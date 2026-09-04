@@ -73,4 +73,22 @@ describe("template design presentation", () => {
     expect(html).toContain("템플릿 추가 텍스트 목록");
     expect(html).toContain("1/20");
   });
+
+  it("matches the editor two-stage sidebar and keeps background as its own tool", () => {
+    const html = renderToStaticMarkup(createElement(TemplateEditor, {
+      initialTemplate: template, baseTemplateId: "dark-minimal", initialConfig: config,
+      customTemplateDesignEnabled: true,
+    }));
+    expect(html).toContain('aria-label="템플릿 편집 도구"');
+    expect(html).toContain('id="template-tool-detail"');
+    const labels = ["후킹 제목", "텍스트", "자막", "댓글", "채널명", "배경", "템플릿"];
+    labels.reduce((lastIndex, label) => {
+      const index = html.indexOf(label, lastIndex + 1);
+      expect(index).toBeGreaterThan(lastIndex);
+      return index;
+    }, -1);
+    expect(html).toContain("fixed bottom-0 left-0 top-16");
+    expect(html).toContain("pl-[504px]");
+    expect(html).toContain("배경 이미지 업로드");
+  });
 });

@@ -72,9 +72,75 @@ type TemplateLayerId = Exclude<LayerId, "comment">;
 type TextLayerId = "title" | "channel";
 type History = { past: TemplateConfig[]; present: TemplateConfig; future: TemplateConfig[] };
 type CenterGuides = { x: boolean; y: boolean };
+type TemplateSidebarTool =
+  | "title"
+  | "text"
+  | "subtitle"
+  | "comment"
+  | "channel"
+  | "background"
+  | "template";
 
-const layerLabels: Record<LayerId, string> = { video: "영상", title: "제목", subtitle: "자막", channel: "채널명", comment: "댓글" };
-const standardLayerIds: LayerId[] = ["video", "title", "channel"];
+const TEMPLATE_SIDEBAR_TOOLS = [
+  { id: "title", label: "후킹 제목" },
+  { id: "text", label: "텍스트" },
+  { id: "subtitle", label: "자막" },
+  { id: "comment", label: "댓글" },
+  { id: "channel", label: "채널명" },
+  { id: "background", label: "배경" },
+  { id: "template", label: "템플릿" },
+] as const satisfies readonly { id: TemplateSidebarTool; label: string }[];
+
+function TemplateSidebarSectionIcon({ section }: { section: TemplateSidebarTool }) {
+  if (section === "title") {
+    return <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path d="M4 5h12M10 5v10M7.3 15h5.4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>;
+  }
+  if (section === "comment") {
+    return <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path d="M4.25 4.25h11.5v8.5H9l-3.75 3v-3h-1Z" stroke="currentColor" strokeWidth="1.55" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M7 7.25h6M7 9.75h4" stroke="currentColor" strokeWidth="1.45" strokeLinecap="round" />
+    </svg>;
+  }
+  if (section === "subtitle") {
+    return <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <rect x="3" y="4" width="14" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M5.75 9h3.5M10.75 9h3.5M5.75 12h5.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>;
+  }
+  if (section === "text") {
+    return <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <rect x="3.25" y="3.25" width="13.5" height="13.5" rx="2" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M6.25 7h7.5M10 7v6.25M7.8 13.25h4.4" stroke="currentColor" strokeWidth="1.55" strokeLinecap="round" />
+    </svg>;
+  }
+  if (section === "channel") {
+    return <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <circle cx="10" cy="7" r="3" stroke="currentColor" strokeWidth="1.55" />
+      <path d="M4.5 16c.55-3 2.35-4.5 5.5-4.5s4.95 1.5 5.5 4.5" stroke="currentColor" strokeWidth="1.55" strokeLinecap="round" />
+    </svg>;
+  }
+  if (section === "background") {
+    return <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <rect x="3" y="3.5" width="14" height="13" rx="2" stroke="currentColor" strokeWidth="1.55" />
+      <circle cx="7" cy="7.5" r="1.35" fill="currentColor" />
+      <path d="m4.5 14 3.7-3.7 2.35 2.3 1.7-1.7 3.25 3.1" stroke="currentColor" strokeWidth="1.55" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>;
+  }
+  return <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+    <rect x="3.25" y="3.25" width="13.5" height="13.5" rx="2" stroke="currentColor" strokeWidth="1.5" />
+    <path d="M3.8 8h12.4M9 8v8.2" stroke="currentColor" strokeWidth="1.5" />
+  </svg>;
+}
+
+function sidebarToolForLayer(layer: SelectedLayerId): TemplateSidebarTool {
+  if (layer === "video") return "template";
+  if (layer === "title" || layer === "subtitle" || layer === "comment" || layer === "channel") {
+    return layer;
+  }
+  return "text";
+}
 const commentSizeOptions: { value: TemplateConfig["comment"]["size"]; label: string }[] = [
   { value: "small", label: "작게" },
   { value: "medium", label: "기본" },
@@ -173,6 +239,7 @@ export function TemplateEditor({
   const initialName = initialTemplate?.name || suggestedName || "나의 템플릿";
   const [name, setName] = useState(initialName);
   const [selectedLayer, setSelectedLayer] = useState<SelectedLayerId>("title");
+  const [activeSidebarTool, setActiveSidebarTool] = useState<TemplateSidebarTool>("title");
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const [backgroundBusy, setBackgroundBusy] = useState(false);
   const [zoom, setZoom] = useState(1);
@@ -200,17 +267,31 @@ export function TemplateEditor({
   const dirty = JSON.stringify({ name, config }) !== baselineRef.current;
   const unifiedSubtitleConfigEnabled = unifiedSubtitleCanaryEnabled && isTemplateConfigV5(config);
   const positionedWordsV4Enabled = isEditorRenderSpecV4Enabled();
-  const availableLayerIds = unifiedSubtitleConfigEnabled
-    ? commentLayerEnabled
-      ? (["video", "title", "subtitle", "channel", "comment"] satisfies LayerId[])
-      : (["video", "title", "subtitle", "channel"] satisfies LayerId[])
-    : commentLayerEnabled
-      ? ([...standardLayerIds, "comment"] satisfies LayerId[])
-      : standardLayerIds;
   const videoBottom = config.video.y + config.video.height;
   const commentCanDockToVideo = customCommentCanDockToVideo(config.video);
   const commentIsDockedToVideo = config.comment.dockedToVideo && commentCanDockToVideo;
   const commentY = customCommentLayerY(config);
+
+  const selectLayer = useCallback((layer: SelectedLayerId) => {
+    setSelectedLayer(layer);
+    setActiveSidebarTool(sidebarToolForLayer(layer));
+  }, []);
+
+  const activateSidebarTool = (tool: TemplateSidebarTool) => {
+    setActiveSidebarTool(tool);
+    if (tool === "title" || tool === "subtitle" || tool === "comment" || tool === "channel") {
+      setSelectedLayer(tool);
+      return;
+    }
+    if (tool === "template") {
+      setSelectedLayer("video");
+      return;
+    }
+    if (tool === "text" && extraTexts[0]) {
+      setSelectedLayer(`text:${extraTexts[0].id}`);
+      setEditingTextId(null);
+    }
+  };
 
   const commit = useCallback((updater: (current: TemplateConfig) => TemplateConfig) => {
     setHistory((current) => {
@@ -277,7 +358,7 @@ export function TemplateEditor({
     if (!canvas) return;
     event.preventDefault();
     event.stopPropagation();
-    setSelectedLayer(layer);
+    selectLayer(layer);
     setCenterGuides(hiddenCenterGuides);
     event.currentTarget.setPointerCapture(event.pointerId);
     transactionRef.current = cloneConfig(config);
@@ -381,7 +462,7 @@ export function TemplateEditor({
     if (!canvas) return;
     event.preventDefault();
     event.stopPropagation();
-    setSelectedLayer("comment");
+    selectLayer("comment");
     event.currentTarget.setPointerCapture(event.pointerId);
     transactionRef.current = cloneConfig(config);
     const startPointerY = event.clientY;
@@ -454,7 +535,7 @@ export function TemplateEditor({
     const id = crypto.randomUUID();
     finishTextInteraction();
     commit((next) => addTemplateTextOverlay(next, id));
-    setSelectedLayer(`text:${id}`);
+    selectLayer(`text:${id}`);
     setEditingTextId(null);
   };
 
@@ -463,7 +544,7 @@ export function TemplateEditor({
     finishTextInteraction();
     commit((next) => removeTemplateTextOverlay(next, id));
     setEditingTextId(null);
-    setSelectedLayer("title");
+    selectLayer("title");
   };
 
   const beginExtraTextPointerAction = (
@@ -480,7 +561,7 @@ export function TemplateEditor({
     textDragCleanupRef.current?.();
     finishTextInteraction();
     beginTextInteraction();
-    setSelectedLayer(`text:${id}`);
+    selectLayer(`text:${id}`);
     setCenterGuides(hiddenCenterGuides);
     const captureTarget = event.currentTarget;
     const pointerId = event.pointerId;
@@ -600,12 +681,12 @@ export function TemplateEditor({
           </div>
         </header>
 
-        <main className="min-h-dvh pb-10 pl-6 pr-[504px] pt-24">
+        <main className="min-h-dvh pb-10 pl-[504px] pr-6 pt-24">
           <div className="mx-auto flex max-w-[920px] flex-col items-center">
             <div className="mb-4 flex w-full max-w-[500px] items-center justify-between text-xs font-bold text-neutral-500"><span className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-3 py-1 text-emerald-300">● LIVE PREVIEW</span><span>9:16 · 1080 × 1920</span></div>
             <div className="flex min-h-[680px] w-full items-center justify-center overflow-auto">
               <div style={{ transform: `scale(${zoom})`, transformOrigin: "center" }}>
-                <div ref={canvasRef} className="relative aspect-[9/16] w-[360px] touch-none overflow-hidden rounded-[12px] shadow-[0_30px_100px_rgba(0,0,0,.65)]" style={{ ...background, containerType: "inline-size" }} onPointerDown={() => setSelectedLayer("video")}>
+                <div ref={canvasRef} className="relative aspect-[9/16] w-[360px] touch-none overflow-hidden rounded-[12px] shadow-[0_30px_100px_rgba(0,0,0,.65)]" style={{ ...background, containerType: "inline-size" }} onPointerDown={() => selectLayer("video")}>
                   <div onPointerDown={(event) => beginPointerAction(event, "video")} className={`absolute cursor-move overflow-hidden bg-neutral-700 ${selectedLayer === "video" ? "ring-2 ring-[#ff715e] ring-inset" : ""}`} style={{ ...customVideoFrameStyle(config.video), zIndex: templateDesignLayerZIndex(config, "video") }}>
                     <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_40%,#73737c,#2c2c31_70%)]" /><div className="absolute inset-x-0 top-1/2 h-px bg-white/20" />
                     <button type="button" aria-label="영상 크기 조절" onPointerDown={(event) => beginPointerAction(event, "video", "resize")} className="absolute bottom-0 right-0 h-6 w-6 cursor-nwse-resize border-l border-t border-white bg-[#ff715e]" />
@@ -642,8 +723,8 @@ export function TemplateEditor({
                     : null}
                   {config.channel.visible && !commentLayerEnabled && <button type="button" onPointerDown={(event) => beginPointerAction(event, "channel")} className={`absolute z-30 cursor-move truncate rounded px-[1.8cqw] py-[.8cqw] text-center font-bold ${selectedLayer === "channel" ? "outline outline-2 outline-[#ff715e]" : ""}`} style={{ ...customCenteredLayerStyle(config.channel), color: config.channel.color, backgroundColor: config.channel.backgroundColor || "transparent", fontSize: customCanvasWidth(config.channel.fontSize), zIndex: templateDesignLayerZIndex(config, "channel") }}>● Easy Cut</button>}
                   {commentLayerEnabled && <div className={`absolute inset-x-0 ${hasDesignOrder ? "" : "z-40"}`} style={{ top: `${(commentY / TEMPLATE_CANVAS.height) * 100}%` }}>
-                    {config.comment.visible && <div style={hasDesignOrder ? { position: "relative", zIndex: templateDesignLayerZIndex(config, "comment") } : undefined}><TemplateCommentPrototype selected={selectedLayer === "comment"} theme={config.comment.theme} size={config.comment.size} comment={TEMPLATE_PRESET_COMMENT_SAMPLE} onSelect={() => setSelectedLayer("comment")} onPointerDown={beginCommentPointerAction} /></div>}
-                    {config.channel.visible && <button type="button" onClick={() => setSelectedLayer("channel")} onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); setSelectedLayer("channel"); }} className={`${config.schemaVersion >= 4 ? "absolute left-1/2" : "relative mx-auto mt-[2cqw] block"} z-30 truncate rounded px-[1.8cqw] py-[.8cqw] text-center font-bold ${selectedLayer === "channel" ? "outline outline-2 outline-[#ff715e]" : ""}`} style={{ top: config.schemaVersion >= 4 ? customCanvasWidth(config.channel.y - commentY) : undefined, transform: config.schemaVersion >= 4 ? "translate(-50%, -50%)" : undefined, width: customCanvasWidth(config.channel.maxWidth), color: config.channel.color, backgroundColor: config.channel.backgroundColor || "transparent", fontSize: customCanvasWidth(config.channel.fontSize), zIndex: templateDesignLayerZIndex(config, "channel") }}>● Easy Cut</button>}
+                    {config.comment.visible && <div style={hasDesignOrder ? { position: "relative", zIndex: templateDesignLayerZIndex(config, "comment") } : undefined}><TemplateCommentPrototype selected={selectedLayer === "comment"} theme={config.comment.theme} size={config.comment.size} comment={TEMPLATE_PRESET_COMMENT_SAMPLE} onSelect={() => selectLayer("comment")} onPointerDown={beginCommentPointerAction} /></div>}
+                    {config.channel.visible && <button type="button" onClick={() => selectLayer("channel")} onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); selectLayer("channel"); }} className={`${config.schemaVersion >= 4 ? "absolute left-1/2" : "relative mx-auto mt-[2cqw] block"} z-30 truncate rounded px-[1.8cqw] py-[.8cqw] text-center font-bold ${selectedLayer === "channel" ? "outline outline-2 outline-[#ff715e]" : ""}`} style={{ top: config.schemaVersion >= 4 ? customCanvasWidth(config.channel.y - commentY) : undefined, transform: config.schemaVersion >= 4 ? "translate(-50%, -50%)" : undefined, width: customCanvasWidth(config.channel.maxWidth), color: config.channel.color, backgroundColor: config.channel.backgroundColor || "transparent", fontSize: customCanvasWidth(config.channel.fontSize), zIndex: templateDesignLayerZIndex(config, "channel") }}>● Easy Cut</button>}
                   </div>}
                   {extraTexts.map((text) => customTemplateDesignEnabled
                     ? <EditorTextOverlayPreview
@@ -656,7 +737,7 @@ export function TemplateEditor({
                         onPointerDown={(event) => beginExtraTextPointerAction(text.id, event)}
                         onResizePointerDown={(edge, event) => beginExtraTextPointerAction(text.id, event, edge)}
                         onDelete={deleteExtraText}
-                        onEditStart={(id) => { finishTextInteraction(); beginTextInteraction(); setSelectedLayer(`text:${id}`); setEditingTextId(id); }}
+                        onEditStart={(id) => { finishTextInteraction(); beginTextInteraction(); selectLayer(`text:${id}`); setEditingTextId(id); }}
                         onEditValueChange={(id, text) => updateExtraText(id, { text }, "continuous")}
                         onEditEnd={() => { finishTextInteraction(); setEditingTextId(null); }}
                       />
@@ -671,20 +752,48 @@ export function TemplateEditor({
           </div>
         </main>
 
-        <aside className="fixed bottom-0 right-0 top-16 z-40 flex w-[480px] flex-col border-l border-white/10 bg-[#19191c]">
-          <fieldset disabled={saving || backgroundBusy} className="min-h-0 flex-1 space-y-9 overflow-y-auto px-6 pb-32 pt-7">
-            <div><h1 className="text-lg font-extrabold tracking-[-.025em] text-[#f6f4f7]">템플릿 편집</h1><p className="mt-1.5 text-xs leading-5 text-[#8f8e97]">왼쪽 미리보기에서 변경 내용을 실시간으로 확인하세요.</p></div>
+        <aside className="fixed bottom-0 left-0 top-16 z-40 flex w-[480px] border-r border-white/10 bg-[#19191c]">
+          <nav className="flex w-[88px] shrink-0 flex-col overflow-y-auto border-r border-white/10 bg-[#111114] px-2 py-3 [scrollbar-width:none] [&_svg]:h-[23px] [&_svg]:w-[23px] [&::-webkit-scrollbar]:hidden" aria-label="템플릿 편집 도구">
+            <div className="flex flex-col gap-1.5">
+              {TEMPLATE_SIDEBAR_TOOLS.map((tool) => {
+                const active = activeSidebarTool === tool.id;
+                return <button
+                  key={tool.id}
+                  type="button"
+                  aria-pressed={active}
+                  aria-controls="template-tool-detail"
+                  onClick={() => activateSidebarTool(tool.id)}
+                  className={`flex min-h-[76px] w-full flex-col items-center justify-center gap-1.5 rounded-xl px-1 py-2 text-center text-[13px] font-extrabold leading-tight tracking-[-.025em] transition ${active ? "bg-white/[.12] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,.08)]" : "text-[#aaa8b0] hover:bg-white/[.06] hover:text-white"}`}
+                >
+                  <span className={`grid h-[34px] w-[34px] place-items-center rounded-[10px] ${active ? "bg-white/[.16]" : "bg-white/[.07]"}`}>
+                    <TemplateSidebarSectionIcon section={tool.id} />
+                  </span>
+                  {tool.label}
+                </button>;
+              })}
+            </div>
+          </nav>
+          <div id="template-tool-detail" className="relative flex min-w-0 flex-1 flex-col bg-[#18181c]">
+          <fieldset disabled={saving || backgroundBusy} className="min-h-0 flex-1 space-y-7 overflow-y-auto px-[22px] pb-32 pt-[18px]">
+            <header className="border-b border-white/[.08] pb-4">
+              <h1 className="text-lg font-extrabold tracking-[-.025em] text-[#f6f4f7]">{TEMPLATE_SIDEBAR_TOOLS.find((tool) => tool.id === activeSidebarTool)?.label}</h1>
+              <p className="mt-1.5 text-xs leading-5 text-[#8f8e97]">오른쪽 미리보기에서 변경 내용을 실시간으로 확인하세요.</p>
+            </header>
 
-            <section><label className="block text-[15px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">템플릿 이름<input value={name} maxLength={50} onChange={(event) => setName(event.target.value)} className="mt-3 h-11 w-full rounded-xl border border-white/10 bg-black/25 px-3 text-sm font-medium text-white outline-none transition focus:border-[#ff715e]" /></label></section>
+            <section hidden={activeSidebarTool !== "template"}>
+              <label className="block text-[15px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">템플릿 이름<input value={name} maxLength={50} onChange={(event) => setName(event.target.value)} className="mt-3 h-11 w-full rounded-xl border border-white/10 bg-black/25 px-3 text-sm font-medium text-white outline-none transition focus:border-[#ff715e]" /></label>
+              <div className="mt-6 border-t border-white/10 pt-5">
+                <h2 className="text-[17px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">영상 프레임</h2>
+                <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3.5"><h3 className="text-sm font-semibold text-neutral-200">영상 비율</h3><div className="mt-3 grid grid-cols-5 gap-1">{videoAspectRatioOptions.map((option) => <button key={option.value} type="button" onClick={() => changeAspect(option.value)} className={`rounded-lg py-2 text-[10px] font-bold transition ${config.video.aspectRatio === option.value ? "bg-white text-black" : "bg-white/5 text-neutral-400 hover:bg-white/10"}`}>{option.value}</button>)}</div><p className="mt-3 text-[11px] leading-5 text-neutral-500">프레임을 끌어 이동하고 오른쪽 아래 핸들로 비율을 유지한 채 크기를 조절하세요.</p></div>
+              </div>
+            </section>
 
-            <section><h2 className="text-[17px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">편집 레이어</h2><p className="mt-1.5 text-xs leading-5 text-[#8f8e97]">미리보기에서 직접 선택하거나 아래 레이어를 고르세요.</p><div className={`mt-3 grid gap-1.5 rounded-xl border border-white/10 bg-black/20 p-1.5 ${availableLayerIds.length >= 5 ? "grid-cols-5" : availableLayerIds.length === 4 ? "grid-cols-4" : "grid-cols-3"}`}>{availableLayerIds.map((layer) => <button key={layer} type="button" onClick={() => setSelectedLayer(layer)} className={`rounded-lg px-1 py-2.5 text-xs font-bold transition ${selectedLayer === layer ? "bg-[#ff715e] text-white" : "text-neutral-400 hover:bg-white/5 hover:text-white"}`}>{layerLabels[layer]}</button>)}</div></section>
-
-            {customTemplateDesignEnabled && <section aria-label="템플릿 추가 텍스트">
+            {customTemplateDesignEnabled && <section hidden={activeSidebarTool !== "text"} aria-label="템플릿 추가 텍스트">
               <div className="flex items-center justify-between gap-3"><h2 className="text-[17px] font-extrabold text-[#f2f0f4]">추가 텍스트</h2><span className="text-xs text-neutral-500">{extraTexts.length}/{TEMPLATE_TEXT_OVERLAY_LIMIT}</span></div>
               <p className="mt-1.5 text-xs leading-5 text-[#8f8e97]">완성 영상 전체에 표시됩니다. 생성 후 편집기에서 표시 시간을 바꿀 수 있습니다.</p>
               <button type="button" disabled={extraTexts.length >= TEMPLATE_TEXT_OVERLAY_LIMIT} onClick={addExtraText} className="mt-3 w-full rounded-xl border border-white/15 bg-white/[.04] py-3 text-xs font-bold text-neutral-100 hover:border-[#ff715e] disabled:opacity-40">+ 텍스트 추가</button>
               {extraTexts.length > 0 && <div className="mt-3 space-y-2" aria-label="템플릿 추가 텍스트 목록">{extraTexts.map((text, index) => <div key={text.id}>
-                <button type="button" aria-pressed={selectedExtraText?.id === text.id} onClick={() => { setSelectedLayer(`text:${text.id}`); setEditingTextId(null); }} className={`flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left text-xs ${selectedExtraText?.id === text.id ? "border-[#ff715e] bg-[#ff715e]/10 text-white" : "border-white/10 text-neutral-400"}`}><span aria-hidden="true" className="font-black">T</span><span className="min-w-0 truncate">{text.text.trim() || `텍스트 ${index + 1}`}</span></button>
+                <button type="button" aria-pressed={selectedExtraText?.id === text.id} onClick={() => { selectLayer(`text:${text.id}`); setEditingTextId(null); }} className={`flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left text-xs ${selectedExtraText?.id === text.id ? "border-[#ff715e] bg-[#ff715e]/10 text-white" : "border-white/10 text-neutral-400"}`}><span aria-hidden="true" className="font-black">T</span><span className="min-w-0 truncate">{text.text.trim() || `텍스트 ${index + 1}`}</span></button>
                 {selectedExtraText?.id === text.id && <EditorTextOverlayControls
                   textOverlay={text}
                   onChange={(patch, mode) => updateExtraText(text.id, patch, mode)}
@@ -704,9 +813,11 @@ export function TemplateEditor({
               </div>)}</div>}
             </section>}
 
-            {selectedLayer === "video" && <section><h2 className="text-[17px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">영상 프레임</h2><div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3.5"><h3 className="text-sm font-semibold text-neutral-200">영상 비율</h3><div className="mt-3 grid grid-cols-5 gap-1">{videoAspectRatioOptions.map((option) => <button key={option.value} type="button" onClick={() => changeAspect(option.value)} className={`rounded-lg py-2 text-[10px] font-bold transition ${config.video.aspectRatio === option.value ? "bg-white text-black" : "bg-white/5 text-neutral-400 hover:bg-white/10"}`}>{option.value}</button>)}</div><p className="mt-3 text-[11px] leading-5 text-neutral-500">프레임을 끌어 이동하고 오른쪽 아래 핸들로 비율을 유지한 채 크기를 조절하세요.</p></div></section>}
+            {!customTemplateDesignEnabled && <section hidden={activeSidebarTool !== "text"} aria-label="텍스트 설정 안내">
+              <p className="rounded-xl border border-white/10 bg-black/20 px-4 py-4 text-xs leading-6 text-neutral-400">추가 텍스트 기능은 현재 공개 범위에 포함되지 않습니다. 기존 템플릿 요소는 그대로 유지됩니다.</p>
+            </section>}
 
-            {selectedTextLayer && <section><h2 className="text-[17px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">{selectedLayer === "title" ? "제목 스타일" : "채널명 스타일"}</h2><div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3.5">
+            {selectedTextLayer && (activeSidebarTool === "title" || activeSidebarTool === "channel") && <section><h2 className="text-[17px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">{selectedLayer === "title" ? "제목 스타일" : "채널명 스타일"}</h2><div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3.5">
               <div className="flex items-center justify-between"><span className="text-sm font-semibold text-neutral-200">레이어 표시</span><button type="button" onClick={() => commit((next) => { next[selectedLayer as TextLayerId].visible = !selectedTextLayer.visible; return next; })} className={`rounded-full px-3 py-1 text-xs font-bold ${selectedTextLayer.visible ? "bg-emerald-400 text-black" : "bg-white/10 text-neutral-400"}`}>{selectedTextLayer.visible ? "켜짐" : "꺼짐"}</button></div>
               {selectedLayer === "title" && unifiedTitleFontId && <label className="mt-5 block border-t border-white/10 pt-4 text-sm font-semibold text-neutral-200">후킹 제목 폰트
                 <select
@@ -730,7 +841,7 @@ export function TemplateEditor({
               </> : <div className="mt-5 border-t border-white/10 pt-4"><h3 className="text-sm font-semibold text-neutral-200">채널명</h3>{commentLayerEnabled && <p className="mt-1.5 text-[11px] leading-5 text-neutral-500">댓글 카드 크기가 바뀌어도 채널명은 항상 카드 아래로 자동 정렬됩니다.</p>}<div className="mt-3 grid grid-cols-2 gap-5"><div><p className="text-xs font-semibold text-neutral-400">글자색</p><div className="mt-2"><ColorPalette key="channel-color" value={config.channel.color} onChange={(color) => { if (color) commit((next) => { next.channel.color = color; return next; }); }} /></div></div><div><p className="text-xs font-semibold text-neutral-400">배경색</p><div className="mt-2"><ColorPalette key="channel-background" allowNone value={config.channel.backgroundColor} onChange={(color) => commit((next) => { next.channel.backgroundColor = color; return next; })} /></div></div></div></div>}
             </div></section>}
 
-            {selectedSubtitle && <section>
+            {activeSidebarTool === "subtitle" && selectedSubtitle && <section>
               <div className="flex items-center justify-between gap-3">
                 <h2 className="text-[17px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">자막 스타일</h2>
                 <span className="rounded-full border border-[#35e6e3]/25 bg-[#35e6e3]/10 px-2.5 py-1 text-[10px] font-bold text-[#74efec]">영상에 적용</span>
@@ -829,7 +940,11 @@ export function TemplateEditor({
               </div>
             </section>}
 
-            {selectedLayer === "comment" && commentLayerEnabled && <section>
+            {activeSidebarTool === "subtitle" && !selectedSubtitle && <section>
+              <p className="rounded-xl border border-white/10 bg-black/20 px-4 py-4 text-xs leading-6 text-neutral-400">이 템플릿에는 편집 가능한 자막 레이어가 없습니다.</p>
+            </section>}
+
+            {activeSidebarTool === "comment" && selectedLayer === "comment" && commentLayerEnabled && <section>
               <div className="flex items-center justify-between gap-3">
                 <h2 className="text-[17px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">댓글 레이아웃</h2>
                 <span className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2.5 py-1 text-[10px] font-bold text-emerald-300">렌더링 적용</span>
@@ -862,7 +977,11 @@ export function TemplateEditor({
               </div>
             </section>}
 
-            <section><h2 className="text-[17px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">배경</h2><p className="mt-1.5 text-xs leading-5 text-[#8f8e97]">완성 영상과 같은 9:16 비율로 배경을 비교하세요.</p><div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3.5">
+            {activeSidebarTool === "comment" && !commentLayerEnabled && <section>
+              <p className="rounded-xl border border-white/10 bg-black/20 px-4 py-4 text-xs leading-6 text-neutral-400">댓글 설정은 댓글 캡처 템플릿에서 사용할 수 있습니다.</p>
+            </section>}
+
+            <section hidden={activeSidebarTool !== "background"}><h2 className="text-[17px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">배경</h2><p className="mt-1.5 text-xs leading-5 text-[#8f8e97]">완성 영상과 같은 9:16 비율로 배경을 비교하세요.</p><div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3.5">
               {customTemplateDesignEnabled && <div className="mb-6 border-b border-white/10 pb-5"><BackgroundAssetPicker
                 value={config.background}
                 disabled={saving}
@@ -875,6 +994,7 @@ export function TemplateEditor({
             </div></section>
           </fieldset>
           <div className="absolute inset-x-0 bottom-0 border-t border-white/10 bg-[#19191c]/95 p-5 backdrop-blur-xl"><button type="button" disabled={saving || backgroundBusy || !dirty} onClick={() => void save()} className="h-12 w-full rounded-xl bg-[#ff715e] text-sm font-black text-white transition hover:bg-[#ff8a78] disabled:bg-neutral-700 disabled:text-neutral-400">{backgroundBusy ? "배경 이미지 확인 중…" : saving ? "저장 중..." : savedTemplate ? "템플릿 저장" : "내 템플릿으로 저장"}</button>{message && <p className="mt-2 text-center text-[11px] leading-4 text-neutral-400">{message}</p>}</div>
+          </div>
         </aside>
       </div>
       <div className="grid min-h-dvh place-items-center px-6 text-center lg:hidden"><div><div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-[#ff715e]/10 text-2xl">▣</div><h1 className="mt-5 text-lg font-black">템플릿 편집은 데스크톱에서 이용해 주세요</h1><p className="mt-2 text-sm leading-6 text-neutral-500">1024px 이상의 화면에서 위치 이동과 크기 조절을 정확하게 사용할 수 있습니다.</p><Link href="/templates" className="mt-6 inline-flex rounded-xl bg-white px-5 py-3 text-sm font-bold text-black">템플릿 라이브러리로</Link></div></div>
