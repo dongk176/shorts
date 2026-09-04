@@ -74,7 +74,7 @@ describe("template design presentation", () => {
     expect(html).toContain("1/20");
   });
 
-  it("matches the editor two-stage sidebar and keeps background as its own tool", () => {
+  it("matches the editor two-stage sidebar, supports mobile, and keeps background as its own tool", () => {
     const html = renderToStaticMarkup(createElement(TemplateEditor, {
       initialTemplate: template, baseTemplateId: "dark-minimal", initialConfig: config,
       customTemplateDesignEnabled: true,
@@ -87,8 +87,12 @@ describe("template design presentation", () => {
       expect(index).toBeGreaterThan(lastIndex);
       return index;
     }, -1);
-    expect(html).toContain("fixed bottom-0 left-0 top-16");
-    expect(html).toContain("pl-[504px]");
+    expect(html).toContain("lg:w-[560px]");
+    expect(html).toContain("lg:pl-[584px]");
+    expect(html).toContain("h-[calc(64px+env(safe-area-inset-bottom,0px))]");
+    expect(html).toContain('aria-label="설정 닫기"');
+    expect(html).toContain("w-[min(76vw,360px)]");
+    expect(html).not.toContain("템플릿 편집은 데스크톱에서 이용해 주세요");
     expect(html).toContain("배경 이미지 업로드");
   });
 });

@@ -240,6 +240,7 @@ export function TemplateEditor({
   const [name, setName] = useState(initialName);
   const [selectedLayer, setSelectedLayer] = useState<SelectedLayerId>("title");
   const [activeSidebarTool, setActiveSidebarTool] = useState<TemplateSidebarTool>("title");
+  const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const [backgroundBusy, setBackgroundBusy] = useState(false);
   const [zoom, setZoom] = useState(1);
@@ -275,9 +276,11 @@ export function TemplateEditor({
   const selectLayer = useCallback((layer: SelectedLayerId) => {
     setSelectedLayer(layer);
     setActiveSidebarTool(sidebarToolForLayer(layer));
+    setMobileControlsOpen(true);
   }, []);
 
   const activateSidebarTool = (tool: TemplateSidebarTool) => {
+    setMobileControlsOpen((current) => activeSidebarTool === tool ? !current : true);
     setActiveSidebarTool(tool);
     if (tool === "title" || tool === "subtitle" || tool === "comment" || tool === "channel") {
       setSelectedLayer(tool);
@@ -672,24 +675,24 @@ export function TemplateEditor({
 
   return (
     <div className="min-h-dvh bg-[#101012] text-neutral-100">
-      <div className="hidden min-h-dvh lg:block">
-        <header className="fixed inset-x-0 top-0 z-50 flex h-16 items-center justify-between border-b border-white/10 bg-[#171719]/95 px-5 backdrop-blur-xl">
-          <div className="flex items-center gap-4"><Link href="/templates" className="text-sm font-bold text-neutral-400 hover:text-white">← 라이브러리</Link><span className="h-5 w-px bg-white/10" /><strong className="tracking-[-.03em]">Easy Cut <span className="text-[#ff715e]">템플릿 커스텀</span></strong></div>
+      <div className="min-h-dvh">
+        <header className="fixed inset-x-0 top-0 z-50 flex h-[calc(56px+env(safe-area-inset-top,0px))] items-center justify-between border-b border-white/10 bg-[#171719]/95 px-3 pt-[env(safe-area-inset-top,0px)] backdrop-blur-xl lg:h-16 lg:px-5 lg:pt-0">
+          <div className="flex min-w-0 items-center gap-3 lg:gap-4"><Link href="/templates" className="shrink-0 text-sm font-bold text-neutral-400 hover:text-white">← 라이브러리</Link><span className="hidden h-5 w-px bg-white/10 sm:block" /><strong className="hidden truncate tracking-[-.03em] sm:block">Easy Cut <span className="text-[#ff715e]">템플릿 커스텀</span></strong></div>
           <div className="flex items-center gap-2">
-            <button type="button" onClick={() => { finishTextInteraction(); undo(); }} disabled={!history.past.length || saving || backgroundBusy} className="rounded-lg border border-white/10 px-3 py-2 text-sm disabled:opacity-30" aria-label="실행 취소">↶ 되돌리기</button>
-            <button type="button" onClick={() => { finishTextInteraction(); redo(); }} disabled={!history.future.length || saving || backgroundBusy} className="rounded-lg border border-white/10 px-3 py-2 text-sm disabled:opacity-30" aria-label="다시 실행">↷ 복구하기</button>
+            <button type="button" onClick={() => { finishTextInteraction(); undo(); }} disabled={!history.past.length || saving || backgroundBusy} className="h-9 rounded-lg border border-white/10 px-2.5 text-sm disabled:opacity-30 lg:px-3" aria-label="실행 취소">↶ <span className="hidden lg:inline">되돌리기</span></button>
+            <button type="button" onClick={() => { finishTextInteraction(); redo(); }} disabled={!history.future.length || saving || backgroundBusy} className="h-9 rounded-lg border border-white/10 px-2.5 text-sm disabled:opacity-30 lg:px-3" aria-label="다시 실행">↷ <span className="hidden lg:inline">복구하기</span></button>
           </div>
         </header>
 
-        <main className="min-h-dvh pb-10 pl-[504px] pr-6 pt-24">
+        <main className="min-h-dvh px-4 pb-[calc(80px+env(safe-area-inset-bottom,0px))] pt-[calc(72px+env(safe-area-inset-top,0px))] lg:px-0 lg:pb-10 lg:pl-[584px] lg:pr-6 lg:pt-24">
           <div className="mx-auto flex max-w-[920px] flex-col items-center">
-            <div className="mb-4 flex w-full max-w-[500px] items-center justify-between text-xs font-bold text-neutral-500"><span className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-3 py-1 text-emerald-300">● LIVE PREVIEW</span><span>9:16 · 1080 × 1920</span></div>
-            <div className="flex min-h-[680px] w-full items-center justify-center overflow-auto">
+            <div className="mb-3 flex w-full max-w-[500px] items-center justify-between text-[11px] font-bold text-neutral-500 lg:mb-4 lg:text-xs"><span className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2.5 py-1 text-emerald-300 lg:px-3">● LIVE PREVIEW</span><span>9:16 · 1080 × 1920</span></div>
+            <div className="flex min-h-[calc(100dvh-180px)] w-full items-center justify-center overflow-auto lg:min-h-[680px]">
               <div style={{ transform: `scale(${zoom})`, transformOrigin: "center" }}>
-                <div ref={canvasRef} className="relative aspect-[9/16] w-[360px] touch-none overflow-hidden rounded-[12px] shadow-[0_30px_100px_rgba(0,0,0,.65)]" style={{ ...background, containerType: "inline-size" }} onPointerDown={() => selectLayer("video")}>
+                <div ref={canvasRef} className="relative aspect-[9/16] w-[min(76vw,360px)] touch-none overflow-hidden rounded-[12px] shadow-[0_30px_100px_rgba(0,0,0,.65)]" style={{ ...background, containerType: "inline-size" }} onPointerDown={() => selectLayer("video")}>
                   <div onPointerDown={(event) => beginPointerAction(event, "video")} className={`absolute cursor-move overflow-hidden bg-neutral-700 ${selectedLayer === "video" ? "ring-2 ring-[#ff715e] ring-inset" : ""}`} style={{ ...customVideoFrameStyle(config.video), zIndex: templateDesignLayerZIndex(config, "video") }}>
                     <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_40%,#73737c,#2c2c31_70%)]" /><div className="absolute inset-x-0 top-1/2 h-px bg-white/20" />
-                    <button type="button" aria-label="영상 크기 조절" onPointerDown={(event) => beginPointerAction(event, "video", "resize")} className="absolute bottom-0 right-0 h-6 w-6 cursor-nwse-resize border-l border-t border-white bg-[#ff715e]" />
+                    <button type="button" aria-label="영상 크기 조절" onPointerDown={(event) => beginPointerAction(event, "video", "resize")} className="absolute bottom-0 right-0 h-8 w-8 cursor-nwse-resize touch-none"><span aria-hidden="true" className="absolute bottom-0 right-0 h-4 w-4 border-l border-t border-white bg-[#ff715e]" /></button>
                   </div>
                   {positionedWordsV4Enabled
                     ? <TemplateTitleV4Preview
@@ -748,13 +751,13 @@ export function TemplateEditor({
                 </div>
               </div>
             </div>
-            <div className="mt-5 flex items-center gap-2 rounded-xl border border-white/10 bg-[#19191c] p-1"><button type="button" onClick={() => setZoom((value) => clamp(value - .1, .7, 1.2))} className="h-9 w-9 rounded-lg hover:bg-white/5">−</button><span className="w-14 text-center text-xs font-bold">{Math.round(zoom * 100)}%</span><button type="button" onClick={() => setZoom((value) => clamp(value + .1, .7, 1.2))} className="h-9 w-9 rounded-lg hover:bg-white/5">＋</button></div>
+            <div className="mt-3 flex items-center gap-2 rounded-xl border border-white/10 bg-[#19191c] p-1 lg:mt-5"><button type="button" onClick={() => setZoom((value) => clamp(value - .1, .7, 1.2))} className="h-9 w-9 rounded-lg hover:bg-white/5">−</button><span className="w-14 text-center text-xs font-bold">{Math.round(zoom * 100)}%</span><button type="button" onClick={() => setZoom((value) => clamp(value + .1, .7, 1.2))} className="h-9 w-9 rounded-lg hover:bg-white/5">＋</button></div>
           </div>
         </main>
 
-        <aside className="fixed bottom-0 left-0 top-16 z-40 flex w-[480px] border-r border-white/10 bg-[#19191c]">
-          <nav className="flex w-[88px] shrink-0 flex-col overflow-y-auto border-r border-white/10 bg-[#111114] px-2 py-3 [scrollbar-width:none] [&_svg]:h-[23px] [&_svg]:w-[23px] [&::-webkit-scrollbar]:hidden" aria-label="템플릿 편집 도구">
-            <div className="flex flex-col gap-1.5">
+        <aside className={`fixed inset-x-0 bottom-0 z-40 flex w-full flex-col overflow-hidden border-t border-white/10 bg-[#19191c] shadow-[0_-18px_60px_rgba(0,0,0,.45)] transition-[height] duration-300 ${mobileControlsOpen ? "h-[min(64dvh,600px)]" : "h-[calc(64px+env(safe-area-inset-bottom,0px))]"} lg:inset-x-auto lg:left-0 lg:top-16 lg:h-auto lg:w-[560px] lg:flex-row lg:border-r lg:border-t-0 lg:shadow-none`}>
+          <nav className="order-2 flex h-[calc(64px+env(safe-area-inset-bottom,0px))] min-h-[calc(64px+env(safe-area-inset-bottom,0px))] w-full shrink-0 flex-row overflow-x-auto overflow-y-hidden border-t border-white/10 bg-[#111114] px-2 pb-[env(safe-area-inset-bottom,0px)] pt-[5px] [scrollbar-width:none] [&_svg]:h-[21px] [&_svg]:w-[21px] [&::-webkit-scrollbar]:hidden lg:order-1 lg:h-auto lg:min-h-0 lg:w-[88px] lg:flex-col lg:overflow-x-hidden lg:overflow-y-auto lg:border-r lg:border-t-0 lg:py-3 lg:[&_svg]:h-[23px] lg:[&_svg]:w-[23px]" aria-label="템플릿 편집 도구">
+            <div className="flex min-w-max flex-row gap-1.5 lg:min-w-0 lg:flex-col">
               {TEMPLATE_SIDEBAR_TOOLS.map((tool) => {
                 const active = activeSidebarTool === tool.id;
                 return <button
@@ -763,9 +766,9 @@ export function TemplateEditor({
                   aria-pressed={active}
                   aria-controls="template-tool-detail"
                   onClick={() => activateSidebarTool(tool.id)}
-                  className={`flex min-h-[76px] w-full flex-col items-center justify-center gap-1.5 rounded-xl px-1 py-2 text-center text-[13px] font-extrabold leading-tight tracking-[-.025em] transition ${active ? "bg-white/[.12] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,.08)]" : "text-[#aaa8b0] hover:bg-white/[.06] hover:text-white"}`}
+                  className={`flex min-h-[54px] w-[64px] shrink-0 flex-col items-center justify-center gap-1 rounded-xl px-1 py-1 text-center text-[10px] font-extrabold leading-tight tracking-[-.025em] transition lg:min-h-[76px] lg:w-full lg:gap-1.5 lg:py-2 lg:text-[13px] ${active ? "bg-white/[.12] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,.08)]" : "text-[#aaa8b0] hover:bg-white/[.06] hover:text-white"}`}
                 >
-                  <span className={`grid h-[34px] w-[34px] place-items-center rounded-[10px] ${active ? "bg-white/[.16]" : "bg-white/[.07]"}`}>
+                  <span className={`grid h-[28px] w-[28px] place-items-center rounded-[9px] lg:h-[34px] lg:w-[34px] lg:rounded-[10px] ${active ? "bg-white/[.16]" : "bg-white/[.07]"}`}>
                     <TemplateSidebarSectionIcon section={tool.id} />
                   </span>
                   {tool.label}
@@ -773,11 +776,10 @@ export function TemplateEditor({
               })}
             </div>
           </nav>
-          <div id="template-tool-detail" className="relative flex min-w-0 flex-1 flex-col bg-[#18181c]">
-          <fieldset disabled={saving || backgroundBusy} className="min-h-0 flex-1 space-y-7 overflow-y-auto px-[22px] pb-32 pt-[18px]">
+          <div id="template-tool-detail" className={`${mobileControlsOpen ? "flex" : "hidden"} relative order-1 min-h-0 min-w-0 flex-1 flex-col bg-[#18181c] lg:order-2 lg:flex`}>
+          <fieldset disabled={saving || backgroundBusy} className="min-h-0 flex-1 space-y-7 overflow-y-auto px-4 pb-32 pt-4 lg:px-[26px] lg:pt-[18px]">
             <header className="border-b border-white/[.08] pb-4">
-              <h1 className="text-lg font-extrabold tracking-[-.025em] text-[#f6f4f7]">{TEMPLATE_SIDEBAR_TOOLS.find((tool) => tool.id === activeSidebarTool)?.label}</h1>
-              <p className="mt-1.5 text-xs leading-5 text-[#8f8e97]">오른쪽 미리보기에서 변경 내용을 실시간으로 확인하세요.</p>
+              <div className="flex items-start justify-between gap-3"><div><h1 className="text-lg font-extrabold tracking-[-.025em] text-[#f6f4f7]">{TEMPLATE_SIDEBAR_TOOLS.find((tool) => tool.id === activeSidebarTool)?.label}</h1><p className="mt-1.5 text-xs leading-5 text-[#8f8e97]"><span className="lg:hidden">미리보기를 보며 변경 내용을 실시간으로 확인하세요.</span><span className="hidden lg:inline">오른쪽 미리보기에서 변경 내용을 실시간으로 확인하세요.</span></p></div><button type="button" onClick={() => setMobileControlsOpen(false)} aria-label="설정 닫기" className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[.04] text-lg text-neutral-300 lg:hidden">⌄</button></div>
             </header>
 
             <section hidden={activeSidebarTool !== "template"}>
@@ -993,11 +995,10 @@ export function TemplateEditor({
               <div className="mt-6 border-t border-white/10 pt-5"><div className="flex items-center justify-between gap-3"><h3 className="text-sm font-semibold text-neutral-200">단색 배경</h3><button type="button" aria-expanded={showAllBackgroundColors} onClick={() => setShowAllBackgroundColors((current) => !current)} className="text-[11px] font-bold text-[#ff9b8d] transition hover:text-white">{showAllBackgroundColors ? "접기" : "전체 보기"}</button></div><div className="mt-3 grid grid-cols-3 gap-2">{visibleBackgroundColors.map((option) => <button key={option.color} type="button" title={option.name} aria-label={`${option.name} 단색 배경 선택`} aria-pressed={selectedBackgroundColor === option.color} onClick={() => commit((next) => { next.background = { kind: "color", color: option.color }; return next; })} className={`relative aspect-[9/16] overflow-hidden rounded-lg border transition ${selectedBackgroundColor === option.color ? "border-[#ff715e] ring-2 ring-[#ff715e]/25" : "border-white/10 hover:border-white/35"}`} style={{ backgroundColor: option.color }}><span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-black/20 px-1 py-1.5 text-[9px] font-bold leading-3 text-white">{option.name}</span></button>)}</div></div>
             </div></section>
           </fieldset>
-          <div className="absolute inset-x-0 bottom-0 border-t border-white/10 bg-[#19191c]/95 p-5 backdrop-blur-xl"><button type="button" disabled={saving || backgroundBusy || !dirty} onClick={() => void save()} className="h-12 w-full rounded-xl bg-[#ff715e] text-sm font-black text-white transition hover:bg-[#ff8a78] disabled:bg-neutral-700 disabled:text-neutral-400">{backgroundBusy ? "배경 이미지 확인 중…" : saving ? "저장 중..." : savedTemplate ? "템플릿 저장" : "내 템플릿으로 저장"}</button>{message && <p className="mt-2 text-center text-[11px] leading-4 text-neutral-400">{message}</p>}</div>
+          <div className="absolute inset-x-0 bottom-0 border-t border-white/10 bg-[#19191c]/95 p-3 backdrop-blur-xl lg:p-5"><button type="button" disabled={saving || backgroundBusy || !dirty} onClick={() => void save()} className="h-11 w-full rounded-xl bg-[#ff715e] text-sm font-black text-white transition hover:bg-[#ff8a78] disabled:bg-neutral-700 disabled:text-neutral-400 lg:h-12">{backgroundBusy ? "배경 이미지 확인 중…" : saving ? "저장 중..." : savedTemplate ? "템플릿 저장" : "내 템플릿으로 저장"}</button>{message && <p className="mt-2 text-center text-[11px] leading-4 text-neutral-400">{message}</p>}</div>
           </div>
         </aside>
       </div>
-      <div className="grid min-h-dvh place-items-center px-6 text-center lg:hidden"><div><div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-[#ff715e]/10 text-2xl">▣</div><h1 className="mt-5 text-lg font-black">템플릿 편집은 데스크톱에서 이용해 주세요</h1><p className="mt-2 text-sm leading-6 text-neutral-500">1024px 이상의 화면에서 위치 이동과 크기 조절을 정확하게 사용할 수 있습니다.</p><Link href="/templates" className="mt-6 inline-flex rounded-xl bg-white px-5 py-3 text-sm font-bold text-black">템플릿 라이브러리로</Link></div></div>
     </div>
   );
 }
