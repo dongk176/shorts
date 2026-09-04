@@ -1,5 +1,6 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { CustomTemplateCanvasPreview } from "@/components/custom-template-canvas-preview";
 import { EditorTextOverlayPaint } from "@/components/editor-text-overlay-paint";
@@ -7,6 +8,11 @@ import { EditorTextOverlayControls } from "@/components/editor-text-overlay-cont
 import { TemplateEditor } from "@/app/templates/template-editor";
 import { addTemplateTextOverlay, templateTextRenderSpec } from "@/lib/template-design-preview";
 import { createDefaultTemplateConfig, type CustomTemplate } from "@/lib/template-config";
+
+const templateEditorSource = readFileSync(
+  new URL("../app/templates/template-editor.tsx", import.meta.url),
+  "utf8",
+);
 
 const id = "9bfcc905-bbbf-46b5-812b-7fb1c5c0bde4";
 const config = addTemplateTextOverlay(createDefaultTemplateConfig(), id);
@@ -93,7 +99,18 @@ describe("template design presentation", () => {
     expect(html).toContain('aria-label="설정 닫기"');
     expect(html).toContain("absolute left-1/2 top-1");
     expect(html).toContain("w-[min(76vw,360px)]");
+    expect(html).toContain("끌어 이동 · 두 번 탭해 설정");
+    expect(html).toContain("레이아웃을 끌어 이동하고 두 번 탭하면 설정이 열립니다.");
     expect(html).not.toContain("템플릿 편집은 데스크톱에서 이용해 주세요");
     expect(html).toContain("배경 이미지 업로드");
+  });
+
+  it("separates mobile dragging from opening controls and keeps the active tool visible", () => {
+    expect(templateEditorSource).toContain("openMobileControlsFromDoubleTap");
+    expect(templateEditorSource).toContain("timeStamp - previousActivation.timestamp <= 450");
+    expect(templateEditorSource).toContain("Math.max(Math.abs(clientDx), Math.abs(clientDy)) < 5");
+    expect(templateEditorSource).toContain("setMobileControlsOpen(false);");
+    expect(templateEditorSource).toContain('inline: "center"');
+    expect(templateEditorSource).toContain('beginCanvasTargetTap(event, "background")');
   });
 });

@@ -80,6 +80,8 @@ type TemplateSidebarTool =
   | "channel"
   | "background"
   | "template";
+type CanvasControlTarget = SelectedLayerId | "background";
+type MobileCanvasActivation = { target: CanvasControlTarget; timestamp: number };
 
 const TEMPLATE_SIDEBAR_TOOLS = [
   { id: "title", label: "후킹 제목" },
@@ -140,6 +142,10 @@ function sidebarToolForLayer(layer: SelectedLayerId): TemplateSidebarTool {
     return layer;
   }
   return "text";
+}
+
+function sidebarToolForCanvasTarget(target: CanvasControlTarget): TemplateSidebarTool {
+  return target === "background" ? "background" : sidebarToolForLayer(target);
 }
 const commentSizeOptions: { value: TemplateConfig["comment"]["size"]; label: string }[] = [
   { value: "small", label: "작게" },
@@ -251,6 +257,8 @@ export function TemplateEditor({
   const [centerGuides, setCenterGuides] = useState<CenterGuides>(hiddenCenterGuides);
   const [commentSnapGuide, setCommentSnapGuide] = useState(false);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const sidebarToolButtonRefs = useRef<Partial<Record<TemplateSidebarTool, HTMLButtonElement | null>>>({});
+  const mobileCanvasActivationRef = useRef<MobileCanvasActivation | null>(null);
   const transactionRef = useRef<TemplateConfig | null>(null);
   const textDragCleanupRef = useRef<(() => void) | null>(null);
   const baselineRef = useRef(JSON.stringify({ name: initialName, config: initialConfig }));
@@ -276,7 +284,37 @@ export function TemplateEditor({
   const selectLayer = useCallback((layer: SelectedLayerId) => {
     setSelectedLayer(layer);
     setActiveSidebarTool(sidebarToolForLayer(layer));
-    setMobileControlsOpen(true);
+  }, []);
+
+  const selectCanvasTarget = useCallback((target: CanvasControlTarget) => {
+    setActiveSidebarTool(sidebarToolForCanvasTarget(target));
+    if (target !== "background") setSelectedLayer(target);
+    setMobileControlsOpen(false);
+  }, []);
+
+  const openMobileControlsFromDoubleTap = useCallback((
+    target: CanvasControlTarget,
+    timeStamp: number,
+    moved: boolean,
+  ) => {
+    if (!window.matchMedia("(max-width: 1023px)").matches) return false;
+    if (moved) {
+      mobileCanvasActivationRef.current = null;
+      return false;
+    }
+    const previousActivation = mobileCanvasActivationRef.current;
+    if (
+      previousActivation?.target === target
+      && timeStamp - previousActivation.timestamp <= 450
+    ) {
+      mobileCanvasActivationRef.current = null;
+      setActiveSidebarTool(sidebarToolForCanvasTarget(target));
+      if (target !== "background") setSelectedLayer(target);
+      setMobileControlsOpen(true);
+      return true;
+    }
+    mobileCanvasActivationRef.current = { target, timestamp: timeStamp };
+    return false;
   }, []);
 
   const activateSidebarTool = (tool: TemplateSidebarTool) => {
@@ -334,6 +372,15 @@ export function TemplateEditor({
   useEffect(() => () => textDragCleanupRef.current?.(), []);
 
   useEffect(() => {
+    if (!window.matchMedia("(max-width: 1023px)").matches) return;
+    sidebarToolButtonRefs.current[activeSidebarTool]?.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
+      inline: "center",
+    });
+  }, [activeSidebarTool]);
+
+  useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "z") return;
       if (event.isComposing || saving || backgroundBusy) return;
@@ -355,13 +402,54 @@ export function TemplateEditor({
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
 
+  const beginCanvasTargetTap = (
+    event: ReactPointerEvent<HTMLElement>,
+    target: CanvasControlTarget,
+  ) => {
+    if (saving || backgroundBusy) return;
+    event.preventDefault();
+    event.stopPropagation();
+    selectCanvasTarget(target);
+    const captureTarget = event.currentTarget;
+    const pointerId = event.pointerId;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    let moved = false;
+    captureTarget.setPointerCapture(pointerId);
+    const move = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
+      moved = moved || Math.max(
+        Math.abs(moveEvent.clientX - startX),
+        Math.abs(moveEvent.clientY - startY),
+      ) >= 5;
+    };
+    const cleanup = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", finish);
+      if (captureTarget.hasPointerCapture(pointerId)) captureTarget.releasePointerCapture(pointerId);
+    };
+    const finish = (finishEvent: PointerEvent) => {
+      if (finishEvent.pointerId !== pointerId) return;
+      cleanup();
+      if (finishEvent.type === "pointerup") {
+        openMobileControlsFromDoubleTap(target, finishEvent.timeStamp, moved);
+      } else {
+        mobileCanvasActivationRef.current = null;
+      }
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("pointercancel", finish);
+  };
+
   const beginPointerAction = (event: ReactPointerEvent, layer: TemplateLayerId, mode: "move" | "resize" = "move") => {
     if (saving || backgroundBusy) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     event.preventDefault();
     event.stopPropagation();
-    selectLayer(layer);
+    selectCanvasTarget(layer);
     setCenterGuides(hiddenCenterGuides);
     event.currentTarget.setPointerCapture(event.pointerId);
     transactionRef.current = cloneConfig(config);
@@ -371,10 +459,17 @@ export function TemplateEditor({
     const rect = canvas.getBoundingClientRect();
     const toCanvasX = TEMPLATE_CANVAS.width / rect.width;
     const toCanvasY = TEMPLATE_CANVAS.height / rect.height;
+    const pointerId = event.pointerId;
+    let moved = false;
 
     const move = (moveEvent: PointerEvent) => {
-      const dx = Math.round((moveEvent.clientX - startX) * toCanvasX);
-      const dy = Math.round((moveEvent.clientY - startY) * toCanvasY);
+      if (moveEvent.pointerId !== pointerId) return;
+      const clientDx = moveEvent.clientX - startX;
+      const clientDy = moveEvent.clientY - startY;
+      if (!moved && Math.max(Math.abs(clientDx), Math.abs(clientDy)) < 5) return;
+      moved = true;
+      const dx = Math.round(clientDx * toCanvasX);
+      const dy = Math.round(clientDy * toCanvasY);
       const snapThresholdX = CENTER_SNAP_THRESHOLD_PX * toCanvasX;
       const snapThresholdY = CENTER_SNAP_THRESHOLD_PX * toCanvasY;
 
@@ -442,7 +537,8 @@ export function TemplateEditor({
         return next;
       });
     };
-    const finish = () => {
+    const finish = (finishEvent: PointerEvent) => {
+      if (finishEvent.pointerId !== pointerId) return;
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", finish);
       window.removeEventListener("pointercancel", finish);
@@ -453,10 +549,15 @@ export function TemplateEditor({
       setHistory((current) => JSON.stringify(before) === JSON.stringify(current.present)
         ? current
         : { past: [...current.past.slice(-49), before], present: current.present, future: [] });
+      if (finishEvent.type === "pointerup" && mode === "move") {
+        openMobileControlsFromDoubleTap(layer, finishEvent.timeStamp, moved);
+      } else {
+        mobileCanvasActivationRef.current = null;
+      }
     };
     window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", finish, { once: true });
-    window.addEventListener("pointercancel", finish, { once: true });
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("pointercancel", finish);
   };
 
   const beginCommentPointerAction = (event: ReactPointerEvent<HTMLButtonElement>) => {
@@ -465,15 +566,23 @@ export function TemplateEditor({
     if (!canvas) return;
     event.preventDefault();
     event.stopPropagation();
-    selectLayer("comment");
+    selectCanvasTarget("comment");
     event.currentTarget.setPointerCapture(event.pointerId);
     transactionRef.current = cloneConfig(config);
+    const pointerId = event.pointerId;
+    const startPointerX = event.clientX;
     const startPointerY = event.clientY;
     const startLayerY = commentY;
     const toCanvasY = TEMPLATE_CANVAS.height / canvas.getBoundingClientRect().height;
+    let moved = false;
 
     const move = (moveEvent: PointerEvent) => {
-      const deltaY = Math.round((moveEvent.clientY - startPointerY) * toCanvasY);
+      if (moveEvent.pointerId !== pointerId) return;
+      const clientDx = moveEvent.clientX - startPointerX;
+      const clientDy = moveEvent.clientY - startPointerY;
+      if (!moved && Math.max(Math.abs(clientDx), Math.abs(clientDy)) < 5) return;
+      moved = true;
+      const deltaY = Math.round(clientDy * toCanvasY);
       const candidateY = clamp(startLayerY + deltaY, COMMENT_Y_MIN, COMMENT_Y_MAX);
       const vertical = snapCommentYToVideo(
         candidateY,
@@ -487,7 +596,8 @@ export function TemplateEditor({
       });
       setCommentSnapGuide(vertical.snapped);
     };
-    const finish = () => {
+    const finish = (finishEvent: PointerEvent) => {
+      if (finishEvent.pointerId !== pointerId) return;
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", finish);
       window.removeEventListener("pointercancel", finish);
@@ -498,10 +608,15 @@ export function TemplateEditor({
       setHistory((current) => JSON.stringify(before) === JSON.stringify(current.present)
         ? current
         : { past: [...current.past.slice(-49), before], present: current.present, future: [] });
+      if (finishEvent.type === "pointerup") {
+        openMobileControlsFromDoubleTap("comment", finishEvent.timeStamp, moved);
+      } else {
+        mobileCanvasActivationRef.current = null;
+      }
     };
     window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", finish, { once: true });
-    window.addEventListener("pointercancel", finish, { once: true });
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("pointercancel", finish);
   };
 
   const changeAspect = (aspectRatio: VideoAspectRatio) => commit((next) => {
@@ -564,7 +679,7 @@ export function TemplateEditor({
     textDragCleanupRef.current?.();
     finishTextInteraction();
     beginTextInteraction();
-    selectLayer(`text:${id}`);
+    selectCanvasTarget(`text:${id}`);
     setCenterGuides(hiddenCenterGuides);
     const captureTarget = event.currentTarget;
     const pointerId = event.pointerId;
@@ -572,11 +687,16 @@ export function TemplateEditor({
     const startY = event.clientY;
     const canvasRect = canvas.getBoundingClientRect();
     const textRect = clientRectToCanvas(captureTarget.getBoundingClientRect(), canvasRect);
+    let moved = false;
     captureTarget.setPointerCapture(pointerId);
     const move = (moveEvent: PointerEvent) => {
       if (moveEvent.pointerId !== pointerId) return;
       moveEvent.preventDefault();
-      const raw = clientDeltaToCanvas({ x: moveEvent.clientX - startX, y: moveEvent.clientY - startY }, canvasRect);
+      const clientDx = moveEvent.clientX - startX;
+      const clientDy = moveEvent.clientY - startY;
+      if (!moved && Math.max(Math.abs(clientDx), Math.abs(clientDy)) < 5) return;
+      moved = true;
+      const raw = clientDeltaToCanvas({ x: clientDx, y: clientDy }, canvasRect);
       if (edge) {
         const resized = resizeEditorTextOverlayWidth({
           width: text.width, offsetX: text.offset.x, deltaX: raw.x / text.scale, edge,
@@ -611,6 +731,11 @@ export function TemplateEditor({
       cleanup();
       setCenterGuides(hiddenCenterGuides);
       finishTextInteraction();
+      if (finishEvent.type === "pointerup" && !edge) {
+        openMobileControlsFromDoubleTap(`text:${id}`, finishEvent.timeStamp, moved);
+      } else {
+        mobileCanvasActivationRef.current = null;
+      }
     };
     textDragCleanupRef.current = cleanup;
     window.addEventListener("pointermove", move);
@@ -686,10 +811,10 @@ export function TemplateEditor({
 
         <main className="min-h-dvh px-4 pb-[calc(80px+env(safe-area-inset-bottom,0px))] pt-[calc(72px+env(safe-area-inset-top,0px))] lg:px-0 lg:pb-10 lg:pl-[584px] lg:pr-6 lg:pt-24">
           <div className="mx-auto flex max-w-[920px] flex-col items-center">
-            <div className="mb-3 flex w-full max-w-[500px] items-center justify-between text-[11px] font-bold text-neutral-500 lg:mb-4 lg:text-xs"><span className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2.5 py-1 text-emerald-300 lg:px-3">● LIVE PREVIEW</span><span>9:16 · 1080 × 1920</span></div>
+            <div className="mb-3 flex w-full max-w-[500px] items-center justify-between text-[11px] font-bold text-neutral-500 lg:mb-4 lg:text-xs"><span className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2.5 py-1 text-emerald-300 lg:px-3">● LIVE PREVIEW</span><span className="lg:hidden">끌어 이동 · 두 번 탭해 설정</span><span className="hidden lg:inline">9:16 · 1080 × 1920</span></div>
             <div className="flex min-h-[calc(100dvh-180px)] w-full items-center justify-center overflow-auto lg:min-h-[680px]">
               <div style={{ transform: `scale(${zoom})`, transformOrigin: "center" }}>
-                <div ref={canvasRef} className="relative aspect-[9/16] w-[min(76vw,360px)] touch-none overflow-hidden rounded-[12px] shadow-[0_30px_100px_rgba(0,0,0,.65)]" style={{ ...background, containerType: "inline-size" }} onPointerDown={() => selectLayer("video")}>
+                <div ref={canvasRef} aria-label="템플릿 미리보기. 레이아웃을 끌어 이동하고 두 번 탭하면 설정이 열립니다." className="relative aspect-[9/16] w-[min(76vw,360px)] touch-none overflow-hidden rounded-[12px] shadow-[0_30px_100px_rgba(0,0,0,.65)]" style={{ ...background, containerType: "inline-size" }} onPointerDown={(event) => beginCanvasTargetTap(event, "background")}>
                   <div onPointerDown={(event) => beginPointerAction(event, "video")} className={`absolute cursor-move overflow-hidden bg-neutral-700 ${selectedLayer === "video" ? "ring-2 ring-[#ff715e] ring-inset" : ""}`} style={{ ...customVideoFrameStyle(config.video), zIndex: templateDesignLayerZIndex(config, "video") }}>
                     <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_40%,#73737c,#2c2c31_70%)]" /><div className="absolute inset-x-0 top-1/2 h-px bg-white/20" />
                     <button type="button" aria-label="영상 크기 조절" onPointerDown={(event) => beginPointerAction(event, "video", "resize")} className="absolute bottom-0 right-0 h-8 w-8 cursor-nwse-resize touch-none"><span aria-hidden="true" className="absolute bottom-0 right-0 h-4 w-4 border-l border-t border-white bg-[#ff715e]" /></button>
@@ -727,7 +852,7 @@ export function TemplateEditor({
                   {config.channel.visible && !commentLayerEnabled && <button type="button" onPointerDown={(event) => beginPointerAction(event, "channel")} className={`absolute z-30 cursor-move truncate rounded px-[1.8cqw] py-[.8cqw] text-center font-bold ${selectedLayer === "channel" ? "outline outline-2 outline-[#ff715e]" : ""}`} style={{ ...customCenteredLayerStyle(config.channel), color: config.channel.color, backgroundColor: config.channel.backgroundColor || "transparent", fontSize: customCanvasWidth(config.channel.fontSize), zIndex: templateDesignLayerZIndex(config, "channel") }}>● Easy Cut</button>}
                   {commentLayerEnabled && <div className={`absolute inset-x-0 ${hasDesignOrder ? "" : "z-40"}`} style={{ top: `${(commentY / TEMPLATE_CANVAS.height) * 100}%` }}>
                     {config.comment.visible && <div style={hasDesignOrder ? { position: "relative", zIndex: templateDesignLayerZIndex(config, "comment") } : undefined}><TemplateCommentPrototype selected={selectedLayer === "comment"} theme={config.comment.theme} size={config.comment.size} comment={TEMPLATE_PRESET_COMMENT_SAMPLE} onSelect={() => selectLayer("comment")} onPointerDown={beginCommentPointerAction} /></div>}
-                    {config.channel.visible && <button type="button" onClick={() => selectLayer("channel")} onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); selectLayer("channel"); }} className={`${config.schemaVersion >= 4 ? "absolute left-1/2" : "relative mx-auto mt-[2cqw] block"} z-30 truncate rounded px-[1.8cqw] py-[.8cqw] text-center font-bold ${selectedLayer === "channel" ? "outline outline-2 outline-[#ff715e]" : ""}`} style={{ top: config.schemaVersion >= 4 ? customCanvasWidth(config.channel.y - commentY) : undefined, transform: config.schemaVersion >= 4 ? "translate(-50%, -50%)" : undefined, width: customCanvasWidth(config.channel.maxWidth), color: config.channel.color, backgroundColor: config.channel.backgroundColor || "transparent", fontSize: customCanvasWidth(config.channel.fontSize), zIndex: templateDesignLayerZIndex(config, "channel") }}>● Easy Cut</button>}
+                    {config.channel.visible && <button type="button" onClick={() => selectLayer("channel")} onPointerDown={(event) => beginCanvasTargetTap(event, "channel")} className={`${config.schemaVersion >= 4 ? "absolute left-1/2" : "relative mx-auto mt-[2cqw] block"} z-30 truncate rounded px-[1.8cqw] py-[.8cqw] text-center font-bold ${selectedLayer === "channel" ? "outline outline-2 outline-[#ff715e]" : ""}`} style={{ top: config.schemaVersion >= 4 ? customCanvasWidth(config.channel.y - commentY) : undefined, transform: config.schemaVersion >= 4 ? "translate(-50%, -50%)" : undefined, width: customCanvasWidth(config.channel.maxWidth), color: config.channel.color, backgroundColor: config.channel.backgroundColor || "transparent", fontSize: customCanvasWidth(config.channel.fontSize), zIndex: templateDesignLayerZIndex(config, "channel") }}>● Easy Cut</button>}
                   </div>}
                   {extraTexts.map((text) => customTemplateDesignEnabled
                     ? <EditorTextOverlayPreview
@@ -762,6 +887,7 @@ export function TemplateEditor({
                 const active = activeSidebarTool === tool.id;
                 return <button
                   key={tool.id}
+                  ref={(element) => { sidebarToolButtonRefs.current[tool.id] = element; }}
                   type="button"
                   aria-pressed={active}
                   aria-controls="template-tool-detail"
