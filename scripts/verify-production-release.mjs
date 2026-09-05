@@ -46,6 +46,7 @@ export const ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE = [
   "/api/background-assets/[assetId]/route",
   "/api/projects/route",
   "/api/admin/overview/route",
+  "/api/admin/trends/route",
   "/api/admin/billing/supporting-data/route",
   "/api/internal/job-admission-preflight/route",
   "/api/file-upload/sessions/route",

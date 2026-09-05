@@ -4,6 +4,8 @@ import type { CSSProperties, ReactNode } from "react";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import styles from "./admin-shell.module.css";
+import { AdminTrendCard } from "./admin-trend-card";
+import type { AdminTrendData } from "@/lib/admin-trends";
 
 export type AdminTab =
   | "billing"
@@ -20,17 +22,6 @@ export type AdminTab =
   | "editor-releases"
   | "installments";
 
-export type AdminSalesTrendPoint = {
-  date: string;
-  sales: number;
-  orderCount: number;
-};
-
-export type AdminMemberTrendPoint = {
-  date: string;
-  memberCount: number;
-};
-
 type AdminMetrics = {
     grossSales: number;
     refundedSales: number;
@@ -46,8 +37,8 @@ type AdminMetrics = {
 
 type AdminOverviewData = {
   metrics: AdminMetrics;
-  salesTrend: AdminSalesTrendPoint[];
-  memberTrend: AdminMemberTrendPoint[];
+  salesTrend: AdminTrendData;
+  memberTrend: AdminTrendData;
 };
 
 type AdminShellProps = {
@@ -195,174 +186,6 @@ function compactMoney(value: number) {
   return money(value);
 }
 
-type TrendChartPoint = {
-  date: string;
-  detailLabel: string;
-  value: number;
-  valueLabel: string;
-  tooltip: string;
-};
-
-function TrendChart({
-  ariaLabel,
-  areaColor,
-  data,
-  gradientId,
-  lineClassName,
-  pointClassName,
-}: {
-  ariaLabel: string;
-  areaColor: string;
-  data: TrendChartPoint[];
-  gradientId: string;
-  lineClassName: string;
-  pointClassName: string;
-}) {
-  const width = 760;
-  const height = 260;
-  const padding = { top: 82, right: 15, bottom: 10, left: 12 };
-  const chartWidth = width - padding.left - padding.right;
-  const chartHeight = height - padding.top - padding.bottom;
-  const maxValue = Math.max(...data.map((point) => point.value), 1);
-  const coordinates = data.map((point, index) => {
-    const x = padding.left + (data.length === 1 ? chartWidth / 2 : (index / (data.length - 1)) * chartWidth);
-    const y = padding.top + chartHeight - (point.value / maxValue) * chartHeight;
-    return { ...point, x, y };
-  });
-  const linePath = coordinates.map((point, index) => `${index ? "L" : "M"} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(" ");
-  const areaPath = coordinates.length
-    ? `${linePath} L ${coordinates[coordinates.length - 1].x.toFixed(2)} ${(padding.top + chartHeight).toFixed(2)} L ${coordinates[0].x.toFixed(2)} ${(padding.top + chartHeight).toFixed(2)} Z`
-    : "";
-  const labelStep = data.length > 8 ? 3 : 1;
-
-  return (
-    <div className={styles.chartFrame}>
-      <svg className={styles.chart} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={ariaLabel}>
-        <defs>
-          <linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor={areaColor} stopOpacity="0.27" />
-            <stop offset="100%" stopColor={areaColor} stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        {[0, 0.5, 1].map((ratio) => {
-          const y = padding.top + chartHeight * ratio;
-          return <line key={ratio} className={styles.chartGrid} x1={padding.left} x2={width - padding.right} y1={y} y2={y} />;
-        })}
-        {areaPath ? <path d={areaPath} fill={`url(#${gradientId})`} /> : null}
-        {linePath ? <path className={lineClassName} d={linePath} /> : null}
-        {coordinates.map((point) => (
-          <circle
-            className={pointClassName}
-            cx={point.x}
-            cy={point.y}
-            key={point.date}
-            r="3.2"
-          />
-        ))}
-      </svg>
-
-      <div className={styles.chartHoverLayer}>
-        {coordinates.map((point, index) => {
-          const edgeClass = index === 0
-            ? styles.chartHitColumnFirst
-            : index === coordinates.length - 1
-              ? styles.chartHitColumnLast
-              : "";
-          const hitAreaLeft = index === 0
-            ? 0
-            : (coordinates[index - 1].x + point.x) / 2;
-          const hitAreaRight = index === coordinates.length - 1
-            ? width
-            : (point.x + coordinates[index + 1].x) / 2;
-          return (
-            <span
-              aria-label={point.tooltip}
-              className={`${styles.chartHitColumn} ${edgeClass}`}
-              key={point.date}
-              role="img"
-              style={{
-                "--chart-column-left": `${(hitAreaLeft / width) * 100}%`,
-                "--chart-column-width": `${((hitAreaRight - hitAreaLeft) / width) * 100}%`,
-                "--chart-point-position": `${((point.x - hitAreaLeft) / (hitAreaRight - hitAreaLeft)) * 100}%`,
-                "--chart-tooltip-top": `${(point.y / height) * 100}%`,
-              } as CSSProperties}
-              tabIndex={0}
-            >
-              <span className={styles.chartTooltip}>
-                <span className={styles.chartTooltipDate}>
-                  {point.date.replaceAll("-", ".")}
-                </span>
-                <strong>{point.valueLabel}</strong>
-                <span className={styles.chartTooltipDetail}>{point.detailLabel}</span>
-              </span>
-            </span>
-          );
-        })}
-      </div>
-
-      <div className={styles.chartDateLabels} aria-hidden="true">
-        {coordinates.map((point, index) => {
-          if (index % labelStep !== 0 && index !== coordinates.length - 1) return null;
-          const edgeClass = index === 0
-            ? styles.chartDateLabelFirst
-            : index === coordinates.length - 1
-              ? styles.chartDateLabelLast
-              : "";
-          return (
-            <span
-              className={`${styles.chartDateLabel} ${edgeClass}`}
-              key={point.date}
-              style={{
-                "--chart-date-position": `${(point.x / width) * 100}%`,
-              } as CSSProperties}
-            >
-              {point.date.slice(5).replace("-", ".")}
-            </span>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function SalesTrendChart({ data }: { data: AdminSalesTrendPoint[] }) {
-  return (
-    <TrendChart
-      ariaLabel="최근 14일 일별 매출 추이"
-      areaColor="#9d85ff"
-      data={data.map((point) => ({
-        date: point.date,
-        detailLabel: `${point.orderCount.toLocaleString("ko-KR")}건 승인`,
-        value: point.sales,
-        valueLabel: money(point.sales),
-        tooltip: `${point.date} · 매출 ${money(point.sales)} · ${point.orderCount}건`,
-      }))}
-      gradientId="admin-sales-area"
-      lineClassName={styles.chartLine}
-      pointClassName={styles.chartPoint}
-    />
-  );
-}
-
-function MemberTrendChart({ data }: { data: AdminMemberTrendPoint[] }) {
-  return (
-    <TrendChart
-      ariaLabel="최근 14일 일별 신규 회원 수 추이"
-      areaColor="#56d6b0"
-      data={data.map((point) => ({
-        date: point.date,
-        detailLabel: "신규 가입",
-        value: point.memberCount,
-        valueLabel: `${point.memberCount.toLocaleString("ko-KR")}명`,
-        tooltip: `${point.date} · 신규 회원 ${point.memberCount.toLocaleString("ko-KR")}명`,
-      }))}
-      gradientId="admin-members-area"
-      lineClassName={styles.memberChartLine}
-      pointClassName={styles.memberChartPoint}
-    />
-  );
-}
-
 export function AdminShell({
   activeTab,
   adminEmail,
@@ -398,11 +221,7 @@ export function AdminShell({
     };
   }, [overviewAttempt]);
   const metrics = overview?.metrics ?? emptyMetrics;
-  const salesTrend = overview?.salesTrend ?? [];
-  const memberTrend = overview?.memberTrend ?? [];
   const currentPage = pageCopy[activeTab];
-  const trendSales = salesTrend.reduce((sum, point) => sum + point.sales, 0);
-  const trendMemberCount = memberTrend.reduce((sum, point) => sum + point.memberCount, 0);
   const subscriptionTotal = Math.max(
     metrics.activeSubscriptions
       + metrics.pastDueSubscriptions
@@ -509,7 +328,7 @@ export function AdminShell({
             <h1 className={styles.pageTitle}>{currentPage.title}</h1>
           </div>
           <div className={styles.topbarActions}>
-            <span className={styles.kstBadge}>최근 운영 데이터 · 최대 1분 지연</span>
+            <span className={styles.kstBadge}>KST · 운영 데이터</span>
             <Link href="/" prefetch={false} className={styles.serviceLink}>
               서비스로 이동
               <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
@@ -568,31 +387,12 @@ export function AdminShell({
             </div>
 
             <div className={styles.analyticsGrid}>
-              <article className={`${styles.analyticsCard} ${styles.revenueCard}`}>
-                <div className={styles.cardHeader}>
-                  <div>
-                    <h3 className={styles.cardTitle}>최근 14일 매출</h3>
-                  </div>
-                  <div>
-                    <p className={styles.chartTotal}>기간 합계<strong>{compactMoney(trendSales)}</strong></p>
-                    <p className={styles.chartLegend}><span className={styles.legendDot} /> 일별 매출</p>
-                  </div>
-                </div>
-                <SalesTrendChart data={salesTrend} />
-              </article>
-
-              <article className={`${styles.analyticsCard} ${styles.memberCard}`}>
-                <div className={styles.cardHeader}>
-                  <div>
-                    <h3 className={styles.cardTitle}>최근 14일 회원 수 추이</h3>
-                  </div>
-                  <div>
-                    <p className={styles.chartTotal}>기간 신규<strong>{trendMemberCount.toLocaleString("ko-KR")}명</strong></p>
-                    <p className={styles.chartLegend}><span className={styles.memberLegendDot} /> 일별 신규 회원</p>
-                  </div>
-                </div>
-                <MemberTrendChart data={memberTrend} />
-              </article>
+              {overview ? (
+                <>
+                  <AdminTrendCard key={`${activeTab}-sales`} initialData={overview.salesTrend} />
+                  <AdminTrendCard key={`${activeTab}-members`} initialData={overview.memberTrend} />
+                </>
+              ) : null}
 
               <article className={`${styles.analyticsCard} ${styles.subscriptionCard}`}>
                 <div>

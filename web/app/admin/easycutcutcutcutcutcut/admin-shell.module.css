@@ -466,6 +466,13 @@
   stroke-width: 1;
 }
 
+.trendValueTick {
+  fill: #9299a9;
+  font-size: 11px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
 .chartLine {
   fill: none;
   stroke: #9d85ff;
@@ -496,95 +503,6 @@
   stroke-width: 2;
 }
 
-.chartHoverLayer {
-  position: absolute;
-  inset: 0 0 26px;
-}
-
-.chartHitColumn {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: var(--chart-column-left);
-  width: var(--chart-column-width);
-  cursor: crosshair;
-  outline: none;
-}
-
-.chartHitColumn::before {
-  position: absolute;
-  z-index: 3;
-  top: var(--chart-tooltip-top);
-  left: var(--chart-point-position);
-  width: 12px;
-  height: 12px;
-  border: 2px solid rgba(237, 234, 255, 0.88);
-  border-radius: 50%;
-  background: rgba(17, 20, 28, 0.9);
-  box-shadow: 0 0 15px rgba(157, 133, 255, 0.7);
-  content: "";
-  opacity: 0;
-  pointer-events: none;
-  transform: translate(-50%, -50%);
-  transition: opacity 120ms ease;
-}
-
-.chartHitColumn::after {
-  position: absolute;
-  top: var(--chart-tooltip-top);
-  bottom: 0;
-  left: var(--chart-point-position);
-  width: 1px;
-  background: linear-gradient(
-    to bottom,
-    rgba(231, 227, 255, 0.56),
-    rgba(231, 227, 255, 0.04)
-  );
-  content: "";
-  opacity: 0;
-  pointer-events: none;
-  transform: translateX(-50%);
-  transition: opacity 120ms ease;
-}
-
-.chartTooltip {
-  position: absolute;
-  z-index: 4;
-  top: var(--chart-tooltip-top);
-  left: var(--chart-point-position);
-  display: grid;
-  min-width: 150px;
-  gap: 2px;
-  border: 1px solid rgba(255, 255, 255, 0.13);
-  border-radius: 11px;
-  padding: 9px 11px;
-  color: #f8f9fc;
-  background: rgba(19, 22, 31, 0.97);
-  box-shadow:
-    0 12px 30px rgba(0, 0, 0, 0.34),
-    inset 0 1px rgba(255, 255, 255, 0.06);
-  opacity: 0;
-  pointer-events: none;
-  transform: translate(-50%, calc(-100% - 8px));
-  transition:
-    opacity 120ms ease,
-    transform 120ms ease;
-  white-space: nowrap;
-}
-
-.chartTooltip::after {
-  position: absolute;
-  bottom: -5px;
-  left: 50%;
-  width: 9px;
-  height: 9px;
-  border-right: 1px solid rgba(255, 255, 255, 0.13);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.13);
-  background: rgba(19, 22, 31, 0.97);
-  content: "";
-  transform: translateX(-50%) rotate(45deg);
-}
-
 .chartTooltipDate {
   color: #8d93a2;
   font-size: 11px;
@@ -592,7 +510,7 @@
   letter-spacing: 0.025em;
 }
 
-.chartTooltip strong {
+.trendTooltip strong {
   margin-top: 2px;
   color: #fff;
   font-size: 15px;
@@ -606,56 +524,12 @@
   font-weight: 720;
 }
 
-.chartHitColumn:hover::before,
-.chartHitColumn:focus-visible::before,
-.chartHitColumn:hover::after,
-.chartHitColumn:focus-visible::after,
-.chartHitColumn:hover .chartTooltip,
-.chartHitColumn:focus-visible .chartTooltip {
-  opacity: 1;
-}
-
-.chartHitColumn:hover .chartTooltip,
-.chartHitColumn:focus-visible .chartTooltip {
-  transform: translate(-50%, calc(-100% - 12px));
-}
-
-.chartHitColumnFirst .chartTooltip {
-  left: calc(var(--chart-point-position) - 7px);
-  transform: translate(0, calc(-100% - 8px));
-}
-
-.chartHitColumnFirst .chartTooltip::after {
-  left: 7px;
-  transform: rotate(45deg);
-}
-
-.chartHitColumnFirst:hover .chartTooltip,
-.chartHitColumnFirst:focus-visible .chartTooltip {
-  transform: translate(0, calc(-100% - 12px));
-}
-
-.chartHitColumnLast .chartTooltip {
-  right: calc(100% - var(--chart-point-position) - 7px);
-  left: auto;
-  transform: translate(0, calc(-100% - 8px));
-}
-
-.chartHitColumnLast .chartTooltip::after {
-  right: 7px;
-  left: auto;
-  transform: rotate(45deg);
-}
-
-.chartHitColumnLast:hover .chartTooltip,
-.chartHitColumnLast:focus-visible .chartTooltip {
-  transform: translate(0, calc(-100% - 12px));
-}
-
 .chartDateLabels {
   position: relative;
   height: 24px;
-  margin: 1px 3px 0;
+  margin: 1px 0 0;
+  font-size: 12px;
+  font-weight: 780;
 }
 
 .chartDateLabel {
@@ -677,6 +551,116 @@
 
 .chartDateLabelLast {
   transform: translateX(-100%);
+}
+
+.trendHeading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.trendHeading .cardTitle {
+  margin: 0;
+}
+
+.trendSelect,
+.trendButtons button {
+  min-height: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 7px;
+  padding: 4px 9px;
+  color: #dfe2ea;
+  background: #171b25;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.trendSelect {
+  color-scheme: dark;
+}
+
+.trendButtons button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.trendSelect:focus-visible,
+.trendButtons button:focus-visible,
+.trendInteractive:focus-visible {
+  outline: 2px solid #9d85ff;
+  outline-offset: 3px;
+}
+
+.trendToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.trendVisibleRange,
+.trendHint {
+  color: #9299a9;
+  font-size: 10px;
+}
+
+.trendButtons {
+  display: flex;
+  gap: 4px;
+}
+
+.trendButtons button {
+  min-width: 32px;
+}
+
+.trendInteractive {
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+  border-radius: 4px;
+}
+
+.trendTooltip {
+  position: absolute;
+  z-index: 4;
+  top: 0;
+  display: grid;
+  width: 184px;
+  gap: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 11px;
+  padding: 8px 11px;
+  background: rgba(19, 22, 31, 0.97);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.trendRequestStatus {
+  min-height: 20px;
+  margin-top: 4px;
+  color: #c5b7ff;
+  font-size: 11px;
+}
+
+.trendRequestStatus button {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.trendSrOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .chartLegend {

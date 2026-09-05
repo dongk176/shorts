@@ -2,10 +2,10 @@ import "server-only";
 
 import { unstable_cache } from "next/cache";
 import { getDb } from "@/lib/db";
-import type {
-  AdminMemberTrendPoint,
-  AdminSalesTrendPoint,
-} from "@/app/admin/easycutcutcutcutcutcut/admin-shell";
+import {
+  buildAdminTrend, kstDate, shiftTrendDate,
+  type AdminTrendData, type AdminTrendMetric, type AdminTrendPeriod, type AdminTrendPoint,
+} from "@/lib/admin-trends";
 
 export type AdminOverviewData = {
   metrics: {
@@ -20,11 +20,11 @@ export type AdminOverviewData = {
     activeProSubscriptions: number;
     activeSubscriptionBillingKrw: number;
   };
-  salesTrend: AdminSalesTrendPoint[];
-  memberTrend: AdminMemberTrendPoint[];
+  salesTrend: AdminTrendData;
+  memberTrend: AdminTrendData;
 };
 
-export const loadAdminOverview = unstable_cache(async (): Promise<AdminOverviewData> => {
+const loadAdminMetrics = unstable_cache(async (today: string): Promise<AdminOverviewData["metrics"]> => {
   const db = getDb();
   const rows = await db`
     with metrics as (
@@ -34,7 +34,7 @@ export const loadAdminOverview = unstable_cache(async (): Promise<AdminOverviewD
         coalesce(sum(amount_krw) filter (
           where status='succeeded' and amount_krw>0
             and approved_at >= (
-              date_trunc('day',clock_timestamp() at time zone 'Asia/Seoul')
+              ${today}::timestamp
               at time zone 'Asia/Seoul'
             )
         ),0)::bigint as today_sales,
@@ -55,76 +55,85 @@ export const loadAdminOverview = unstable_cache(async (): Promise<AdminOverviewD
         ),0)::bigint as active_billing_krw
       from shorts_mvp.user_subscriptions subscription
       left join shorts_mvp.plans plan on plan.code=subscription.plan_code
-    ),
-    days as (
-      select generate_series(
-        date_trunc('day',clock_timestamp() at time zone 'Asia/Seoul') - interval '13 days',
-        date_trunc('day',clock_timestamp() at time zone 'Asia/Seoul'),
-        interval '1 day'
-      )::date as trend_day
-    ),
-    daily_sales as (
-      select (approved_at at time zone 'Asia/Seoul')::date as trend_day,
-        coalesce(sum(amount_krw),0)::bigint as sales,count(*)::integer as order_count
-      from shorts_mvp.billing_orders
-      where status='succeeded' and amount_krw>0
-        and approved_at >= (
-          date_trunc('day',clock_timestamp() at time zone 'Asia/Seoul') - interval '13 days'
-        ) at time zone 'Asia/Seoul'
-      group by (approved_at at time zone 'Asia/Seoul')::date
-    ),
-    daily_members as (
-      select (created_at at time zone 'Asia/Seoul')::date as trend_day,
-        count(*)::integer as member_count
-      from shorts_mvp.app_users
-      where created_at >= (
-        date_trunc('day',clock_timestamp() at time zone 'Asia/Seoul') - interval '13 days'
-      ) at time zone 'Asia/Seoul'
-      group by (created_at at time zone 'Asia/Seoul')::date
     )
-    select metrics.*,subscriptions.*,
-      (
-        select jsonb_agg(jsonb_build_object(
-          'date',to_char(days.trend_day,'YYYY-MM-DD'),
-          'sales',coalesce(daily_sales.sales,0),
-          'orderCount',coalesce(daily_sales.order_count,0)
-        ) order by days.trend_day)
-        from days left join daily_sales using (trend_day)
-      ) as sales_trend,
-      (
-        select jsonb_agg(jsonb_build_object(
-          'date',to_char(days.trend_day,'YYYY-MM-DD'),
-          'memberCount',coalesce(daily_members.member_count,0)
-        ) order by days.trend_day)
-        from days left join daily_members using (trend_day)
-      ) as member_trend
+    select metrics.*,subscriptions.*
     from metrics cross join subscriptions
   `;
   const row = rows[0] || {};
-  const salesTrend = Array.isArray(row.salesTrend) ? row.salesTrend : [];
-  const memberTrend = Array.isArray(row.memberTrend) ? row.memberTrend : [];
-
   return {
-    metrics: {
-      grossSales: Number(row.grossSales || 0),
-      refundedSales: Number(row.refundedSales || 0),
-      todaySales: Number(row.todaySales || 0),
-      paidOrders: Number(row.paidOrders || 0),
-      orderReviewCount: Number(row.reviewOrders || 0),
-      activeSubscriptions: Number(row.active || 0),
-      pastDueSubscriptions: Number(row.pastDue || 0),
-      manualReviewSubscriptions: Number(row.manualReview || 0),
-      activeProSubscriptions: Number(row.activePro || 0),
-      activeSubscriptionBillingKrw: Number(row.activeBillingKrw || 0),
-    },
-    salesTrend: salesTrend.map((item) => ({
-      date: String((item as Record<string, unknown>).date),
-      sales: Number((item as Record<string, unknown>).sales || 0),
-      orderCount: Number((item as Record<string, unknown>).orderCount || 0),
-    })),
-    memberTrend: memberTrend.map((item) => ({
-      date: String((item as Record<string, unknown>).date),
-      memberCount: Number((item as Record<string, unknown>).memberCount || 0),
-    })),
+    grossSales: Number(row.grossSales || 0),
+    refundedSales: Number(row.refundedSales || 0),
+    todaySales: Number(row.todaySales || 0),
+    paidOrders: Number(row.paidOrders || 0),
+    orderReviewCount: Number(row.reviewOrders || 0),
+    activeSubscriptions: Number(row.active || 0),
+    pastDueSubscriptions: Number(row.pastDue || 0),
+    manualReviewSubscriptions: Number(row.manualReview || 0),
+    activeProSubscriptions: Number(row.activePro || 0),
+    activeSubscriptionBillingKrw: Number(row.activeBillingKrw || 0),
   };
-}, ["admin-overview-v2"], { revalidate: 60 });
+}, ["admin-overview-metrics-v3"], { revalidate: 60 });
+
+async function readTrendRows(
+  metric: AdminTrendMetric, from: string | null, until: string,
+): Promise<AdminTrendPoint[]> {
+  const db = getDb();
+  const lower = from ? `${from}T00:00:00+09:00` : null;
+  const upper = `${until}T00:00:00+09:00`;
+  if (metric === "sales") {
+    const rows = await db`
+      select
+        to_char(approved_at at time zone 'Asia/Seoul','YYYY-MM-DD') as date,
+        coalesce(sum(amount_krw),0)::bigint as sales,
+        count(*)::integer as order_count
+      from shorts_mvp.billing_orders
+      where status='succeeded' and amount_krw>0
+        and (${lower}::timestamptz is null or approved_at >= ${lower}::timestamptz)
+        and approved_at < ${upper}::timestamptz
+      group by 1 order by 1
+    `;
+    return rows.map((row) => ({
+      date: String(row.date), value: Number(row.sales), orderCount: Number(row.orderCount),
+    }));
+  }
+  const rows = await db`
+    select
+      to_char(created_at at time zone 'Asia/Seoul','YYYY-MM-DD') as date,
+      count(*)::integer as member_count
+    from shorts_mvp.app_users
+    where (${lower}::timestamptz is null or created_at >= ${lower}::timestamptz)
+      and created_at < ${upper}::timestamptz
+    group by 1 order by 1
+  `;
+  return rows.map((row) => ({ date: String(row.date), value: Number(row.memberCount) }));
+}
+
+// Share historical daily aggregates across all four periods. The KST cutoff
+// is part of the key, so a new day cannot reuse yesterday's partition boundary.
+const loadHistoricalTrend = unstable_cache(
+  (metric: AdminTrendMetric, until: string) => readTrendRows(metric, null, until),
+  ["admin-trend-history-v1"], { revalidate: 86_400 },
+);
+const loadRecentTrend = unstable_cache(
+  (metric: AdminTrendMetric, from: string, until: string) => readTrendRows(metric, from, until),
+  ["admin-trend-recent-v1"], { revalidate: 30 },
+);
+
+export async function loadAdminTrend(
+  metric: AdminTrendMetric, period: AdminTrendPeriod, today = kstDate(),
+): Promise<AdminTrendData> {
+  const cutoff = shiftTrendDate(today, -1);
+  const history = await loadHistoricalTrend(metric, cutoff);
+  const recent = await loadRecentTrend(metric, cutoff, shiftTrendDate(today, 1));
+  return buildAdminTrend(metric, period, today, [...history, ...recent]);
+}
+
+export async function loadAdminOverview(): Promise<AdminOverviewData> {
+  // Do not wrap this orchestration in unstable_cache: Next 15 bypasses nested
+  // unstable_cache reads, which would defeat the longer historical cache.
+  const today = kstDate();
+  const metrics = await loadAdminMetrics(today);
+  const salesTrend = await loadAdminTrend("sales", "7d", today);
+  const memberTrend = await loadAdminTrend("members", "7d", today);
+  return { metrics, salesTrend, memberTrend };
+}

@@ -43,8 +43,8 @@ describe("administrator shell recovery", () => {
   it("restores the latest administrator navigation and overview", () => {
     expect(shellSource).toContain("Admin Console");
     expect(shellSource).toContain("비즈니스 현황을 한눈에.");
-    expect(shellSource).toContain("최근 14일 매출");
-    expect(shellSource).toContain("최근 14일 회원 수 추이");
+    expect(shellSource).toContain("initialData={overview.salesTrend}");
+    expect(shellSource).toContain("initialData={overview.memberTrend}");
     expect(pageSource).toContain("<AdminShell");
   });
 
