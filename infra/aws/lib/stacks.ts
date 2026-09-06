@@ -2367,7 +2367,7 @@ export class ShortsMvpElevenLabsTranscriptionStack extends cdk.Stack {
       throw new Error("elevenLabsTranscriptionImageDigest must be an immutable sha256 digest");
     }
     const maxVcpus = Number(
-      this.node.tryGetContext("elevenLabsTranscriptionMaxVcpus") || 32,
+      this.node.tryGetContext("elevenLabsTranscriptionMaxVcpus") || 64,
     );
     if (!Number.isInteger(maxVcpus) || maxVcpus < 8 || maxVcpus > 160) {
       throw new Error(

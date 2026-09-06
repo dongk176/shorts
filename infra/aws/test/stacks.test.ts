@@ -237,7 +237,7 @@ describe("ElevenLabs transcription stack", () => {
     template.hasResourceProperties("AWS::Batch::ComputeEnvironment", {
       ComputeEnvironmentName:
         "shorts-mvp-elevenlabs-transcription-fargate-production",
-      ComputeResources: Match.objectLike({ Type: "FARGATE", MaxvCpus: 32 }),
+      ComputeResources: Match.objectLike({ Type: "FARGATE", MaxvCpus: 64 }),
     });
     template.hasResourceProperties("AWS::Batch::JobQueue", {
       JobQueueName:
