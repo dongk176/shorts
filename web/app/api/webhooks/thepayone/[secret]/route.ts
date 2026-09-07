@@ -346,6 +346,15 @@ async function processRecurring(
       `;
       return;
     }
+    const renewedAt = new Date();
+    const previousPeriodStart = locked[0].currentPeriodStart as Date;
+    // The provider can charge before the anniversary time. Keep access
+    // continuous without moving the grant or the billing schedule earlier.
+    const periodStart = chargeDueAt > renewedAt
+      && previousPeriodStart <= renewedAt
+      && entitlementTail > renewedAt
+      ? renewedAt
+      : chargeDueAt;
     const orders = await tx`
       insert into shorts_mvp.billing_orders (
         user_id,subscription_id,payment_method_id,request_id,kind,product_code,billing_cycle,
@@ -396,7 +405,7 @@ async function processRecurring(
     });
     await tx`
       update shorts_mvp.user_subscriptions
-      set status='active',current_period_start=${chargeDueAt},current_period_end=${periodEnd},
+      set status='active',current_period_start=${periodStart},current_period_end=${periodEnd},
         next_charge_at=${nextChargeAt},next_quota_at=${quotaEnd},next_retry_at=null,grace_ends_at=null,
         retry_count=0,provider_schedule_status='active',billing_review_status='clear',
         billing_review_reason=null,last_provider_event_at=now()

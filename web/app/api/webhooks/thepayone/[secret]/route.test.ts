@@ -21,6 +21,7 @@ vi.mock("@/lib/default-payment-method", () => ({
 }));
 
 import { cardTokenHash } from "@/lib/thepayone";
+import { getBillingSummary, type BillingDb } from "@/lib/billing";
 import { POST } from "./route";
 
 type RecordedQuery = { text: string; values: unknown[] };
@@ -120,14 +121,19 @@ function replayDatabase() {
   return Object.assign(db, { queries });
 }
 
-function recurringReplayDatabase() {
+function recurringReplayDatabase(options: {
+  currentPeriodStart?: Date;
+  currentPeriodEnd?: Date;
+  chargeDueAt?: Date;
+  billingAnchorDay?: number;
+} = {}) {
   const queries: RecordedQuery[] = [];
   const transactionQueries: RecordedQuery[] = [];
   const storedTrackId = "EC-AUTH-260725-0123456789abcdef0123";
   const recurringTrackId = `${storedTrackId}194500`;
   const recurringTransactionId = "T260825000001";
-  const chargeDueAt = new Date(Date.now() - 60_000);
-  const currentPeriodEnd = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const chargeDueAt = options.chargeDueAt ?? new Date(Date.now() - 60_000);
+  const currentPeriodEnd = options.currentPeriodEnd ?? new Date(Date.now() + 24 * 60 * 60 * 1000);
   let inserted = false;
   let validationStatus = "received";
   let processingResult: string | null = null;
@@ -148,9 +154,14 @@ function recurringReplayDatabase() {
     cancelAtPeriodEnd: false,
     scheduledPlanCode: null,
     planCode: "easycut_pro_v2",
-    billingAnchorDay: 25,
+    billingAnchorDay: options.billingAnchorDay ?? 25,
     nextChargeAt: chargeDueAt,
+    currentPeriodStart: options.currentPeriodStart ?? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
     currentPeriodEnd,
+    displayName: "이지컷 프로",
+    monthlySourceSeconds: 3_600,
+    maxActiveJobs: 1,
+    retentionDays: 30,
   };
   const tx = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
     const text = compactSql(strings, values);
@@ -160,6 +171,19 @@ function recurringReplayDatabase() {
     }
     if (text.startsWith("insert into shorts_mvp.billing_orders")) {
       return [{ id: "renewal-order-a" }];
+    }
+    if (text.startsWith("update shorts_mvp.user_subscriptions set status='active'")) {
+      // Persist the handler's bound date values so the real billing summary
+      // evaluates the resulting access, rather than mocking that decision.
+      for (const [column, field] of [
+        ["current_period_start", "currentPeriodStart"],
+        ["current_period_end", "currentPeriodEnd"],
+        ["next_charge_at", "nextChargeAt"],
+      ] as const) {
+        const parameter = text.match(new RegExp(`${column}=\\$(\\d+)`));
+        if (!parameter) throw new Error(`Missing subscription update: ${column}`);
+        subscription[field] = values[Number(parameter[1]) - 1] as Date;
+      }
     }
     if (text.includes("processing_result='subscription_renewed'")) {
       validationStatus = "processed";
@@ -199,7 +223,17 @@ function recurringReplayDatabase() {
     recurringTransactionId,
     storedTrackId,
     transactionQueries,
+    subscription,
   });
+}
+
+async function recurringBillingSummary(db: ReturnType<typeof recurringReplayDatabase>) {
+  const responses = [
+    [{ hasPaymentHistory: true, purchasedPackageCodes: [] }],
+    [{ ...db.subscription }],
+  ];
+  const summaryDb = (async () => responses.shift() || []) as unknown as BillingDb;
+  return getBillingSummary(summaryDb, "user-a");
 }
 
 beforeEach(() => {
@@ -222,6 +256,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  vi.useRealTimers();
 });
 
 describe("POST /api/webhooks/thepayone/[secret]", () => {
@@ -281,5 +316,113 @@ describe("POST /api/webhooks/thepayone/[secret]", () => {
     expect(db.transactionQueries.filter(({ text }) => (
       text.includes("processing_result='subscription_renewed'")
     ))).toHaveLength(1);
+  });
+
+  it("keeps paid access when the 08:00 renewal precedes the 11:20 anniversary", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const renewedAt = new Date("2026-09-07T08:00:06+09:00");
+    vi.setSystemTime(renewedAt);
+    const oldStart = new Date("2026-08-07T11:20:40+09:00");
+    const anniversary = new Date("2026-09-07T11:20:40+09:00");
+    const nextAnniversary = new Date("2026-10-07T11:20:40+09:00");
+    const db = recurringReplayDatabase({
+      currentPeriodStart: oldStart,
+      currentPeriodEnd: anniversary,
+      chargeDueAt: anniversary,
+      billingAnchorDay: 7,
+    });
+    mocks.getDb.mockReturnValue(db);
+
+    for (let delivery = 0; delivery < 11; delivery += 1) {
+      const response = await POST(
+        recurringRequest(db.recurringTrackId, db.recurringTransactionId), context(),
+      );
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe("result=0000");
+    }
+
+    expect(db.subscription.currentPeriodStart).toEqual(renewedAt);
+    expect(db.subscription.currentPeriodEnd).toEqual(nextAnniversary);
+    expect(db.subscription.nextChargeAt).toEqual(nextAnniversary);
+    for (const time of [
+      "2026-09-07T08:00:07+09:00",
+      "2026-09-07T10:59:57+09:00",
+      "2026-09-07T11:20:40+09:00",
+    ]) {
+      vi.setSystemTime(new Date(time));
+      const summary = await recurringBillingSummary(db);
+      expect(summary.canCreateJobs).toBe(true);
+      expect(summary.activeProducts).toHaveLength(1);
+      expect(summary.activeProducts[0].planCode).toBe("easycut_pro_v2");
+    }
+    const grants = db.transactionQueries.filter(({ text }) => (
+      text.startsWith("insert into shorts_mvp.usage_grants")
+    ));
+    expect(grants).toHaveLength(1);
+    expect(grants[0].values.slice(-2)).toEqual([anniversary, nextAnniversary]);
+    expect(grants[0].values[5]).toBe(3_600);
+    expect(db.transactionQueries.filter(({ text }) => (
+      text.startsWith("insert into shorts_mvp.billing_orders")
+    ))).toHaveLength(1);
+    expect(db.transactionQueries.some(({ text }) => (
+      /^(update|delete from) shorts_mvp.usage_grants/.test(text)
+    ))).toBe(false);
+  });
+
+  it.each([
+    ["on-time", "2026-09-07T11:20:40+09:00"],
+    ["late", "2026-09-07T14:19:22+09:00"],
+  ])("keeps the scheduled billing cycle for an %s renewal", async (_label, time) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(time));
+    const anniversary = new Date("2026-09-07T11:20:40+09:00");
+    const nextAnniversary = new Date("2026-10-07T11:20:40+09:00");
+    const db = recurringReplayDatabase({
+      currentPeriodStart: new Date("2026-08-07T11:20:40+09:00"),
+      currentPeriodEnd: anniversary,
+      chargeDueAt: anniversary,
+      billingAnchorDay: 7,
+    });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await POST(
+      recurringRequest(db.recurringTrackId, db.recurringTransactionId), context(),
+    );
+
+    expect(response.status).toBe(200);
+    expect(db.subscription.currentPeriodStart).toEqual(anniversary);
+    expect(db.subscription.currentPeriodEnd).toEqual(nextAnniversary);
+    expect(db.subscription.nextChargeAt).toEqual(nextAnniversary);
+    expect((await recurringBillingSummary(db)).canCreateJobs).toBe(true);
+    const grant = db.transactionQueries.find(({ text }) => (
+      text.startsWith("insert into shorts_mvp.usage_grants")
+    ));
+    expect(grant?.values.slice(-2)).toEqual([anniversary, nextAnniversary]);
+  });
+
+  it.each([
+    ["expired", "2026-08-07T11:20:40+09:00", "2026-09-07T07:00:00+09:00"],
+    ["not started", "2026-09-07T09:00:00+09:00", "2026-09-07T11:20:40+09:00"],
+  ])("does not invent early access when the previous period has %s", async (_label, start, end) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-07T08:00:06+09:00"));
+    const anniversary = new Date("2026-09-07T11:20:40+09:00");
+    const db = recurringReplayDatabase({
+      currentPeriodStart: new Date(start),
+      currentPeriodEnd: new Date(end),
+      chargeDueAt: anniversary,
+      billingAnchorDay: 7,
+    });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await POST(
+      recurringRequest(db.recurringTrackId, db.recurringTransactionId), context(),
+    );
+
+    expect(response.status).toBe(200);
+    expect(db.subscription.currentPeriodStart).toEqual(anniversary);
+    const summary = await recurringBillingSummary(db);
+    expect(summary.canCreateJobs).toBe(false);
+    expect(summary.activeProducts).toEqual([]);
   });
 });
