@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useUsageState } from "@/components/usage-provider";
 
 type Status =
@@ -38,9 +38,18 @@ export function TossCheckoutSuccessClient() {
   const router = useRouter();
   const { refreshUsage } = useUsageState();
   const [status, setStatus] = useState<Status>({ kind: "loading" });
+  const completionActions = useRef({ refreshUsage, router });
+  const callbackParams = useRef<URLSearchParams | null>(null);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
+    completionActions.current = { refreshUsage, router };
+  }, [refreshUsage, router]);
+
+  useEffect(() => {
+    // Retain the callback across effect replay after removing credentials
+    // from the address bar. Usage refreshes must not restart checkout.
+    const params = callbackParams.current ?? new URLSearchParams(window.location.search);
+    callbackParams.current = params;
     const requestId = params.get("requestId");
     const customerKey = params.get("customerKey");
     const authKey = params.get("authKey");
@@ -59,10 +68,12 @@ export function TossCheckoutSuccessClient() {
 
     const controller = new AbortController();
     const finish = async (payload: CheckoutPayload) => {
+      if (controller.signal.aborted) return;
       const remainingMinutes = Math.max(0, Math.floor((payload.remainingSeconds ?? 0) / 60));
-      await refreshUsage().catch(() => undefined);
-      router.refresh();
+      await completionActions.current.refreshUsage().catch(() => undefined);
+      if (controller.signal.aborted) return;
       setStatus({ kind: "success", remainingMinutes });
+      completionActions.current.router.refresh();
     };
     const statusRequest = async () => {
       const response = await fetch("/api/billing/toss/checkout/status", {
@@ -84,6 +95,7 @@ export function TossCheckoutSuccessClient() {
       });
       for (let attempt = 0; attempt < 90; attempt += 1) {
         const payload = await statusRequest();
+        if (controller.signal.aborted) return;
         if (payload.state === "succeeded") return finish(payload);
         if (payload.state === "failed") {
           throw new Error(payload.message || "카드 승인이 완료되지 않았습니다. 다시 시도해 주세요.");
@@ -113,6 +125,7 @@ export function TossCheckoutSuccessClient() {
         body: JSON.stringify({ requestId, customerKey, authKey }),
       });
       const payload = await response.json().catch(() => ({})) as CheckoutPayload;
+      if (controller.signal.aborted) return;
       if (response.status === 202 || payload.state === "reconciliation_required") return poll();
       if (!response.ok || payload.state === "failed") {
         if (payload.code === "TOSS_HANA_CARD_UNAVAILABLE") {
@@ -132,7 +145,7 @@ export function TossCheckoutSuccessClient() {
       });
     });
     return () => controller.abort();
-  }, [refreshUsage, router]);
+  }, []);
 
   return (
     <main className="grid min-h-screen place-items-center bg-[#101415] px-5 py-12 text-neutral-100">
