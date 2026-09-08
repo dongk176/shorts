@@ -13,6 +13,7 @@ import {
 } from "@/lib/project-feedback";
 import {
   clearCompletedProjectViewedForFeedback,
+  deferProjectFeedback,
   hasCompletedProjectViewedForFeedback,
   isProjectFeedbackProjectRoute,
   PROJECT_FEEDBACK_STATUS_REFRESH_EVENT,
@@ -34,12 +35,19 @@ async function responseBody<T>(response: Response): Promise<T> {
 }
 
 export function ProjectFeedbackOverlay() {
+  const { authenticated, accountId } = useUsageState();
+  useEffect(() => {
+    if (!authenticated || !accountId) clearCompletedProjectViewedForFeedback();
+    else hasCompletedProjectViewedForFeedback(accountId);
+  }, [accountId, authenticated]);
+  if (!authenticated || !accountId) return null;
+  return <AccountProjectFeedbackOverlay key={accountId} accountId={accountId} />;
+}
+
+function AccountProjectFeedbackOverlay({ accountId }: { accountId: string }) {
   const pathname = usePathname();
-  const { authenticated, usage } = useUsageState();
-  const {
-    active: queueActive,
-    complete: completeQueueStage,
-  } = useWelcomeOverlayStage("feedback");
+  const { usage } = useUsageState();
+  const { active: queueActive, complete: completeQueueStage } = useWelcomeOverlayStage("feedback");
   const [status, setStatus] = useState<ProjectFeedbackPromptStatus | null>(null);
   const [open, setOpen] = useState(false);
   const [satisfactionRating, setSatisfactionRating] = useState<number | null>(null);
@@ -49,109 +57,101 @@ export function ProjectFeedbackOverlay() {
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState<FeedbackSubmissionResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [completedProjectViewed, setCompletedProjectViewed] = useState(false);
-  const skippedInitialUsageRefresh = useRef(false);
+  const dialogRef = useRef<HTMLElement>(null);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
   const onProjectRoute = isProjectFeedbackProjectRoute(pathname);
+  const usageFingerprint = usage
+    ? `${usage.usedSeconds}:${usage.reservedSeconds}:${usage.remainingSeconds}`
+    : "";
 
   useEffect(() => {
-    if (!authenticated || onProjectRoute) {
-      setCompletedProjectViewed(false);
-      return;
-    }
-    setCompletedProjectViewed(hasCompletedProjectViewedForFeedback());
-  }, [authenticated, onProjectRoute, pathname]);
-
-  const loadStatus = useCallback(async () => {
-    if (
-      !authenticated
-      || !queueActive
-      || !completedProjectViewed
-      || onProjectRoute
-      || success
-    ) return;
-    try {
-      const response = await fetch("/api/project-feedback", {
-        cache: "no-store",
-        credentials: "same-origin",
-      });
-      if (response.status === 401) return;
-      setStatus(await responseBody<ProjectFeedbackPromptStatus>(response));
-    } catch {
-      // 피드백 요청은 핵심 작업 흐름을 방해하지 않도록 조용히 재시도한다.
-    }
-  }, [authenticated, completedProjectViewed, onProjectRoute, queueActive, success]);
-
-  useEffect(() => {
-    if (
-      !authenticated
-      || !queueActive
-      || !completedProjectViewed
-      || onProjectRoute
-    ) {
+    if (success) return;
+    if (!queueActive || onProjectRoute) {
       setStatus(null);
       setOpen(false);
       return;
     }
-    void loadStatus();
-    const onFocus = () => void loadStatus();
-    const onVisibilityChange = () => {
-      if (document.visibilityState === "visible") void loadStatus();
+    let active = true;
+    let controller: AbortController | null = null;
+    const loadStatus = async () => {
+      controller?.abort();
+      const requestController = new AbortController();
+      controller = requestController;
+      if (!hasCompletedProjectViewedForFeedback(accountId)) {
+        setStatus(null);
+        setOpen(false);
+        return;
+      }
+      try {
+        const response = await fetch("/api/project-feedback", {
+          cache: "no-store",
+          credentials: "same-origin",
+          signal: requestController.signal,
+        });
+        if (response.status === 401) {
+          if (active && !requestController.signal.aborted) { setStatus(null); setOpen(false); }
+          return;
+        }
+        const result = await responseBody<ProjectFeedbackPromptStatus>(response);
+        if (active && !requestController.signal.aborted && hasCompletedProjectViewedForFeedback(accountId)) {
+          setStatus(result);
+        }
+      } catch {
+        // Feedback must never interrupt the core project flow.
+      }
     };
-    const onStatusRefresh = () => void loadStatus();
-    window.addEventListener("focus", onFocus);
-    window.addEventListener(PROJECT_FEEDBACK_STATUS_REFRESH_EVENT, onStatusRefresh);
-    document.addEventListener("visibilitychange", onVisibilityChange);
+    const refresh = () => { if (document.visibilityState === "visible") void loadStatus(); };
+    refresh();
+    window.addEventListener("focus", refresh);
+    window.addEventListener(PROJECT_FEEDBACK_STATUS_REFRESH_EVENT, refresh);
+    document.addEventListener("visibilitychange", refresh);
     return () => {
-      window.removeEventListener("focus", onFocus);
-      window.removeEventListener(PROJECT_FEEDBACK_STATUS_REFRESH_EVENT, onStatusRefresh);
-      document.removeEventListener("visibilitychange", onVisibilityChange);
+      active = false;
+      controller?.abort();
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener(PROJECT_FEEDBACK_STATUS_REFRESH_EVENT, refresh);
+      document.removeEventListener("visibilitychange", refresh);
     };
-  }, [authenticated, completedProjectViewed, loadStatus, onProjectRoute, queueActive]);
-
-  const usageFingerprint = usage
-    ? `${usage.usedSeconds}:${usage.reservedSeconds}:${usage.remainingSeconds}`
-    : "";
-  useEffect(() => {
-    if (!skippedInitialUsageRefresh.current) {
-      skippedInitialUsageRefresh.current = true;
-      return;
-    }
-    void loadStatus();
-  }, [loadStatus, usageFingerprint]);
+  }, [accountId, onProjectRoute, pathname, queueActive, success, usageFingerprint]);
 
   useEffect(() => {
-    if (
-      !queueActive
-      || !completedProjectViewed
-      || onProjectRoute
-      || !status
-      || success
-    ) return;
+    if (!queueActive || onProjectRoute || !status || success) return;
     if (!status.eligible) {
       clearCompletedProjectViewedForFeedback();
-      setCompletedProjectViewed(false);
       completeQueueStage();
       return;
     }
-    const timer = window.setTimeout(() => setOpen(true), 900);
+    const timer = window.setTimeout(() => {
+      if (document.visibilityState === "visible" && hasCompletedProjectViewedForFeedback(accountId)) {
+        setOpen(true);
+      }
+    }, 900);
     return () => window.clearTimeout(timer);
-  }, [
-    completeQueueStage,
-    completedProjectViewed,
-    onProjectRoute,
-    queueActive,
-    status,
-    success,
-  ]);
+  }, [accountId, completeQueueStage, onProjectRoute, queueActive, status, success]);
+
+  const closeFeedback = useCallback(() => {
+    if (submitting) return;
+    if (!success) deferProjectFeedback(accountId);
+    else clearCompletedProjectViewedForFeedback();
+    setOpen(false);
+    completeQueueStage();
+  }, [accountId, completeQueueStage, submitting, success]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || onProjectRoute || !queueActive) return;
     const previousOverflow = document.body.style.overflow;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     document.body.style.overflow = "hidden";
+    dialogRef.current?.focus();
     return () => {
       document.body.style.overflow = previousOverflow;
+      previousFocus?.focus();
     };
-  }, [open]);
+  }, [onProjectRoute, open, queueActive]);
 
   const submitFeedback = async (event: FormEvent) => {
     event.preventDefault();
@@ -171,6 +171,7 @@ export function ProjectFeedbackOverlay() {
         }),
       });
       const result = await responseBody<FeedbackSubmissionResponse>(response);
+      if (!mounted.current) return;
       publishUsageSnapshot(result.usage);
       clearCompletedProjectViewedForFeedback();
       setStatus((current) => current
@@ -184,7 +185,7 @@ export function ProjectFeedbackOverlay() {
     }
   };
 
-  if (!open) return null;
+  if (!open || onProjectRoute || !queueActive) return null;
 
   return (
     <div
@@ -192,8 +193,30 @@ export function ProjectFeedbackOverlay() {
       role="presentation"
     >
       <section
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            closeFeedback();
+          }
+          if (event.key !== "Tab") return;
+          const controls = dialogRef.current?.querySelectorAll<HTMLElement>(
+            'button:not(:disabled), input:not(:disabled), textarea:not(:disabled), [href]',
+          );
+          if (!controls?.length) return;
+          const first = controls[0];
+          const last = controls[controls.length - 1];
+          if (event.shiftKey && (document.activeElement === first || document.activeElement === dialogRef.current)) {
+            event.preventDefault();
+            last?.focus();
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first?.focus();
+          }
+        }}
         aria-labelledby="project-feedback-title"
         className="max-h-[94dvh] w-full max-w-2xl overflow-y-auto rounded-t-[28px] border border-white/10 bg-[#17181b] shadow-[0_30px_100px_rgba(0,0,0,.6)] sm:rounded-[28px]"
       >
@@ -210,11 +233,7 @@ export function ProjectFeedbackOverlay() {
             </p>
             <button
               type="button"
-              onClick={() => {
-                setOpen(false);
-                setCompletedProjectViewed(false);
-                completeQueueStage();
-              }}
+              onClick={closeFeedback}
               className="mt-7 min-h-12 rounded-xl bg-white px-7 text-sm font-black text-black transition hover:bg-neutral-200"
             >
               확인
@@ -222,7 +241,14 @@ export function ProjectFeedbackOverlay() {
           </div>
         ) : (
           <form onSubmit={submitFeedback}>
-            <header className="border-b border-white/10 px-6 pb-6 pt-7 sm:px-9 sm:pt-9">
+            <header className="relative border-b border-white/10 px-6 pb-6 pt-7 sm:px-9 sm:pt-9">
+              <button
+                type="button"
+                aria-label="피드백 닫기"
+                disabled={submitting}
+                onClick={closeFeedback}
+                className="absolute right-3 top-3 flex h-10 w-10 items-center justify-center rounded-full text-xl text-neutral-400 hover:bg-white/10 hover:text-white disabled:opacity-40"
+              >×</button>
               <span className="inline-flex rounded-full bg-[#ff7d69]/15 px-3 py-1.5 text-xs font-extrabold text-[#ff9b8d]">
                 30초 피드백 · 처리시간 30분
               </span>
@@ -316,7 +342,7 @@ export function ProjectFeedbackOverlay() {
               )}
             </div>
 
-            <footer className="border-t border-white/10 px-6 py-5 sm:px-9">
+            <footer className="space-y-2 border-t border-white/10 px-6 py-5 sm:px-9">
               <button
                 type="submit"
                 disabled={submitting || satisfactionRating === null || disappointmentReason === null}
@@ -324,6 +350,12 @@ export function ProjectFeedbackOverlay() {
               >
                 {submitting ? "보내는 중..." : "피드백 보내고 30분 받기"}
               </button>
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={closeFeedback}
+                className="min-h-11 w-full rounded-xl px-6 text-sm font-semibold text-neutral-400 hover:bg-white/5 hover:text-white disabled:opacity-40"
+              >나중에 할게요</button>
             </footer>
           </form>
         )}

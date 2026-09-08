@@ -171,7 +171,7 @@ import {
   parseProjectEditRefreshSignal,
   PROJECT_EDIT_REFRESH_STORAGE_KEY,
 } from "@/lib/project-edit-refresh";
-import { markCompletedProjectViewedForFeedback } from "@/lib/project-feedback-client";
+import { ProjectFeedbackVideo } from "@/components/project-feedback-video";
 import {
   applyEditorFontToSelectableText,
   EDITOR_TEXT_DEFAULT_WIDTH,
@@ -12739,7 +12739,7 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
                 <div className="short-result-layout">
                   <div className="short-video-column">
                     <div className="short-video-shell">
-                      {itemUrl ? <video key={shortPlaybackVersionKey(item)} src={itemUrl} poster={itemAsset?.posterUrl || undefined} controls={!itemIsRerendering} controlsList="nodownload" playsInline preload="metadata" onError={() => refreshPlaybackAccess(item)} className={itemIsRerendering ? "grayscale" : ""} /> : <div className="short-video-placeholder">영상 준비 중</div>}
+                      {itemUrl ? <ProjectFeedbackVideo key={shortPlaybackVersionKey(item)} projectNumber={job.projectNumber} feedbackEnabled={job.status === "completed" && !job.isExample && item.status === "ready"} src={itemUrl} poster={itemAsset?.posterUrl || undefined} controls={!itemIsRerendering} controlsList="nodownload" playsInline preload="metadata" onError={() => refreshPlaybackAccess(item)} className={itemIsRerendering ? "grayscale" : ""} /> : <div className="short-video-placeholder">영상 준비 중</div>}
                       <span className="short-duration-badge">{formatDuration(item.durationSeconds, locale)}</span>
                       {itemIsRerendering && <EstimatedProcessingOverlay operationKey={`rerender:${item.id}:${item.renderVersion}`} durationSeconds={item.durationSeconds} rerender minimumProgress={item.rerenderProgress} />}
                     </div>
@@ -12855,11 +12855,6 @@ export function ProjectPage({ projectNumber, adminSubtitleLayoutEnabled = false,
   useEffect(() => {
     void loadProject();
   }, [loadProject]);
-
-  useEffect(() => {
-    if (project?.status !== "completed" || project.isExample) return;
-    markCompletedProjectViewedForFeedback(project.projectNumber);
-  }, [project?.isExample, project?.projectNumber, project?.status]);
 
   useEffect(() => {
     const refreshAfterAppliedEdit = (event: StorageEvent) => {

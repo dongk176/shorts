@@ -81,7 +81,8 @@ export function MarketingEmailPreferenceOverlay() {
         if (
           result.promptDue
           && !onProjectRoute
-          && hasCompletedProjectViewedForFeedback()
+          && accountId
+          && hasCompletedProjectViewedForFeedback(accountId)
         ) {
           setOpen(true);
         }

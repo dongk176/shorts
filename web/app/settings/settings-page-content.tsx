@@ -1,5 +1,7 @@
 "use client";
 
+import { clearCompletedProjectViewedForFeedback } from "@/lib/project-feedback-client";
+
 import Link from "next/link";
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { AuthControls } from "@/components/auth-controls";
@@ -271,6 +273,7 @@ export function SettingsPageContent({ user }: { user: AuthProfile | null }) {
     event.preventDefault();
     if (signingOut) return;
     setSigningOut(true);
+    clearCompletedProjectViewedForFeedback();
     const form = event.currentTarget;
     try {
       const response = await fetch("/auth/sign-out", {
