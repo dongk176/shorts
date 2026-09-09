@@ -132,17 +132,22 @@ export async function backfillCatalogBatch(
   });
 }
 
-/** Run only after a successful comparison, after recording backfill_verified_at.
- * A rollback uses the last 48 hours of compatibility snapshots; calendar membership is never deleted. */
+/** Legacy cleanup is a separate rollout action, never a consequence of enabling
+ * the catalog or recording a completed backfill. Keep it off through promotion
+ * and restore verification. Temporary new compatibility snapshots keep their TTL. */
 export async function cleanupImportedSnapshots(db: Sql = getDb()) {
+  const cleanupLegacy =
+    process.env.YOUTUBE_LEGACY_SNAPSHOT_CLEANUP_ENABLED === "true" &&
+    (await getCatalogBackfillReadiness(db)).ready;
   for (const source of sources) {
-    await db`delete from ${db(`shorts_mvp.${source.prefix}_items`)} where run_id in (
+    if (cleanupLegacy)
+      await db`delete from ${db(`shorts_mvp.${source.prefix}_items`)} where run_id in (
       select r.id from ${db(`shorts_mvp.${source.prefix}_runs`)} r
       join shorts_mvp.youtube_catalog_imports i on i.legacy_run_id=r.id and i.source=${source.prefix}
-      where i.completed_at is not null and r.completed_at<clock_timestamp()-${source.prefix === 'free_video' ? '3 days' : '48 hours'}::interval
+      where r.status='ready' and i.completed_at is not null and r.completed_at<clock_timestamp()-${source.prefix === "free_video" ? "3 days" : "48 hours"}::interval
         and exists(select 1 from shorts_mvp.youtube_quota_verifications where project_id=${process.env.YOUTUBE_QUOTA_PROJECT_ID || ""} and backfill_verified_at is not null))`;
     await db`delete from ${db(`shorts_mvp.${source.prefix}_runs`)} where id in (
-      select id from shorts_mvp.youtube_collection_runs where legacy=false and finished_at<clock_timestamp()-${source.prefix === 'free_video' ? '3 days' : '48 hours'}::interval)`;
+      select id from shorts_mvp.youtube_collection_runs where legacy=false and finished_at<clock_timestamp()-${source.prefix === "free_video" ? "3 days" : "48 hours"}::interval)`;
   }
 }
 

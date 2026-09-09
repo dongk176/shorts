@@ -627,14 +627,47 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
     expect(new Date(row.firstDiscoveredAt).toISOString()).toBe(
       old.toISOString(),
     );
+    // Failed legacy runs can contain rows excluded from the successful import.
+    // Never sweep those rows merely because the failed run itself was recorded.
+    const failedId = randomUUID();
+    const failedAt = new Date(old.getTime() - DAY_MS);
+    await db`insert into shorts_mvp.popular_video_runs(id,snapshot_date,status,started_at,completed_at,page_count,item_count)
+      values(${failedId},${kstDate(failedAt)},'failed',${failedAt},${failedAt},1,1)`;
+    await db`insert into shorts_mvp.popular_video_items(run_id,video_id,category,category_rank,page_number,title,channel_name,thumbnail_url,duration_seconds,view_count,published_at,license,is_korean,collected_at)
+      values(${failedId},'failed00001','entertainment',1,1,'Unreconciled row','channel','https://example.com/old.jpg',600,1,${failedAt},'youtube',true,${failedAt})`;
+    expect(await backfillCatalogBatch(db, fetchImpl)).toMatchObject({
+      processed: 0,
+    });
     await db`insert into shorts_mvp.youtube_quota_verifications(project_id,key_fingerprint,search_daily_limit,general_daily_limit,verified_at,evidence,backfill_verified_at)
       values('test-project','test-only',100,10000,now(),'integration comparison passed',now())`;
+    // A completed backfill must not itself authorize destruction of old rows.
+    vi.stubEnv("YOUTUBE_LEGACY_SNAPSHOT_CLEANUP_ENABLED", "false");
     await cleanupImportedSnapshots(db);
     expect(
       (
         await db`select count(*)::int as count from shorts_mvp.popular_video_items`
       )[0].count,
-    ).toBe(0);
+    ).toBe(2);
+    vi.stubEnv("YOUTUBE_LEGACY_SNAPSHOT_CLEANUP_ENABLED", "true");
+    // Even with the cleanup switch on, a stale verification cannot hide a gap.
+    await db`update shorts_mvp.youtube_catalog set first_discovered_at=clock_timestamp()`;
+    await cleanupImportedSnapshots(db);
+    expect(
+      (
+        await db`select count(*)::int as count from shorts_mvp.popular_video_items`
+      )[0].count,
+    ).toBe(2);
+    await db`update shorts_mvp.youtube_catalog set first_discovered_at=${old}`;
+    await cleanupImportedSnapshots(db);
+    expect(
+      (
+        await db`select count(*)::int as count from shorts_mvp.popular_video_items`
+      )[0].count,
+    ).toBe(1);
+    expect(
+      (await db`select video_id from shorts_mvp.popular_video_items`)[0]
+        .videoId,
+    ).toBe("failed00001");
     expect(
       (await getTrendingCalendar(kstDate(old).slice(0, 7), db)).days.find(
         (d) => d.date === kstDate(old),
