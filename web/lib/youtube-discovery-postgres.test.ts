@@ -38,6 +38,7 @@ import {
   expandedDiscoveryEnabled,
 } from "./youtube-quota";
 import { analyzeYoutubeUrl } from "./youtube";
+import { collectFreeVideos } from "./youtube-free";
 import {
   kstDate,
   discoverySince,
@@ -194,6 +195,41 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
       values(${runId},${id},'entertainment',1,1,'Old snapshot','channel','https://example.com/old.jpg',600,1,${at},'youtube',true,${at})`;
     return runId;
   }
+
+  it.each([undefined, "false", "true"])(
+    "keeps expired legacy free history unless cleanup is explicitly released (%s)",
+    async (cleanup) => {
+      vi.stubEnv("YOUTUBE_DISCOVERY_ENABLED", "false");
+      vi.stubEnv("YOUTUBE_LEGACY_SNAPSHOT_CLEANUP_ENABLED", cleanup);
+      const now = new Date();
+      const fetchPage = (id: string) =>
+        vi.fn<typeof fetch>()
+          .mockResolvedValueOnce(
+            new Response(JSON.stringify({ items: [{ id: { videoId: id } }] })),
+          )
+          .mockResolvedValueOnce(
+            new Response(JSON.stringify({ items: [youtubeItem(id)] })),
+          );
+      const old = await collectFreeVideos({
+        db,
+        now: new Date(now.getTime() - 4 * DAY_MS),
+        maxPages: 1,
+        fetchImpl: fetchPage("dQw4w9WgXcQ"),
+      });
+      const original = await db`select * from shorts_mvp.free_video_items where run_id=${old.runId}`;
+      expect(original).toHaveLength(1);
+      const next = await collectFreeVideos({
+        db,
+        now,
+        maxPages: 1,
+        fetchImpl: fetchPage("9bZkp7q19f0"),
+      });
+      const preserved = await db`select * from shorts_mvp.free_video_items where run_id=${old.runId}`;
+      expect(preserved).toEqual(cleanup === "true" ? [] : original);
+      const latest = await db`select status,item_count from shorts_mvp.free_video_runs where id=${next.runId}`;
+      expect(latest[0]).toMatchObject({ status: "ready", itemCount: 1 });
+    },
+  );
 
   it("does not classify newly collected daily compatibility snapshots as historical imports", async () => {
     const result = await collectDiscoveryLane("views", {

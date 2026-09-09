@@ -430,10 +430,14 @@ export async function collectFreeVideos(options: {
           next_page_token=${collection.nextPageToken || null}, completed_at=${now}, error_message=null
         where id=${run.id}
       `;
-      await tx`
-        delete from shorts_mvp.free_video_runs
-        where id <> ${run.id} and expires_at <= ${now}
-      `;
+      // These rows are still the migration source while the legacy collector
+      // runs. Expiry alone must not delete them before preservation is released.
+      if (process.env.YOUTUBE_LEGACY_SNAPSHOT_CLEANUP_ENABLED === "true") {
+        await tx`
+          delete from shorts_mvp.free_video_runs
+          where id <> ${run.id} and expires_at <= ${now}
+        `;
+      }
     });
     return {
       runId: run.id,

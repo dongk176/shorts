@@ -25,7 +25,9 @@ test("legacy editor global CSS remains byte-for-byte at the approved baseline", 
 
   assert.equal(
     digest,
-    "ea8eef742165fb63879246876d0e5b9dc8ed9351966835d54a72dc0fe4f8a4ab",
+    // Promoted 51d911f: the tablet preview fix was reviewed at 390/707/1280px.
+    // See docs/youtube-discovery-production-preparation-20260909.md.
+    "1a314592ac1b8189374b6ff4608241e44cb3a4b291c13e6b3b68388d5bbb51b0",
     "Do not change the approved global CSS baseline without a dedicated public UI review.",
   );
 });
