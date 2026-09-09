@@ -109,3 +109,21 @@ test("custom backgrounds add only the collection and private asset routes", () =
     PROTECTED_APP_ROUTES, ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE,
   ), { added: ["/api/background-assets/public/route"], removed: [] });
 });
+
+test("discovery rollout permits its five exact routes and keeps publishing blocked", () => {
+  const additions = [
+    "/api/admin/youtube-discovery/route",
+    "/api/admin/youtube-discovery/backfill/route",
+    "/api/cron/youtube-discovery/route",
+    "/api/youtube/popular/calendar/route",
+    "/api/youtube/popular/status/route",
+  ];
+  assert.deepEqual(compareManifestRoutes(
+    [...PROTECTED_APP_ROUTES, ...additions], PROTECTED_APP_ROUTES,
+    ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE,
+  ), { added: [], removed: [] });
+  assert.deepEqual(compareManifestRoutes(
+    [...PROTECTED_APP_ROUTES, "/api/youtube/oauth/route", "/api/admin/youtube-discovery/delete/route"],
+    PROTECTED_APP_ROUTES, ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE,
+  ), { added: ["/api/admin/youtube-discovery/delete/route", "/api/youtube/oauth/route"], removed: [] });
+});
