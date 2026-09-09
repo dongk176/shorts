@@ -1,3 +1,4 @@
+import { discoveryEnabled } from "@/lib/youtube-quota";
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import {
@@ -37,6 +38,7 @@ export async function GET(request: Request) {
   if (!authorized(request)) {
     return NextResponse.json({ detail: "인증되지 않은 무료 소재 수집 요청입니다." }, { status: 401 });
   }
+  if (discoveryEnabled()) return NextResponse.json({ skipped: true, reason: "use_scheduled_discovery" });
   try {
     const result = await collectFreeVideos({ maxPages: collectionPageLimit() });
     return NextResponse.json({ ok: true, ...result });

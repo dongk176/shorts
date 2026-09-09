@@ -18,6 +18,7 @@ export type PopularFilterUsageInput = {
   koreanOnly: boolean;
   discoveryPeriod: PopularDiscoveryPeriod;
   resultCount: number;
+  selectedDate?: string;
 };
 
 export async function recordPopularFilterUsage(
@@ -96,5 +97,7 @@ export async function recordPopularFilterUsage(
     on conflict (user_id,interaction_id) do nothing
     returning id,occurred_at
   `;
+  if (input.selectedDate && inserted[0]) await db`update shorts_mvp.popular_filter_usage_events
+    set selected_date=${input.selectedDate}::date where id=${inserted[0].id}`;
   return inserted[0] || null;
 }

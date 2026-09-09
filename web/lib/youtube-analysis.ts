@@ -1,3 +1,4 @@
+import { discoveryEnabled } from "@/lib/youtube-quota";
 import { expectedShortCount, type YoutubeAnalysis } from "@/lib/contracts";
 import { getDb } from "@/lib/db";
 import type { MvpSession } from "@/lib/session";
@@ -45,6 +46,7 @@ export async function createYoutubeAnalysis(
       ${sourceRangeSelectionEnabled}
     ) returning id
   `;
+  if (discoveryEnabled()) await db`update shorts_mvp.youtube_catalog set last_used_at=clock_timestamp() where video_id=${metadata.videoId}`;
   return {
     ...metadata,
     analysisId: String(rows[0].id),

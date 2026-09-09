@@ -1,5 +1,7 @@
 "use client";
 
+import { TrendingDateFilter, discoveryCopy } from "./trending-date-filter";
+
 import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -810,6 +812,7 @@ function popularVideoParams(
   discoveryPeriod: PopularDiscoveryPeriod,
   cursor?: string,
   interactionId?: string,
+  date?: string | null,
 ) {
   const params = new URLSearchParams({
     type,
@@ -818,7 +821,8 @@ function popularVideoParams(
     longForm: String(longForm),
     korean: String(korean),
   });
-  params.set("period", discoveryPeriod);
+  params.set("period", type === "trending" && date ? "all" : discoveryPeriod);
+  if (type === "trending" && date) params.set("date", date);
   if (cursor) params.set("cursor", cursor);
   if (interactionId) params.set("interactionId", interactionId);
   return params;
@@ -869,6 +873,7 @@ function VideoCard({ video, rank, active, onOpen, onClose }: {
         <span className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-black/40 to-transparent" aria-hidden="true" />
       </div>
       <div className="flex flex-1 flex-col p-4">
+        {video.isCurrentTrending && <span className="mb-2 text-xs font-bold text-emerald-300">{discoveryCopy[locale].current}</span>}
         <h2 data-i18n-skip className="line-clamp-2 min-h-11 text-[15px] font-extrabold leading-[1.45] tracking-[-.015em] text-white">{video.title}</h2>
         <p data-i18n-skip className="mt-2 truncate text-[13px] font-semibold text-neutral-400">{video.channelName}</p>
         <div className="mt-3 flex items-center gap-2 text-[13px] font-semibold text-neutral-400">
@@ -923,6 +928,10 @@ export function PopularVideosExplorer({
   const [koreanOnly, setKoreanOnly] = useState(false);
   const [longFormOnly, setLongFormOnly] = useState(false);
   const [reusableOnly, setReusableOnly] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [catalogEnabled, setCatalogEnabled] = useState(false);
+  const [hasNewList, setHasNewList] = useState(false);
+  const [cursorNotice, setCursorNotice] = useState(false);
   const [discoveryPeriod, setDiscoveryPeriod] = useState<PopularDiscoveryPeriod>("all");
   const [category, setCategory] = useState<PopularVideoCategory>("all");
   const [response, setResponse] = useState<PopularVideoResponse | null>(null);
@@ -964,7 +973,7 @@ export function PopularVideosExplorer({
     setLoadMoreError(null);
     setError(null);
     setResponse(null);
-    const endpoint = `/api/youtube/popular?${popularVideoParams(dataType, category, reusableOnly, longFormOnly, koreanOnly, discoveryPeriod, undefined, filterInteractionId || undefined)}`;
+    const endpoint = `/api/youtube/popular?${popularVideoParams(dataType, category, reusableOnly, longFormOnly, koreanOnly, discoveryPeriod, undefined, filterInteractionId || undefined, selectedDate)}`;
     fetch(endpoint, { cache: "no-store", signal: controller.signal })
       .then(async (result) => {
         if (!result.ok) {
@@ -973,7 +982,7 @@ export function PopularVideosExplorer({
         }
         return result.json() as Promise<PopularVideoResponse>;
       })
-      .then((result) => setResponse(result))
+      .then((result) => { setResponse(result); setCatalogEnabled(Boolean(result.catalogEnabled)); setHasNewList(false); })
       .catch((cause: unknown) => {
         if (cause instanceof DOMException && cause.name === "AbortError") return;
         setError(userFacingErrorMessage(cause, uiCopy.loadFailed));
@@ -982,7 +991,22 @@ export function PopularVideosExplorer({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [category, dataType, discoveryPeriod, filterInteractionId, koreanOnly, locale, longFormOnly, reusableOnly, retryCount, uiCopy.loadFailed]);
+  }, [category, dataType, discoveryPeriod, selectedDate, filterInteractionId, koreanOnly, locale, longFormOnly, reusableOnly, retryCount, uiCopy.loadFailed]);
+
+  useEffect(() => {
+    if (!catalogEnabled || !response?.generation) return;
+    const controller = new AbortController();
+    const timer = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      fetch(`/api/youtube/popular/status?type=${dataType}`, { cache: "no-store", signal: controller.signal })
+        .then(async result => result.ok ? result.json() as Promise<{ generation?: string; delayed?: boolean }> : null)
+        .then(state => {
+          if (state?.generation && state.generation !== response.generation) setHasNewList(true);
+          if (state?.delayed) setResponse(current => current ? { ...current, delayed: true, items: current.items.map(video => ({ ...video, isCurrentTrending: false })) } : current);
+        }).catch(() => undefined);
+    }, 60_000);
+    return () => { clearInterval(timer); controller.abort(); };
+  }, [catalogEnabled, dataType, response?.generation]);
 
   const selectedTypeLabel = dataType === "trending"
     ? filterCopy.trending
@@ -998,8 +1022,11 @@ export function PopularVideosExplorer({
     setLoadingMore(true);
     setLoadMoreError(null);
     try {
-      const endpoint = `/api/youtube/popular?${popularVideoParams(dataType, category, reusableOnly, longFormOnly, koreanOnly, discoveryPeriod, response.nextCursor)}`;
+      const endpoint = `/api/youtube/popular?${popularVideoParams(dataType, category, reusableOnly, longFormOnly, koreanOnly, discoveryPeriod, response.nextCursor, undefined, selectedDate)}`;
       const result = await fetch(endpoint, { cache: "no-store", signal: controller.signal });
+      if (result.status === 410) {
+        setCursorNotice(true); setRetryCount(value => value + 1); return;
+      }
       if (!result.ok) {
         const body = await result.json().catch(() => ({})) as { detail?: string };
         throw new Error(body.detail || uiCopy.loadMoreFailed);
@@ -1010,6 +1037,7 @@ export function PopularVideosExplorer({
         const videos = new Map(current.items.map((video) => [video.videoId, video]));
         for (const video of next.items) videos.set(video.videoId, video);
         return {
+          ...current,
           items: Array.from(videos.values()),
           updatedAt: current.updatedAt,
           totalCount: next.totalCount ?? current.totalCount,
@@ -1324,15 +1352,25 @@ export function PopularVideosExplorer({
           <h2 className="text-xl font-black tracking-[-.025em] text-white">{selectedTypeLabel}</h2>
           <p className="mt-1 text-xs font-bold tabular-nums text-neutral-500" aria-live="polite">{!loading && response && displayedTotalCount !== undefined ? (locale === "ko" ? `${formatNumber(displayedTotalCount, locale)}개` : locale === "en" ? formatNumber(displayedTotalCount, locale) : `${formatNumber(displayedTotalCount, locale)}件`) : uiCopy.countLoading}</p>
         </div>
-        <DiscoveryPeriodDropdown
+        {dataType === "trending" && catalogEnabled ? <TrendingDateFilter date={selectedDate} locale={locale} canUseFilters={canUseFilters}
+          onRequestAccess={() => applyFilter(() => undefined)}
+          onChange={date => date ? applyFilter(() => { setSelectedDate(date); setDiscoveryPeriod("all"); }) : (() => { setSelectedDate(null); setDiscoveryPeriod("all"); })()}
+        /> : <DiscoveryPeriodDropdown
           value={discoveryPeriod}
           counts={periodCounts}
           locale={locale}
           disabled={loading}
           onChange={(period) => applyFilter(() => setDiscoveryPeriod(period))}
-        />
+        />}
       </div>
 
+      {catalogEnabled && <div className="mb-5 space-y-2 text-xs text-neutral-400" aria-live="polite">
+        {dataType === "trending" && selectedDate ? <p>{discoveryCopy[locale].note}</p> : dataType === "trending" && response?.delayed ? <p className="text-amber-300">{discoveryCopy[locale].delayed}</p> : null}
+        {dataType === "trending" && selectedDate && response?.collectionStatus && <p>{discoveryCopy[locale][response.collectionStatus === "complete" ? "complete" : response.collectionStatus === "partial" ? "partial" : "none"]}</p>}
+        {Boolean(response?.unavailableCount) && <p>{discoveryCopy[locale].unavailable}</p>}
+        {cursorNotice && <p>{discoveryCopy[locale].expired}</p>}
+        {hasNewList && <button type="button" className="min-h-10 rounded-lg border border-violet-300/40 px-4 font-bold text-violet-100" onClick={() => setRetryCount(value => value + 1)}>{discoveryCopy[locale].fresh}</button>}
+      </div>}
       {loading ? <LoadingSkeleton /> : error ? (
         <section role="alert" className="grid min-h-64 place-items-center rounded-2xl border border-red-400/20 bg-red-950/15 px-6 py-12 text-center">
           <div><div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-red-400/10 text-xl text-red-300" aria-hidden="true">!</div><h2 className="mt-4 text-lg font-extrabold">{uiCopy.loadFailed}</h2><p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-red-200/75">{error}</p><button type="button" onClick={() => setRetryCount((value) => value + 1)} className="mt-6 rounded-xl bg-white px-5 py-3 text-sm font-extrabold text-black transition hover:bg-neutral-200">{uiCopy.retry}</button></div>

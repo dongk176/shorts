@@ -4,6 +4,8 @@ const mocks = vi.hoisted(() => ({
   collectPopularVideos: vi.fn(),
   collectPopularSearchVideos: vi.fn(),
   collectFreeVideos: vi.fn(),
+  collectDiscoveryLane: vi.fn(),
+  expanded: vi.fn(),
 }));
 
 vi.mock("@/lib/youtube-popular", () => ({ collectPopularVideos: mocks.collectPopularVideos }));
@@ -13,6 +15,8 @@ vi.mock("@/lib/youtube-popular-search", () => ({
 }));
 vi.mock("@/lib/youtube-free", () => ({ collectFreeVideos: mocks.collectFreeVideos }));
 
+vi.mock("@/lib/youtube-discovery-collector", () => ({ collectDiscoveryLane: mocks.collectDiscoveryLane }));
+vi.mock("@/lib/youtube-quota", () => ({ discoveryEnabled: () => process.env.YOUTUBE_DISCOVERY_ENABLED === "true", expandedDiscoveryEnabled: mocks.expanded }));
 import { GET } from "./route";
 
 function request(secret?: string) {
@@ -23,6 +27,9 @@ function request(secret?: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.unstubAllEnvs();
+  mocks.expanded.mockResolvedValue(false);
+  mocks.collectDiscoveryLane.mockResolvedValue({ failed: 0 });
   process.env.CRON_SECRET = "cron-test-secret";
   mocks.collectPopularVideos.mockResolvedValue({ items: 100 });
   mocks.collectPopularSearchVideos.mockResolvedValue({
@@ -36,6 +43,7 @@ beforeEach(() => {
 afterEach(() => {
   delete process.env.CRON_SECRET;
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
 });
 
 describe("daily YouTube collection cron", () => {
@@ -73,4 +81,17 @@ describe("daily YouTube collection cron", () => {
       failed: ["popularSearch"],
     });
   });
+});
+
+it("keeps one daily collection until expansion is verified", async () => {
+  vi.stubEnv("YOUTUBE_DISCOVERY_ENABLED", "true");
+  expect((await GET(request("cron-test-secret"))).status).toBe(200);
+  expect(mocks.collectDiscoveryLane.mock.calls.map(([lane])=>lane)).toEqual(["trending","views","reusable","free"]);
+  expect(mocks.collectDiscoveryLane.mock.calls.every(([,options])=>options.legacy)).toBe(true);
+  expect(mocks.collectPopularVideos).not.toHaveBeenCalled();
+});
+it("does not overlap the old daily collector and expanded schedules", async () => {
+  vi.stubEnv("YOUTUBE_DISCOVERY_ENABLED", "true"); mocks.expanded.mockResolvedValue(true);
+  expect((await GET(request("cron-test-secret"))).status).toBe(200);
+  expect(mocks.collectDiscoveryLane).not.toHaveBeenCalled();expect(mocks.collectPopularVideos).not.toHaveBeenCalled();
 });

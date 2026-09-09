@@ -1,3 +1,4 @@
+import { youtubeRequest, YoutubeQuotaError } from "@/lib/youtube-quota";
 import type { Sql } from "postgres";
 import { z } from "zod";
 import { getDb } from "@/lib/db";
@@ -55,6 +56,8 @@ export type PopularVideo = {
   viewCount: number;
   publishedAt: string;
   license: PopularVideoLicense;
+  isCurrentTrending?: boolean;
+  verifiedAt?: string;
 };
 
 export type PopularVideoResponse = {
@@ -65,6 +68,14 @@ export type PopularVideoResponse = {
   /** @deprecated Use periodCounts. Kept for older API consumers. */
   reusablePeriodCounts?: Record<PopularReusablePeriod, number>;
   nextCursor?: string;
+  version?: string;
+  date?: string | null;
+  delayed?: boolean;
+  verifiedAt?: string | null;
+  unavailableCount?: number;
+  collectionStatus?: "complete" | "partial" | "none";
+  catalogEnabled?: boolean;
+  generation?: string;
 };
 
 export type PopularCollectionCategoryResult = {
@@ -139,7 +150,7 @@ function selectThumbnail(thumbnails: Record<string, { url: string }>) {
   return Object.values(thumbnails)[0]?.url || "";
 }
 
-function normalizePage(
+export function normalizePage(
   response: z.infer<typeof videoResponseSchema>,
   category: PopularVideoSourceCategory,
   pageNumber: number,
@@ -186,7 +197,7 @@ function normalizePage(
   return videos;
 }
 
-async function requestPopularPage(
+export async function requestPopularPage(
   category: (typeof popularVideoSourceCategories)[number],
   pageToken: string | undefined,
   fetchImpl: typeof fetch,
@@ -204,8 +215,9 @@ async function requestPopularPage(
 
   let response: Response;
   try {
-    response = await fetchImpl(endpoint, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
-  } catch {
+    response = await youtubeRequest("trending", endpoint, { cache: "no-store", signal: AbortSignal.timeout(15_000) }, fetchImpl);
+  } catch (error) {
+    if (error instanceof YoutubeQuotaError) throw error;
     console.error("YouTube popular collection connection failed", { category: category.value });
     throw new YoutubePopularApiError("YouTube 인기 영상 수집에 연결하지 못했습니다.");
   }
@@ -222,7 +234,8 @@ async function requestPopularPage(
   }
   try {
     return videoResponseSchema.parse(await response.json());
-  } catch {
+  } catch (error) {
+    if (error instanceof YoutubeQuotaError) throw error;
     console.error("YouTube popular collection response was invalid", { category: category.value });
     throw new YoutubePopularApiError("YouTube 인기 영상 수집 응답을 확인하지 못했습니다.");
   }

@@ -16,6 +16,26 @@
     {
       "path": "/api/cron/billing-renewals",
       "schedule": "7 * * * *"
+    },
+    {
+      "path": "/api/cron/youtube-discovery?lane=trending",
+      "schedule": "0 */2 * * *"
+    },
+    {
+      "path": "/api/cron/youtube-discovery?lane=views",
+      "schedule": "10 8,20 * * *"
+    },
+    {
+      "path": "/api/cron/youtube-discovery?lane=reusable",
+      "schedule": "10 8,20 * * *"
+    },
+    {
+      "path": "/api/cron/youtube-discovery?lane=free",
+      "schedule": "40 8 * * *"
+    },
+    {
+      "path": "/api/cron/youtube-discovery?lane=refresh",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

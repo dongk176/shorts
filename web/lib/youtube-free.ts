@@ -1,3 +1,4 @@
+import { youtubeRequest, YoutubeQuotaError } from "@/lib/youtube-quota";
 import type { Sql } from "postgres";
 import { z } from "zod";
 import { getDb } from "@/lib/db";
@@ -8,7 +9,7 @@ import type { PopularVideo, PopularVideoResponse, PopularVideoSourceCategory } f
 const FREE_SEARCH_PAGE_SIZE = 50;
 const FREE_SEARCH_WINDOW_DAYS = 7;
 const FREE_SEARCH_REQUEST_INTERVAL_MS = 1_000;
-const FREE_SEARCH_QUERIES = [
+export const FREE_SEARCH_QUERIES = [
   "엔터테인먼트",
   "예능",
   "게임",
@@ -45,11 +46,11 @@ const searchResponseSchema = z.object({
   nextPageToken: z.string().optional(),
   items: z.array(z.object({
     id: z.object({ videoId: z.string() }),
-  })).default([]),
+  })),
 });
 
 const thumbnailSchema = z.object({ url: z.string().url() });
-const detailsResponseSchema = z.object({
+export const detailsResponseSchema = z.object({
   items: z.array(z.object({
     id: z.string(),
     snippet: z.object({
@@ -71,7 +72,7 @@ const detailsResponseSchema = z.object({
       embeddable: z.boolean().optional(),
     }),
     liveStreamingDetails: z.unknown().optional(),
-  })).default([]),
+  })),
 });
 
 const cursorSchema = z.object({
@@ -143,7 +144,7 @@ function apiKey() {
   return value;
 }
 
-async function requestFreeSearchPage(options: {
+export async function requestFreeSearchPage(options: {
   source: SearchVideoSource;
   videoLicense?: "creativeCommon" | "youtube";
   pageToken?: string;
@@ -171,35 +172,39 @@ async function requestFreeSearchPage(options: {
 
   let response: Response;
   try {
-    response = await options.fetchImpl(endpoint, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
-  } catch {
+    response = await youtubeRequest("free", endpoint, { cache: "no-store", signal: AbortSignal.timeout(15_000) }, options.fetchImpl);
+  } catch (error) {
+    if (error instanceof YoutubeQuotaError) throw error;
     console.error("YouTube free search connection failed");
     throw new YoutubeFreeApiError("YouTube 무료 소재 검색에 연결하지 못했습니다.");
   }
   if (!response.ok) {
     console.error("YouTube free search request failed", { status: response.status });
+    const body = await response.json().catch(() => null);
+    if (body?.error?.errors?.some((item: { reason?: string }) => item.reason === "invalidPageToken")) throw new InvalidSearchPageTokenError();
     throw new YoutubeFreeApiError("YouTube 무료 소재 검색 요청에 실패했습니다.");
   }
   try {
     return searchResponseSchema.parse(await response.json());
-  } catch {
+  } catch (error) {
+    if (error instanceof YoutubeQuotaError) throw error;
     console.error("YouTube free search response was invalid");
     throw new YoutubeFreeApiError("YouTube 무료 소재 검색 응답을 확인하지 못했습니다.");
   }
 }
 
-async function requestVideoDetails(videoIds: string[], fetchImpl: typeof fetch) {
+export async function requestVideoDetails(videoIds: string[], fetchImpl: typeof fetch) {
   if (!videoIds.length) return detailsResponseSchema.parse({ items: [] });
   const endpoint = new URL("https://www.googleapis.com/youtube/v3/videos");
   endpoint.searchParams.set("key", apiKey());
   endpoint.searchParams.set("part", "snippet,contentDetails,statistics,status,liveStreamingDetails");
   endpoint.searchParams.set("id", videoIds.join(","));
-  endpoint.searchParams.set("maxResults", String(FREE_SEARCH_PAGE_SIZE));
 
   let response: Response;
   try {
-    response = await fetchImpl(endpoint, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
-  } catch {
+    response = await youtubeRequest("free", endpoint, { cache: "no-store", signal: AbortSignal.timeout(15_000) }, fetchImpl);
+  } catch (error) {
+    if (error instanceof YoutubeQuotaError) throw error;
     console.error("YouTube free detail connection failed");
     throw new YoutubeFreeApiError("YouTube 무료 소재 상세 정보에 연결하지 못했습니다.");
   }
@@ -209,13 +214,14 @@ async function requestVideoDetails(videoIds: string[], fetchImpl: typeof fetch) 
   }
   try {
     return detailsResponseSchema.parse(await response.json());
-  } catch {
+  } catch (error) {
+    if (error instanceof YoutubeQuotaError) throw error;
     console.error("YouTube free detail response was invalid");
     throw new YoutubeFreeApiError("YouTube 무료 소재 상세 응답을 확인하지 못했습니다.");
   }
 }
 
-function normalizeDetails(
+export function normalizeDetails(
   videoIds: string[],
   response: z.infer<typeof detailsResponseSchema>,
   pageNumber: number,
@@ -528,4 +534,22 @@ export async function getStoredFreeVideo(videoId: string, db: Sql = getDb()) {
     limit 1
   `;
   return rows[0] ? rowToPopularVideo(rows[0] as Record<string, unknown>) : null;
+}
+
+export class InvalidSearchPageTokenError extends YoutubeFreeApiError {
+  constructor() { super("검색 페이지가 만료되었습니다."); this.name = "InvalidSearchPageTokenError"; }
+}
+
+/** Reject incomplete public metadata before making any availability or license decision. */
+export function verifiedCatalogDetails(videoIds: string[], response: z.infer<typeof detailsResponseSchema>) {
+  const items=normalizeDetails(videoIds,response,1,0);
+  const normalized=new Set(items.map(item=>item.videoId));
+  for (const item of response.items) {
+    if (!item.status.privacyStatus || (item.status.privacyStatus === 'public'
+      && (!item.snippet.liveBroadcastContent || item.snippet.liveBroadcastContent === 'none')
+      && item.liveStreamingDetails === undefined && (!normalized.has(item.id) || !item.status.license))) {
+      throw new YoutubeFreeApiError('YouTube 영상의 전체 정보를 확인하지 못했습니다.');
+    }
+  }
+  return { items, unavailableIds: videoIds.filter(id=>!normalized.has(id)) };
 }

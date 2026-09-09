@@ -1,3 +1,5 @@
+import { getDb } from "@/lib/db";
+import { catalogReadsEnabled } from "@/lib/youtube-quota";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { apiError } from "@/lib/http";
@@ -19,7 +21,9 @@ export async function POST(request: Request) {
     const session = await requireMvpSession(undefined, {
       enforcePaymentMethodRemediation: true,
     });
-    const video = input.source === "popular"
+    const catalogVideo = catalogReadsEnabled() ? (await getDb()`select video_id from shorts_mvp.youtube_catalog
+      where video_id=${input.videoId} and availability='public' and verified_at>now()-interval '30 days' limit 1`)[0] : null;
+    const video = catalogVideo ? { videoId: String(catalogVideo.videoId) } : input.source === "popular"
       ? await getStoredPopularVideo(input.videoId) || await getStoredPopularSearchVideo(input.videoId)
       : await getStoredFreeVideo(input.videoId);
     if (!video) throw new Error("인기 영상 목록에서 해당 영상을 찾을 수 없습니다. 목록을 새로고침해 주세요.");

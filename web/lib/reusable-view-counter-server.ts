@@ -164,3 +164,18 @@ export async function refreshReusableViewCounterSchedule(
     endsAt: endsAt.toISOString(),
   } satisfies ReusableViewCounterSchedule;
 }
+
+/** Canonical current CC metadata includes every discovery source, including free. */
+export async function refreshCatalogViewCounter(db: CounterSql, now: Date) {
+  const [row] = await db`select coalesce(sum((metadata->>'viewCount')::bigint),0)::bigint as total
+    from shorts_mvp.youtube_catalog where availability='public' and metadata->>'license'='creativeCommon'
+      and verified_at>clock_timestamp()-interval '30 days'`;
+  const total=Number(row.total);
+  if (!Number.isSafeInteger(total) || total<0) throw new Error("REUSABLE_VIEW_COUNTER_VALUE_OUT_OF_RANGE");
+  // License removals must also decrease the displayed counter immediately.
+  await db`insert into shorts_mvp.site_metrics(key,value,updated_at) values
+    ('reusable_views_start',${total},${now}),('reusable_views_target',${total},${now}),
+    ('reusable_views_started_at_ms',${now.getTime()},${now}),
+    ('reusable_views_ends_at_ms',${now.getTime()+12*3_600_000},${now})
+    on conflict(key) do update set value=excluded.value,updated_at=excluded.updated_at`;
+}

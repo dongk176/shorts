@@ -1,3 +1,4 @@
+import { AdminYoutubeDiscovery } from "./admin-youtube-discovery";
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { requireAdminUser } from "@/lib/admin";
@@ -888,6 +889,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
           {tossBillingRuntimeState ? (
             <AdminTossBillingSettings initialState={tossBillingRuntimeState} />
           ) : null}
+          <AdminYoutubeDiscovery />
           <AdminRuntimeSettings
             initialEnabled={Boolean(runtimeSettingRows[0]?.enabled)}
             environmentEnabled={onboardingWelcomeGrantEnabled()}

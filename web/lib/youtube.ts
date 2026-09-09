@@ -1,3 +1,5 @@
+import { recordCatalogAnalysisStatus } from "@/lib/youtube-catalog";
+import { youtubeRequest, discoveryEnabled, youtubeRequestContextDb } from "@/lib/youtube-quota";
 import { z } from "zod";
 import { expectedShortCount, type YoutubeCreationBlockCode } from "@/lib/contracts";
 import { assertSupportedSourceVideoDuration } from "@/lib/source-video";
@@ -55,6 +57,7 @@ const responseSchema = z.object({
     }),
     status: z.object({
       uploadStatus: z.string(),
+      license: z.string().optional(),
       privacyStatus: z.string(),
       embeddable: z.boolean(),
       failureReason: z.string().optional(),
@@ -84,7 +87,7 @@ async function getChannelThumbnailUrl(channelId: string | undefined, apiKey: str
   endpoint.searchParams.set("id", channelId);
   endpoint.searchParams.set("key", apiKey);
   try {
-    const response = await fetch(endpoint, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
+    const response = await youtubeRequest("analysis", endpoint, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
     if (!response.ok) return null;
     const parsed = channelResponseSchema.parse(await response.json());
     const thumbnailUrl = selectYoutubeThumbnail(parsed.items[0]?.snippet.thumbnails || {});
@@ -174,11 +177,12 @@ export async function analyzeYoutubeUrl(
   endpoint.searchParams.set("part", "snippet,contentDetails,status,liveStreamingDetails");
   endpoint.searchParams.set("id", videoId);
   endpoint.searchParams.set("key", apiKey);
-  const response = await fetch(endpoint, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
+  const response = await youtubeRequest("analysis", endpoint, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
   if (!response.ok) throw new Error("YouTube 영상 정보를 확인하지 못했습니다.");
   const parsed = responseSchema.parse(await response.json());
   const item = parsed.items[0];
   if (!item) {
+    if (discoveryEnabled()) await recordCatalogAnalysisStatus(youtubeRequestContextDb(), videoId, null);
     throw new Error(UNAVAILABLE_VIDEO_MESSAGE);
   }
   const durationSeconds = parseIsoDuration(item.contentDetails.duration);
@@ -189,6 +193,7 @@ export async function analyzeYoutubeUrl(
     sourceRangeSelectionEnabled: true,
   });
   const availability = getYoutubeCreationAvailability(item, options);
+  if (discoveryEnabled() && item.status) await recordCatalogAnalysisStatus(youtubeRequestContextDb(), videoId, item.status);
   const channelThumbnailUrl = await getChannelThumbnailUrl(item.snippet.channelId, apiKey);
   return {
     videoId,

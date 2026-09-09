@@ -1,3 +1,6 @@
+import { catalogReadsEnabled } from "@/lib/youtube-quota";
+import { CatalogCursorExpiredError, getCatalogVideos } from "@/lib/youtube-catalog";
+import { validKstDate } from "@/lib/youtube-discovery-time";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getBillingSummary } from "@/lib/billing";
@@ -32,6 +35,7 @@ const querySchema = z.object({
   longForm: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
   korean: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
   period: z.enum(popularDiscoveryPeriods).default("all"),
+  date: z.string().refine(value => validKstDate(value)).optional(),
   cursor: z.string().max(500).optional(),
   interactionId: z.string().uuid().optional(),
 });
@@ -47,16 +51,17 @@ export async function GET(request: Request) {
     period: url.searchParams.get("period")
       || url.searchParams.get("reusablePeriod")
       || undefined,
+    date: url.searchParams.get("date") || undefined,
     cursor: url.searchParams.get("cursor") || undefined,
     interactionId: url.searchParams.get("interactionId") || undefined,
   });
-  if (!query.success) {
+  if (!query.success || (query.data.date && query.data.type !== "trending")) {
     return NextResponse.json({ detail: "지원하지 않는 인기 영상 필터입니다." }, { status: 400 });
   }
   try {
     const db = getDb();
     let paidFilterUserId: string | null = null;
-    const usesPaidFeature = Boolean(query.data.cursor)
+    const usesPaidFeature = Boolean(query.data.date) || Boolean(query.data.cursor)
       || query.data.type !== "trending"
       || query.data.category !== "all"
       || query.data.reusable
@@ -77,7 +82,11 @@ export async function GET(request: Request) {
     const reusableOnly = query.data.type === "reusable" || query.data.reusable;
     const effectiveType = query.data.type === "reusable" ? "views" : query.data.type;
     let result;
-    if (query.data.type === "reusable") {
+    if (catalogReadsEnabled()) {
+      result = await getCatalogVideos(query.data, db);
+    } else if (query.data.date) {
+      return NextResponse.json({ detail: "날짜별 수집 기록을 준비 중입니다." }, { status: 503 });
+    } else if (query.data.type === "reusable") {
       try {
         result = await getReusablePopularVideos(
           query.data.category,
@@ -148,12 +157,14 @@ export async function GET(request: Request) {
         koreanOnly: query.data.korean,
         discoveryPeriod: query.data.period,
         resultCount: result.items.length,
+        ...(query.data.date ? { selectedDate: query.data.date } : {}),
       });
     }
     const response = NextResponse.json(result);
     response.headers.set("Cache-Control", "private, no-store");
     return response;
   } catch (error) {
+    if (error instanceof CatalogCursorExpiredError) return NextResponse.json({ detail: error.message, code: "CURSOR_EXPIRED" }, { status: 410 });
     if (error instanceof HttpError) return apiError(error);
     console.error("popular_videos_load_failed", {
       errorName: error instanceof Error ? error.name : "UnknownError",

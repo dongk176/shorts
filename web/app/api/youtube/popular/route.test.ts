@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => ({
   getReusablePopularVideos: vi.fn(),
   getBillingSummary: vi.fn(),
   getDb: vi.fn(),
+  getCatalogVideos: vi.fn(),
+  getTrendingCalendar: vi.fn(),
   authenticatedSession: vi.fn(),
   hasDirectPopularFilterAccess: vi.fn(),
   managedPopularFilterOverride: vi.fn(),
@@ -39,11 +41,18 @@ vi.mock("@/lib/session", () => ({
   requireAuthenticatedMvpSession: mocks.authenticatedSession,
 }));
 
+vi.mock("@/lib/youtube-catalog", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/youtube-catalog")>(),
+  getCatalogVideos: mocks.getCatalogVideos, getTrendingCalendar: mocks.getTrendingCalendar,
+}));
+import { CatalogCursorExpiredError } from "@/lib/youtube-catalog";
+import { GET as calendarGET } from "./calendar/route";
 import { HttpError } from "@/lib/http";
 import { GET } from "./route";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.unstubAllEnvs();
   mocks.getDb.mockReturnValue("database");
   mocks.authenticatedSession.mockResolvedValue({ userId: "user-a" });
   mocks.hasDirectPopularFilterAccess.mockResolvedValue(false);
@@ -371,5 +380,30 @@ describe("popular YouTube API route", () => {
       errorCode: "POPULAR_FILTER_ENTITLEMENT_SOURCE_MISSING",
     });
     consoleError.mockRestore();
+  });
+});
+
+describe("catalog calendar API access", () => {
+  beforeEach(() => { vi.stubEnv("YOUTUBE_DISCOVERY_ENABLED", "true"); vi.stubEnv("YOUTUBE_CATALOG_READS_ENABLED", "true"); });
+  it("records paid date selection without a YouTube request", async () => {
+    mocks.getCatalogVideos.mockResolvedValue({items:[],updatedAt:"",date:"2026-08-01"});
+    const result=await GET(new Request("http://localhost/api/youtube/popular?type=trending&date=2026-08-01"));
+    expect(result.status).toBe(200);expect(mocks.authenticatedSession).toHaveBeenCalled();
+    expect(mocks.recordPopularFilterUsage).toHaveBeenCalledWith("database",expect.objectContaining({selectedDate:"2026-08-01"}));
+    expect(mocks.getPopularVideos).not.toHaveBeenCalled();
+  });
+  it("requires the same paid entitlement for monthly records", async () => {
+    mocks.getBillingSummary.mockResolvedValue({activeProducts:[]});
+    expect((await calendarGET(new Request("http://localhost/api/youtube/popular/calendar?month=2026-08"))).status).toBe(402);
+    expect(mocks.getTrendingCalendar).not.toHaveBeenCalled();
+  });
+  it("rejects future and impossible dates", async () => {
+    for(const date of ["2999-01-01","2026-02-30"]) expect((await GET(new Request(`http://localhost/api/youtube/popular?type=trending&date=${date}`))).status).toBe(400);
+    expect(mocks.getCatalogVideos).not.toHaveBeenCalled();
+  });
+  it("returns an explicit expired cursor response", async () => {
+    mocks.getCatalogVideos.mockRejectedValue(new CatalogCursorExpiredError());
+    const result=await GET(new Request("http://localhost/api/youtube/popular?type=views&cursor=expired"));
+    expect(result.status).toBe(410);expect(await result.json()).toMatchObject({code:"CURSOR_EXPIRED"});
   });
 });

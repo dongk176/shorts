@@ -19,7 +19,7 @@ import { refreshReusableViewCounterSchedule } from "@/lib/reusable-view-counter-
 
 export const POPULAR_SEARCH_PAGE_LIMIT = 40;
 export const POPULAR_REUSABLE_SEARCH_PAGE_LIMIT = 10;
-const POPULAR_SEARCH_QUERIES = [
+export const POPULAR_SEARCH_QUERIES = [
   "엔터테인먼트",
   "예능",
   "게임",
