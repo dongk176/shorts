@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Sql, TransactionSql } from "postgres";
+import type { CatalogVisibility } from "@/lib/youtube-catalog-visibility";
 import { getDb } from "@/lib/db";
 import type {
   PopularVideo,
@@ -70,6 +71,9 @@ export async function saveCatalogPage(
       trending_rank=case when excluded.last_trending_at>=youtube_catalog.last_trending_at or youtube_catalog.last_trending_at is null
         then coalesce(excluded.trending_rank,youtube_catalog.trending_rank) else youtube_catalog.trending_rank end`;
   if (input.trending) {
+    if (input.runId)
+      await db`insert into shorts_mvp.youtube_collection_run_days(run_id,day)
+        values(${input.runId},${kstDate(input.observedAt)}) on conflict do nothing`;
     await db`insert into shorts_mvp.youtube_trending_days(day,catalog_id,first_seen_at,last_seen_at)
       select ${kstDate(input.observedAt)}::date,unnest(${records.map((r) => r.id)}::text[]),${input.observedAt},${input.observedAt}
       on conflict(day,catalog_id) do update set
@@ -84,6 +88,7 @@ export async function saveCatalogPage(
 export async function catalogStatus(
   db: CatalogSql = getDb(),
   type: PopularVideoType = "trending",
+  now = new Date(),
 ) {
   const [row] = await db`select
     (select max(finished_at) from shorts_mvp.youtube_collection_runs where status='success' and ((${type}='trending' and lane='trending') or (${type}='views' and lane='views') or (${type}='reusable' and lane<>'refresh'))) as collected_at,
@@ -99,7 +104,8 @@ export async function catalogStatus(
     updatedAt,
     verifiedAt,
     generation: `${updatedAt || ""}/${row?.changedAt ? new Date(row.changedAt).toISOString() : ""}`,
-    delayed: !updatedAt || Date.now() - Date.parse(updatedAt) >= 3 * 3_600_000,
+    delayed:
+      !updatedAt || now.getTime() - Date.parse(updatedAt) >= 3 * 3_600_000,
   };
 }
 
@@ -108,6 +114,37 @@ export class CatalogCursorExpiredError extends Error {
     super("목록 유효기간이 지나 첫 페이지를 다시 불러옵니다.");
     this.name = "CatalogCursorExpiredError";
   }
+}
+
+/** DB-only checks for cards already on screen. Never expose unavailable metadata. */
+export async function getCatalogVisibility(
+  videoIds: string[],
+  db: CatalogSql = getDb(),
+  now = new Date(),
+): Promise<CatalogVisibility[]> {
+  const ids = [...new Set(videoIds)];
+  if (ids.length > 200 || ids.some((id) => !/^[A-Za-z0-9_-]{11}$/.test(id)))
+    throw new Error("INVALID_VISIBILITY_IDS");
+  if (!ids.length) return [];
+  const rows = await db`select id,metadata->>'license' as license,
+    (availability='public' and metadata is not null and video_id is not null and verified_at>${new Date(now.getTime() - 30 * DAY_MS)}) as available,
+    coalesce(last_trending_at>${new Date(now.getTime() - DAY_MS)},false) as recent_trending,
+    exists(select 1 from shorts_mvp.youtube_trending_run_items i where i.catalog_id=c.id
+      and i.run_id=(select id from shorts_mvp.youtube_collection_runs where lane='trending' and status='success' order by finished_at desc limit 1)) as current_trending
+    from shorts_mvp.youtube_catalog c where id in ${db(ids.map(catalogId))}`;
+  const byId = new Map(rows.map((row) => [String(row.id), row]));
+  return ids.map((videoId) => {
+    const row = byId.get(catalogId(videoId));
+    const available = Boolean(row?.available);
+    return {
+      videoId,
+      available,
+      license:
+        available && row ? (row.license as "youtube" | "creativeCommon") : null,
+      recentTrending: Boolean(row?.recentTrending),
+      currentTrending: available && Boolean(row?.currentTrending),
+    };
+  });
 }
 export type CatalogFilters = {
   type: PopularVideoType;
@@ -142,7 +179,7 @@ export async function getCatalogVideos(
     filters.type === "trending" ? null : discoverySince(filters.period, now);
   const today = discoverySince("today", now)!;
   const week = discoverySince("week", now)!;
-  const state = await catalogStatus(db, filters.type);
+  const state = await catalogStatus(db, filters.type, now);
   const [currentRun] =
     await db`select id from shorts_mvp.youtube_collection_runs
     where lane='trending' and status='success' order by finished_at desc limit 1`;
@@ -167,7 +204,9 @@ export async function getCatalogVideos(
       cursor = JSON.parse(Buffer.from(filters.cursor, "base64url").toString());
       if (
         typeof cursor.id !== "string" ||
-        !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(cursor.id) ||
+        !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(
+          cursor.id,
+        ) ||
         !Number.isSafeInteger(cursor.offset) ||
         cursor.offset < 0
       )
@@ -272,12 +311,18 @@ export async function getTrendingCalendar(
   const rows = await db`with days as (
     select d::date as day from generate_series(${`${month}-01`}::date,
       least((${`${month}-01`}::date+interval '1 month' - interval '1 day')::date,${kstDate(now)}::date),interval '1 day') d
+    ), run_days as (
+      select id as run_id,(started_at at time zone 'Asia/Seoul')::date as day
+      from shorts_mvp.youtube_collection_runs where lane='trending'
+        and started_at>=(${`${month}-01`}::date::timestamp at time zone 'Asia/Seoul')
+        and started_at<((${`${month}-01`}::date+interval '1 month') at time zone 'Asia/Seoul')
+      union
+      select run_id,day from shorts_mvp.youtube_collection_run_days
+        where day>=${`${month}-01`}::date and day<${`${month}-01`}::date+interval '1 month'
     ), records as (
-      select (started_at at time zone 'Asia/Seoul')::date as day,count(*)::int as attempts,
+      select d.day,count(*)::int as attempts,
         count(*) filter(where status='success')::int as successes,
-        bool_and(legacy) as legacy from shorts_mvp.youtube_collection_runs where lane='trending'
-          and started_at>=(${`${month}-01`}::date::timestamp at time zone 'Asia/Seoul')
-          and started_at<((${`${month}-01`}::date+interval '1 month') at time zone 'Asia/Seoul')
+        bool_and(legacy) as legacy from run_days d join shorts_mvp.youtube_collection_runs r on r.id=d.run_id where lane='trending'
         group by 1
     ), members as (
       select d.day,count(*)::int as total,
@@ -311,11 +356,12 @@ export async function getTrendingCalendar(
         legacy: Boolean(row.legacy),
         totalCount: Number(row.total),
         unavailableCount: Number(row.unavailable),
-        status: !row.attempts
-          ? ("none" as const)
-          : Number(row.successes) < expected
-            ? ("partial" as const)
-            : ("complete" as const),
+        status:
+          !row.attempts && !row.total
+            ? ("none" as const)
+            : !row.attempts || Number(row.successes) < expected
+              ? ("partial" as const)
+              : ("complete" as const),
       };
     }),
   };
@@ -324,8 +370,17 @@ export async function getTrendingCalendar(
 export async function purgeExpiredCatalog(db: Sql = getDb(), now = new Date()) {
   await db.begin(async (tx) => {
     // Internal hash membership survives; expired API identifiers and payload do not.
-    await tx`update shorts_mvp.youtube_catalog set metadata=null,video_id=null,availability='expired',trending_rank=null,updated_at=clock_timestamp()
-      where verified_at<=${new Date(now.getTime() - 30 * DAY_MS)} and metadata is not null`;
+    const expired =
+      await tx`update shorts_mvp.youtube_catalog set metadata=null,video_id=null,availability='expired',trending_rank=null,updated_at=clock_timestamp()
+      where verified_at<=${new Date(now.getTime() - 30 * DAY_MS)} and metadata is not null returning id`;
+    if (expired.length) {
+      const { refreshCatalogViewCounter } = await import(
+        "@/lib/reusable-view-counter-server"
+      );
+      await tx
+        .savepoint((counterDb) => refreshCatalogViewCounter(counterDb, now))
+        .catch(() => console.error("youtube_catalog_counter_refresh_failed"));
+    }
     await tx`update shorts_mvp.youtube_catalog set trending_rank=null where last_trending_at<${new Date(now.getTime() - DAY_MS)}`;
     await tx`update shorts_mvp.youtube_search_positions set page_token=null where updated_at<${new Date(now.getTime() - 25 * DAY_MS)}`;
     await tx`delete from shorts_mvp.youtube_list_versions where expires_at<=${now}`;

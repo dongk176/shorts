@@ -1,5 +1,11 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import type { SiteLocale } from "@/lib/i18n/config";
 import { kstDate } from "@/lib/youtube-discovery-time";
 
@@ -89,10 +95,39 @@ export function TrendingDateFilter({
   const [error, setError] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
+  const popup = useRef<HTMLDivElement>(null);
+  const [popupStyle, setPopupStyle] = useState<CSSProperties>({});
   const close = () => {
     setOpen(false);
     trigger.current?.focus();
   };
+  useLayoutEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const anchor = root.current?.getBoundingClientRect();
+      if (!anchor || !popup.current) return;
+      if (window.innerWidth < 768) {
+        setPopupStyle({});
+        return;
+      }
+      const below = window.innerHeight - anchor.bottom - 28;
+      const above = anchor.top - 28;
+      const openAbove = below < popup.current.scrollHeight && above > below;
+      setPopupStyle({
+        top: openAbove ? "auto" : "calc(100% + 0.5rem)",
+        bottom: openAbove ? "calc(100% + 0.5rem)" : "auto",
+        marginTop: 0,
+        maxHeight: Math.max(120, openAbove ? above : below),
+      });
+    };
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open, month, days, error]);
   useEffect(() => {
     if (!open || !canUseFilters) return;
     const controller = new AbortController();
@@ -170,10 +205,12 @@ export function TrendingDateFilter({
       </button>
       {open && canUseFilters && (
         <div
+          ref={popup}
           id="trending-calendar"
           role="dialog"
           aria-label={copy.choose}
-          className="absolute right-0 top-full z-50 mt-2 w-[min(21rem,calc(100vw-2.5rem))] rounded-2xl border border-white/15 bg-[#1d2025] p-4 text-white shadow-2xl"
+          style={popupStyle}
+          className="fixed bottom-5 right-5 z-50 max-h-[calc(100dvh-2.5rem)] w-[min(21rem,calc(100vw-2.5rem))] overflow-y-auto rounded-2xl border border-white/15 bg-[#1d2025] p-4 text-white shadow-2xl md:absolute md:bottom-auto md:right-0 md:top-full md:mt-2"
         >
           <div className="flex items-center justify-between gap-2">
             <button

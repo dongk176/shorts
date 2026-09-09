@@ -43,6 +43,13 @@ create table shorts_mvp.youtube_collection_runs (
 );
 create index youtube_collection_runs_latest on shorts_mvp.youtube_collection_runs(lane,finished_at desc);
 create index youtube_collection_runs_calendar on shorts_mvp.youtube_collection_runs(lane,started_at);
+-- A run may cross KST midnight. Keep its actual observation dates permanently.
+create table shorts_mvp.youtube_collection_run_days (
+  run_id uuid not null references shorts_mvp.youtube_collection_runs(id),
+  day date not null,
+  primary key(run_id,day)
+);
+create index youtube_collection_run_days_day on shorts_mvp.youtube_collection_run_days(day,run_id);
 create table shorts_mvp.youtube_trending_days (
   day date not null,
   catalog_id text not null references shorts_mvp.youtube_catalog(id),
@@ -124,6 +131,7 @@ revoke all on function shorts_mvp.reserve_youtube_quota(text,text,text,integer) 
 -- Server SQL only: never expose catalog, fingerprints, or quota controls through PostgREST.
 alter table shorts_mvp.youtube_catalog enable row level security;
 alter table shorts_mvp.youtube_collection_runs enable row level security;
+alter table shorts_mvp.youtube_collection_run_days enable row level security;
 alter table shorts_mvp.youtube_trending_days enable row level security;
 alter table shorts_mvp.youtube_trending_run_items enable row level security;
 alter table shorts_mvp.youtube_search_positions enable row level security;

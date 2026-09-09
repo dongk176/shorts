@@ -2,6 +2,7 @@ import type { Sql } from "postgres";
 import { getDb } from "@/lib/db";
 import {
   catalogId,
+  markCatalogUnavailable,
   saveCatalogPage,
   type CatalogVideo,
 } from "@/lib/youtube-catalog";
@@ -73,29 +74,29 @@ export async function backfillCatalogBatch(
             const internalId = catalogId(id);
             const known = existing.get(internalId);
             const observedAt = new Date(row.collectedAt);
-            const item =
-              known && new Date(known.verifiedAt) > observedAt
+            const rechecked = stale.includes(id);
+            const useKnown = known && new Date(known.verifiedAt) > observedAt;
+            const item = rechecked
+              ? freshById.get(id)
+              : useKnown
                 ? (known.metadata as CatalogVideo | null)
-                : stale.includes(id)
-                  ? freshById.get(id)
-                  : ({
-                      videoId: id,
-                      category: row.category,
-                      title: row.title,
-                      channelName: row.channelName,
-                      thumbnailUrl: row.thumbnailUrl,
-                      durationSeconds: Number(row.durationSeconds),
-                      viewCount: Number(row.viewCount),
-                      publishedAt: new Date(row.publishedAt).toISOString(),
-                      license: row.license,
-                      isKorean: row.isKorean,
-                    } as CatalogVideo);
-            const verifiedAt =
-              known && new Date(known.verifiedAt) > observedAt
+                : ({
+                    videoId: id,
+                    category: row.category,
+                    title: row.title,
+                    channelName: row.channelName,
+                    thumbnailUrl: row.thumbnailUrl,
+                    durationSeconds: Number(row.durationSeconds),
+                    viewCount: Number(row.viewCount),
+                    publishedAt: new Date(row.publishedAt).toISOString(),
+                    license: row.license,
+                    isKorean: row.isKorean,
+                  } as CatalogVideo);
+            const verifiedAt = rechecked
+              ? now
+              : useKnown
                 ? new Date(known.verifiedAt)
-                : stale.includes(id)
-                  ? now
-                  : observedAt;
+                : observedAt;
             if (item)
               await saveCatalogPage(tx, [item], {
                 runId: String(newRun.id),
@@ -107,10 +108,14 @@ export async function backfillCatalogBatch(
               await tx`insert into shorts_mvp.youtube_catalog(id,first_discovered_at,verified_at,availability)
                 values(${internalId},${observedAt},${verifiedAt},'unavailable')
                 on conflict(id) do update set first_discovered_at=least(youtube_catalog.first_discovered_at,excluded.first_discovered_at)`;
-              if (source.lane === "trending")
+              await markCatalogUnavailable(tx, [id], verifiedAt);
+              if (source.lane === "trending") {
+                await tx`insert into shorts_mvp.youtube_collection_run_days(run_id,day)
+                  values(${newRun.id},${kstDate(observedAt)}) on conflict do nothing`;
                 await tx`insert into shorts_mvp.youtube_trending_days(day,catalog_id,first_seen_at,last_seen_at)
                 values(${kstDate(observedAt)},${internalId},${observedAt},${observedAt}) on conflict(day,catalog_id) do update set
                   first_seen_at=least(youtube_trending_days.first_seen_at,excluded.first_seen_at),last_seen_at=greatest(youtube_trending_days.last_seen_at,excluded.last_seen_at)`;
+              }
             }
           }
           await tx`update shorts_mvp.youtube_catalog_imports set next_offset=greatest(next_offset,${Number(run.nextOffset) + offset + batch.length})
@@ -176,7 +181,9 @@ export async function getCatalogBackfillReadiness(db: Sql = getDb()) {
     await db`select count(*)::int as missing from shorts_mvp.popular_video_items i
     join shorts_mvp.popular_video_runs r on r.id=i.run_id and r.status='ready'
     where not exists(select 1 from shorts_mvp.youtube_trending_days d
-      where d.day=(i.collected_at at time zone 'Asia/Seoul')::date and d.catalog_id=encode(sha256(convert_to(i.video_id,'UTF8')),'hex'))`;
+      where d.day=(i.collected_at at time zone 'Asia/Seoul')::date and d.catalog_id=encode(sha256(convert_to(i.video_id,'UTF8')),'hex'))
+      or not exists(select 1 from shorts_mvp.youtube_collection_run_days d
+        where d.run_id=r.id and d.day=(i.collected_at at time zone 'Asia/Seoul')::date)`;
   const [catalog] = await db`select count(*)::int as total,
     count(*) filter(where metadata is not null and verified_at<=clock_timestamp()-interval '30 days')::int as expired
     from shorts_mvp.youtube_catalog`;

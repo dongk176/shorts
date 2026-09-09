@@ -180,7 +180,8 @@ export async function collectDiscoveryLane(
   const db = options.db || getDb();
   const fetchImpl = options.fetchImpl || fetch;
   const scheduledAt = options.scheduledAt || discoverySlot(lane);
-  const runId = await claimRun(db, lane, scheduledAt, Boolean(options.legacy));
+  // Daily cadence still creates a new run. Only backfilled old runs are legacy.
+  const runId = await claimRun(db, lane, scheduledAt, false);
   if (!runId) return { skipped: true, lane };
   const deadline = Date.now() + (options.maxDurationMs ?? 230_000);
   let failed = 0;

@@ -39,6 +39,8 @@ export async function GET() {
         enabled: true,
         backfill,
         reads: catalogReadsEnabled(),
+        legacyCleanupEnabled:
+          process.env.YOUTUBE_LEGACY_SNAPSHOT_CLEANUP_ENABLED === "true",
         expanded,
         project,
         usage,

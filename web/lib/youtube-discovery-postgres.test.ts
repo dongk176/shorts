@@ -17,6 +17,7 @@ import {
   getCatalogVideos,
   getTrendingCalendar,
   purgeExpiredCatalog,
+  getCatalogVisibility,
   CatalogCursorExpiredError,
   type CatalogVideo,
   type CatalogFilters,
@@ -184,6 +185,148 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
       await db`insert into shorts_mvp.youtube_collection_runs(lane,scheduled_at,started_at,finished_at,status,legacy) values('trending',${at},${at},${at},${status},${legacy}) returning id`;
     return String(r.id);
   }
+
+  async function legacyVideo(id: string, at: Date) {
+    const runId = randomUUID();
+    await db`insert into shorts_mvp.popular_video_runs(id,snapshot_date,status,started_at,completed_at,page_count,item_count)
+      values(${runId},${kstDate(at)},'ready',${at},${at},1,1)`;
+    await db`insert into shorts_mvp.popular_video_items(run_id,video_id,category,category_rank,page_number,title,channel_name,thumbnail_url,duration_seconds,view_count,published_at,license,is_korean,collected_at)
+      values(${runId},${id},'entertainment',1,1,'Old snapshot','channel','https://example.com/old.jpg',600,1,${at},'youtube',true,${at})`;
+    return runId;
+  }
+
+  it("does not classify newly collected daily compatibility snapshots as historical imports", async () => {
+    const result = await collectDiscoveryLane("views", {
+      db,
+      legacy: true,
+      fetchImpl: vi.fn(async () => new Response(JSON.stringify({ items: [] }))),
+    });
+    expect(result.failed).toBe(0);
+    const [record] =
+      await db`select legacy from shorts_mvp.youtube_collection_runs where id=${result.runId!}`;
+    expect(record.legacy).toBe(false);
+    expect(await backfillCatalogBatch(db)).toEqual({ done: true });
+  });
+
+  it("uses the new API verification when both legacy and canonical metadata have expired", async () => {
+    const old = new Date(Date.now() - 35 * DAY_MS);
+    await legacyVideo("stale000001", old);
+    await saveCatalogPage(
+      db,
+      [fixture("stale000001", { title: "Still stale" })],
+      {
+        observedAt: new Date(Date.now() - 31 * DAY_MS),
+      },
+    );
+    const fetched = {
+      ...youtubeItem("stale000001"),
+      snippet: {
+        ...youtubeItem("stale000001").snippet,
+        title: "New verification",
+      },
+    };
+    await backfillCatalogBatch(
+      db,
+      vi.fn(async () => new Response(JSON.stringify({ items: [fetched] }))),
+    );
+    const [record] =
+      await db`select metadata,first_discovered_at,verified_at from shorts_mvp.youtube_catalog`;
+    expect(record.metadata.title).toBe("New verification");
+    expect(new Date(record.verifiedAt).getTime()).toBeGreaterThan(
+      Date.now() - 60_000,
+    );
+    expect(new Date(record.firstDiscoveredAt).toISOString()).toBe(
+      old.toISOString(),
+    );
+  });
+
+  it("records a confirmed unavailable backfill result without losing the historical membership", async () => {
+    const old = new Date(Date.now() - 35 * DAY_MS);
+    await legacyVideo("gone0000001", old);
+    await saveCatalogPage(db, [fixture("gone0000001")], {
+      observedAt: new Date(Date.now() - 31 * DAY_MS),
+    });
+    await backfillCatalogBatch(
+      db,
+      vi.fn(async () => new Response(JSON.stringify({ items: [] }))),
+    );
+    const [record] =
+      await db`select metadata,availability,first_discovered_at from shorts_mvp.youtube_catalog`;
+    expect(record.metadata).toBeNull();
+    expect(record.availability).toBe("unavailable");
+    expect(new Date(record.firstDiscoveredAt).toISOString()).toBe(
+      old.toISOString(),
+    );
+    expect(
+      (await getTrendingCalendar(kstDate(old).slice(0, 7), db)).days.find(
+        (d) => d.date === kstDate(old),
+      ),
+    ).toMatchObject({ totalCount: 1, unavailableCount: 1 });
+  });
+
+  it("keeps calendar collection records on the observed day when a run crosses KST midnight", async () => {
+    const before = new Date("2026-08-31T14:59:00Z"),
+      after = new Date("2026-08-31T15:01:00Z");
+    const runId = await run(before, "success", true);
+    await saveCatalogPage(db, [fixture("midnight001")], {
+      runId,
+      trending: true,
+      observedAt: after,
+    });
+    const calendar = await getTrendingCalendar(
+      "2026-09",
+      db,
+      new Date("2026-09-02T00:00:00Z"),
+    );
+    expect(calendar.days[0]).toMatchObject({
+      date: "2026-09-01",
+      collections: 1,
+      totalCount: 1,
+      status: "complete",
+      legacy: true,
+    });
+  });
+
+  it("checks current visibility from the DB without leaking expired or missing metadata", async () => {
+    const now = new Date();
+    await saveCatalogPage(
+      db,
+      [fixture("visible0001", { license: "creativeCommon" })],
+      { observedAt: now, trending: true },
+    );
+    await saveCatalogPage(db, [fixture("expired0001")], {
+      observedAt: new Date(now.getTime() - 31 * DAY_MS),
+    });
+    expect(
+      await getCatalogVisibility(
+        ["visible0001", "expired0001", "missing0001"],
+        db,
+        now,
+      ),
+    ).toEqual([
+      {
+        videoId: "visible0001",
+        available: true,
+        license: "creativeCommon",
+        recentTrending: true,
+        currentTrending: false,
+      },
+      {
+        videoId: "expired0001",
+        available: false,
+        license: null,
+        recentTrending: false,
+        currentTrending: false,
+      },
+      {
+        videoId: "missing0001",
+        available: false,
+        license: null,
+        recentTrending: false,
+        currentTrending: false,
+      },
+    ]);
+  });
 
   it("builds and reuses a list version for a 50000-video catalog", async () => {
     await db`insert into shorts_mvp.youtube_catalog(id,video_id,metadata,first_discovered_at,verified_at)
@@ -531,11 +674,21 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
   it("purges all stale API fields after 30 days while retaining unidentifiable calendar membership", async () => {
     const now = new Date();
     const old = new Date(now.getTime() - 31 * DAY_MS);
-    await saveCatalogPage(db, [fixture("expired0001")], {
-      observedAt: old,
-      trending: true,
-    });
+    await saveCatalogPage(
+      db,
+      [fixture("expired0001", { license: "creativeCommon" })],
+      {
+        observedAt: old,
+        trending: true,
+      },
+    );
+    await db`insert into shorts_mvp.site_metrics(key,value,updated_at) values('reusable_views_target',100,${old}) on conflict(key) do update set value=100`;
     await purgeExpiredCatalog(db, now);
+    expect(
+      (
+        await db`select value from shorts_mvp.site_metrics where key='reusable_views_target'`
+      )[0].value,
+    ).toBe("0");
     const [row] =
       await db`select video_id,metadata,availability from shorts_mvp.youtube_catalog`;
     expect(row).toMatchObject({
