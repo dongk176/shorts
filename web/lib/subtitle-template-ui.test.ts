@@ -44,10 +44,10 @@ describe("subtitle template UI isolation", () => {
       .toBeLessThan(shortsAppSource.indexOf("remainingFavoriteCards.map(renderFavoriteCard)"));
     expect(shortsAppSource).not.toContain('id === "basic"');
     expect(shortsAppSource).toContain("SUBTITLE_TEMPLATE_BRAND_COLOR");
-    expect(shortsAppSource).toContain("canvasCqw(snapshot.title.fontSizePx)");
+    expect(shortsAppSource).toContain("builtInSubtitlePresentation({");
     expect(shortsAppSource).toContain("canvasCqw(snapshot.font.sizePx)");
     expect(shortsAppSource).toContain("canvasCqw(snapshot.wordGapPx)");
-    expect(shortsAppSource).toContain("snapshot.title.secondLineColor");
+    expect(shortsAppSource).toContain("accentColor={config.title.accentColor}");
     expect(shortsAppSource).toContain("brandColorSelectionEnabled");
     expect(shortsAppSource).toContain("<BrandColorPicker");
     expect(shortsAppSource).toContain("disabled={Boolean(customTemplateId)}");

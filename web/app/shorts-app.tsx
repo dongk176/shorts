@@ -67,8 +67,9 @@ import type {
   YoutubeAnalysis,
 } from "@/lib/contracts";
 import { expectedShortCount, videoAspectRatioOptions } from "@/lib/contracts";
+import { builtInSubtitlePresentation } from "@/lib/built-in-subtitle-presentation";
+import { videoAspectRatioForTemplate } from "@/lib/video-aspect-ratio-selection";
 import { presetTemplateDisplayName } from "@/lib/admin-template-copy";
-import { contrastingTitleTextColor } from "@/lib/brand-color-contrast";
 import {
   CAPTION_ASS_PREVIEW_FONT_SCALE,
   captionRenderSpecForEditor,
@@ -1478,16 +1479,16 @@ function SubtitleTemplatePreview({
   fullVerticalTitleBackgroundEnabled: boolean;
   fontId?: EditorFontId;
 }) {
-  const snapshot = subtitleTemplateStyleSnapshot(
+  const { config, style: snapshot } = useMemo(() => builtInSubtitlePresentation({
     id,
     videoAspectRatio,
     brandColor,
     captionPlacement,
     fontId,
-    fullVerticalTitleBackgroundEnabled
+    timingLeadFrames: fullVerticalTitleBackgroundEnabled
       ? SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES
       : STABLE_SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES,
-  );
+  }), [brandColor, captionPlacement, fontId, fullVerticalTitleBackgroundEnabled, id, videoAspectRatio]);
   const layout = snapshot.layout;
   const canvasCqw = (pixels: number) => `${pixels / 10.8}cqw`;
   const rectStyle = (rect: { x: number; y: number; width: number; height: number }) => ({
@@ -1500,40 +1501,25 @@ function SubtitleTemplatePreview({
     WebkitTextStroke: `${canvasCqw(snapshot.outlinePx)} #080808`,
     paintOrder: "stroke fill",
   } satisfies CSSProperties;
-  const titleBackground = fullVerticalTitleBackgroundEnabled
-    && videoAspectRatio === "9:16"
-    ? brandColor
-    : null;
-  const titleRowStyle = titleBackground
-    ? {
-        color: contrastingTitleTextColor(titleBackground),
-        background: titleBackground,
-        borderRadius: canvasCqw(10),
-        padding: `${canvasCqw(12)} ${canvasCqw(29)}`,
-      }
-    : undefined;
   return (
     <div
+      data-subtitle-template-preview={id}
+      data-video-aspect-ratio={videoAspectRatio}
       className="relative mx-auto aspect-[9/16] w-full max-w-[150px] overflow-hidden rounded-[10px] bg-black shadow-[inset_0_0_0_1px_rgba(255,255,255,.08)]"
       style={{ containerType: "inline-size" }}
     >
-      <div
-        className="absolute z-20 flex flex-col items-center justify-end text-center font-black leading-none"
-        style={{
-          ...rectStyle(layout.title),
-          gap: canvasCqw(snapshot.title.lineGapPx),
-          paddingBottom: canvasCqw(snapshot.title.bottomMarginPx),
-          fontSize: canvasCqw(snapshot.title.fontSizePx),
-          color: snapshot.title.firstLineColor,
-        }}
-      >
-        <span className="block" style={titleRowStyle}>AI가 고른 오늘의</span>
-        <span
-          className="block"
-          style={titleRowStyle || { color: snapshot.title.secondLineColor }}
-        >핵심 장면</span>
-      </div>
-      <div className="absolute overflow-hidden bg-gradient-to-br from-neutral-600 via-neutral-800 to-neutral-950" style={rectStyle(layout.video)}>
+      <TemplateTitleV4Preview
+        enabled
+        templateId="dark-minimal"
+        title={"AI가 고른 오늘의\n핵심 장면"}
+        templateConfig={config}
+        videoAspectRatio={videoAspectRatio}
+        fontId={fontId}
+        primaryColor={config.title.primaryColor}
+        accentColor={config.title.accentColor}
+        zIndex={20}
+      />
+      <div data-subtitle-preview-video className="absolute overflow-hidden bg-gradient-to-br from-neutral-600 via-neutral-800 to-neutral-950" style={rectStyle(layout.video)}>
         <div className="absolute inset-x-0 top-1/2 h-px bg-white/10" />
       </div>
       <div
@@ -4072,6 +4058,8 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       customTemplateId: savedEditorDocument?.template.customTemplateId
         ?? item.customTemplateId,
       subtitleTemplateId: item.subtitleTemplateId,
+      videoAspectRatio: initialVideoAspectRatio,
+      captionPlacement: captionTemplateEditorSpec?.captionPlacement,
       templateSnapshot: savedEditorDocument?.template.snapshot,
       fallbackTemplateSnapshot: item.templateSnapshot,
       accentColor: captionTemplateEditorSpec?.style.accentColor
@@ -4079,7 +4067,9 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     }),
     [
       captionTemplateEditorSpec?.style.accentColor,
+      captionTemplateEditorSpec?.captionPlacement,
       initialTemplateId,
+      initialVideoAspectRatio,
       item.customTemplateId,
       item.subtitleTemplateId,
       item.templateSnapshot,
@@ -14676,7 +14666,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
               setSubtitleTemplateId(null);
               setSubtitleCaptionPlacement("lower");
               setTemplateId(nextTemplateId);
-              if (nextTemplateId === "comment-capture") setVideoAspectRatio("16:9");
+              setVideoAspectRatio((current) => videoAspectRatioForTemplate(current, nextTemplateId));
             }}
             videoAspectRatio={effectiveVideoAspectRatio}
             onVideoAspectRatioChange={setVideoAspectRatio}

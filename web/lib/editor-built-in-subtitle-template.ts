@@ -1,7 +1,7 @@
-import type { TemplateId } from "./contracts";
+import type { TemplateId, VideoAspectRatio } from "./contracts";
+import { builtInSubtitlePresentation } from "./built-in-subtitle-presentation";
 import type { EditorDocumentJsonObject } from "./editor-document-snapshot";
 import {
-  createUnifiedSubtitleTemplateConfig,
   isTemplateConfigV5,
   templateConfigSchema,
   templatePresetColorOptions,
@@ -11,6 +11,7 @@ import {
   SUBTITLE_TEMPLATE_BASE_TEMPLATE_ID,
   subtitleTemplateCreationIds,
   type SubtitleTemplateSelectionId,
+  type SubtitleCaptionPlacement,
 } from "./subtitle-templates";
 
 const hexColor = /^#[0-9A-Fa-f]{6}$/;
@@ -60,6 +61,8 @@ export function resolveBuiltInSubtitleTemplateSnapshot(input: {
   templateSnapshot?: unknown;
   fallbackTemplateSnapshot?: unknown;
   accentColor?: string | null;
+  videoAspectRatio?: VideoAspectRatio;
+  captionPlacement?: SubtitleCaptionPlacement;
 }): EditorDocumentJsonObject | null {
   const selectionId = subtitleTemplateSelectionId(input.subtitleTemplateId);
   if (
@@ -78,7 +81,6 @@ export function resolveBuiltInSubtitleTemplateSnapshot(input: {
     if (snapshot) return snapshot;
   }
 
-  const config = createUnifiedSubtitleTemplateConfig(selectionId);
   const normalizedAccentColor = typeof input.accentColor === "string"
     && hexColor.test(input.accentColor)
     ? input.accentColor.toUpperCase()
@@ -89,10 +91,12 @@ export function resolveBuiltInSubtitleTemplateSnapshot(input: {
     )
     ? normalizedAccentColor as TemplatePresetColor
     : null;
-  if (accentColor) {
-    config.title.accentColor = accentColor;
-    config.subtitle.accentColor = accentColor;
-  }
+  const { config } = builtInSubtitlePresentation({
+    id: selectionId,
+    videoAspectRatio: input.videoAspectRatio ?? "16:9",
+    captionPlacement: input.captionPlacement,
+    brandColor: accentColor ?? undefined,
+  });
   return {
     presetVersion: 3,
     ...(accentColor ? { brandColor: accentColor } : {}),

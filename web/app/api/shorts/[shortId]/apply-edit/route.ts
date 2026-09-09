@@ -616,6 +616,8 @@ async function applyEditorDocument({
       templateId: existing.templateId,
       customTemplateId: existing.customTemplateId,
       subtitleTemplateId: existing.subtitleTemplateId,
+      videoAspectRatio: existing.videoAspectRatio,
+      captionPlacement: captionRenderSpec?.captionPlacement,
       templateSnapshot: existing.templateSnapshot,
       accentColor: captionRenderSpec?.style.accentColor,
     });

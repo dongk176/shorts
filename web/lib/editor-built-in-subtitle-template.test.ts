@@ -1,3 +1,5 @@
+import { subtitleRatioCases } from "../test/subtitle-ratio-cases";
+import { builtInSubtitlePresentation } from "./built-in-subtitle-presentation";
 import { describe, expect, it } from "vitest";
 import { createEditorDocumentSnapshot } from "./editor-document-snapshot";
 import { createInitialEditorOverlayLayout } from "./editor-overlay-preview";
@@ -48,6 +50,21 @@ function documentWithSnapshot(snapshot: NonNullable<ReturnType<
 }
 
 describe("built-in subtitle template editor snapshot", () => {
+  it.each(subtitleRatioCases)("restores $id $videoAspectRatio $captionPlacement and preserves the saved snapshot", (test) => {
+    const expected = builtInSubtitlePresentation(test).config;
+    const input = {
+      templateId: "dark-minimal" as const, subtitleTemplateId: test.id,
+      videoAspectRatio: test.videoAspectRatio, captionPlacement: test.captionPlacement,
+    };
+    const restored = resolveBuiltInSubtitleTemplateSnapshot(input)!;
+    expect(restored.config).toEqual(expected);
+    // Saving and reopening must retain an existing full snapshot even if fallback fields differ.
+    const saved = JSON.parse(JSON.stringify(restored));
+    expect(resolveBuiltInSubtitleTemplateSnapshot({ ...input, videoAspectRatio: "16:9", templateSnapshot: saved }))
+      .toEqual(restored);
+    expect(resolveBuiltInSubtitleTemplateSnapshot({ ...input, templateSnapshot: { presetVersion: 3 }, fallbackTemplateSnapshot: saved }))
+      .toEqual(restored);
+  });
   it.each(["highlight", "pop"] as const)(
     "keeps the %s title anchor through color and position edits",
     (subtitleTemplateId) => {

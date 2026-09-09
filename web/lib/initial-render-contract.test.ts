@@ -41,15 +41,15 @@ describe("shared initial render contract", () => {
       wordGapPx: 6,
     });
     expect(upload.usesUnifiedTemplateSubtitleCandidate).toBe(true);
-    expect(upload.videoAspectRatio).toBe("16:9");
+    expect(upload.videoAspectRatio).toBe("9:16");
     expect(upload.templateSnapshot).toMatchObject({
       presetVersion: 3,
       brandColor: "#35E6E3",
       config: {
         schemaVersion: 5,
-        video: { aspectRatio: "16:9", y: 432, height: 608 },
-        title: { y: 295 },
-        subtitle: { variant: "pop", y: 1158 },
+        video: { aspectRatio: "9:16", y: 0, height: 1920 },
+        title: { y: 271 },
+        subtitle: { variant: "pop", y: 1500 },
         channel: { y: 1790 },
       },
     });

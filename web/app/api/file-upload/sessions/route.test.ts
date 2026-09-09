@@ -1,3 +1,4 @@
+import { subtitleRatioCases } from "../../../../test/subtitle-ratio-cases";
 import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FileUploadCapacityTransientError } from "@/lib/file-upload-capacity-retry";
@@ -766,6 +767,31 @@ describe("file upload job control plane", () => {
       const response = await POST(jsonRequest(invalidBody));
       expect(response.status).toBe(400);
     }
+  });
+
+  it.each(subtitleRatioCases)("stores upload $id $videoAspectRatio $captionPlacement", async (test) => {
+    const { db, queries } = transactionDb();
+    mocks.getDb.mockReturnValue(db);
+    const response = await POST(jsonRequest({
+      ...validBody, subtitleTemplateId: test.id, subtitleCaptionPlacement: test.captionPlacement,
+      videoAspectRatio: test.videoAspectRatio, brandColor: "#FF715E",
+    }));
+    expect(response.status, JSON.stringify(await response.clone().json())).toBe(201);
+    const values = query(queries, "insert into shorts_mvp.video_jobs")?.values;
+    expect(values).toEqual(expect.arrayContaining([
+      test.videoAspectRatio,
+      expect.objectContaining({ config: expect.objectContaining({
+        video: expect.objectContaining({ aspectRatio: test.videoAspectRatio, y: test.y, width: 1080, height: test.height }),
+        title: expect.objectContaining({ y: test.titleY }),
+        subtitle: expect.objectContaining({ variant: test.id, y: test.captionY, accentColor: "#FF715E" }),
+        channel: expect.objectContaining({ y: test.channelY }),
+      }) }),
+      expect.objectContaining({
+        videoAspectRatio: test.videoAspectRatio, subtitleTemplateId: test.id,
+        captionPlacement: test.captionPlacement,
+        safeArea: { x: 120, y: test.captionY - 70, width: 840, height: 140 },
+      }),
+    ]));
   });
 
   it("uses the exact shared subtitle placement contract", async () => {

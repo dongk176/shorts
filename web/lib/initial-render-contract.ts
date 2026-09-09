@@ -1,35 +1,12 @@
-import type { VideoAspectRatio } from "@/lib/contracts";
 import type { ResolvedTemplateExecutionSnapshot } from "@/lib/template-execution-snapshot";
-import {
-  createUnifiedSubtitleTemplateConfig,
-  type TemplatePresetColor,
-} from "@/lib/template-config";
+import type { TemplatePresetColor } from "@/lib/template-config";
+import { builtInSubtitlePresentation } from "@/lib/built-in-subtitle-presentation";
 import {
   STABLE_SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES,
   SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES,
-  subtitleTemplateStyleSnapshot,
   type SubtitleCaptionPlacement,
   type SubtitleTemplateSelectionId,
 } from "@/lib/subtitle-templates";
-
-function builtInSubtitleTemplateSnapshot({
-  subtitleTemplateId,
-  brandColor,
-}: {
-  subtitleTemplateId: SubtitleTemplateSelectionId;
-  brandColor?: TemplatePresetColor;
-}) {
-  const config = createUnifiedSubtitleTemplateConfig(subtitleTemplateId);
-  if (brandColor) {
-    config.title.accentColor = brandColor;
-    config.subtitle.accentColor = brandColor;
-  }
-  return {
-    presetVersion: 3 as const,
-    ...(brandColor ? { brandColor } : {}),
-    config,
-  };
-}
 
 /**
  * The source acquisition path ends before this function. Link and file-upload
@@ -44,27 +21,25 @@ export function createInitialRenderContract(input: {
   enhancedSubtitleTiming: boolean;
 }) {
   const resolved = input.resolvedExecution;
-  const builtInSubtitleSnapshot = input.subtitleTemplateId
-    ? builtInSubtitleTemplateSnapshot({
-        subtitleTemplateId: input.subtitleTemplateId,
+  const presentation = input.subtitleTemplateId
+    ? builtInSubtitlePresentation({
+        id: input.subtitleTemplateId,
+        videoAspectRatio: resolved.resolvedVideoAspectRatio,
+        captionPlacement: input.subtitleCaptionPlacement ?? "lower",
         brandColor: input.brandColor,
-      })
-    : null;
-  const videoAspectRatio = builtInSubtitleSnapshot
-    ? builtInSubtitleSnapshot.config.video.aspectRatio
-    : resolved.resolvedVideoAspectRatio;
-  const builtInSubtitleStyle = input.subtitleTemplateId
-    ? subtitleTemplateStyleSnapshot(
-        input.subtitleTemplateId,
-        videoAspectRatio,
-        input.brandColor,
-        input.subtitleCaptionPlacement ?? "lower",
-        undefined,
-        input.enhancedSubtitleTiming
+        timingLeadFrames: input.enhancedSubtitleTiming
           ? SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES
           : STABLE_SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES,
-      )
+      })
     : null;
+  const builtInSubtitleSnapshot = presentation
+    ? {
+        presetVersion: 3 as const,
+        ...(input.brandColor ? { brandColor: input.brandColor } : {}),
+        config: presentation.config,
+      }
+    : null;
+  const builtInSubtitleStyle = presentation?.style;
   const subtitleTemplateSnapshot = builtInSubtitleStyle
     ? {
         ...builtInSubtitleStyle,
@@ -75,7 +50,7 @@ export function createInitialRenderContract(input: {
     : resolved.subtitleTemplateSnapshot;
   return {
     templateId: resolved.resolvedTemplateId,
-    videoAspectRatio: videoAspectRatio as VideoAspectRatio,
+    videoAspectRatio: resolved.resolvedVideoAspectRatio,
     templateSnapshot: builtInSubtitleSnapshot ?? resolved.templateSnapshot,
     subtitleTemplateId: subtitleTemplateSnapshot?.subtitleTemplateId ?? null,
     subtitleTemplateSnapshot,

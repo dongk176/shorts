@@ -1,3 +1,4 @@
+import { subtitleRatioCases } from "../../test/subtitle-ratio-cases";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 import { readFileSync } from "node:fs";
@@ -2479,7 +2480,7 @@ describe("job API security and idempotency", () => {
     );
   });
 
-  it("pins an authorized built-in v5 subtitle job to the unified target", async () => {
+  it.each(subtitleRatioCases)("stores URL $id $videoAspectRatio $captionPlacement on the unified target", async (test) => {
     process.env.SUBTITLE_TEMPLATES_ENABLED = "true";
     process.env.ELEVENLABS_TRANSCRIPTION_ENABLED = "true";
     process.env.EDITOR_RENDERING_V2_ENABLED = "true";
@@ -2515,10 +2516,10 @@ describe("job API security and idempotency", () => {
     const response = await createJob(jsonRequest("http://localhost/api/jobs", {
       analysisId,
       templateId: "dark-minimal",
-      subtitleTemplateId: "highlight",
-      subtitleCaptionPlacement: "center",
+      subtitleTemplateId: test.id,
+      subtitleCaptionPlacement: test.captionPlacement,
       brandColor: "#FF715E",
-      videoAspectRatio: "9:16",
+      videoAspectRatio: test.videoAspectRatio,
       rightsConfirmed: true,
       requestId: "29199bd8-8097-49df-aa79-fd531436c4fa",
     }));
@@ -2529,25 +2530,26 @@ describe("job API security and idempotency", () => {
         "insert into shorts_mvp.video_jobs",
       ));
     expect(insertCall?.slice(1)).toEqual(expect.arrayContaining([
-      "highlight",
+      test.id,
+      test.videoAspectRatio,
       expect.objectContaining({
         presetVersion: 3,
         brandColor: "#FF715E",
         config: expect.objectContaining({
           schemaVersion: 5,
-          video: expect.objectContaining({ aspectRatio: "16:9", y: 432 }),
-          title: expect.objectContaining({ y: 295 }),
-          subtitle: expect.objectContaining({ variant: "highlight", y: 1158 }),
+          video: expect.objectContaining({ aspectRatio: test.videoAspectRatio, y: test.y, height: test.height }),
+          title: expect.objectContaining({ y: test.titleY }),
+          subtitle: expect.objectContaining({ variant: test.id, y: test.captionY }),
         }),
       }),
       expect.objectContaining({
-        subtitleTemplateId: "highlight",
-        selectionId: "highlight",
-        captionPlacement: "center",
+        subtitleTemplateId: test.id,
+        selectionId: test.id,
+        captionPlacement: test.captionPlacement,
         baseTemplateId: "dark-minimal",
-        videoAspectRatio: "16:9",
+        videoAspectRatio: test.videoAspectRatio,
         color: expect.objectContaining({ active: "#FF715E" }),
-        safeArea: { x: 120, y: 666, width: 840, height: 140 },
+        safeArea: { x: 120, y: test.captionY - 70, width: 840, height: 140 },
       }),
       "elevenlabs_primary_openai_fallback",
       "unified_template_subtitles",
