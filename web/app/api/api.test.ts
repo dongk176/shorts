@@ -38,6 +38,10 @@ vi.mock("@/lib/session", () => ({
   requireAuthenticatedMvpSession: mocks.authenticatedSession,
 }));
 vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
+vi.mock("@/lib/read-request", () => ({
+  withReadRequest: (_operation: string, task: (stage: (name: string, run: () => Promise<unknown>) => Promise<unknown>) => Promise<unknown>) =>
+    task((_name, run) => run()),
+}));
 vi.mock("@/lib/billing", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/billing")>()),
   getBillingSummary: mocks.billing,
@@ -1984,7 +1988,7 @@ describe("MVP state visibility", () => {
       },
     });
     mocks.getDb.mockReturnValue(vi.fn());
-    const response = await getMvpState();
+    const response = await getMvpState(new Request("http://localhost/api/mvp/state"));
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
       sessionId: null,
@@ -2012,7 +2016,7 @@ describe("MVP state visibility", () => {
   it("returns only the authenticated user's project query result", async () => {
     mocks.getDb.mockReturnValue(vi.fn());
     mocks.recentJobs.mockResolvedValue([{ id: "job-a" }]);
-    const response = await getMvpState();
+    const response = await getMvpState(new Request("http://localhost/api/mvp/state"));
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
       capabilities: {

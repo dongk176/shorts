@@ -1,4 +1,5 @@
 import postgres, { type Sql } from "postgres";
+import { readDbContext } from "@/lib/db-read-context";
 
 const globalDb = globalThis as typeof globalThis & {
   __shortsMvpDbClient?: Sql;
@@ -18,6 +19,11 @@ class DbHealthTimeoutError extends Error {
 }
 
 export function getDb(): Sql {
+  const readScope = readDbContext.getStore();
+  if (readScope) {
+    if (!readScope.active) throw new Error("DB read request timeout");
+    return readScope.db;
+  }
   if (!client) {
     const connectionString = process.env.DATABASE_URL;
     if (!connectionString) throw new Error("DATABASE_URL이 설정되지 않았습니다.");

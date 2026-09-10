@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { cache } from "react";
 import { getDb } from "@/lib/db";
+import { readDbContext } from "@/lib/db-read-context";
 import { getSupabaseAuthConfig } from "@/lib/supabase/config";
 import {
   fetchSupabaseAuth,
@@ -49,7 +50,7 @@ export async function createSupabaseServerClient() {
   return createConfiguredSupabaseServerClient(config, cookieStore);
 }
 
-export const getAuthenticatedUser = cache(async function getAuthenticatedUser() {
+async function readAuthenticatedUser() {
   // Read request cookies before checking optional configuration. In builds
   // where auth variables are injected only at runtime, returning first would
   // let Next.js prerender and publicly cache the signed-out header.
@@ -76,4 +77,14 @@ export const getAuthenticatedUser = cache(async function getAuthenticatedUser() 
   } catch {
     return null;
   }
-});
+}
+
+const getCachedAuthenticatedUser = cache(readAuthenticatedUser);
+
+export function getAuthenticatedUser() {
+  // A bounded read owns its connection and cancellation lifetime. Do not borrow
+  // a pending managed-account lookup started by a layout on the ordinary pool.
+  return readDbContext.getStore()
+    ? readAuthenticatedUser()
+    : getCachedAuthenticatedUser();
+}

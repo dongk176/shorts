@@ -5,11 +5,11 @@ import { loadMvpState } from "@/lib/mvp-state";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   const requestId = randomUUID();
   try {
     const response = NextResponse.json(
-      await loadMvpState(),
+      await loadMvpState(undefined, request.signal),
       { headers: { "x-request-id": requestId } },
     );
     response.headers.set("Cache-Control", "private, no-store");

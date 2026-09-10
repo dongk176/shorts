@@ -119,6 +119,31 @@ describe("MVP session cookie", () => {
     expect(mocks.getDb).not.toHaveBeenCalled();
   });
 
+  it("reads an old session without updating last_seen_at in read-only requests", async () => {
+    const set = vi.fn();
+    mocks.cookies.mockResolvedValue({ get: vi.fn().mockReturnValue({ value: "existing-token" }), set });
+    const db = vi.fn().mockResolvedValue([{
+      id: "existing", selectedPlanCode: "free", userId: null, lastSeenAt: new Date(0),
+    }]);
+    mocks.getDb.mockReturnValue(db);
+    const { requireMvpSession } = await import("./session");
+    await expect(requireMvpSession(null, { readOnly: true })).resolves.toMatchObject({ id: "existing" });
+    expect(db).toHaveBeenCalledOnce();
+    expect(db.mock.calls[0][0].join("")).toMatch(/^\s*select/);
+    expect(set).not.toHaveBeenCalled();
+  });
+
+  it("never creates a missing session in read-only requests", async () => {
+    const set = vi.fn();
+    mocks.cookies.mockResolvedValue({ get: vi.fn().mockReturnValue(undefined), set });
+    const db = vi.fn();
+    mocks.getDb.mockReturnValue(db);
+    const { requireMvpSession } = await import("./session");
+    await expect(requireMvpSession(null, { readOnly: true })).resolves.toMatchObject({ id: "" });
+    expect(db).not.toHaveBeenCalled();
+    expect(set).not.toHaveBeenCalled();
+  });
+
   it("saves the Google profile and claims the current anonymous session", async () => {
     const set = vi.fn();
     const deleteCookie = vi.fn();

@@ -54,25 +54,21 @@ export async function getSubtitleTemplateUsage(
 
 let publicStateCache: {
   expiresAt: number;
-  value: Promise<{
+  value: {
     plans: Plan[];
     generatedShortCount: number;
     reusableViewCounter: Awaited<ReturnType<typeof getPublicSiteMetrics>>["reusableViewCounter"];
-  }>;
+  };
 } | null = null;
 
 export async function getPublicMvpState(db: Sql) {
   const now = Date.now();
   if (publicStateCache && publicStateCache.expiresAt > now) return publicStateCache.value;
-  const value = Promise.all([getPlans(db), getPublicSiteMetrics(db)])
-    .then(([plans, metrics]) => ({ plans, ...metrics }));
-  publicStateCache = { expiresAt: now + 30_000, value };
-  try {
-    return await value;
-  } catch (error) {
-    if (publicStateCache?.value === value) publicStateCache = null;
-    throw error;
-  }
+  // Never share an in-flight query tied to another request's connection/deadline.
+  const [plans, metrics] = await Promise.all([getPlans(db), getPublicSiteMetrics(db)]);
+  const value = { plans, ...metrics };
+  publicStateCache = { expiresAt: Date.now() + 30_000, value };
+  return value;
 }
 
 type ShortsForJobsOptions = {

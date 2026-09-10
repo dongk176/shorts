@@ -9,6 +9,7 @@ import {
   getSubtitleTemplateUsage,
 } from "@/lib/data";
 import { getDb } from "@/lib/db";
+import { withReadRequest, type ReadStage } from "@/lib/read-request";
 import { getEnterpriseAccessState } from "@/lib/enterprise-access";
 import { getFileUploadReleaseAccess } from "@/lib/file-upload-release";
 import { getCustomTemplateDesignAccess } from "@/lib/custom-template-design-access";
@@ -26,13 +27,21 @@ import {
 
 export async function loadMvpState(
   authenticatedUser?: User | null,
+  signal?: AbortSignal,
+): Promise<MvpState> {
+  return withReadRequest("mvp_state", (stage) => readMvpState(stage, authenticatedUser), signal);
+}
+
+async function readMvpState(
+  stage: ReadStage,
+  authenticatedUser?: User | null,
 ): Promise<MvpState> {
   const db = getDb();
   const [{ plans, generatedShortCount, reusableViewCounter }, user] = await Promise.all([
-    getPublicMvpState(db),
-    authenticatedUser === undefined
+    stage("public_state", () => getPublicMvpState(db)),
+    stage("auth", () => authenticatedUser === undefined
       ? getAuthenticatedUser()
-      : Promise.resolve(authenticatedUser),
+      : Promise.resolve(authenticatedUser)),
   ]);
   const reusableViewCounterState = reusableViewCounter
     ? { ...reusableViewCounter, serverNow: new Date().toISOString() }
@@ -44,8 +53,8 @@ export async function loadMvpState(
     if (!selectedPlan) throw new Error("기본 플랜 정보를 찾을 수 없습니다.");
     const { start, next } = currentKstPeriod();
     const [billing, recentJobs] = await Promise.all([
-      getBillingSummary(db, null),
-      getPublicExampleJobs(db),
+      stage("billing", () => getBillingSummary(db, null)),
+      stage("examples", () => getPublicExampleJobs(db)),
     ]);
 
     return {
@@ -83,11 +92,11 @@ export async function loadMvpState(
     };
   }
 
-  const session = await requireMvpSession(user, { createIfMissing: false });
-  const subtitleTemplateAccessPromise = getEffectiveSubtitleTemplateAccess(
+  const session = await stage("session", () => requireMvpSession(user, { createIfMissing: false, readOnly: true }));
+  const subtitleTemplateAccessPromise = stage("subtitle_access", () => getEffectiveSubtitleTemplateAccess(
     db,
     session.userId,
-  );
+  ));
   const [
     usage,
     recentJobs,
@@ -99,17 +108,17 @@ export async function loadMvpState(
     enterpriseAccess,
     customTemplateDesignAccess,
   ] = await Promise.all([
-    getUsageSnapshot(db, session),
-    getRecentJobs(db, session),
-    getBillingSummary(db, session.userId),
-    getPaymentMethodAction(db, session.userId),
-    getSubtitleTemplateUsage(db, session.userId),
-    getFileUploadReleaseAccess(db, session.userId),
+    stage("usage", () => getUsageSnapshot(db, session)),
+    stage("jobs", () => getRecentJobs(db, session)),
+    stage("billing", () => getBillingSummary(db, session.userId)),
+    stage("payment_method_action", () => getPaymentMethodAction(db, session.userId)),
+    stage("subtitle_usage", () => getSubtitleTemplateUsage(db, session.userId)),
+    stage("file_upload_access", () => getFileUploadReleaseAccess(db, session.userId)),
     subtitleTemplateAccessPromise,
     session.isEnterprise === true
-      ? getEnterpriseAccessState(db, session.userId!)
+      ? stage("enterprise_access", () => getEnterpriseAccessState(db, session.userId!))
       : Promise.resolve({ accountType: "personal" as const, allowed: true as const }),
-    getCustomTemplateDesignAccess(db, session.userId),
+    stage("custom_template_access", () => getCustomTemplateDesignAccess(db, session.userId)),
   ]);
 
   return {

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { withReadRequest } from "@/lib/read-request";
 import { apiError, HttpError } from "@/lib/http";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 import { customTemplateFromRow } from "@/lib/custom-templates";
@@ -17,32 +18,34 @@ import {
 import { assertUnifiedTemplateSubtitleCanaryAccess } from "@/lib/template-execution-snapshot";
 import { lockTemplateDesignForSave } from "@/lib/custom-template-design";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const session = await requireAuthenticatedMvpSession();
-    const db = getDb();
-    const rows = await db`
-      select id, name, base_template_id, config, version, created_at, updated_at
-      from shorts_mvp.custom_templates
-      where user_id=${session.userId}
-      order by updated_at desc, id desc
-    `;
-    const templates = rows.map(customTemplateFromRow);
-    const hasUnifiedTemplates = templates.some((template) =>
-      isTemplateConfigV5(template.config)
-    );
-    if (!hasUnifiedTemplates) {
-      return NextResponse.json({ templates });
-    }
-    const access = await getEffectiveSubtitleTemplateAccess(
-      db,
-      session.userId,
-    );
-    return NextResponse.json({
-      templates: access.unifiedEnabled
-        ? templates
-        : templates.filter((template) => !isTemplateConfigV5(template.config)),
-    });
+    return await withReadRequest("templates", async (stage) => {
+      const session = await stage("session", () => requireAuthenticatedMvpSession({ readOnly: true }));
+      const db = getDb();
+      const rows = await stage("templates", async () => db`
+        select id, name, base_template_id, config, version, created_at, updated_at
+        from shorts_mvp.custom_templates
+        where user_id=${session.userId}
+        order by updated_at desc, id desc
+      `);
+      const templates = rows.map(customTemplateFromRow);
+      const hasUnifiedTemplates = templates.some((template) =>
+        isTemplateConfigV5(template.config)
+      );
+      if (!hasUnifiedTemplates) {
+        return NextResponse.json({ templates });
+      }
+      const access = await stage("access", () => getEffectiveSubtitleTemplateAccess(
+        db,
+        session.userId,
+      ));
+      return NextResponse.json({
+        templates: access.unifiedEnabled
+          ? templates
+          : templates.filter((template) => !isTemplateConfigV5(template.config)),
+      });
+    }, request.signal);
   } catch (error) {
     return apiError(error);
   }

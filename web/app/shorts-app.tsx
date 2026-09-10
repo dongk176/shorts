@@ -110,7 +110,7 @@ import {
 } from "@/lib/range-editing";
 import { userFacingErrorMessage } from "@/lib/public-error";
 import { isIosDownloadDevice, shortDownloadFilename } from "@/lib/short-download";
-import { stateRetryDelayMs } from "@/lib/state-loading";
+import { STATE_REQUEST_TIMEOUT_MS, stateRetryDelayMs } from "@/lib/state-loading";
 import {
   markSubtitleTemplateUsed,
   SUBTITLE_TEMPLATE_DISCOVERY_DEFAULT_ID,
@@ -13455,7 +13455,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const loadState = useCallback(async () => {
     if (stateLoadInFlight.current) return stateLoadInFlight.current;
     const task = (async () => {
-      const value = await requestJson<MvpState>("/api/mvp/state", undefined, 12_000);
+      const value = await requestJson<MvpState>("/api/mvp/state", undefined, STATE_REQUEST_TIMEOUT_MS);
       setState(value);
       publishUsageSnapshot(value.usage);
       setStateLoadStatus("ready");

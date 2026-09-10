@@ -33,6 +33,7 @@ export type MvpSession = {
 type SessionAccessOptions = {
   enforcePaymentMethodRemediation?: boolean;
   createIfMissing?: boolean;
+  readOnly?: boolean;
 };
 
 function hashToken(token: string) {
@@ -74,6 +75,7 @@ type StoredSession = {
 async function findStoredSession(
   db: ReturnType<typeof getDb>,
   token: string | undefined,
+  readOnly = false,
 ): Promise<StoredSession | undefined> {
   if (!token) return undefined;
   const rows = await db`
@@ -83,7 +85,7 @@ async function findStoredSession(
     limit 1
   `;
   const existing = rows[0] as StoredSession | undefined;
-  if (existing?.lastSeenAt instanceof Date && existing.lastSeenAt.getTime() < Date.now() - 5 * 60 * 1000) {
+  if (!readOnly && existing?.lastSeenAt instanceof Date && existing.lastSeenAt.getTime() < Date.now() - 5 * 60 * 1000) {
     await db`
       update shorts_mvp.mvp_sessions
       set last_seen_at=now()
@@ -116,7 +118,7 @@ export async function requireMvpSession(
   const cookieStore = await cookies();
   const token = cookieStore.get(MVP_SESSION_COOKIE)?.value;
   const db = getDb();
-  const existing = await findStoredSession(db, token);
+  const existing = await findStoredSession(db, token, options.readOnly);
   const authUser = authenticatedUser === undefined ? await getAuthenticatedUser() : authenticatedUser;
   if (!authUser) {
     if (existing && !existing.userId) {
@@ -128,7 +130,7 @@ export async function requireMvpSession(
         isAdmin: false,
       };
     }
-    if (options.createIfMissing === false) {
+    if (options.readOnly || options.createIfMissing === false) {
       return {
         id: "",
         selectedPlanCode: "free",
@@ -175,7 +177,7 @@ export async function requireMvpSession(
 
   const activeSession = existing?.userId === appUser.id
     ? existing
-    : options.createIfMissing === false
+    : options.readOnly || options.createIfMissing === false
       ? {
           id: "",
           selectedPlanCode: appUser.selectedPlanCode,
@@ -201,12 +203,14 @@ export async function requireMvpSession(
 export async function requireAuthenticatedMvpSession(options: {
   allowPaymentMethodRemediation?: boolean;
   createIfMissing?: boolean;
+  readOnly?: boolean;
 } = {}): Promise<MvpSession & { userId: string }> {
   const authenticatedUser = await getAuthenticatedUser();
   if (!authenticatedUser) throw new HttpError(401, "로그인이 필요합니다.");
   const session = await requireMvpSession(authenticatedUser, {
     enforcePaymentMethodRemediation: !options.allowPaymentMethodRemediation,
     createIfMissing: options.createIfMissing,
+    readOnly: options.readOnly,
   });
   return session as MvpSession & { userId: string };
 }
