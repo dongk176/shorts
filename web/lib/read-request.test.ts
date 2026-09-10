@@ -38,7 +38,7 @@ describe("bounded isolated read requests", () => {
       expect(getDb()).toBe(reads.tx);
       return "ok";
     })).resolves.toBe("ok");
-    expect(reads.begin).toHaveBeenCalledWith("read only", expect.any(Function));
+    expect(reads.begin).toHaveBeenCalledWith("read write", expect.any(Function));
     expect(reads.tx.mock.calls[0][0].join("")).toContain("set_config('statement_timeout', '4000', true)");
     expect(reads.end).toHaveBeenCalledWith({ timeout: 0 });
     expect(getDb()).toBe(writes);

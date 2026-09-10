@@ -64,7 +64,10 @@ export async function withReadRequest<T>(
       onAbort = () => reject(unavailable("READ_REQUEST_ABORTED"));
       signal?.addEventListener("abort", onAbort, { once: true });
     });
-    const work = db.begin("read only", async (tx) => {
+    // Existing release-attestation SELECT functions acquire FOR SHARE locks.
+    // Keep those guards intact; callers opt out of session writes explicitly.
+    // This transaction is used only by the audited state/template read paths.
+    const work = db.begin("read write", async (tx) => {
       if (finished) throw unavailable("READ_REQUEST_ABORTED");
       timings.connect = Date.now() - startedAt;
       pending.delete("connect");

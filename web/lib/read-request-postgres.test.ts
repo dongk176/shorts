@@ -10,16 +10,14 @@ if (connection && !["localhost", "127.0.0.1"].includes(new URL(connection).hostn
 describe.skipIf(!connection)("read request PostgreSQL integration", () => {
   afterEach(() => vi.unstubAllEnvs());
 
-  it("enforces transaction-local limits and read-only mode on the actual connection", async () => {
+  it("enforces transaction-local limits while allowing existing read locks", async () => {
     vi.stubEnv("DATABASE_URL", connection!);
     await withReadRequest("integration_limits", async () => {
       const rows = await getDb()`select current_setting('statement_timeout') as statement_timeout,
         current_setting('lock_timeout') as lock_timeout, current_setting('transaction_read_only') as read_only`;
-      expect(rows[0]).toMatchObject({ statementTimeout: "4s", lockTimeout: "1s", readOnly: "on" });
+      expect(rows[0]).toMatchObject({ statementTimeout: "4s", lockTimeout: "1s", readOnly: "off" });
     });
-    await expect(withReadRequest("integration_read_only", async () => {
-      await getDb()`create schema read_request_must_never_create`;
-    })).rejects.toMatchObject({ code: "25006" });
+
   });
 
   it("cancels a slow SQL statement and successfully serves the following request", async () => {

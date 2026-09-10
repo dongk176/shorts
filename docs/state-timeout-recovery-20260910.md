@@ -10,7 +10,7 @@ Supavisor transaction connections reported a two-minute statement timeout even
 though the ordinary pool supplied a ten-second startup setting.
 
 State and template reads now use an isolated, request-owned connection to the
-existing transaction pooler. Each transaction is read-only and applies actual
+existing transaction pooler. Each transaction contains read operations and applies actual
 transaction-local four-second statement and one-second lock limits. A ten-second
 request deadline also covers connection acquisition and authentication. Success,
 failure and client cancellation close the connection; delayed callbacks cannot
@@ -20,6 +20,10 @@ joining an unbounded queue. This adds a connection handshake per request, while
 Supavisor retains backend pooling. Production read probes took 290–551 ms.
 
 Read-only session lookup does not create sessions or update last-seen timestamps.
+Existing release-attestation SELECT functions acquire FOR SHARE locks; the
+request transaction permits these locks and preserves the exact attestation
+logic. It is intentionally not declared PostgreSQL READ ONLY. Only the audited
+state/template read paths opt into this helper.
 Completed public state can be shared for 30 seconds; pending promises are no
 longer shared across requests. Managed-account authentication remains inside its
 own read lifetime. The browser deadline allows the existing eight-second auth
@@ -35,13 +39,13 @@ Validation:
 
 - Web suite: 2,414 passed, 28 skipped (including three opt-in local DB cases).
 - Local PostgreSQL 16: three integration cases passed, covering actual limits,
-  read-only enforcement, slow-query cancellation/recovery and browser abort.
+  read-lock compatibility, slow-query cancellation/recovery and browser abort.
 - Unit tests cover stalled connection cleanup, concurrent request isolation,
   admission limits, late callbacks, ordinary pool preservation and cache recovery.
 - Existing repository script tests: 204 passed.
 - Production read-only probes: public state and two paid account states returned
   valid plans, usage and recent jobs; transaction settings were confirmed as
-  `read_only=on` and `statement_timeout=4s` through the real Supavisor connection.
+  `statement_timeout=4s` through the real Supavisor connection.
 - Local test container was removed after verification. No new recurring resources.
 - Candidate build, route manifest, five protected paths and runtime target
   fingerprint must pass before promoting that exact deployment without rebuild.
