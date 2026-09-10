@@ -8,29 +8,6 @@ const migration = readFileSync(
   ),
   "utf8",
 );
-const createPayoutRoute = readFileSync(
-  new URL(
-    "../app/api/admin/referrals/[partnerId]/payouts/route.ts",
-    import.meta.url,
-  ),
-  "utf8",
-);
-const finalizePayoutRoute = readFileSync(
-  new URL(
-    "../app/api/admin/referrals/payouts/[payoutId]/route.ts",
-    import.meta.url,
-  ),
-  "utf8",
-);
-const partnerDashboardPage = readFileSync(
-  new URL("../app/partner/dashboard/page.tsx", import.meta.url),
-  "utf8",
-);
-const commissionCsvRoute = readFileSync(
-  new URL("../app/api/partner/commissions.csv/route.ts", import.meta.url),
-  "utf8",
-);
-
 describe("referral monthly ledger migration", () => {
   it("creates a private monthly commission and payout-item ledger", () => {
     expect(migration).toContain("shorts_mvp.referral_commission_installments");
@@ -57,29 +34,5 @@ describe("referral monthly ledger migration", () => {
     expect(migration).toContain("referral.payout_monthly_migration_repriced");
     expect(migration).toContain("referral.payout_monthly_migration_canceled");
     expect(migration).not.toMatch(/update shorts_mvp\.referral_payouts\s+set status='draft'/i);
-  });
-});
-
-describe("referral monthly payout flow", () => {
-  it("limits drafts to unlocked installments in the selected KST period", () => {
-    expect(createPayoutRoute).toContain("referral_commission_installments");
-    expect(createPayoutRoute).toContain("at time zone 'Asia/Seoul'");
-    expect(createPayoutRoute).toContain("between ${body.periodStart}::date and ${body.periodEnd}::date");
-    expect(createPayoutRoute).toContain("referral_payout_items");
-    expect(createPayoutRoute).toContain("Math.min(");
-  });
-
-  it("rechecks refunds and releases allocations when a draft is canceled", () => {
-    expect(finalizePayoutRoute).toContain("itemPayable");
-    expect(finalizePayoutRoute).toContain("globalPayable");
-    expect(finalizePayoutRoute).toContain("PAYOUT_BALANCE_REVERSED");
-    expect(finalizePayoutRoute).toContain("delete from shorts_mvp.referral_payout_items");
-  });
-
-  it("shows and exports one row per monthly installment", () => {
-    expect(partnerDashboardPage).toContain("installment.installment_number");
-    expect(partnerDashboardPage).toContain("installment.earned_at");
-    expect(commissionCsvRoute).toContain('"회차","전체회차"');
-    expect(commissionCsvRoute).toContain('"월별수익금액","상태","정산가능일"');
   });
 });

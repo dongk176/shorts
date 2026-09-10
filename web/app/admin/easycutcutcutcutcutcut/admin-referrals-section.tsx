@@ -1,3 +1,5 @@
+import { loadReferralSettlements } from "@/lib/referral-settlement-server";
+import { defaultReferralMonth, referralKstDate } from "@/lib/referral-settlement";
 import { getDb } from "@/lib/db";
 import {
   AdminReferralsDashboard,
@@ -11,7 +13,9 @@ function iso(value: unknown) {
 
 export async function AdminReferralsSection() {
   const db = getDb();
-  const [partnerRows, payoutRows] = await Promise.all([
+  const initialMonth = defaultReferralMonth();
+  const currentMonth = referralKstDate().slice(0, 7);
+  const [partnerRows, payoutRows, settlementLedgers] = await Promise.all([
     db`
       select p.id,p.creator_name,p.slug,p.commission_rate_bps,p.status,p.recovery_email,
         p.bank_name,p.account_holder,p.account_number_last4,p.created_at,p.terminated_at,
@@ -21,15 +25,7 @@ export async function AdminReferralsSection() {
         coalesce(signups.signups,0)::integer as signups,
         coalesce(sales.paid_customers,0)::integer as paid_customers,
         coalesce(sales.gross_sales,0)::bigint as gross_sales,
-        coalesce(sales.refunds,0)::bigint as refunds,
-        coalesce(ledger.commission,0)::bigint as commission,
-        coalesce(ledger.current_month_commission,0)::bigint as current_month_commission,
-        coalesce(ledger.pending,0)::bigint as pending,
-        coalesce(ledger.future,0)::bigint as future,
-        coalesce(ledger.available_total,0)::bigint
-          - coalesce(paid.paid,0)::bigint
-          - coalesce(paid.draft,0)::bigint as available,
-        coalesce(paid.paid,0)::bigint as paid
+        coalesce(sales.refunds,0)::bigint as refunds
       from shorts_mvp.referral_partners p
       join shorts_mvp.referral_partner_credentials c on c.partner_id=p.id
       left join lateral (
@@ -50,54 +46,6 @@ export async function AdminReferralsSection() {
         from shorts_mvp.referral_commissions rc
         where rc.partner_id=p.id
       ) sales on true
-      left join lateral (
-        select
-          sum(installment.commission_amount_krw) filter (
-            where installment.earned_at<=clock_timestamp()
-          )::bigint as commission,
-          sum(installment.commission_amount_krw) filter (
-            where installment.earned_at >= (
-              date_trunc('month',clock_timestamp() at time zone 'Asia/Seoul')
-              at time zone 'Asia/Seoul'
-            )
-              and installment.earned_at < (
-                date_trunc('month',clock_timestamp() at time zone 'Asia/Seoul')+interval '1 month'
-              ) at time zone 'Asia/Seoul'
-          )::bigint as current_month_commission,
-          sum(greatest(
-            installment.commission_amount_krw-coalesce(allocated.amount_krw,0),
-            0
-          )) filter (
-            where installment.earned_at<=clock_timestamp()
-              and installment.available_at>clock_timestamp()
-          )::bigint as pending,
-          sum(greatest(
-            installment.commission_amount_krw-coalesce(allocated.amount_krw,0),
-            0
-          )) filter (
-            where installment.earned_at>clock_timestamp()
-          )::bigint as future,
-          sum(installment.commission_amount_krw) filter (
-            where installment.available_at<=clock_timestamp()
-          )::bigint as available_total
-        from shorts_mvp.referral_commission_installments installment
-        join shorts_mvp.referral_commissions rc on rc.id=installment.commission_id
-        left join lateral (
-          select sum(item.amount_krw)::bigint as amount_krw
-          from shorts_mvp.referral_payout_items item
-          join shorts_mvp.referral_payouts payout on payout.id=item.payout_id
-          where item.installment_id=installment.id
-            and payout.status in ('draft','paid')
-        ) allocated on true
-        where rc.partner_id=p.id
-      ) ledger on true
-      left join lateral (
-        select
-          sum(rp.amount_krw) filter (where rp.status='paid')::bigint as paid,
-          sum(rp.amount_krw) filter (where rp.status='draft')::bigint as draft
-        from shorts_mvp.referral_payouts rp
-        where rp.partner_id=p.id
-      ) paid on true
       order by p.created_at desc
     `,
     db`
@@ -109,6 +57,7 @@ export async function AdminReferralsSection() {
       order by r.created_at desc
       limit 100
     `,
+    loadReferralSettlements({ includeMonths: [initialMonth, currentMonth] }),
   ]);
 
   const partners: AdminReferralPartner[] = partnerRows.map((row) => ({
@@ -130,12 +79,6 @@ export async function AdminReferralsSection() {
     paidCustomers: Number(row.paidCustomers || 0),
     grossSalesKrw: Number(row.grossSales || 0),
     refundsKrw: Number(row.refunds || 0),
-    commissionKrw: Number(row.commission || 0),
-    currentMonthCommissionKrw: Number(row.currentMonthCommission || 0),
-    pendingKrw: Number(row.pending || 0),
-    futureKrw: Number(row.future || 0),
-    availableKrw: Number(row.available || 0),
-    paidKrw: Number(row.paid || 0),
   }));
   const payouts: AdminReferralPayout[] = payoutRows.map((row) => ({
     id: row.id,
@@ -152,5 +95,5 @@ export async function AdminReferralsSection() {
     paidAt: iso(row.paidAt),
   }));
 
-  return <AdminReferralsDashboard partners={partners} payouts={payouts} />;
+  return <AdminReferralsDashboard partners={partners} payouts={payouts} settlementLedgers={settlementLedgers} initialMonth={initialMonth} currentMonth={currentMonth} />;
 }
