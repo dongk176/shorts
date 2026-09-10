@@ -22,6 +22,8 @@ export async function GET(
         o.failure_code,o.approved_at,o.amount_krw,
         o.installment_months,o.proration_credit_krw,
         s.next_quota_at,s.next_charge_at,
+        (r.refund_amount_krw = r.source_amount_krw) as full_upgrade_refund,
+        (r.id is not null) as has_upgrade_refund,
         coalesce(r.status,
           case when o.proration_refund_status='succeeded' and o.proration_credit_krw > 0
             then 'completed' else null end
@@ -48,13 +50,13 @@ export async function GET(
       nextQuotaAt: order.nextQuotaAt?.toISOString() || null,
       nextChargeAt: order.nextChargeAt?.toISOString() || null,
       refund: {
-        mode: order.upgradeRefundStatus
-          ? "manual_partial"
+        mode: order.hasUpgradeRefund
+          ? order.fullUpgradeRefund ? "manual_full" : "manual_partial"
           : Number(order.refundAmountKrw || 0) > 0
             ? "automatic_full"
             : "none",
         amountKrw: Number(order.refundAmountKrw || 0),
-        processingBusinessDays: order.upgradeRefundStatus ? 3 : 0,
+        processingBusinessDays: order.hasUpgradeRefund && !order.fullUpgradeRefund ? 3 : 0,
         status: order.upgradeRefundStatus || null,
       },
     }, { headers: { "Cache-Control": "no-store, max-age=0" } });

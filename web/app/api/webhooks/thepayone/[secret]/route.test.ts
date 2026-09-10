@@ -24,6 +24,34 @@ import { cardTokenHash } from "@/lib/thepayone";
 import { getBillingSummary, type BillingDb } from "@/lib/billing";
 import { POST } from "./route";
 
+it.each(["manual_review", "completed"])("reconciles a delayed upgrade refund in %s without touching the upgraded plan or quota", async (status) => {
+  const queries: RecordedQuery[] = [];
+  const queued = {
+    id: "refund-ledger", status, sourceOrderId: "old-pro-payment",
+    subscriptionId: "upgraded-subscription", providerMerchantId: "merchant-1",
+    providerTerminalId: "terminal-1", refundAmountKrw: 9900,
+  };
+  const query = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+    const text = compactSql(strings, values);
+    queries.push({ text, values });
+    if (text.startsWith("insert into shorts_mvp.billing_payment_events")) return [{ id: "refund-event" }];
+    if (text.includes("from shorts_mvp.subscription_upgrade_refunds")) return [queued];
+    return [];
+  });
+  const db = Object.assign(query, { begin: (run: (tx: typeof query) => Promise<unknown>) => run(query) });
+  mocks.getDb.mockReturnValue(db);
+  const payload = flatPayload().replace("trxType=pay", "trxType=refund").replace("rootTrxId=", "rootTrxId=old-pro-transaction");
+  const response = await POST(new Request(`http://localhost/api/webhooks/thepayone/${webhookSecret}`, {
+    method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: payload,
+  }), context());
+  expect(response.status).toBe(200);
+  const paymentWrites = queries.filter((q) => q.text.startsWith("update shorts_mvp.billing_orders"));
+  expect(paymentWrites).toHaveLength(status === "completed" ? 0 : 1);
+  if (status !== "completed") expect(paymentWrites[0].values).toContain("old-pro-payment");
+  expect(queries.some((q) => /update shorts_mvp.user_subscriptions|update shorts_mvp.usage_grants|insert into shorts_mvp.usage_grants/.test(q.text))).toBe(false);
+  expect(queries.some((q) => q.text.includes("upgrade_refund_reconciled"))).toBe(true);
+});
+
 type RecordedQuery = { text: string; values: unknown[] };
 
 const webhookSecret = "test-webhook-secret-value-123456";

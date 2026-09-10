@@ -862,13 +862,6 @@ export function PlanCheckoutOverlay({
           cardPassword: "",
           identityNumber: "",
         }));
-      } else if (
-        cause instanceof BillingClientError
-        && cause.code === "PRO_REFUND_FAILED_PACKAGE_REVERSED"
-      ) {
-        paymentRequestIdRef.current = crypto.randomUUID();
-        setErrorTitle("기존 프로 이용권을 유지했습니다");
-        setError(cause.message);
       } else if (isManualOneTime) {
         setErrorTitle("승인 여부를 확인해 주세요");
         setError(
@@ -1161,8 +1154,8 @@ export function PlanCheckoutOverlay({
                     </strong>
                     <p className="mt-1 text-xs font-medium leading-5 text-neutral-300">
                       {changeQuote.currentPlanDisplayName || "이지컷 프로"} 결제금액
-                      {" "}{priceFormatter.format(changeQuote.refund.amountKrw)}원은 전액 환불되고,
-                      기존 프로 이용시간은 종료됩니다.
+                      {" "}{priceFormatter.format(changeQuote.refund.amountKrw)}원은 전액 환불 대상이며, 새 이용권과 사용량은 결제 완료 즉시 적용됩니다.
+                      자동 환불이 지연되면 담당자가 별도로 환불해 드립니다. 기존 프로 이용시간은 종료됩니다.
                     </p>
                   </div>
                 )}

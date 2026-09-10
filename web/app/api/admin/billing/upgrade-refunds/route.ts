@@ -47,7 +47,8 @@ export async function GET(request: Request) {
       join shorts_mvp.app_users u on u.id=r.user_id
       join shorts_mvp.billing_orders source on source.id=r.source_order_id
       join shorts_mvp.billing_orders upgrade on upgrade.id=r.upgrade_order_id
-      where (${input.status}='all' or r.status=${input.status})
+      where source.provider='thepayone' and upgrade.provider='thepayone'
+        and (${input.status}='all' or r.status=${input.status})
         and (${input.from}='' or r.created_at >= ${input.from || "1900-01-01"}::date)
         and (${input.to}='' or r.created_at < (${input.to || "2999-12-31"}::date + interval '1 day'))
         and (
@@ -67,7 +68,7 @@ export async function GET(request: Request) {
 
     const headers = [
       "사용자명", "이메일", "사용자ID", "이전 플랜", "신규 플랜", "신규 주기",
-      "거래일자", "승인번호", "전체 결제금액", "부분취소 금액", "원주문번호",
+      "거래일자", "승인번호", "전체 결제금액", "환불 금액", "원주문번호",
       "업그레이드 주문번호", "PG 원거래번호", "카드사", "끝 4자리", "상태", "PG 확인번호", "메모",
     ];
     const keys = [
@@ -87,7 +88,7 @@ export async function GET(request: Request) {
       },
     });
   } catch (error) {
-    return apiError(error, "업그레이드 부분환불 원장을 불러오지 못했습니다.");
+    return apiError(error, "업그레이드 환불 원장을 불러오지 못했습니다.");
   }
 }
 
@@ -102,7 +103,7 @@ export async function PATCH(request: Request) {
         select * from shorts_mvp.subscription_upgrade_refunds where id=${body.id} for update
       `;
       const current = currentRows[0];
-      if (!current) throw new HttpError(404, "부분환불 항목을 찾을 수 없습니다.");
+      if (!current) throw new HttpError(404, "환불 항목을 찾을 수 없습니다.");
       if (current.status === "completed") {
         if (body.action === "completed") return currentRows;
         throw new HttpError(409, "이미 환불 완료된 항목은 되돌릴 수 없습니다.");
@@ -110,8 +111,11 @@ export async function PATCH(request: Request) {
       if (body.action === "submitted" && !["pending", "manual_review"].includes(current.status)) {
         throw new HttpError(409, "PG 전달 완료로 변경할 수 없는 상태입니다.");
       }
-      if (body.action === "completed" && !["submitted", "manual_review"].includes(current.status)) {
-        throw new HttpError(409, "PG 전달 완료 또는 확인 필요 상태에서만 환불 완료로 변경할 수 있습니다.");
+      if (body.action === "completed" && !["pending", "submitted", "manual_review"].includes(current.status)) {
+        throw new HttpError(409, "환불 처리 대기 또는 확인 필요 상태에서만 환불 완료로 변경할 수 있습니다.");
+      }
+      if (body.action === "completed" && !body.providerReference?.trim()) {
+        throw new HttpError(400, "PG 환불 거래번호 또는 직접 환불한 이체 확인번호를 입력해 주세요.");
       }
       const updated = await tx`
         update shorts_mvp.subscription_upgrade_refunds
@@ -152,6 +156,6 @@ export async function PATCH(request: Request) {
     });
     return NextResponse.json({ ok: true, refund: rows[0] });
   } catch (error) {
-    return apiError(error, "업그레이드 부분환불 상태를 변경하지 못했습니다.");
+    return apiError(error, "업그레이드 환불 상태를 변경하지 못했습니다.");
   }
 }

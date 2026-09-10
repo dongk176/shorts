@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { AdminUpgradeRefunds } from "./admin-upgrade-refunds";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   adminPaymentDetailParts,
@@ -244,6 +245,7 @@ export function AdminBillingDashboard({
 
   return (
     <div className="mt-7 grid gap-7">
+      {initialFilters.provider !== "toss" && <AdminUpgradeRefunds />}
       {supportingError ? (
         <section className="rounded-2xl border border-amber-300/20 bg-amber-300/[.06] p-5" role="alert">
           <p className="text-sm font-bold text-amber-100">{supportingError}</p>

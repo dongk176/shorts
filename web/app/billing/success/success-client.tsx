@@ -20,7 +20,7 @@ export function BillingSuccessClient() {
     kind?: string;
     productCode?: string;
     orderName?: string;
-    refund?: { mode: string; amountKrw: number; processingBusinessDays: number };
+    refund?: { mode: string; amountKrw: number; processingBusinessDays: number; status?: string | null };
     installmentMonths?: number;
     chargedAmountKrw?: number;
     nextQuotaAt?: string | null;
@@ -34,6 +34,10 @@ export function BillingSuccessClient() {
       ? "승인 여부를 확인 중입니다. 중복 결제를 막기 위해 같은 상품을 다시 결제하지 마세요. 확인 전에는 이용권이나 추가시간이 지급되지 않습니다."
       : orderState === "failed"
         ? "결제 승인을 완료하지 못했습니다. 가격 페이지에서 다시 시도해 주세요."
+    : orderDetail?.refund?.mode === "manual_full" && orderDetail.refund.amountKrw > 0
+      ? orderDetail.refund.status === "completed"
+        ? `새 플랜과 사용량이 적용되었고 기존 결제 ${orderDetail.refund.amountKrw.toLocaleString("ko-KR")}원도 전액 환불되었습니다.`
+        : `업그레이드와 사용량 지급이 완료되어 지금부터 이용할 수 있습니다. 기존 결제 ${orderDetail.refund.amountKrw.toLocaleString("ko-KR")}원은 담당자가 확인 후 별도로 전액 환불해 드립니다.`
     : orderDetail?.refund?.mode === "manual_partial" && orderDetail.refund.amountKrw > 0
       ? `${orderDetail.refund.amountKrw.toLocaleString("ko-KR")}원은 영업일 +3일 이내에 원 결제수단으로 부분환불 처리됩니다. 카드사 반영 시점은 다를 수 있습니다.${Number(orderDetail.installmentMonths || 0) > 0 ? ` 이번 결제는 ${orderDetail.installmentMonths}개월 할부입니다.` : ""}`
     : orderDetail?.refund?.mode === "automatic_full" && orderDetail.refund.amountKrw > 0
@@ -106,7 +110,7 @@ export function BillingSuccessClient() {
           productCode?: string;
           orderName?: string;
           status?: string;
-          refund?: { mode: string; amountKrw: number; processingBusinessDays: number };
+          refund?: { mode: string; amountKrw: number; processingBusinessDays: number; status?: string | null };
           installmentMonths?: number;
           chargedAmountKrw?: number;
           nextQuotaAt?: string | null;

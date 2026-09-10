@@ -337,6 +337,7 @@ export async function POST(request: Request) {
   let refundedProSubscriptionId: string | null = null;
   let refundedProSchedulePaused = false;
   let changeQuote: SubscriptionChangeQuote | null = null;
+  let deferredFullRefundNote: string | null = null;
   let paymentCredentialScope: ThePayOneCredentialScope = "default";
   try {
     assertBillingMutationRequest(request);
@@ -359,6 +360,22 @@ export async function POST(request: Request) {
       || body.mode === "change_subscription_saved";
     const session = await requireAuthenticatedMvpSession();
     const db = getDb();
+    // Return the committed result before re-evaluating the now-upgraded plan.
+    const priorOrders = await db`
+      select id,order_id,product_code,billing_cycle,status,kind
+      from shorts_mvp.billing_orders
+      where user_id=${session.userId} and request_id=${body.requestId} and provider='thepayone'
+      limit 1
+    `;
+    const priorOrder = priorOrders[0];
+    if (priorOrder?.status === "succeeded") {
+      if ("planCode" in body && (
+        priorOrder.productCode !== body.planCode || priorOrder.billingCycle !== body.billingCycle
+      )) throw new HttpError(409, "결제 요청 ID와 상품이 일치하지 않습니다.", "PAYMENT_REQUEST_MISMATCH");
+      return NextResponse.json({
+        ok: true, checkoutId: priorOrder.id, orderId: priorOrder.orderId, alreadyProcessed: true,
+      });
+    }
     if ("planCode" in body) {
       await assertPricingV2PackagePurchaseAvailable(
         db,
@@ -525,8 +542,8 @@ export async function POST(request: Request) {
         !currentPaymentToRefund
         || changeQuote.refundAmountKrw !== quotedProrationCreditKrw
         || Number(currentPaymentToRefund.refundedAmountKrw) !== 0
-        || currentPaymentToRefund.refundStatus !== "none"
-        || currentPaymentToRefund.prorationRefundStatus !== "none"
+        || !["none", "manual_review"].includes(currentPaymentToRefund.refundStatus)
+        || !["none", "manual_review"].includes(currentPaymentToRefund.prorationRefundStatus)
         || currentPaymentToRefund.hasReservedRefund
         || currentPaymentToRefund.providerMerchantId !== thePayOneMerchantId()
         || currentPaymentToRefund.providerTerminalId !== thePayOneTerminalId()
@@ -555,6 +572,12 @@ export async function POST(request: Request) {
         "확인한 뒤 예상 환불 금액이 변경되었습니다. 금액을 다시 확인해 주세요.",
         "PAYMENT_QUOTE_CHANGED",
       );
+    }
+    if (changeQuote?.fullCurrentPaymentRefund && currentPaymentToRefund && (
+      currentPaymentToRefund.refundStatus === "manual_review"
+      || currentPaymentToRefund.prorationRefundStatus === "manual_review"
+    )) {
+      deferredFullRefundNote = "이전 자동 환불의 결과 확인이 필요합니다. PG 원거래의 실제 취소 여부를 확인한 후 미환불 금액만 직접 환불해 주세요. 새 이용권과 사용량은 지급되었습니다.";
     }
     const defaultPaymentMethodId = reuseStoredMethod
       ? await getDefaultPaymentMethodId(db, session.userId)
@@ -753,7 +776,7 @@ export async function POST(request: Request) {
         checkoutId: order.id,
         orderId: order.orderId,
         refund: {
-          mode: changeQuote?.refundMode || "none",
+          mode: deferredFullRefundNote ? "manual_full" : changeQuote?.refundMode || "none",
           amountKrw: changeQuote?.refundAmountKrw || Number(order.prorationCreditKrw || 0),
           processingBusinessDays: changeQuote?.refundMode === "manual_partial" ? 3 : 0,
         },
@@ -1091,7 +1114,7 @@ export async function POST(request: Request) {
       );
     }
     let replacementRefundTransactionId: string | null = null;
-    if (needsCurrentPaymentFullRefund && currentPaymentToRefund) {
+    if (needsCurrentPaymentFullRefund && currentPaymentToRefund && !deferredFullRefundNote) {
       const refundAmount = Number(currentPaymentToRefund.amountKrw);
       const refundTrackId = createPaymentTrackId("REFUND");
       await db.begin(async (tx) => {
@@ -1158,74 +1181,23 @@ export async function POST(request: Request) {
           refundedProSubscriptionId = current?.id || null;
         }
       } catch (error) {
-        let packageChargeReversed = false;
-        if (replacesEasycutPro) {
-          const reversalTrackId = createPaymentTrackId("REFUND");
-          try {
-            const reversal = await refundThePayOnePayment({
-              trackId: reversalTrackId,
-              rootTransactionId: payment.providerTransactionId,
-              amount: chargeAmount,
-              referenceId: order.id,
-              reason: "기존 프로 환불 실패로 패키지 결제 전액취소",
-            }, paymentCredentialScope);
-            const reversalMismatchFields = thePayOneRefundMismatchFields(reversal, {
-              trackId: reversalTrackId,
-              rootTransactionId: payment.providerTransactionId,
-              amount: chargeAmount,
-              terminalId: expectedTerminalId,
-            });
-            if (reversalMismatchFields.length > 0) {
-              throw new ThePayOneError(
-                "패키지 결제 취소 결과가 주문 정보와 일치하지 않습니다.",
-                "PACKAGE_REVERSAL_MISMATCH",
-                `불일치 필드: ${reversalMismatchFields.join(",")}`,
-                true,
-              );
-            }
-            await db`
-              update shorts_mvp.billing_orders
-              set refunded_amount_krw=${chargeAmount},refund_status='full',
-                proration_refund_track_id=${reversalTrackId},
-                proration_refund_transaction_id=${reversal.providerTransactionId},
-                proration_refund_status='succeeded'
-              where id=${order.id} and status='processing'
-            `;
-            packageChargeReversed = true;
-            providerPaymentCompleted = false;
-          } catch {
-            // The original payment remains under manual review if compensation
-            // cannot be proved successful.
-          }
-        }
-        if (chargeCardId) {
-          await changeThePayOneCardStatus(
-            chargeCardId,
-            "중지",
-            createPaymentTrackId("AUDT"),
-            paymentCredentialScope,
-          ).catch(() => undefined);
-        }
+        // A paid upgrade is independent of the old payment's refund. Do not
+        // reverse the new charge or disable its payment method on refund failure.
+        const refundFailureCode = error instanceof ThePayOneError
+          ? error.resultCode
+          : error instanceof HttpError ? error.code : "REFUND_PROCESSING_FAILED";
+        deferredFullRefundNote = `자동 환불 확인 필요 (${refundFailureCode}). ${safeFailureMessage(error) || "환불 결과를 확인하지 못했습니다."} PG 원거래의 실제 취소 여부를 확인한 후 미환불 금액만 직접 환불해 주세요.`;
+        console.warn("thepayone_upgrade_refund_deferred", {
+          billingOrderId: order.id,
+          sourceOrderId: currentPaymentToRefund.id,
+          resultCode: refundFailureCode,
+          outcomeUnknown: !(error instanceof ThePayOneError) || error.outcomeUnknown,
+        });
         await db`
           update shorts_mvp.billing_orders
           set proration_refund_status='manual_review',refund_status='manual_review'
           where id=${currentPaymentToRefund.id} and proration_refund_status='pending'
-        `.catch(() => undefined);
-        if (paymentMethodId) {
-          await db`
-            update shorts_mvp.billing_payment_methods
-            set status='manual_review',provider_schedule_status='manual_review'
-            where id=${paymentMethodId}
-          `.catch(() => undefined);
-        }
-        if (packageChargeReversed) {
-          throw new HttpError(
-            502,
-            "기존 이지컷 프로 결제를 환불하지 못해 패키지 결제를 전액 취소했습니다. 기존 프로 이용권은 그대로 유지됩니다.",
-            "PRO_REFUND_FAILED_PACKAGE_REVERSED",
-          );
-        }
-        throw error;
+        `;
       }
     }
 
@@ -1487,18 +1459,27 @@ export async function POST(request: Request) {
           provider_transaction_day=${kstTransactionDay(approvedAt)},
           installment_months=${payment.installmentMonths},
           installment_terms_snapshot=${tx.json(installmentTermsSnapshot as never)},
-          approved_at=${approvedAt},failure_code=null,failure_message=null
+          approved_at=${approvedAt},failure_code=null,failure_message=null,
+          proration_refund_status=${deferredFullRefundNote ? "manual_review" : replacementRefundTransactionId ? "succeeded" : "none"}
         where id=${order.id}
       `;
       if (
-        changeQuote?.refundMode === "manual_partial"
-        && changeQuote.refundAmountKrw > 0
+        (changeQuote?.refundMode === "manual_partial" || deferredFullRefundNote !== null)
+        && changeQuote && changeQuote.refundAmountKrw > 0
         && currentPaymentToRefund
         && current
       ) {
-        const refundStatus = currentPaymentToRefund.providerAuthCode
-          ? "pending"
-          : "manual_review";
+        await tx`select id from shorts_mvp.billing_orders where id=${currentPaymentToRefund.id} for update`;
+        const reservedRefunds = await tx`
+          select id from shorts_mvp.subscription_upgrade_refunds
+          where source_order_id=${currentPaymentToRefund.id} and upgrade_order_id<>${order.id}
+            and status in ('pending','submitted','manual_review','completed')
+          limit 1
+        `;
+        if (reservedRefunds[0]) throw new HttpError(409, "기존 결제의 환불 항목이 이미 존재합니다.", "UPGRADE_REFUND_ALREADY_RESERVED");
+        const refundStatus = deferredFullRefundNote || !currentPaymentToRefund.providerAuthCode
+          ? "manual_review"
+          : "pending";
         await tx`
           insert into shorts_mvp.subscription_upgrade_refunds (
             upgrade_order_id,source_order_id,user_id,source_plan_code,target_plan_code,
@@ -1515,7 +1496,7 @@ export async function POST(request: Request) {
             ${current.currentPeriodStart},${current.currentPeriodEnd},
             ${changeQuote.refundTotalPeriodDays},${changeQuote.refundUnusedPeriodDays},
             ${oldMethod?.issuerName || null},${oldMethod?.cardLast4 || null},${refundStatus},
-            ${refundStatus === "manual_review" ? "과거 승인번호가 없어 확인이 필요합니다." : ""}
+            ${deferredFullRefundNote || (refundStatus === "manual_review" ? "과거 승인번호가 없어 확인이 필요합니다." : "")}
           )
           on conflict (upgrade_order_id) do nothing
         `;
@@ -1524,7 +1505,7 @@ export async function POST(request: Request) {
           set proration_credit_krw=${changeQuote.refundAmountKrw},
             proration_refund_status=${refundStatus}
           where id=${currentPaymentToRefund.id}
-            and refunded_amount_krw=0 and refund_status='none'
+            and refunded_amount_krw=0 and refund_status in ('none','manual_review')
         `;
       }
       if (replacementRefundTransactionId && currentPaymentToRefund) await tx`
@@ -1580,8 +1561,9 @@ export async function POST(request: Request) {
       chargedAmountKrw: finalChargeAmount,
       prorationCreditKrw,
       refund: {
-        mode: changeQuote?.refundMode || "none",
+        mode: deferredFullRefundNote ? "manual_full" : changeQuote?.refundMode || "none",
         amountKrw: changeQuote?.refundAmountKrw || 0,
+        status: deferredFullRefundNote ? "manual_review" : replacementRefundTransactionId ? "completed" : null,
         processingBusinessDays: changeQuote?.refundMode === "manual_partial" ? 3 : 0,
       },
       installmentMonths: Number(order.installmentMonths || 0),
