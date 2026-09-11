@@ -206,3 +206,10 @@ describe("free YouTube search collection", () => {
     expect(errorSpy).toHaveBeenCalledWith("YouTube free search request failed", { status: 403 });
   });
 });
+
+// Parsing/pagination tests use an in-memory transport; real quota concurrency
+// and source-lookup isolation are exercised by youtube-discovery-postgres.test.
+vi.mock("@/lib/youtube-quota", async (importOriginal) => ({
+  ...await importOriginal<typeof import("./youtube-quota")>(),
+  youtubeRequest: (_purpose: unknown, url: URL, init: RequestInit, fetchImpl: typeof fetch) => fetchImpl(url, init),
+}));

@@ -7,6 +7,29 @@
   (`lab`, production read-only, or explicitly authorized production change),
   actual worktree/branch, and planned action. Continue safe local work when a
   cloud check is unavailable; do not ask again for authorization already given.
+- Before requesting a login or making remote changes, establish the test
+  configuration: exact source commit/worktree, intended environment, required
+  services and schema, observed deployment versions, and what the test can prove.
+  Compare relevant lab/production feature and dependency differences first;
+  never assume lab is a mirror of production or an automatic staging branch.
+  Use available read-only evidence. If authentication is needed to resolve an
+  unknown, identify that specific check and request only the needed login;
+  record the unknown and stop dependent changes until verified.
+- For production changes, keep the currently promoted production commit as
+  the code baseline. Choose a suitable isolated test or unaliased candidate
+  within the authorized scope; explain its code baseline separately from its
+  account/DB configuration. Preserve environment-specific guards and existing
+  lab work. Do not merge lab wholesale into production or overwrite either
+  environment merely to make their versions match.
+- Lab checks are conditional on work targeting lab. The presence of lab tools
+  does not make lab login, AWS access, or lab deployment a prerequisite for
+  every production change or local test. An explicit lab test request still
+  requires a compatible test configuration and all applicable lab boundaries;
+  it does not establish that the existing lab web app matches production.
+- Report test results against the exact tested source and configuration,
+  including gaps from the release candidate. A test against a different lab
+  version is not production verification. Before promotion, verify the actual
+  production candidate and retain the existing release checks.
 - A filename, branch, browser login, CLI profile name, or local source checkout
   is not proof of the deployed environment. Inspect actual account/project/DB
   identity and exact registered worker revisions before remote changes.

@@ -1,3 +1,5 @@
+import { getJapanSettings, updateJapanSettings } from "./youtube-japan-settings";
+import { collectJapanVideos } from "./youtube-japan-collector";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
@@ -163,11 +165,38 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
         "202609110001_youtube_quota_opening_balances.sql",
         "202609110002_youtube_pending_metadata.sql",
         "202609110003_youtube_collection_recency.sql",
+        "202609110010_youtube_japan_discovery.sql",
+        "202609110011_youtube_japan_quota.sql",
+        "202609110012_youtube_japan_activation_constraints.sql",
       ]) {
+        if (name === "202609110010_youtube_japan_discovery.sql") {
+          await migrationDb`insert into shorts_mvp.youtube_catalog(id,video_id,metadata,first_discovered_at,verified_at,last_trending_at,trending_rank)
+            values('rolling-existing','existing001',${migrationDb.json({videoId:"existing001",title:"既存の動画"})},'2026-09-09Z',now(),'2026-09-09Z',9)`;
+          await migrationDb`insert into shorts_mvp.youtube_collection_recency(catalog_id,last_collected_at) values('rolling-existing','2026-09-09Z')`;
+        }
+        if (name === "202609110012_youtube_japan_activation_constraints.sql") {
+          await migrationDb`update shorts_mvp.youtube_catalog set last_trending_at='2026-09-10Z',trending_rank=2 where id='rolling-existing'`;
+          await migrationDb`update shorts_mvp.youtube_collection_recency set last_collected_at='2026-09-10Z' where catalog_id='rolling-existing'`;
+          // Phase 1 must accept the old deployment's conflict targets. Phase 2
+          // catches up its metadata without a YouTube request.
+          await migrationDb`insert into shorts_mvp.youtube_collection_runs(lane,scheduled_at)
+            values('trending','1970-01-01Z') on conflict(lane,scheduled_at) do nothing`;
+          await migrationDb`insert into shorts_mvp.youtube_catalog(id,video_id,metadata,first_discovered_at,verified_at)
+            values('rolling-upgrade','rolling0001',${migrationDb.json({videoId:"rolling0001",title:"楽しい動画"})},now(),now())`;
+          await migrationDb`insert into shorts_mvp.youtube_trending_days(day,catalog_id,first_seen_at,last_seen_at)
+            values('1970-01-01','rolling-upgrade',now(),now()) on conflict(day,catalog_id) do nothing`;
+        }
         await migrationDb.unsafe(
           readFileSync(path.resolve("../supabase/migrations", name), "utf8"),
         );
       }
+      const [caughtUp] = await migrationDb`select first_discovered_at,last_collected_at,last_trending_at,trending_rank from shorts_mvp.youtube_catalog_regions where catalog_id='rolling-existing'`;
+      expect(caughtUp.firstDiscoveredAt.toISOString()).toBe('2026-09-09T00:00:00.000Z');
+      expect(caughtUp.lastCollectedAt.toISOString()).toBe('2026-09-10T00:00:00.000Z');
+      expect(caughtUp.lastTrendingAt.toISOString()).toBe('2026-09-10T00:00:00.000Z');
+      expect(caughtUp.trendingRank).toBe(2);
+      expect((await migrationDb`select metadata->>'isJapanese' as japanese from shorts_mvp.youtube_catalog where id='rolling-upgrade'`)[0].japanese).toBe("true");
+      expect((await migrationDb`select region_code from shorts_mvp.youtube_catalog_regions where catalog_id='rolling-upgrade'`)[0].regionCode).toBe("KR");
     } finally {
       migrationDb.release();
     }
@@ -181,7 +210,7 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
     vi.stubEnv("YOUTUBE_API_KEY", "test-api-key");
     await db.unsafe(`truncate shorts_mvp.youtube_catalog,shorts_mvp.youtube_collection_runs,shorts_mvp.youtube_quota_attempts,
       shorts_mvp.youtube_search_positions,shorts_mvp.youtube_list_versions,shorts_mvp.youtube_catalog_imports,shorts_mvp.youtube_quota_verifications,
-      shorts_mvp.popular_video_runs,shorts_mvp.popular_search_runs,shorts_mvp.free_video_runs cascade`);
+      shorts_mvp.youtube_japan_batches,shorts_mvp.youtube_japan_settings_audit,shorts_mvp.popular_video_runs,shorts_mvp.popular_search_runs,shorts_mvp.free_video_runs cascade`);
     await db`insert into shorts_mvp.youtube_quota_verifications(project_id,key_fingerprint,search_daily_limit,general_daily_limit,verified_at,evidence,accounting_ready_from)
       values('test-project','test',100,10000,now(),'isolated fixture',(now() at time zone 'America/Los_Angeles')::date)`;
   });
@@ -1179,4 +1208,294 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
       ),
     ).toMatchObject({ collections: 1, legacy: true });
   });
+  async function enableJapan() {
+    vi.stubEnv("YOUTUBE_JP_COLLECTION_ENABLED", "true"); vi.stubEnv("YOUTUBE_JP_DISCOVERY_ENABLED", "true");
+    await db`update shorts_mvp.youtube_quota_verifications set key_fingerprint=${createHash("sha256").update("test-api-key").digest("hex")},
+      japan_collection_enabled=true,japan_discovery_enabled=true,japan_activated_at=clock_timestamp(),japan_verified_at=clock_timestamp(),japan_evidence='isolated test',japan_search_daily_ceiling=100,other_clients_reviewed=true where project_id='test-project'`;
+  }
+  it("collects Japan once: seven chart pages and ten searches, ignores all next-page tokens", async () => {
+    await enableJapan();
+    let serial = 0;
+    let activeFetches = 0;
+    let maximumFetches = 0;
+    const licenses = new Map<string,string>();
+    const fake = vi.fn(async (input: RequestInfo | URL) => {
+      activeFetches++;
+      maximumFetches = Math.max(maximumFetches, activeFetches);
+      await new Promise(resolve => setTimeout(resolve, 5));
+      activeFetches--;
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/search")) {
+        expect(url.searchParams.get("regionCode")).toBe("JP"); expect(url.searchParams.get("relevanceLanguage")).toBe("ja");
+        expect(url.searchParams.has("pageToken")).toBe(false);
+        const id = `jp${String(++serial).padStart(9,"0")}`;
+        licenses.set(id,url.searchParams.get("videoLicense") || "youtube");
+        return new Response(JSON.stringify({items:[{id:{videoId:id}}],nextPageToken:"never-follow"}));
+      }
+      const id = url.searchParams.get("id") || `jp${String(++serial).padStart(9,"0")}`;
+      if (url.searchParams.has("chart")) expect(url.searchParams.get("regionCode")).toBe("JP");
+      const item = youtubeItem(id,licenses.get(id)); item.snippet.title="楽しい動画";
+      return new Response(JSON.stringify({items:[item],nextPageToken:"never-follow"}));
+    });
+    const scheduledAt = new Date();
+    const [result] = await Promise.all([
+      collectJapanVideos({db,fetchImpl:fake,scheduledAt}),
+      collectJapanVideos({db,fetchImpl:fake,scheduledAt}),
+    ]);
+    expect(result).toMatchObject({skipped:false,failed:false}); expect(fake).toHaveBeenCalledTimes(27);
+    expect(maximumFetches).toBe(1);
+    const counts = await db`select bucket,sum(units)::int as units from shorts_mvp.youtube_quota_attempts where region_code='JP' group by bucket order by bucket`;
+    expect(counts.map(row=>[row.bucket,row.units])).toEqual([["general",17],["search",10]]);
+    expect((await getCatalogVideos(filters({japanese:true}),db)).items.every(item=>item.title==="楽しい動画")).toBe(true);
+    await collectJapanVideos({db,fetchImpl:fake,scheduledAt}); expect(fake).toHaveBeenCalledTimes(27);
+    expect((await db`select count(*)::int n from shorts_mvp.popular_video_runs`)[0].n).toBe(0);
+  });
+  it("keeps Japanese failed attempts charged without blocking original video lookup", async () => {
+    await enableJapan();
+    const attempt = () => withYoutubePurpose("views",db,()=>youtubeRequest("free",new URL("https://www.googleapis.com/youtube/v3/search"),{},async()=>{throw new Error("network failure");}),{region:"JP"});
+    const settled = await Promise.allSettled(Array.from({length:9},attempt));
+    expect(settled.every(result=>result.status==='rejected')).toBe(true);
+    expect((await db`select sum(units)::int n from shorts_mvp.youtube_quota_attempts where region_code='JP' and bucket='search'`)[0].n).toBe(3);
+    const original = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      return new Response(JSON.stringify({items:[youtubeItem(url.searchParams.get('id') || 'source00001')]}));
+    });
+    vi.stubGlobal("fetch",original);
+    const analysis = await withYoutubePurpose("analysis",db,()=>analyzeYoutubeUrl("https://www.youtube.com/watch?v=source00001"));
+    expect(analysis.videoId).toBe("source00001"); expect(original).toHaveBeenCalledTimes(2);
+  });
+  it("enforces per-country general budgets under concurrent reservations", async () => {
+    await enableJapan();
+    const tasks = (["trending","reusable","views"] as const).flatMap(lane=>Array.from({length:12},()=>db`select shorts_mvp.reserve_youtube_japan_quota('test-project','general',${lane},1) id`));
+    const results = await Promise.all(tasks);
+    expect(results.filter(rows=>rows[0].id)).toHaveLength(17);
+    expect((await db`select shorts_mvp.reserve_youtube_quota('test-project','general','analysis',1) id`)[0].id).toBeTruthy();
+    expect((await db`select bool_and(quota_day=(attempted_at at time zone 'America/Los_Angeles')::date) valid from shorts_mvp.youtube_quota_attempts`)[0].valid).toBe(true);
+  });
+  it("merges both countries without duplicates, freezes pages, and removes Japan on rollback", async () => {
+    await enableJapan(); const now=new Date();
+    const [kr]=await db`insert into shorts_mvp.youtube_collection_runs(lane,region_code,scheduled_at,status,finished_at) values('trending','KR',${now},'success',${now}) returning id`;
+    const [jp]=await db`insert into shorts_mvp.youtube_collection_runs(lane,region_code,scheduled_at,status,finished_at) values('trending','JP',${now},'success',${now}) returning id`;
+    await saveCatalogPage(db,[fixture('korean00001')],{runId:kr.id,regionCode:'KR',trending:true,observedAt:now});
+    const japanese=Array.from({length:55},(_,index)=>fixture(`jp${String(index).padStart(9,'0')}`,{isKorean:false,isJapanese:true,title:'楽しい動画',viewCount:1000-index}));
+    await saveCatalogPage(db,[fixture('korean00001'),...japanese],{runId:jp.id,regionCode:'JP',trending:true,observedAt:now});
+    const first=await getCatalogVideos(filters({type:'trending'}),db,now);
+    expect(first.totalCount).toBe(56); expect(first.items).toHaveLength(48);
+    const ja=await getCatalogVideos(filters({type:'trending',japanese:true}),db,now); expect(ja.totalCount).toBe(55);
+    const ko=await getCatalogVideos(filters({type:'trending',korean:true}),db,now); expect(ko.items.map(item=>item.videoId)).toEqual(['korean00001']);
+    const later = new Date(now.getTime()+1000);
+    const [newRun]=await db`insert into shorts_mvp.youtube_collection_runs(lane,region_code,scheduled_at,status,finished_at) values('trending','JP',${later},'success',${later}) returning id`;
+    await saveCatalogPage(db,[fixture('newjapan001',{isKorean:false,isJapanese:true,viewCount:99999})],{runId:newRun.id,regionCode:'JP',trending:true,observedAt:later});
+    const second=await getCatalogVideos(filters({type:'trending',cursor:first.nextCursor}),db,later);
+    expect(new Set([...first.items,...second.items].map(item=>item.videoId)).size).toBe(56);
+    expect(second.items.some(item=>item.videoId==='newjapan001')).toBe(false);
+    await expect(getCatalogVideos(filters({type:'trending',japanese:true,cursor:first.nextCursor}),db,later)).rejects.toBeInstanceOf(CatalogCursorExpiredError);
+    vi.stubEnv('YOUTUBE_JP_DISCOVERY_ENABLED','false');
+    expect((await getCatalogVideos(filters({type:'trending'}),db,later)).items.map(item=>item.videoId)).toEqual(['korean00001']);
+  });
+  it("keeps a previous Japanese success visible when a later collection hits quota errors", async () => {
+    await enableJapan(); const now=new Date();
+    const [run]=await db`insert into shorts_mvp.youtube_collection_runs(lane,region_code,scheduled_at,status,finished_at) values('trending','JP',${new Date(now.getTime()-1000)},'success',${now}) returning id`;
+    await saveCatalogPage(db,[fixture('oldjapan001',{isKorean:false,isJapanese:true})],{runId:run.id,regionCode:'JP',trending:true,observedAt:now});
+    const fetchImpl=vi.fn(async()=>new Response(JSON.stringify({error:{errors:[{reason:'quotaExceeded'}]}}),{status:403}));
+    expect(await collectJapanVideos({db,fetchImpl,scheduledAt:now})).toMatchObject({failed:true});
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect((await getCatalogVideos(filters({type:'trending',japanese:true}),db)).items[0].videoId).toBe('oldjapan001');
+  });
+
+  it("reserves the existing Korean search allocation when the combined ceiling remains 90", async () => {
+    await enableJapan();
+    await db`update shorts_mvp.youtube_quota_verifications set japan_search_daily_ceiling=90`;
+    const fetchImpl=vi.fn(async()=>new Response(JSON.stringify({items:[]})));
+    const result=await collectJapanVideos({db,fetchImpl});
+    expect(result).toMatchObject({failed:false,results:[{lane:"trending"},{lane:"reusable",skipped:true},{lane:"views",skipped:true}]});
+    expect(fetchImpl).toHaveBeenCalledTimes(7);
+    expect((await db`select shorts_mvp.reserve_youtube_japan_quota('test-project','search','views',1) id`)[0].id).toBeNull();
+    const tasks=([["views",40],["reusable",20],["free",30]] as const).flatMap(([lane,count])=>
+      Array.from({length:count+2},()=>db`select shorts_mvp.reserve_youtube_quota('test-project','search',${lane},1) id`));
+    expect((await Promise.all(tasks)).filter(rows=>rows[0].id)).toHaveLength(90);
+  });
+  it("does not start Japan without current project evidence or after its deadline", async () => {
+    await enableJapan();
+    const fetchImpl=vi.fn(async()=>new Response(JSON.stringify({items:[]})));
+    await db`update shorts_mvp.youtube_quota_verifications set japan_verified_at=clock_timestamp()-interval '8 days'`;
+    expect(await collectJapanVideos({db,fetchImpl})).toMatchObject({skipped:true,reason:"japan_quota_unverified"});
+    await enableJapan();
+    vi.stubEnv("YOUTUBE_API_KEY","a-different-project-key");
+    expect(await collectJapanVideos({db,fetchImpl})).toMatchObject({skipped:true,reason:"japan_quota_unverified"});
+    vi.stubEnv("YOUTUBE_API_KEY","test-api-key");
+    expect(await collectJapanVideos({db,fetchImpl,maxDurationMs:0})).toMatchObject({timedOut:true,results:[]});
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+  it("fails collection closed when usage cannot be recorded", async () => {
+    await enableJapan();
+    const brokenDb=vi.fn(()=>Promise.reject(new Error("accounting unavailable"))) as unknown as Sql;
+    const fetchImpl=vi.fn(async()=>new Response(JSON.stringify({items:[]})));
+    await expect(withYoutubePurpose("trending",brokenDb,()=>youtubeRequest("trending",new URL("https://www.googleapis.com/youtube/v3/videos"),{},fetchImpl),{region:"JP"})).rejects.toMatchObject({name:"YoutubeQuotaError"});
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+  it("caps concurrent Korean and Japanese searches at the explicitly verified allocation", async () => {
+    await enableJapan();
+    const kr=([["views",40],["reusable",20],["free",30]] as const).flatMap(([lane,count])=>
+      Array.from({length:count+2},()=>db`select shorts_mvp.reserve_youtube_quota('test-project','search',${lane},1) id`));
+    const jp=([["views",3],["reusable",7]] as const).flatMap(([lane,count])=>
+      Array.from({length:count+2},()=>db`select shorts_mvp.reserve_youtube_japan_quota('test-project','search',${lane},1) id`));
+    expect((await Promise.all([...kr,...jp])).filter(rows=>rows[0].id)).toHaveLength(100);
+    const usage=await db`select region_code,sum(units)::int n from shorts_mvp.youtube_quota_attempts group by region_code order by region_code`;
+    expect(usage.map(row=>[row.regionCode,row.n])).toEqual([["JP",10],["KR",90]]);
+  });
+  it("keeps all 9000 existing general units available after Japan uses its 17 units", async () => {
+    await enableJapan();
+    await db`insert into shorts_mvp.youtube_quota_opening_balances(project_id,quota_day,bucket,purpose,units,observed_through,evidence)
+      values('test-project',(clock_timestamp() at time zone 'America/Los_Angeles')::date,'general','analysis',8999,clock_timestamp(),'isolated test')`;
+    for (const [lane,count] of [["trending",7],["reusable",7],["views",3]] as const)
+      expect((await db`select shorts_mvp.reserve_youtube_japan_quota('test-project','general',${lane},${count}) id`)[0].id).toBeTruthy();
+    expect((await db`select shorts_mvp.reserve_youtube_quota('test-project','general','analysis',1) id`)[0].id).toBeTruthy();
+    expect((await db`select shorts_mvp.reserve_youtube_quota('test-project','general','analysis',1) id`)[0].id).toBeNull();
+  });
+  it("continues a legacy Korean cursor after Japan exposure is enabled", async () => {
+    await enableJapan(); const now=new Date();
+    const krId=await run(now);
+    const korean=Array.from({length:55},(_,index)=>fixture(`kr${String(index).padStart(9,"0")}`,{viewCount:1000-index}));
+    await saveCatalogPage(db,korean,{runId:krId,trending:true,observedAt:now});
+    vi.stubEnv("YOUTUBE_JP_DISCOVERY_ENABLED","false");
+    const first=await getCatalogVideos(filters({type:"trending"}),db,now);
+    await db`update shorts_mvp.youtube_list_versions set current_run_ids='{}' where id=${first.version!}`;
+    vi.stubEnv("YOUTUBE_JP_DISCOVERY_ENABLED","true");
+    const [jp]=await db`insert into shorts_mvp.youtube_collection_runs(lane,region_code,scheduled_at,status,finished_at)
+      values('trending','JP',${now},'success',${now}) returning id`;
+    await saveCatalogPage(db,[fixture("japan000001",{isKorean:false,isJapanese:true,viewCount:99999})],{runId:jp.id,regionCode:"JP",trending:true,observedAt:now});
+    const second=await getCatalogVideos(filters({type:"trending",cursor:first.nextCursor}),db,now);
+    expect(second.items).toHaveLength(7); expect(second.totalCount).toBe(55);
+    expect(second.items.every(item=>item.videoId.startsWith("kr"))).toBe(true);
+    expect((await getCatalogVideos(filters({type:"trending"}),db,now)).totalCount).toBe(56);
+  });
+  it("does not spend the Korean refresh allocation on Japanese-only history", async () => {
+    await enableJapan(); const now=new Date();
+    const [jp]=await db`insert into shorts_mvp.youtube_collection_runs(lane,region_code,scheduled_at,status,finished_at)
+      values('trending','JP',${now},'success',${now}) returning id`;
+    await saveCatalogPage(db,[fixture("japan000001",{isKorean:false,isJapanese:true})],{runId:jp.id,regionCode:"JP",trending:true,observedAt:now});
+    await db`update shorts_mvp.youtube_catalog set refresh_after=clock_timestamp()-interval '1 hour'`;
+    const fetchImpl=vi.fn(async()=>new Response(JSON.stringify({items:[]})));
+    expect(await refreshCatalogBatch({db,fetchImpl})).toMatchObject({pages:0,failed:false});
+    expect(fetchImpl).not.toHaveBeenCalled();
+    vi.stubEnv("YOUTUBE_JP_DISCOVERY_ENABLED","false");
+    expect((await getCatalogVideos(filters({type:"trending"}),db)).items).toHaveLength(0);
+  });
+
+  it.each(["views", "reusable"] as const)("rolls %s independently at 17:20 and retains the failed country's window", async lane => {
+    await enableJapan();
+    const moment = (day: number, time: string) => new Date(`2026-09-${day}T${time}:00+09:00`);
+    const add = async (region: "KR" | "JP", day: number, done: string, ids: string[]) => {
+      const scheduled = moment(day, region === "KR" ? "17:10" : "17:15");
+      const at = moment(day, done);
+      const [run] = await db`insert into shorts_mvp.youtube_collection_runs(lane,region_code,scheduled_at,status,finished_at)
+        values(${lane},${region},${scheduled},'success',${at}) returning id`;
+      await saveCatalogPage(db, ids.map(id=>fixture(id,{isKorean:false,isJapanese:true,license:lane==="reusable"?"creativeCommon":"youtube"})),
+        {runId:run.id,regionCode:region,observedAt:at});
+    };
+    await add("KR",10,"17:11",["krprevious1"]);
+    await add("JP",10,"17:18",["jpprevious1"]);
+    await add("KR",11,"17:11",["krnewvideo1","sharedvid01"]);
+    await add("JP",11,"17:23",["jpnewvideo1","sharedvid01"]);
+    const scope = filters({type:lane,periodBasis:"collected",period:"today",japanese:true});
+    const before = await getCatalogVideos(scope,db,moment(11,"17:19"));
+    expect(before.collectionWindows).toEqual({KR:moment(10,"17:10").toISOString(),JP:moment(10,"17:15").toISOString()});
+    const split = await getCatalogVideos(scope,db,moment(11,"17:20"));
+    expect(split.collectionWindows).toEqual({KR:moment(11,"17:10").toISOString(),JP:moment(10,"17:15").toISOString()});
+    expect(split.items.map(v=>v.videoId)).not.toContain("krprevious1");
+    expect(split.items.map(v=>v.videoId)).toContain("jpprevious1");
+    const after = await getCatalogVideos(scope,db,moment(11,"17:24"));
+    expect(after.collectionWindowStart).toBe(moment(11,"17:10").toISOString());
+    expect(after.collectionWindows?.JP).toBe(moment(11,"17:15").toISOString());
+    expect(after.items.map(v=>v.videoId).sort()).toEqual(["jpnewvideo1","krnewvideo1","sharedvid01"].sort());
+    expect(after.totalCount).toBe(3); expect(after.periodCounts?.today).toBe(3);
+    expect(after.collectionWindowKey).not.toBe(split.collectionWindowKey);
+    expect((await getCatalogVideos(scope,db,moment(12,"00:01")))).toMatchObject({totalCount:3,collectionWindowKey:after.collectionWindowKey});
+    await db`update shorts_mvp.youtube_collection_runs set status='failed' where region_code='JP' and scheduled_at=${moment(11,"17:15")}`;
+    const failed = await getCatalogVideos(scope,db,moment(11,"17:25"));
+    expect(failed.collectionWindows?.KR).toBe(moment(11,"17:10").toISOString());
+    expect(failed.collectionWindows?.JP).toBe(moment(10,"17:15").toISOString());
+  });
+
+  it("expires only period cursors on a Japanese window rollover and keeps all-page order", async () => {
+    await enableJapan();
+    const old = new Date("2026-09-10T08:15:00Z");
+    const now = new Date("2026-09-11T08:19:00Z");
+    const [run] = await db`insert into shorts_mvp.youtube_collection_runs(lane,region_code,scheduled_at,status,finished_at)
+      values('views','JP',${old},'success',${old}) returning id`;
+    await saveCatalogPage(db,Array.from({length:55},(_,i)=>fixture(`jp${String(i).padStart(9,"0")}`,{viewCount:1000-i})),{runId:run.id,regionCode:"JP",observedAt:old});
+    const scope=filters({periodBasis:"collected",period:"today"});
+    const first=await getCatalogVideos(scope,db,now);
+    const all=await getCatalogVideos({...scope,period:"all"},db,now);
+    const later=new Date("2026-09-11T08:21:00Z");
+    const [next] = await db`insert into shorts_mvp.youtube_collection_runs(lane,region_code,scheduled_at,status,finished_at)
+      values('views','JP','2026-09-11T08:15:00Z','success',${later}) returning id`;
+    await saveCatalogPage(db,[fixture("jpnew000001")],{runId:next.id,regionCode:"JP",observedAt:later});
+    await expect(getCatalogVideos({...scope,cursor:first.nextCursor},db,later)).rejects.toBeInstanceOf(CatalogCursorExpiredError);
+    const page=await getCatalogVideos({...scope,period:"all",cursor:all.nextCursor},db,later);
+    expect(page.items).toHaveLength(7); expect(page.items.some(v=>v.videoId==="jpnew000001")).toBe(false);
+  });
+
+  it.each(["expired", "off"])("preserves all 90 Korean searches after Japanese consumption when Japan is %s", async mode => {
+    await enableJapan();
+    for (const [lane,units] of [["reusable",7],["views",3]] as const)
+      expect((await db`select shorts_mvp.reserve_youtube_japan_quota('test-project','search',${lane},${units}) id`)[0].id).toBeTruthy();
+    if(mode==="expired") await db`update shorts_mvp.youtube_quota_verifications set japan_verified_at=clock_timestamp()-interval '8 days'`;
+    else await db`update shorts_mvp.youtube_quota_verifications set japan_collection_enabled=false`;
+    for(const [lane,units] of [["views",40],["reusable",20],["free",30]] as const)
+      expect((await db`select shorts_mvp.reserve_youtube_quota('test-project','search',${lane},${units}) id`)[0].id).toBeTruthy();
+    expect((await db`select shorts_mvp.reserve_youtube_japan_quota('test-project','general','trending',1) id`)[0].id).toBeNull();
+    expect((await db`select shorts_mvp.reserve_youtube_quota('test-project','search','free',1) id`)[0].id).toBeNull();
+    expect((await db`select shorts_mvp.reserve_youtube_quota('test-project','general','analysis',1) id`)[0].id).toBeTruthy();
+  });
+
+  it("observes collection OFF between requests, then stops without publishing partial results", async () => {
+    await enableJapan();
+    const fetchImpl=vi.fn(async()=>{
+      await db`update shorts_mvp.youtube_quota_verifications set japan_collection_enabled=false`;
+      return new Response(JSON.stringify({items:[youtubeItem("stopped0001")]}));
+    });
+    const result=await collectJapanVideos({db,fetchImpl});
+    expect(result).toMatchObject({failed:true}); expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect((await db`select count(*)::int n from shorts_mvp.youtube_catalog`)[0].n).toBe(0);
+    expect((await db`select sum(units)::int n from shorts_mvp.youtube_quota_attempts where region_code='JP'`)[0].n).toBe(1);
+  });
+
+  it("gates exposure on all three initial results, records changes, and reads OFF without a redeploy", async () => {
+    await enableJapan();
+    await db`update shorts_mvp.youtube_quota_verifications set japan_discovery_enabled=false`;
+    await expect(updateJapanSettings(db,randomUUID(),{collection:true,reads:true})).rejects.toMatchObject({status:409});
+    const now=new Date();
+    for(const lane of ["trending","views","reusable"])
+      await db`insert into shorts_mvp.youtube_collection_runs(lane,region_code,scheduled_at,status,finished_at) values(${lane},'JP',${now},'success',${now})`;
+    await updateJapanSettings(db,randomUUID(),{collection:true,reads:true});
+    expect((await getJapanSettings(db)).reads).toBe(true);
+    await updateJapanSettings(db,randomUUID(),{collection:false,reads:false});
+    expect(await getJapanSettings(db)).toMatchObject({collection:false,reads:false});
+    expect((await db`select count(*)::int n from shorts_mvp.youtube_japan_settings_audit`)[0].n).toBe(2);
+  });
+
+  it("does not repeat manual and scheduled batches in one Pacific day or claim a future slot", async () => {
+    await enableJapan();
+    const fetchImpl=vi.fn(async()=>new Response(JSON.stringify({items:[]})));
+    const firstSlot=new Date(Date.now()-3600000);
+    expect(await collectJapanVideos({db,fetchImpl,scheduledAt:new Date(Date.now()+3600000)})).toMatchObject({skipped:true,reason:"future_slot"});
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(await collectJapanVideos({db,fetchImpl,scheduledAt:firstSlot})).toMatchObject({skipped:false,failed:false});
+    const calls=fetchImpl.mock.calls.length;
+    expect(await collectJapanVideos({db,fetchImpl,scheduledAt:new Date()})).toMatchObject({skipped:true,reason:"already_collected"});
+    expect(fetchImpl).toHaveBeenCalledTimes(calls);
+    expect((await db`select bool_and(quota_day=(started_at at time zone 'America/Los_Angeles')::date) as valid from shorts_mvp.youtube_japan_batches`)[0].valid).toBe(true);
+  });
+
+  it("starts a fresh Pacific-day budget without counting the previous day's reservations", async () => {
+    await enableJapan();
+    await db`insert into shorts_mvp.youtube_quota_attempts(project_id,quota_day,bucket,purpose,units,region_code)
+      values('test-project',(clock_timestamp() at time zone 'America/Los_Angeles')::date-1,'search','views',40,'KR'),
+      ('test-project',(clock_timestamp() at time zone 'America/Los_Angeles')::date-1,'search','views',3,'JP')`;
+    expect((await db`select shorts_mvp.reserve_youtube_quota('test-project','search','views',40) id`)[0].id).toBeTruthy();
+    expect((await db`select shorts_mvp.reserve_youtube_japan_quota('test-project','search','views',3) id`)[0].id).toBeTruthy();
+  });
+
 });

@@ -1,3 +1,5 @@
+import { japanReadsEnabled } from "@/lib/youtube-japan-settings";
+import { getDb } from "@/lib/db";
 import { NextResponse } from "next/server";
 import { catalogReadsEnabled } from "@/lib/youtube-quota";
 import { catalogStatus, getCatalogVisibility } from "@/lib/youtube-catalog";
@@ -13,9 +15,12 @@ export async function GET(request: Request) {
   if (!catalogReadsEnabled())
     return NextResponse.json({ catalogEnabled: false });
   try {
+    const db = getDb();
+    const includeJapan = await japanReadsEnabled(db);
+    const now = new Date();
     const [state, visibility] = await Promise.all([
-      catalogStatus(undefined, type),
-      getCatalogVisibility(ids),
+      catalogStatus(db, type, now, includeJapan),
+      getCatalogVisibility(ids, db, now, includeJapan),
     ]);
     return NextResponse.json(
       { ...state, visibility },

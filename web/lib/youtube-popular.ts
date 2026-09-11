@@ -1,9 +1,9 @@
-import { youtubeRequest, YoutubeQuotaError } from "@/lib/youtube-quota";
+import { withYoutubePurpose, youtubeRequest, YoutubeQuotaError } from "@/lib/youtube-quota";
 import type { Sql } from "postgres";
 import { z } from "zod";
 import { getDb } from "@/lib/db";
 import { parseIsoDuration } from "@/lib/youtube";
-import { isKoreanVideo } from "@/lib/youtube-language";
+import { isKoreanVideo, isJapaneseVideo } from "@/lib/youtube-language";
 
 export const popularVideoTypes = ["trending", "views", "reusable"] as const;
 export const popularDiscoveryPeriods = ["today", "week", "all"] as const;
@@ -75,14 +75,17 @@ export type PopularVideoResponse = {
   unavailableCount?: number;
   collectionStatus?: "complete" | "partial" | "none";
   catalogEnabled?: boolean;
+  japaneseEnabled?: boolean;
   generation?: string;
   collectionWindowStart?: string;
+  collectionWindows?: { KR: string; JP?: string };
+  collectionWindowKey?: string;
 };
 
 export type PopularCollectionCategoryResult = {
   category: PopularVideoSourceCategory;
   pages: number;
-  items: Array<PopularVideo & { categoryRank: number; pageNumber: number; isKorean: boolean }>;
+  items: Array<PopularVideo & { categoryRank: number; pageNumber: number; isKorean: boolean; isJapanese?: boolean }>;
 };
 
 export type PopularCollectionResult = {
@@ -193,6 +196,7 @@ export function normalizePage(
       publishedAt: item.snippet.publishedAt,
       license: item.status.license === "creativeCommon" ? "creativeCommon" : "youtube",
       isKorean: isKoreanVideo(item.snippet),
+      isJapanese: isJapaneseVideo(item.snippet),
     });
   });
   return videos;
@@ -202,6 +206,7 @@ export async function requestPopularPage(
   category: (typeof popularVideoSourceCategories)[number],
   pageToken: string | undefined,
   fetchImpl: typeof fetch,
+  regionCode: "KR" | "JP" = "KR",
 ) {
   const apiKey = process.env.YOUTUBE_API_KEY;
   if (!apiKey) throw new YoutubePopularApiError("YOUTUBE_API_KEY가 설정되지 않아 인기 영상을 수집할 수 없습니다.");
@@ -209,7 +214,7 @@ export async function requestPopularPage(
   endpoint.searchParams.set("key", apiKey);
   endpoint.searchParams.set("part", "snippet,contentDetails,statistics,status");
   endpoint.searchParams.set("chart", "mostPopular");
-  endpoint.searchParams.set("regionCode", "KR");
+  endpoint.searchParams.set("regionCode", regionCode);
   endpoint.searchParams.set("videoCategoryId", category.videoCategoryId);
   endpoint.searchParams.set("maxResults", "50");
   if (pageToken) endpoint.searchParams.set("pageToken", pageToken);
@@ -322,7 +327,7 @@ export async function collectPopularVideos(options: {
   const now = options.now || new Date();
   const run = await startCollectionRun(db, now);
   try {
-    const categories = await collectAllCategories(fetchImpl);
+    const categories = await withYoutubePurpose("trending", db, () => collectAllCategories(fetchImpl));
     const allItems = categories.flatMap((result) => result.items);
     const pageCount = categories.reduce((total, result) => total + result.pages, 0);
     const categorySummary = Object.fromEntries(categories.map((result) => [result.category, {

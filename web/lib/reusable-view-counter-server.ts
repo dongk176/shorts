@@ -1,7 +1,7 @@
 import "server-only";
 
 import type { Sql, TransactionSql } from "postgres";
-import { catalogReadsEnabled } from "@/lib/youtube-quota";
+import { catalogReadsEnabled, japaneseDiscoveryEnabled } from "@/lib/youtube-quota";
 import {
   nextDailyReusableCollectionAt,
   projectReusableViewCounter,
@@ -172,7 +172,7 @@ export async function refreshCatalogViewCounter(db: CounterSql, now: Date) {
   // legacy counter until the validated catalog actually serves the UI.
   if (!catalogReadsEnabled()) return;
   const [row] = await db`select coalesce(sum((metadata->>'viewCount')::bigint),0)::bigint as total
-    from shorts_mvp.youtube_catalog where availability='public' and metadata->>'license'='creativeCommon'
+    from shorts_mvp.youtube_catalog c where (exists(select 1 from shorts_mvp.youtube_catalog_regions r where r.catalog_id=c.id and (r.region_code='KR' or (${japaneseDiscoveryEnabled()} and exists(select 1 from shorts_mvp.youtube_quota_verifications q where q.project_id=${process.env.YOUTUBE_QUOTA_PROJECT_ID || ""} and q.japan_discovery_enabled)))) or not exists(select 1 from shorts_mvp.youtube_catalog_regions r where r.catalog_id=c.id)) and availability='public' and metadata->>'license'='creativeCommon'
       and verified_at>clock_timestamp()-interval '30 days'`;
   const total=Number(row.total);
   if (!Number.isSafeInteger(total) || total<0) throw new Error("REUSABLE_VIEW_COUNTER_VALUE_OUT_OF_RANGE");

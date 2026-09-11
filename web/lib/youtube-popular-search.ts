@@ -1,3 +1,4 @@
+import { withYoutubePurpose } from "@/lib/youtube-quota";
 import type { Sql, TransactionSql } from "postgres";
 import { z } from "zod";
 import { getDb } from "@/lib/db";
@@ -189,19 +190,19 @@ export async function collectPopularSearchVideos(options: {
   const now = options.now || new Date();
   const run = await startCollectionRun(db, now);
   try {
-    const collection = await collectSearchVideoPages({
+    const collection = await withYoutubePurpose("views", db, () => collectSearchVideoPages({
       maxPages: Math.min(POPULAR_SEARCH_PAGE_LIMIT, Math.max(1, options.maxPages || POPULAR_SEARCH_PAGE_LIMIT)),
       now,
       fetchImpl: options.fetchImpl,
       requestIntervalMs: options.requestIntervalMs,
       queries: POPULAR_SEARCH_QUERIES,
-    });
-    const reusableCollection = await collectReusableSearchPages({
+    }));
+    const reusableCollection = await withYoutubePurpose("reusable", db, () => collectReusableSearchPages({
       now,
       fetchImpl: options.fetchImpl,
       maxPages: options.reusableMaxPages,
       requestIntervalMs: options.requestIntervalMs,
-    });
+    }));
     const mergedItems = new Map(collection.items.map((video) => [video.videoId, video]));
     for (const video of reusableCollection.items) {
       mergedItems.set(video.videoId, video);
@@ -288,12 +289,12 @@ export async function collectReusablePopularSearchVideos(options: {
   const now = options.now || new Date();
   const run = await startCollectionRun(db, now);
   try {
-    const collection = await collectReusableSearchPages({
+    const collection = await withYoutubePurpose("reusable", db, () => collectReusableSearchPages({
       now,
       fetchImpl: options.fetchImpl,
       maxPages: options.maxPages,
       requestIntervalMs: options.requestIntervalMs,
-    });
+    }));
     const counterUpdatedAt = options.now ? now : new Date();
     await db.begin(async (tx) => {
       for (let offset = 0; offset < collection.items.length; offset += 250) {

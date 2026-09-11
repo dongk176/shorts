@@ -13,9 +13,12 @@ import {
   DAY_MS,
   discoverySince,
   latestPublishableDiscoverySlot,
+  latestExpectedJapanSlot,
   kstDate,
   validKstDate,
 } from "@/lib/youtube-discovery-time";
+
+import { japanReadsEnabled } from "@/lib/youtube-japan-settings";
 
 type CatalogSql = Sql | TransactionSql;
 type CatalogTimestamp = Date | string;
@@ -27,6 +30,7 @@ export const catalogId = (videoId: string) =>
   createHash("sha256").update(videoId).digest("hex");
 export type CatalogVideo = PopularVideo & {
   isKorean: boolean;
+  isJapanese?: boolean;
   categoryRank?: number;
 };
 export async function saveCatalogPage(
@@ -34,6 +38,7 @@ export async function saveCatalogPage(
   items: CatalogVideo[],
   input: {
     runId?: string;
+    regionCode?: "KR" | "JP";
     trending?: boolean;
     observedAt: CatalogTimestamp;
     firstDiscoveredAt?: CatalogTimestamp;
@@ -59,6 +64,7 @@ export async function saveCatalogPage(
       publishedAt: item.publishedAt,
       license: item.license,
       isKorean: item.isKorean,
+      isJapanese: item.isJapanese ?? false,
     },
   }));
   await db`insert into shorts_mvp.youtube_catalog
@@ -77,13 +83,30 @@ export async function saveCatalogPage(
       last_trending_at=greatest(youtube_catalog.last_trending_at,excluded.last_trending_at),
       trending_rank=case when excluded.last_trending_at>=youtube_catalog.last_trending_at or youtube_catalog.last_trending_at is null
         then coalesce(excluded.trending_rank,youtube_catalog.trending_rank) else youtube_catalog.trending_rank end`;
+  const region = input.regionCode || "KR";
+  const isCollection = db`exists(select 1 from shorts_mvp.youtube_collection_runs where id=${input.runId || null}::uuid and lane<>'refresh')`;
+  // Refresh verifies shared metadata; it must not assign a Japanese-only video to Korea.
+  await db`insert into shorts_mvp.youtube_catalog_regions
+    (catalog_id,region_code,first_discovered_at,last_collected_at,last_trending_at,trending_rank)
+    select r.id,${region},${catalogTimestamp(db,input.firstDiscoveredAt || input.observedAt)}::timestamptz,
+      case when ${isCollection} then ${catalogTimestamp(db,input.observedAt)}::timestamptz end,
+      case when ${Boolean(input.trending)} then ${catalogTimestamp(db,input.observedAt)}::timestamptz end,
+      case when ${Boolean(input.trending)} then r.rank end
+    from jsonb_to_recordset(${db.json(records)}) r(id text,rank integer)
+    where ${isCollection} or ${Boolean(input.trending)} or not exists(select 1 from shorts_mvp.youtube_catalog_regions existing where existing.catalog_id=r.id)
+    on conflict(catalog_id,region_code) do update set
+      first_discovered_at=least(youtube_catalog_regions.first_discovered_at,excluded.first_discovered_at),
+      last_collected_at=greatest(youtube_catalog_regions.last_collected_at,excluded.last_collected_at),
+      last_trending_at=greatest(youtube_catalog_regions.last_trending_at,excluded.last_trending_at),
+      trending_rank=case when excluded.last_trending_at>=youtube_catalog_regions.last_trending_at or youtube_catalog_regions.last_trending_at is null
+        then coalesce(excluded.trending_rank,youtube_catalog_regions.trending_rank) else youtube_catalog_regions.trending_rank end`;
   if (input.trending) {
     if (input.runId)
       await db`insert into shorts_mvp.youtube_collection_run_days(run_id,day)
         values(${input.runId},${kstDate(new Date(input.observedAt))}) on conflict do nothing`;
-    await db`insert into shorts_mvp.youtube_trending_days(day,catalog_id,first_seen_at,last_seen_at)
-      select ${kstDate(new Date(input.observedAt))}::date,unnest(${records.map((r) => r.id)}::text[]),${catalogTimestamp(db,input.observedAt)}::timestamptz,${catalogTimestamp(db,input.observedAt)}::timestamptz
-      on conflict(day,catalog_id) do update set
+    await db`insert into shorts_mvp.youtube_trending_days(day,catalog_id,first_seen_at,last_seen_at,region_code)
+      select ${kstDate(new Date(input.observedAt))}::date,unnest(${records.map((r) => r.id)}::text[]),${catalogTimestamp(db,input.observedAt)}::timestamptz,${catalogTimestamp(db,input.observedAt)}::timestamptz,${region}
+      on conflict(day,catalog_id,region_code) do update set
         first_seen_at=least(youtube_trending_days.first_seen_at,excluded.first_seen_at),
         last_seen_at=greatest(youtube_trending_days.last_seen_at,excluded.last_seen_at)`;
   }
@@ -120,34 +143,46 @@ export async function catalogStatus(
   db: CatalogSql = getDb(),
   type: PopularVideoType = "trending",
   now = new Date(),
+  japanScope?: boolean,
 ) {
+  const includeJapan = japanScope ?? await japanReadsEnabled(db);
   const [row] = await db`select
-    (select max(finished_at) from shorts_mvp.youtube_collection_runs where status='success' and ((${type}='trending' and lane='trending') or (${type}='views' and lane='views') or (${type}='reusable' and lane<>'refresh'))) as collected_at,
+    (select max(finished_at) from shorts_mvp.youtube_collection_runs where status='success' and finished_at<=${now}
+      and (region_code='KR' or ${includeJapan}) and ((${type}='trending' and lane='trending') or (${type}='views' and lane='views') or (${type}='reusable' and lane<>'refresh'))) as collected_at,
     (select max(scheduled_at) from shorts_mvp.youtube_collection_runs
-      where ${type !== "trending"} and lane=${type} and status='success'
-        and finished_at<=${now}
-        and scheduled_at<=${latestPublishableDiscoverySlot(now)}
-        and (scheduled_at at time zone 'UTC')::time=time '08:10') as collection_window_start,
+      where ${type !== "trending"} and lane=${type} and region_code='KR' and status='success' and finished_at<=${now}
+        and scheduled_at<=${latestPublishableDiscoverySlot(now)} and (scheduled_at at time zone 'UTC')::time=time '08:10') as kr_window,
+    (select max(scheduled_at) from shorts_mvp.youtube_collection_runs
+      where ${type !== "trending" && includeJapan} and lane=${type} and region_code='JP' and status='success' and finished_at<=${now}
+        and scheduled_at<=${latestPublishableDiscoverySlot(now,"JP")} and (scheduled_at at time zone 'UTC')::time=time '08:15') as jp_window,
+    (select max(finished_at) from shorts_mvp.youtube_collection_runs where lane='trending' and region_code='KR' and status='success' and finished_at<=${now}) as kr_trending,
+    (select max(scheduled_at) from shorts_mvp.youtube_collection_runs where lane='trending' and region_code='JP' and status='success' and finished_at<=${now}) as jp_trending,
     (select max(verified_at) from shorts_mvp.youtube_catalog) as verified_at,
     (select max(updated_at) from shorts_mvp.youtube_catalog) as changed_at`;
-  const updatedAt = row?.collectedAt
-    ? new Date(row.collectedAt).toISOString()
-    : null;
-  const verifiedAt = row?.verifiedAt
-    ? new Date(row.verifiedAt).toISOString()
-    : null;
-  // Until the first successful afternoon search, retain the existing catalog.
-  // Failed/missing afternoon runs and successful morning runs cannot reset it.
-  const collectionWindowStart = type === "trending" ? undefined
-    : new Date(row?.collectionWindowStart || 0).toISOString();
-  return {
-    updatedAt,
-    verifiedAt,
-    collectionWindowStart,
-    generation: `${updatedAt || ""}/${row?.changedAt ? new Date(row.changedAt).toISOString() : ""}${collectionWindowStart ? `/${collectionWindowStart}` : ""}`,
-    delayed:
-      !updatedAt || now.getTime() - Date.parse(updatedAt) >= 3 * 3_600_000,
+  const iso = (value: Date | string | null | undefined) => value ? new Date(value).toISOString() : null;
+  const updatedAt = iso(row?.collectedAt);
+  const verifiedAt = iso(row?.verifiedAt);
+  const collectionWindowStart = type === "trending" ? undefined : iso(row?.krWindow) || new Date(0).toISOString();
+  const collectionWindows = type === "trending" ? undefined : {
+    KR: collectionWindowStart!, ...(includeJapan ? { JP: iso(row?.jpWindow) || new Date(0).toISOString() } : {}),
   };
+  const collectionWindowKey = JSON.stringify([includeJapan, collectionWindows || null]);
+  const regionDelayed = {
+    KR: !row?.krTrending || now.getTime() - new Date(row.krTrending).getTime() >= 3 * 3_600_000,
+    ...(includeJapan ? { JP: !row?.jpTrending || new Date(row.jpTrending) < latestExpectedJapanSlot(now) } : {}),
+  };
+  return {
+    updatedAt, verifiedAt, collectionWindowStart, collectionWindows, collectionWindowKey, regionDelayed,
+    japaneseEnabled: includeJapan,
+    generation: `${updatedAt || ""}/${iso(row?.changedAt) || ""}/${collectionWindowKey}`,
+    delayed: type === "trending" ? regionDelayed.KR && (!includeJapan || regionDelayed.JP === true)
+      : !updatedAt || now.getTime() - Date.parse(updatedAt) >= 3 * 3_600_000,
+  };
+}
+
+function freshTrendingCondition(db: CatalogSql, now: Date) {
+  return db`((active.region_code='KR' and active.finished_at>${new Date(now.getTime()-3*3_600_000)})
+    or (active.region_code='JP' and active.scheduled_at>=${latestExpectedJapanSlot(now)}))`;
 }
 
 export class CatalogCursorExpiredError extends Error {
@@ -162,16 +197,22 @@ export async function getCatalogVisibility(
   videoIds: string[],
   db: CatalogSql = getDb(),
   now = new Date(),
+  japanScope?: boolean,
 ): Promise<CatalogVisibility[]> {
   const ids = [...new Set(videoIds)];
   if (ids.length > 200 || ids.some((id) => !/^[A-Za-z0-9_-]{11}$/.test(id)))
     throw new Error("INVALID_VISIBILITY_IDS");
   if (!ids.length) return [];
+  const includeJapan = japanScope ?? await japanReadsEnabled(db);
+  const regionalTrendingAt = db`coalesce((select max(r.last_trending_at) from shorts_mvp.youtube_catalog_regions r
+    where r.catalog_id=c.id and (r.region_code='KR' or ${includeJapan})),
+    case when not exists(select 1 from shorts_mvp.youtube_catalog_regions r where r.catalog_id=c.id) then c.last_trending_at end)`;
   const rows = await db`select id,metadata->>'license' as license,
-    (availability='public' and metadata is not null and video_id is not null and verified_at>${new Date(now.getTime() - 30 * DAY_MS)}) as available,
-    coalesce(last_trending_at>${new Date(now.getTime() - DAY_MS)},false) as recent_trending,
+    ((exists(select 1 from shorts_mvp.youtube_catalog_regions r where r.catalog_id=c.id and (r.region_code='KR' or ${includeJapan})) or not exists(select 1 from shorts_mvp.youtube_catalog_regions r where r.catalog_id=c.id)) and availability='public' and metadata is not null and video_id is not null and verified_at>${new Date(now.getTime() - 30 * DAY_MS)}) as available,
+    coalesce(${regionalTrendingAt}>${new Date(now.getTime() - DAY_MS)},false) as recent_trending,
     exists(select 1 from shorts_mvp.youtube_trending_run_items i where i.catalog_id=c.id
-      and i.run_id=(select id from shorts_mvp.youtube_collection_runs where lane='trending' and status='success' order by finished_at desc limit 1)) as current_trending
+      and i.run_id in (select distinct on(region_code) id from shorts_mvp.youtube_collection_runs where lane='trending' and status='success' and (region_code='KR' or ${includeJapan}) order by region_code,finished_at desc)
+      and exists(select 1 from shorts_mvp.youtube_collection_runs active where active.id=i.run_id and ${freshTrendingCondition(db,now)})) as current_trending
     from shorts_mvp.youtube_catalog c where id in ${db(ids.map(catalogId))}`;
   const byId = new Map(rows.map((row) => [String(row.id), row]));
   return ids.map((videoId) => {
@@ -193,6 +234,7 @@ export type CatalogFilters = {
   reusable: boolean;
   longForm: boolean;
   korean: boolean;
+  japanese?: boolean;
   period: PopularDiscoveryPeriod;
   periodBasis?: "collected";
   date?: string;
@@ -209,100 +251,108 @@ export async function getCatalogVideos(
   )
     throw new Error("INVALID_CATALOG_DATE");
   const collectedPeriod = filters.periodBasis === "collected" && !filters.date;
-  const state = await catalogStatus(db, filters.type, now);
+  const exposedJapan = await japanReadsEnabled(db);
+  let includeJapan = exposedJapan;
+  const state = await catalogStatus(db, filters.type, now, exposedJapan);
   const afternoonPeriod = collectedPeriod && filters.type !== "trending";
-  const today = afternoonPeriod
-    ? new Date(state.collectionWindowStart!) : discoverySince("today", now)!;
-  const week = afternoonPeriod
-    ? new Date(today.getTime() - 6 * DAY_MS) : discoverySince("week", now)!;
-  const since = afternoonPeriod
-    ? (filters.period === "all" ? null : filters.period === "today" ? today : week)
-    : filters.type === "trending" && !collectedPeriod
-      ? null : discoverySince(filters.period, now);
-  const filterKey = JSON.stringify([
-    filters.type,
-    filters.category,
-    filters.reusable,
-    filters.longForm,
-    filters.korean,
-    filters.period,
-    filters.date || null,
-    filters.periodBasis || null,
+  const today = afternoonPeriod ? new Date(state.collectionWindowStart!) : discoverySince("today", now)!;
+  const week = new Date(today.getTime() - 6 * DAY_MS);
+  const legacyFilterKey = JSON.stringify([
+    filters.type, filters.category, filters.reusable, filters.longForm, filters.korean,
+    filters.period, filters.date || null, filters.periodBasis || null,
     ...(afternoonPeriod ? ["afternoon-1720-v1", filters.period === "all" ? null : today.toISOString()] : []),
   ]);
-  const [currentRun] =
-    await db`select id from shorts_mvp.youtube_collection_runs
-    where lane='trending' and status='success' order by finished_at desc limit 1`;
-  const currentRunId = currentRun?.id || null;
+  const filterKey = exposedJapan || filters.japanese
+    ? JSON.stringify([...JSON.parse(legacyFilterKey), "regions-v2", Boolean(filters.japanese), exposedJapan,
+      afternoonPeriod && filters.period !== "all" ? state.collectionWindowKey : null]) : legacyFilterKey;
+  let requestedVersion: { id: string; collectedAt: Date | null; currentRunIds: string[]; filterKey: string } | undefined;
+  let cursorOffset = 0;
+  if (filters.cursor) {
+    let cursor: { id: string; offset: number };
+    try {
+      cursor = JSON.parse(Buffer.from(filters.cursor, "base64url").toString());
+      if (typeof cursor.id !== "string" || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(cursor.id)
+        || !Number.isSafeInteger(cursor.offset) || cursor.offset < 0) throw new Error();
+    } catch { throw new CatalogCursorExpiredError(); }
+    const [version] = await db`select id,collected_at,current_run_ids,filter_key from shorts_mvp.youtube_list_versions
+      where id=${cursor.id} and expires_at>${now} and (filter_key=${filterKey} or (${!filters.japanese} and filter_key=${legacyFilterKey}))`;
+    if (!version) throw new CatalogCursorExpiredError();
+    requestedVersion = version as typeof requestedVersion;
+    if (version.filterKey === legacyFilterKey) includeJapan = false;
+    cursorOffset = cursor.offset;
+  }
+  const currentRuns = await db`select distinct on(region_code) id from shorts_mvp.youtube_collection_runs
+    where lane='trending' and status='success' and finished_at<=${now} and (region_code='KR' or ${includeJapan})
+    order by region_code,finished_at desc,id`;
+  let currentRunIds = currentRuns.map(run => String(run.id));
+
   const reusable = filters.type === "reusable" || filters.reusable;
+  const regionScope = db`(r.region_code='KR' or ${includeJapan})`;
+  const regionalTrendingAt = db`coalesce((select max(r.last_trending_at) from shorts_mvp.youtube_catalog_regions r where r.catalog_id=c.id and ${regionScope}),
+    case when not exists(select 1 from shorts_mvp.youtube_catalog_regions r where r.catalog_id=c.id) then c.last_trending_at end)`;
+  const regionalRank = db`coalesce((select min(r.trending_rank) from shorts_mvp.youtube_catalog_regions r where r.catalog_id=c.id and ${regionScope}),c.trending_rank)`;
+  const regionMembership = db`(exists(select 1 from shorts_mvp.youtube_catalog_regions r where r.catalog_id=c.id and ${regionScope})
+    or not exists(select 1 from shorts_mvp.youtube_catalog_regions r where r.catalog_id=c.id))`;
   const collectionTime = filters.type === "trending" && !reusable
-    ? db`c.last_trending_at`
-    : db`(select cr.last_collected_at from shorts_mvp.youtube_collection_recency cr where cr.catalog_id=c.id)`;
+    ? regionalTrendingAt
+    : db`coalesce((select max(r.last_collected_at) from shorts_mvp.youtube_catalog_regions r where r.catalog_id=c.id and ${regionScope}),(select cr.last_collected_at from shorts_mvp.youtube_collection_recency cr where cr.catalog_id=c.id))`;
   const periodTime = collectedPeriod ? collectionTime : db`c.first_discovered_at`;
-  const base = db`c.availability='public' and c.metadata is not null and c.video_id is not null
+  const periodMatch = (period: "all" | "today" | "week") => {
+    if (period === "all") return db`true`;
+    if (!afternoonPeriod) return db`${periodTime}>=${period === "today" ? today : week}`;
+    const krSince = new Date(today.getTime() - (period === "week" ? 6 * DAY_MS : 0));
+    const jpSince = new Date(Date.parse(state.collectionWindows?.JP || new Date(0).toISOString()) - (period === "week" ? 6 * DAY_MS : 0));
+    return db`(exists(select 1 from shorts_mvp.youtube_catalog_regions r where r.catalog_id=c.id and ${regionScope}
+      and r.last_collected_at>=case when r.region_code='KR' then ${krSince}::timestamptz else ${jpSince}::timestamptz end)
+      or (not exists(select 1 from shorts_mvp.youtube_catalog_regions r where r.catalog_id=c.id)
+        and ${collectionTime}>=${krSince}))`;
+  };
+  const base = db`${regionMembership} and c.availability='public' and c.metadata is not null and c.video_id is not null
     and c.verified_at>${new Date(now.getTime() - 30 * DAY_MS)}
     and (${filters.category}='all' or c.metadata->>'category'=${filters.category})
+    and (${filters.japanese ?? false}=false or coalesce((c.metadata->>'isJapanese')::boolean,false))
     and (${filters.korean}=false or (c.metadata->>'isKorean')::boolean)
     and (${filters.longForm}=false or (c.metadata->>'durationSeconds')::int>=240)
     and (${reusable}=false or c.metadata->>'license'='creativeCommon')
     and (${filters.type !== "views" || reusable}=true or c.metadata->>'license'='youtube')
     and (${filters.type !== "trending"}=true or
       (${filters.date || null}::date is null and (
-        (${collectedPeriod} and (${reusable} or c.last_trending_at is not null)) or
-        (${!collectedPeriod} and c.last_trending_at>${new Date(now.getTime() - DAY_MS)})
+        (${collectedPeriod} and (${reusable} or ${regionalTrendingAt} is not null)) or
+        (${!collectedPeriod} and ${regionalTrendingAt}>${new Date(now.getTime() - DAY_MS)})
       )) or
-      exists(select 1 from shorts_mvp.youtube_trending_days d where d.catalog_id=c.id and d.day=${filters.date || null}::date))`;
+      exists(select 1 from shorts_mvp.youtube_trending_days d where d.catalog_id=c.id and d.day=${filters.date || null}::date and (d.region_code='KR' or ${includeJapan})))`;
   let versionId: string;
   let offset = 0;
   let collectedAt = state.updatedAt;
-  if (filters.cursor) {
-    let cursor: { id: string; offset: number };
-    try {
-      cursor = JSON.parse(Buffer.from(filters.cursor, "base64url").toString());
-      if (
-        typeof cursor.id !== "string" ||
-        !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(
-          cursor.id,
-        ) ||
-        !Number.isSafeInteger(cursor.offset) ||
-        cursor.offset < 0
-      )
-        throw new Error();
-    } catch {
-      throw new CatalogCursorExpiredError();
-    }
-    const [version] =
-      await db`select id,collected_at from shorts_mvp.youtube_list_versions
-      where id=${cursor.id} and filter_key=${filterKey} and expires_at>${now}`;
-    if (!version) throw new CatalogCursorExpiredError();
-    versionId = String(version.id);
-    offset = cursor.offset;
-    collectedAt = version.collectedAt
-      ? new Date(version.collectedAt).toISOString()
-      : null;
+  if (requestedVersion) {
+    if (requestedVersion.currentRunIds.length) currentRunIds = requestedVersion.currentRunIds;
+    versionId = requestedVersion.id;
+    offset = cursorOffset;
+    collectedAt = requestedVersion.collectedAt ? new Date(requestedVersion.collectedAt).toISOString() : null;
   } else {
     // Only IDs and their order are frozen. API metadata is always read from the canonical row.
     const [cached] =
-      await db`select id from shorts_mvp.youtube_list_versions where filter_key=${filterKey}
+      await db`select id,current_run_ids from shorts_mvp.youtube_list_versions where filter_key=${filterKey}
       and generation=${state.generation} and expires_at>${now} and created_at>=${today}
       order by created_at desc limit 1`;
     const version =
       cached ||
       (
-        await db`insert into shorts_mvp.youtube_list_versions(filter_key,generation,collected_at,catalog_ids)
-      select ${filterKey},${state.generation},${state.updatedAt},coalesce(array_agg(id order by position),array[]::text[]) from (
+        await db`insert into shorts_mvp.youtube_list_versions(filter_key,generation,collected_at,current_run_ids,catalog_ids)
+      select ${filterKey},${state.generation},${state.updatedAt},${currentRunIds}::uuid[],coalesce(array_agg(id order by position),array[]::text[]) from (
         select c.id,row_number() over(order by
           case when ${filters.type === "trending" && !filters.date} and exists(
-            select 1 from shorts_mvp.youtube_trending_run_items ri where ri.run_id=${currentRunId}::uuid and ri.catalog_id=c.id
+            select 1 from shorts_mvp.youtube_trending_run_items ri where ri.run_id=any(${currentRunIds}::uuid[]) and ri.catalog_id=c.id
           ) then 0 else 1 end,
-          case when ${filters.type === "trending" && !filters.date} then c.trending_rank end asc nulls last,
-          case when ${filters.type === "trending" && !filters.date} then c.last_trending_at end desc nulls last,
+          case when ${filters.type === "trending" && !filters.date} then ${regionalRank} end asc nulls last,
+          case when ${filters.type === "trending" && !filters.date} then ${regionalTrendingAt} end desc nulls last,
           (c.metadata->>'viewCount')::bigint desc,(c.metadata->>'publishedAt')::timestamptz desc,c.id) as position
         from shorts_mvp.youtube_catalog c where ${base}
-          and (${since}::timestamptz is null or ${periodTime}>=${since})
-      ) ranked returning id`
+          and ${filters.type === "trending" && !collectedPeriod ? db`true` : periodMatch(filters.period)}
+      ) ranked returning id,current_run_ids`
       )[0];
     versionId = String(version.id);
+    currentRunIds = version.currentRunIds;
   }
   // Materialize IDs once. OFFSET 0 below preserves ID-first lookups even before
   // ANALYZE has statistics; otherwise a 50k catalog can trigger quadratic rescans.
@@ -312,14 +362,15 @@ export async function getCatalogVideos(
       cross join lateral unnest(v.catalog_ids) with ordinality entry(id,ordinal)
       where v.id=${versionId} and entry.ordinal>${offset}
     ) select c.metadata,c.verified_at,entry.ordinal,
-    (${filters.type === "trending" && !filters.date && !state.delayed} and exists(
-      select 1 from shorts_mvp.youtube_trending_run_items ri where ri.run_id=${currentRunId}::uuid and ri.catalog_id=c.id)) as is_current
+    (${filters.type === "trending" && !filters.date} and exists(
+      select 1 from shorts_mvp.youtube_trending_run_items ri join shorts_mvp.youtube_collection_runs active on active.id=ri.run_id
+      where ri.run_id=any(${currentRunIds}::uuid[]) and ri.catalog_id=c.id and ${freshTrendingCondition(db,now)})) as is_current
     from entries entry cross join lateral (
       select c.* from shorts_mvp.youtube_catalog c where c.id=entry.id and ${base} offset 0
     ) c order by entry.ordinal limit 49`;
   const [counts] = await db`select count(*)::int as all_count,
-    count(*) filter(where ${periodTime}>=${today})::int as today_count,
-    count(*) filter(where ${periodTime}>=${week})::int as week_count
+    count(*) filter(where ${periodMatch("today")})::int as today_count,
+    count(*) filter(where ${periodMatch("week")})::int as week_count
     from shorts_mvp.youtube_catalog c where ${base}`;
   const periodCounts = {
     all: Number(counts.allCount),
@@ -343,6 +394,9 @@ export async function getCatalogVideos(
     delayed: state.delayed,
     version: versionId,
     catalogEnabled: true,
+    japaneseEnabled: exposedJapan,
+    collectionWindowKey: state.collectionWindowKey,
+    collectionWindows: state.collectionWindows,
     date: filters.date || null,
     periodCounts,
     totalCount:
@@ -366,12 +420,13 @@ export async function getTrendingCalendar(
 ) {
   if (!/^\d{4}-\d{2}$/.test(month) || !validKstDate(`${month}-01`, now))
     throw new Error("INVALID_CALENDAR_MONTH");
+  const includeJapan = await japanReadsEnabled(db);
   const rows = await db`with days as (
     select d::date as day from generate_series(${`${month}-01`}::date,
       least((${`${month}-01`}::date+interval '1 month' - interval '1 day')::date,${kstDate(now)}::date),interval '1 day') d
     ), run_days as (
       select id as run_id,(started_at at time zone 'Asia/Seoul')::date as day
-      from shorts_mvp.youtube_collection_runs where lane='trending'
+      from shorts_mvp.youtube_collection_runs where lane='trending' and (region_code='KR' or ${includeJapan})
         and started_at>=(${`${month}-01`}::date::timestamp at time zone 'Asia/Seoul')
         and started_at<((${`${month}-01`}::date+interval '1 month') at time zone 'Asia/Seoul')
       union
@@ -381,13 +436,13 @@ export async function getTrendingCalendar(
       select d.day,count(*)::int as attempts,
         count(*) filter(where status='success')::int as successes,
         count(*) filter(where legacy)::int as legacy_attempts,
-        bool_and(legacy) as legacy from run_days d join shorts_mvp.youtube_collection_runs r on r.id=d.run_id where lane='trending'
+        bool_and(legacy) as legacy from run_days d join shorts_mvp.youtube_collection_runs r on r.id=d.run_id where lane='trending' and (r.region_code='KR' or ${includeJapan})
         group by 1
     ), members as (
-      select d.day,count(*)::int as total,
-        count(*) filter(where c.metadata is null or c.availability<>'public' or c.verified_at<=${new Date(now.getTime() - 30 * DAY_MS)})::int as unavailable
+      select d.day,count(distinct c.id)::int as total,
+        count(distinct c.id) filter(where c.metadata is null or c.availability<>'public' or c.verified_at<=${new Date(now.getTime() - 30 * DAY_MS)})::int as unavailable
       from shorts_mvp.youtube_trending_days d join shorts_mvp.youtube_catalog c on c.id=d.catalog_id
-      where d.day>=${`${month}-01`}::date and d.day<${`${month}-01`}::date+interval '1 month' group by 1
+      where (d.region_code='KR' or ${includeJapan}) and d.day>=${`${month}-01`}::date and d.day<${`${month}-01`}::date+interval '1 month' group by 1
     ) select days.day::text,coalesce(r.attempts,0)::int as attempts,coalesce(r.successes,0)::int as successes,
       coalesce(r.legacy,false) as legacy,coalesce(r.legacy_attempts,0)::int as legacy_attempts,
       coalesce(m.total,0)::int as total,coalesce(m.unavailable,0)::int as unavailable,
@@ -442,6 +497,7 @@ export async function purgeExpiredCatalog(db: Sql = getDb(), now = new Date()) {
         .savepoint((counterDb) => refreshCatalogViewCounter(counterDb, now))
         .catch(() => console.error("youtube_catalog_counter_refresh_failed"));
     }
+    await tx`update shorts_mvp.youtube_catalog_regions set trending_rank=null where last_trending_at<${new Date(now.getTime() - DAY_MS)}`;
     await tx`update shorts_mvp.youtube_catalog set trending_rank=null where last_trending_at<${new Date(now.getTime() - DAY_MS)}`;
     await tx`update shorts_mvp.youtube_search_positions set page_token=null where updated_at<${new Date(now.getTime() - 25 * DAY_MS)}`;
     await tx`delete from shorts_mvp.youtube_list_versions where expires_at<=${now}`;

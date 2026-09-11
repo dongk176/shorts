@@ -63,6 +63,7 @@ const reusableGuideDismissedKey = "easycut:reusable-license-guide-dismissed:v1";
 type MobilePopularFiltersDraft = {
   category: PopularVideoCategory;
   koreanOnly: boolean;
+  japaneseOnly: boolean;
   longFormOnly: boolean;
   reusableOnly: boolean;
 };
@@ -79,6 +80,8 @@ const mobileFilterCopy: Record<SiteLocale, {
   additional: string;
   korean: string;
   koreanDescription: string;
+  japanese: string;
+  japaneseDescription: string;
   longForm: string;
   longFormDescription: string;
   reusable: string;
@@ -99,6 +102,8 @@ const mobileFilterCopy: Record<SiteLocale, {
     description: "카테고리와 세부 조건을 선택한 뒤 한 번에 적용하세요.",
     additional: "추가 조건",
     korean: "한국어 영상만",
+    japanese: "일본어 영상만",
+    japaneseDescription: "일본어로 된 영상만 모아봅니다.",
     koreanDescription: "한국어로 된 영상만 모아봅니다.",
     longForm: "롱폼만",
     longFormDescription: "긴 형식의 영상만 표시합니다.",
@@ -129,6 +134,8 @@ const mobileFilterCopy: Record<SiteLocale, {
     description: "Choose a category and conditions, then apply them together.",
     additional: "Additional filters",
     korean: "Korean only",
+    japanese: "Japanese only",
+    japaneseDescription: "Show only videos in Japanese.",
     koreanDescription: "Show only videos in Korean.",
     longForm: "Long-form only",
     longFormDescription: "Show only long-form videos.",
@@ -159,6 +166,8 @@ const mobileFilterCopy: Record<SiteLocale, {
     description: "カテゴリーと条件を選択して、一度に適用できます。",
     additional: "追加条件",
     korean: "韓国語のみ",
+    japanese: "日本語のみ",
+    japaneseDescription: "日本語の動画のみ表示します。",
     koreanDescription: "韓国語の動画のみ表示します。",
     longForm: "長尺のみ",
     longFormDescription: "長尺動画のみ表示します。",
@@ -185,6 +194,7 @@ const popularUiCopy: Record<SiteLocale, {
   filters: string;
   activePlanOnly: string;
   koreanOnly: string;
+  japaneseOnly: string;
   longFormOnly: string;
   reusableOnly: string;
   longFormOnlyAria: string;
@@ -212,7 +222,7 @@ const popularUiCopy: Record<SiteLocale, {
 }> = {
   ko: {
     lastUpdated: "마지막 업데이트", filters: "필터", activePlanOnly: "활성 이용권 전용",
-    koreanOnly: "한국어만", longFormOnly: "롱폼만", reusableOnly: "재사용 허용만",
+    japaneseOnly: "일본어만", koreanOnly: "한국어만", longFormOnly: "롱폼만", reusableOnly: "재사용 허용만",
     longFormOnlyAria: "롱폼만 보기", reusableOnlyAria: "재사용 허용 영상만 보기",
     categoryAria: (label) => `${label} 카테고리`, countLoading: "개수 확인 중",
     loadFailed: "인기 영상을 불러오지 못했습니다", retry: "다시 시도", loadMore: "더 보기",
@@ -226,7 +236,7 @@ const popularUiCopy: Record<SiteLocale, {
   },
   en: {
     lastUpdated: "Last updated", filters: "Filters", activePlanOnly: "Active plan only",
-    koreanOnly: "Korean only", longFormOnly: "Long-form only", reusableOnly: "Reuse allowed only",
+    japaneseOnly: "Japanese only", koreanOnly: "Korean only", longFormOnly: "Long-form only", reusableOnly: "Reuse allowed only",
     longFormOnlyAria: "Show long-form videos only", reusableOnlyAria: "Show reusable videos only",
     categoryAria: (label) => `${label} category`, countLoading: "Checking count",
     loadFailed: "Could not load trending videos", retry: "Try again", loadMore: "Show more",
@@ -240,7 +250,7 @@ const popularUiCopy: Record<SiteLocale, {
   },
   ja: {
     lastUpdated: "最終更新", filters: "フィルター", activePlanOnly: "有効なプラン限定",
-    koreanOnly: "韓国語のみ", longFormOnly: "長尺のみ", reusableOnly: "再利用可能のみ",
+    japaneseOnly: "日本語のみ", koreanOnly: "韓国語のみ", longFormOnly: "長尺のみ", reusableOnly: "再利用可能のみ",
     longFormOnlyAria: "長尺動画のみ表示", reusableOnlyAria: "再利用可能な動画のみ表示",
     categoryAria: (label) => `${label}カテゴリー`, countLoading: "件数を確認中",
     loadFailed: "人気動画を読み込めませんでした", retry: "もう一度試す", loadMore: "さらに表示",
@@ -453,6 +463,7 @@ function ReusableLicenseGuide({
 }
 
 function MobilePopularFiltersSheet({
+  japaneseEnabled,
   open,
   locale,
   draft,
@@ -462,6 +473,7 @@ function MobilePopularFiltersSheet({
   onApply,
 }: {
   open: boolean;
+  japaneseEnabled: boolean;
   locale: SiteLocale;
   draft: MobilePopularFiltersDraft;
   onDraftChange: (draft: MobilePopularFiltersDraft) => void;
@@ -483,11 +495,12 @@ function MobilePopularFiltersSheet({
   if (!open) return null;
 
   const detailOptions: Array<{
-    key: "koreanOnly" | "longFormOnly" | "reusableOnly";
+    key: "japaneseOnly" | "koreanOnly" | "longFormOnly" | "reusableOnly";
     label: string;
     description: string;
   }> = [
     { key: "koreanOnly", label: copy.korean, description: copy.koreanDescription },
+    ...(japaneseEnabled ? [{ key: "japaneseOnly" as const, label: copy.japanese, description: copy.japaneseDescription }] : []),
     { key: "longFormOnly", label: copy.longForm, description: copy.longFormDescription },
     { key: "reusableOnly", label: copy.reusable, description: copy.reusableDescription },
   ];
@@ -561,7 +574,7 @@ function MobilePopularFiltersSheet({
                   type="button"
                   role="switch"
                   aria-checked={checked}
-                  onClick={() => onDraftChange({ ...draft, [option.key]: !checked })}
+                  onClick={() => onDraftChange({ ...draft, [option.key]: !checked, ...(option.key === "koreanOnly" && !checked ? { japaneseOnly: false } : {}), ...(option.key === "japaneseOnly" && !checked ? { koreanOnly: false } : {}) })}
                   className={`flex min-h-[74px] w-full items-center justify-between gap-4 px-4 py-3 text-left transition active:bg-white/[.055] ${index ? "border-t border-white/[.07]" : ""}`}
                 >
                   <span className="min-w-0">
@@ -810,6 +823,7 @@ function popularVideoParams(
   reusable: boolean,
   longForm: boolean,
   korean: boolean,
+  japanese: boolean,
   discoveryPeriod: PopularDiscoveryPeriod,
   cursor?: string,
   interactionId?: string,
@@ -820,6 +834,7 @@ function popularVideoParams(
     reusable: String(reusable),
     longForm: String(longForm),
     korean: String(korean),
+    japanese: String(japanese),
   });
   params.set("period", discoveryPeriod);
   params.set("periodBasis", "collected");
@@ -925,10 +940,12 @@ export function PopularVideosExplorer({
   const uiCopy = popularUiCopy[locale];
   const filterCopy = mobileFilterCopy[locale];
   const [dataType, setDataType] = useState<PopularVideoType>("trending");
+  const [japaneseOnly, setJapaneseOnly] = useState(false);
   const [koreanOnly, setKoreanOnly] = useState(false);
   const [longFormOnly, setLongFormOnly] = useState(false);
   const [reusableOnly, setReusableOnly] = useState(false);
   const [catalogEnabled, setCatalogEnabled] = useState(false);
+  const [japaneseEnabled, setJapaneseEnabled] = useState(false);
   const [hasNewList, setHasNewList] = useState(false);
   const [cursorNotice, setCursorNotice] = useState(false);
   const [discoveryPeriod, setDiscoveryPeriod] = useState<PopularDiscoveryPeriod>("all");
@@ -947,6 +964,7 @@ export function PopularVideosExplorer({
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [mobileFilterDraft, setMobileFilterDraft] = useState<MobilePopularFiltersDraft>({
     category: "all",
+    japaneseOnly: false,
     koreanOnly: false,
     longFormOnly: false,
     reusableOnly: false,
@@ -973,16 +991,20 @@ export function PopularVideosExplorer({
     setLoadMoreError(null);
     setError(null);
     setResponse(null);
-    const endpoint = `/api/youtube/popular?${popularVideoParams(dataType, category, reusableOnly, longFormOnly, koreanOnly, discoveryPeriod, undefined, filterInteractionId || undefined)}`;
+    const endpoint = `/api/youtube/popular?${popularVideoParams(dataType, category, reusableOnly, longFormOnly, koreanOnly, japaneseOnly, discoveryPeriod, undefined, filterInteractionId || undefined)}`;
     fetch(endpoint, { cache: "no-store", signal: controller.signal })
       .then(async (result) => {
         if (!result.ok) {
-          const body = await result.json().catch(() => ({})) as { detail?: string };
+          const body = await result.json().catch(() => ({})) as { detail?: string; code?: string };
+          if (body.code === "JAPANESE_DISCOVERY_DISABLED" && !controller.signal.aborted) {
+            setJapaneseOnly(false); setJapaneseEnabled(false);
+            return null;
+          }
           throw new Error(body.detail || uiCopy.loadFailed);
         }
         return result.json() as Promise<PopularVideoResponse>;
       })
-      .then((result) => { if (controller.signal.aborted) return; setResponse(result); setCatalogEnabled(Boolean(result.catalogEnabled)); setHasNewList(false); })
+      .then((result) => { if (!result || controller.signal.aborted) return; setResponse(result); setCatalogEnabled(Boolean(result.catalogEnabled)); setJapaneseEnabled(Boolean(result.japaneseEnabled)); setHasNewList(false); })
       .catch((cause: unknown) => {
         if (cause instanceof DOMException && cause.name === "AbortError") return;
         setError(userFacingErrorMessage(cause, uiCopy.loadFailed));
@@ -991,7 +1013,7 @@ export function PopularVideosExplorer({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [category, dataType, discoveryPeriod, filterInteractionId, koreanOnly, locale, longFormOnly, reusableOnly, retryCount, uiCopy.loadFailed]);
+  }, [category, dataType, discoveryPeriod, filterInteractionId, koreanOnly, japaneseOnly, locale, longFormOnly, reusableOnly, retryCount, uiCopy.loadFailed]);
 
   const visibleVideoIds = response?.items.map(video => video.videoId).join(",") || "";
   useEffect(() => {
@@ -1004,10 +1026,16 @@ export function PopularVideosExplorer({
       const ids = visibleVideoIds ? visibleVideoIds.split(",") : [];
       const chunks = Array.from({length: Math.max(1, Math.ceil(ids.length / 200))}, (_, index) => ids.slice(index * 200, index * 200 + 200));
       Promise.all(chunks.map(chunk => fetch(`/api/youtube/popular/status?${new URLSearchParams({type:dataType, ...(chunk.length ? {ids:chunk.join(",")} : {})})}`, { cache: "no-store", signal: controller.signal })
-        .then(async result => result.ok ? result.json() as Promise<{ generation?: string; collectionWindowStart?: string; delayed?: boolean; visibility?: CatalogVisibility[] }> : null)))
+        .then(async result => result.ok ? result.json() as Promise<{ generation?: string; collectionWindowStart?: string; collectionWindowKey?: string; japaneseEnabled?: boolean; delayed?: boolean; visibility?: CatalogVisibility[] }> : null)))
         .then(states => {
           if (controller.signal.aborted) return;
-          if (response.collectionWindowStart && states.some(state => state?.collectionWindowStart && state.collectionWindowStart !== response.collectionWindowStart)) {
+          if (states.some(state => state?.japaneseEnabled === false) && (japaneseOnly || response.japaneseEnabled)) {
+            setJapaneseOnly(false); setRetryCount(value => value + 1); return;
+          }
+          if (response.collectionWindowKey && states.some(state => state?.collectionWindowKey && state.collectionWindowKey !== response.collectionWindowKey)) {
+            setRetryCount(value => value + 1); return;
+          }
+          if (!response.collectionWindowKey && response.collectionWindowStart && states.some(state => state?.collectionWindowStart && state.collectionWindowStart !== response.collectionWindowStart)) {
             setRetryCount(value => value + 1);
             return;
           }
@@ -1023,7 +1051,7 @@ export function PopularVideosExplorer({
         }).catch(() => undefined).finally(() => { checking = false; });
     }, 60_000);
     return () => { clearInterval(timer); controller.abort(); };
-  }, [catalogEnabled, dataType, response?.generation, response?.collectionWindowStart, visibleVideoIds, reusableOnly]);
+  }, [catalogEnabled, dataType, response?.generation, response?.collectionWindowStart, response?.collectionWindowKey, response?.japaneseEnabled, japaneseOnly, visibleVideoIds, reusableOnly]);
 
   const selectedTypeLabel = dataType === "trending"
     ? filterCopy.trending
@@ -1039,7 +1067,7 @@ export function PopularVideosExplorer({
     setLoadingMore(true);
     setLoadMoreError(null);
     try {
-      const endpoint = `/api/youtube/popular?${popularVideoParams(dataType, category, reusableOnly, longFormOnly, koreanOnly, discoveryPeriod, response.nextCursor, undefined)}`;
+      const endpoint = `/api/youtube/popular?${popularVideoParams(dataType, category, reusableOnly, longFormOnly, koreanOnly, japaneseOnly, discoveryPeriod, response.nextCursor, undefined)}`;
       const result = await fetch(endpoint, { cache: "no-store", signal: controller.signal });
       if (controller.signal.aborted) return;
       if (result.status === 410) {
@@ -1048,7 +1076,11 @@ export function PopularVideosExplorer({
         return;
       }
       if (!result.ok) {
-        const body = await result.json().catch(() => ({})) as { detail?: string };
+        const body = await result.json().catch(() => ({})) as { detail?: string; code?: string };
+        if (body.code === "JAPANESE_DISCOVERY_DISABLED") {
+          setJapaneseOnly(false); setJapaneseEnabled(false);
+          return;
+        }
         throw new Error(body.detail || uiCopy.loadMoreFailed);
       }
       const next = await result.json() as PopularVideoResponse;
@@ -1119,7 +1151,7 @@ export function PopularVideosExplorer({
   }, []);
 
   const reusableFilterActive = dataType === "reusable" || reusableOnly;
-  const activeMobileFilterCount = Number(category !== "all") + Number(koreanOnly) + Number(longFormOnly) + Number(reusableFilterActive);
+  const activeMobileFilterCount = Number(category !== "all") + Number(koreanOnly || japaneseOnly) + Number(longFormOnly) + Number(reusableFilterActive);
   const openMobileFilters = () => {
     if (!canUseFilters) {
       setPlanOverlayFeature("filters");
@@ -1129,6 +1161,7 @@ export function PopularVideosExplorer({
     setMobileFilterDraft({
       category,
       koreanOnly,
+      japaneseOnly,
       longFormOnly,
       reusableOnly: reusableFilterActive,
     });
@@ -1144,6 +1177,7 @@ export function PopularVideosExplorer({
       if (dataType === "reusable" && !nextFilters.reusableOnly) setDataType("views");
       setCategory(nextFilters.category);
       setKoreanOnly(nextFilters.koreanOnly);
+      setJapaneseOnly(nextFilters.japaneseOnly);
       setLongFormOnly(nextFilters.longFormOnly);
       setReusableOnly(dataType === "reusable" ? false : nextFilters.reusableOnly);
     });
@@ -1308,7 +1342,7 @@ export function PopularVideosExplorer({
               role="switch"
               aria-checked={koreanOnly}
               aria-haspopup={canUseFilters ? undefined : "dialog"}
-              onClick={() => applyFilter(() => setKoreanOnly((current) => !current))}
+              onClick={() => applyFilter(() => { setKoreanOnly((current) => !current); setJapaneseOnly(false); })}
               className={`flex shrink-0 items-center gap-2.5 rounded-full border px-3.5 py-2.5 text-sm font-extrabold transition ${koreanOnly ? "border-emerald-300/60 bg-emerald-400/15 text-emerald-50" : "border-white/15 bg-white/[.025] text-neutral-200 hover:border-white/30 hover:text-white"}`}
             >
               <span className={`relative h-5 w-9 rounded-full transition ${koreanOnly ? "bg-emerald-400" : "bg-white/15"}`} aria-hidden="true">
@@ -1316,6 +1350,21 @@ export function PopularVideosExplorer({
               </span>
               {uiCopy.koreanOnly}
             </button>
+            {japaneseEnabled && (
+            <button
+              type="button"
+              role="switch"
+              aria-checked={japaneseOnly}
+              aria-haspopup={canUseFilters ? undefined : "dialog"}
+              onClick={() => applyFilter(() => { setJapaneseOnly((current) => !current); setKoreanOnly(false); })}
+              className={`flex shrink-0 items-center gap-2.5 rounded-full border px-3.5 py-2.5 text-sm font-extrabold transition ${japaneseOnly ? "border-sky-300/60 bg-sky-400/15 text-sky-50" : "border-white/15 bg-white/[.025] text-neutral-200 hover:border-white/30 hover:text-white"}`}
+            >
+              <span className={`relative h-5 w-9 rounded-full transition ${japaneseOnly ? "bg-sky-400" : "bg-white/15"}`} aria-hidden="true">
+                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition ${japaneseOnly ? "left-[18px]" : "left-0.5"}`} />
+              </span>
+              {uiCopy.japaneseOnly}
+            </button>
+            )}
             <button
               type="button"
               role="switch"
@@ -1430,6 +1479,7 @@ export function PopularVideosExplorer({
         </section>
       )}
       <MobilePopularFiltersSheet
+        japaneseEnabled={japaneseEnabled}
         open={mobileFiltersOpen}
         locale={locale}
         draft={mobileFilterDraft}
@@ -1437,7 +1487,8 @@ export function PopularVideosExplorer({
         onClose={() => setMobileFiltersOpen(false)}
         onReset={() => setMobileFilterDraft({
           category: "all",
-          koreanOnly: false,
+          japaneseOnly: false,
+    koreanOnly: false,
           longFormOnly: false,
           reusableOnly: false,
         })}

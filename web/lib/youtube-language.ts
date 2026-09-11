@@ -27,3 +27,10 @@ export function isKoreanVideo(metadata: YoutubeLanguageMetadata) {
   return hasKoreanText(metadata.title, 2)
     || hasKoreanText(metadata.description || "", 10);
 }
+
+/** Prefer explicit audio language; title is only a fallback without language metadata. */
+export function isJapaneseVideo(metadata: YoutubeLanguageMetadata) {
+  const language = metadata.defaultAudioLanguage?.trim() || metadata.defaultLanguage?.trim();
+  if (language) return /^ja(?:[-_]|$)/i.test(language);
+  return (metadata.title.normalize("NFKC").match(/[\u3041-\u3096\u30a1-\u30fa]/g)?.length || 0) >= 2;
+}

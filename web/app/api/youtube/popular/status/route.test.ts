@@ -1,10 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   enabled: vi.fn(() => true),
-  state: vi.fn(async () => ({ generation: "current" })),
-  visibility: vi.fn(async () => []),
+  db: {},
+  japan: vi.fn(async () => false),
+  state: vi.fn<(...args: unknown[]) => Promise<{ generation: string }>>(async () => ({ generation: "current" })),
+  visibility: vi.fn<(...args: unknown[]) => Promise<unknown[]>>(async () => []),
 }));
 vi.mock("@/lib/youtube-quota", () => ({ catalogReadsEnabled: mocks.enabled }));
+vi.mock("@/lib/db", () => ({ getDb: () => mocks.db }));
+vi.mock("@/lib/youtube-japan-settings", () => ({ japanReadsEnabled: mocks.japan }));
 vi.mock("@/lib/youtube-catalog", () => ({
   catalogStatus: mocks.state,
   getCatalogVisibility: mocks.visibility,
@@ -26,7 +30,9 @@ describe("catalog status requests", () => {
     expect(mocks.visibility).toHaveBeenCalledWith([
       "first000001",
       "second00001",
-    ]);
+    ], mocks.db, expect.any(Date), false);
+    expect(mocks.state).toHaveBeenCalledWith(mocks.db, "reusable", expect.any(Date), false);
+    expect(mocks.visibility.mock.calls[0][2]).toBe(mocks.state.mock.calls[0][2]);
   });
   it.each([
     "ids=bad",

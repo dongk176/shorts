@@ -81,23 +81,25 @@ export function discoverySearchTasks(
   ];
 }
 
-async function claimRun(
+export async function claimRun(
   db: Sql,
   lane: DiscoveryLane | "refresh",
   scheduledAt: Date,
   legacy: boolean,
+  regionCode: "KR" | "JP" = "KR",
 ) {
   return db.begin(async (tx) => {
-    await tx`select pg_advisory_xact_lock(hashtextextended(${"youtube-collector:" + lane},0))`;
+    // Keep Korea's lock identity compatible with the previous deployment.
+    await tx`select pg_advisory_xact_lock(hashtextextended(${"youtube-collector:" + (regionCode === "KR" ? lane : "JP")},0))`;
     await tx`update shorts_mvp.youtube_collection_runs
       set status=case when page_count>0 then 'partial' else 'failed' end,finished_at=clock_timestamp(),failed_pages=failed_pages+1
-      where lane=${lane} and status='running' and started_at<clock_timestamp()-interval '10 minutes'`;
+      where (lane=${lane} or ${regionCode}='JP') and region_code=${regionCode} and status='running' and started_at<clock_timestamp()-interval '10 minutes'`;
     const [busy] =
-      await tx`select 1 from shorts_mvp.youtube_collection_runs where lane=${lane} and status='running'`;
+      await tx`select 1 from shorts_mvp.youtube_collection_runs where (lane=${lane} or ${regionCode}='JP') and region_code=${regionCode} and status='running'`;
     if (busy) return null;
     const [run] =
-      await tx`insert into shorts_mvp.youtube_collection_runs(lane,scheduled_at,legacy)
-      values(${lane},${scheduledAt},${legacy}) on conflict(lane,scheduled_at) do nothing returning id`;
+      await tx`insert into shorts_mvp.youtube_collection_runs(lane,scheduled_at,legacy,region_code)
+      values(${lane},${scheduledAt},${legacy},${regionCode}) on conflict(lane,region_code,scheduled_at) do nothing returning id`;
     return run ? String(run.id) : null;
   });
 }
@@ -327,8 +329,10 @@ export async function refreshCatalogBatch(
     for (let page = 0; page < Math.min(options.maxPages || 12, 25); page++) {
       const batch = await db.begin(async (tx) => {
         const rows =
-          await tx`select id,video_id,first_discovered_at::text as first_discovered_at from shorts_mvp.youtube_catalog
+          await tx`select id,video_id,first_discovered_at::text as first_discovered_at from shorts_mvp.youtube_catalog c
           where video_id is not null and refresh_after<=clock_timestamp()
+            and (exists(select 1 from shorts_mvp.youtube_catalog_regions r where r.catalog_id=c.id and r.region_code='KR')
+              or not exists(select 1 from shorts_mvp.youtube_catalog_regions r where r.catalog_id=c.id))
             and (refresh_lease_until is null or refresh_lease_until<clock_timestamp())
           order by (verified_at<clock_timestamp()-interval '25 days') desc,
             (last_used_at>clock_timestamp()-interval '1 day') desc nulls last,

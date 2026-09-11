@@ -39,7 +39,7 @@ export async function backfillCatalogBatch(
         await db`insert into shorts_mvp.youtube_collection_runs(id,lane,scheduled_at,started_at,finished_at,status,page_count,item_count,legacy)
         values(${run.id},${source.lane},${catalogTimestamp(db,String(run.startedAtExact))}::timestamptz,${catalogTimestamp(db,String(run.startedAtExact))}::timestamptz,${catalogTimestamp(db,String(run.completedAtExact || run.startedAtExact))}::timestamptz,
           ${run.status === "ready" ? "success" : "failed"},${run.pageCount},${run.itemCount},true)
-        on conflict(lane,scheduled_at) do update set legacy=youtube_collection_runs.legacy returning id`;
+        on conflict(lane,region_code,scheduled_at) do update set legacy=youtube_collection_runs.legacy returning id`;
       await db`insert into shorts_mvp.youtube_catalog_imports(source,legacy_run_id) values(${source.prefix},${run.id}) on conflict do nothing`;
       const rows =
         run.status === "ready"
@@ -125,7 +125,7 @@ export async function backfillCatalogBatch(
                 await tx`insert into shorts_mvp.youtube_collection_run_days(run_id,day)
                   values(${newRun.id},${kstDate(new Date(observedAt))}) on conflict do nothing`;
                 await tx`insert into shorts_mvp.youtube_trending_days(day,catalog_id,first_seen_at,last_seen_at)
-                values(${kstDate(new Date(observedAt))},${internalId},${catalogTimestamp(tx,observedAt)}::timestamptz,${catalogTimestamp(tx,observedAt)}::timestamptz) on conflict(day,catalog_id) do update set
+                values(${kstDate(new Date(observedAt))},${internalId},${catalogTimestamp(tx,observedAt)}::timestamptz,${catalogTimestamp(tx,observedAt)}::timestamptz) on conflict(day,catalog_id,region_code) do update set
                   first_seen_at=least(youtube_trending_days.first_seen_at,excluded.first_seen_at),last_seen_at=greatest(youtube_trending_days.last_seen_at,excluded.last_seen_at)`;
               }
             }

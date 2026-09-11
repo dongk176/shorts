@@ -37,6 +37,10 @@
     {
       "path": "/api/cron/youtube-discovery?lane=refresh",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/youtube-japan",
+      "schedule": "15 8 * * *"
     }
   ]
 }

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  japanReadsEnabled: vi.fn(),
   getPopularVideos: vi.fn(),
   getPopularSearchVideos: vi.fn(),
   getReusablePopularVideos: vi.fn(),
@@ -13,6 +14,8 @@ const mocks = vi.hoisted(() => ({
   managedPopularFilterOverride: vi.fn(),
   recordPopularFilterUsage: vi.fn(),
 }));
+
+vi.mock("@/lib/youtube-japan-settings", () => ({ japanReadsEnabled: mocks.japanReadsEnabled }));
 
 vi.mock("@/lib/youtube-popular", () => ({
   getPopularVideos: mocks.getPopularVideos,
@@ -54,6 +57,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.unstubAllEnvs();
   mocks.getDb.mockReturnValue("database");
+  mocks.japanReadsEnabled.mockImplementation(async () => process.env.YOUTUBE_JP_DISCOVERY_ENABLED === "true");
   mocks.authenticatedSession.mockResolvedValue({ userId: "user-a" });
   mocks.hasDirectPopularFilterAccess.mockResolvedValue(false);
   mocks.managedPopularFilterOverride.mockResolvedValue(null);
@@ -125,11 +129,12 @@ describe("popular YouTube API route", () => {
       category: "gaming",
       reusableOnly: true,
       longFormOnly: true,
+      japaneseOnly: false,
       koreanOnly: true,
       discoveryPeriod: "all",
       resultCount: 0,
     });
-    await expect(response.json()).resolves.toEqual({ items: [], updatedAt: "2026-07-14T00:00:00.000Z" });
+    await expect(response.json()).resolves.toEqual({ items: [], updatedAt: "2026-07-14T00:00:00.000Z", japaneseEnabled: false });
   });
 
   it("maps the reusable primary filter to the accumulated view-count list", async () => {
@@ -361,6 +366,7 @@ describe("popular YouTube API route", () => {
       category: "all",
       reusableOnly: false,
       longFormOnly: false,
+      japaneseOnly: false,
       koreanOnly: false,
       discoveryPeriod: "all",
       resultCount: 2,
@@ -415,5 +421,28 @@ describe("catalog calendar API access", () => {
     mocks.getCatalogVideos.mockRejectedValue(new CatalogCursorExpiredError());
     const result=await GET(new Request("http://localhost/api/youtube/popular?type=views&cursor=expired"));
     expect(result.status).toBe(410);expect(await result.json()).toMatchObject({code:"CURSOR_EXPIRED"});
+  });
+});
+
+describe("Japanese filter API", () => {
+  it("rejects simultaneous Korean and Japanese filters before reading data", async () => {
+    const response = await GET(new Request("https://example.com/api/youtube/popular?type=trending&korean=true&japanese=true"));
+    expect(response.status).toBe(400);
+    expect(mocks.getCatalogVideos).not.toHaveBeenCalled();
+  });
+  it("passes the language condition to catalog and usage tracking with existing entitlement checks", async () => {
+    vi.stubEnv("YOUTUBE_DISCOVERY_ENABLED", "true"); vi.stubEnv("YOUTUBE_CATALOG_READS_ENABLED", "true"); vi.stubEnv("YOUTUBE_JP_DISCOVERY_ENABLED", "true");
+    mocks.getCatalogVideos.mockResolvedValue({ items: [], updatedAt: "" });
+    const response = await GET(new Request("https://example.com/api/youtube/popular?type=trending&japanese=true"));
+    expect(response.status).toBe(200);
+    expect(mocks.authenticatedSession).toHaveBeenCalled();
+    expect(mocks.getCatalogVideos).toHaveBeenCalledWith(expect.objectContaining({ japanese: true, korean: false }), "database");
+    expect(mocks.recordPopularFilterUsage).toHaveBeenCalledWith("database", expect.objectContaining({ japaneseOnly: true, koreanOnly: false }));
+    expect(await response.json()).toMatchObject({ japaneseEnabled: true });
+  });
+  it("keeps Japanese results disabled by default", async () => {
+    const response = await GET(new Request("https://example.com/api/youtube/popular?type=trending&japanese=true"));
+    expect(response.status).toBe(503);
+    expect(mocks.getPopularVideos).not.toHaveBeenCalled();
   });
 });

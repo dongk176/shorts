@@ -56,6 +56,7 @@ export const ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE = [
   "/api/admin/youtube-discovery/route",
   "/api/admin/youtube-discovery/backfill/route",
   "/api/cron/youtube-discovery/route",
+  "/api/cron/youtube-japan/route",
   "/api/youtube/popular/calendar/route",
   "/api/youtube/popular/status/route",
   "/api/background-assets/route",

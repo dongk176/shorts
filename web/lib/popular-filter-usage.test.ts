@@ -43,6 +43,7 @@ describe("popular filter usage evidence", () => {
       true,
       true,
       true,
+      false,
       "week",
       12,
     ]);

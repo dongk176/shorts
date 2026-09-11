@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isKoreanVideo } from "./youtube-language";
+import { isKoreanVideo, isJapaneseVideo } from "./youtube-language";
 
 describe("YouTube Korean-language detection", () => {
   it("accepts Korean audio and metadata language codes", () => {
@@ -22,5 +22,21 @@ describe("YouTube Korean-language detection", () => {
       defaultAudioLanguage: "en-US",
       defaultLanguage: "en",
     })).toBe(false);
+  });
+});
+
+describe("Japanese language detection", () => {
+  it("gives audio language priority over default language and title", () => {
+    expect(isJapaneseVideo({ title: "日本語の動画", defaultAudioLanguage: "ko-KR", defaultLanguage: "ja" })).toBe(false);
+    expect(isJapaneseVideo({ title: "English title", defaultAudioLanguage: "ja-JP", defaultLanguage: "en" })).toBe(true);
+    expect(isJapaneseVideo({ title: "English title", defaultLanguage: "ja" })).toBe(true);
+  });
+  it("only falls back to two kana when explicit language is absent", () => {
+    expect(isJapaneseVideo({ title: "楽しい料理" })).toBe(true);
+    expect(isJapaneseVideo({ title: "ｶﾀｶﾅ動画" })).toBe(true);
+    expect(isJapaneseVideo({ title: "中文漢字" })).toBe(false);
+    expect(isJapaneseVideo({ title: "あ" })).toBe(false);
+    expect(isJapaneseVideo({ title: "English", description: "日本語の説明" })).toBe(false);
+    expect(isJapaneseVideo({ title: "楽しい料理", defaultLanguage: "en" })).toBe(false);
   });
 });

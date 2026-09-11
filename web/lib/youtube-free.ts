@@ -1,9 +1,9 @@
-import { youtubeRequest, YoutubeQuotaError } from "@/lib/youtube-quota";
+import { withYoutubePurpose, youtubeRequest, YoutubeQuotaError } from "@/lib/youtube-quota";
 import type { Sql } from "postgres";
 import { z } from "zod";
 import { getDb } from "@/lib/db";
 import { parseIsoDuration } from "@/lib/youtube";
-import { isKoreanVideo } from "@/lib/youtube-language";
+import { isKoreanVideo, isJapaneseVideo } from "@/lib/youtube-language";
 import type { PopularVideo, PopularVideoResponse, PopularVideoSourceCategory } from "@/lib/youtube-popular";
 
 const FREE_SEARCH_PAGE_SIZE = 50;
@@ -85,12 +85,14 @@ const cursorSchema = z.object({
   offset: z.number().int().nonnegative(),
 });
 
-export type StoredSearchVideo = PopularVideo & { searchRank: number; pageNumber: number; isKorean: boolean };
+export type StoredSearchVideo = PopularVideo & { searchRank: number; pageNumber: number; isKorean: boolean; isJapanese?: boolean };
 
 export type SearchVideoSource = {
   query?: string;
   videoCategoryId?: string;
   publishedAfter?: Date | null;
+  regionCode?: "KR" | "JP";
+  relevanceLanguage?: "ko" | "ja";
 };
 
 export type FreeCollectionResult = {
@@ -167,8 +169,8 @@ export async function requestFreeSearchPage(options: {
   if (options.source.publishedAfter) {
     endpoint.searchParams.set("publishedAfter", options.source.publishedAfter.toISOString());
   }
-  endpoint.searchParams.set("regionCode", "KR");
-  endpoint.searchParams.set("relevanceLanguage", "ko");
+  endpoint.searchParams.set("regionCode", options.source.regionCode || "KR");
+  endpoint.searchParams.set("relevanceLanguage", options.source.relevanceLanguage || "ko");
   endpoint.searchParams.set("videoDuration", "any");
   if (options.videoLicense) endpoint.searchParams.set("videoLicense", options.videoLicense);
   endpoint.searchParams.set("safeSearch", "moderate");
@@ -267,6 +269,7 @@ export function normalizeDetails(
       publishedAt: item.snippet.publishedAt,
       license: item.status.license === "creativeCommon" ? "creativeCommon" : "youtube",
       isKorean: isKoreanVideo(item.snippet),
+      isJapanese: isJapaneseVideo(item.snippet),
     });
   });
   return videos;
@@ -373,11 +376,11 @@ export async function collectFreeVideos(options: {
   const now = options.now || new Date();
   const run = await startCollectionRun(db, now);
   try {
-    const collection = await collectSearchVideoPages({
+    const collection = await withYoutubePurpose("free", db, () => collectSearchVideoPages({
       maxPages: options.maxPages,
       now,
       fetchImpl: options.fetchImpl,
-    });
+    }));
     await db.begin(async (tx) => {
       for (let offset = 0; offset < collection.items.length; offset += 250) {
         const rows = collection.items.slice(offset, offset + 250).map((video) => ({
