@@ -212,6 +212,7 @@ export function TrendingDateFilter({
           style={popupStyle}
           className="fixed bottom-5 right-5 z-50 max-h-[calc(100dvh-2.5rem)] w-[min(21rem,calc(100vw-2.5rem))] overflow-y-auto rounded-2xl border border-white/15 bg-[#1d2025] p-4 text-white shadow-2xl md:absolute md:bottom-auto md:right-0 md:top-full md:mt-2"
         >
+          <style>{`body:has(#trending-calendar) .language-selector-floating { display: none; }`}</style>
           <div className="flex items-center justify-between gap-2">
             <button
               type="button"
