@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Script from "next/script";
+import { ApplicationOverlays } from "@/components/application-overlays";
 import { EditorLaunchAnnouncementOverlay } from "@/components/editor-launch-announcement-overlay";
 import { GoogleAnalyticsMeasurement } from "@/components/google-analytics";
 import { StructuredData } from "@/components/structured-data";
@@ -138,15 +139,17 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
           >
             <WelcomeOverlayQueueProvider>
               {children}
-              <UserOnboardingOverlay />
-              <EditorLaunchAnnouncementOverlay />
-              <SidebarNavigationAnnouncement />
-              <MarketingEmailPreferenceOverlay />
-              <ProjectFeedbackOverlay />
-              <PaymentMethodRemediationGate
-                initialAction={null}
-                authenticated={initialUsageState.authenticated}
-              />
+              <ApplicationOverlays>
+                <UserOnboardingOverlay />
+                <EditorLaunchAnnouncementOverlay />
+                <SidebarNavigationAnnouncement />
+                <MarketingEmailPreferenceOverlay />
+                <ProjectFeedbackOverlay />
+                <PaymentMethodRemediationGate
+                  initialAction={null}
+                  authenticated={initialUsageState.authenticated}
+                />
+              </ApplicationOverlays>
             </WelcomeOverlayQueueProvider>
           </UsageProvider>
           <GoogleAnalyticsMeasurement measurementId={analyticsMeasurementId} />

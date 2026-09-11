@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { processBillingRenewals } from "@/lib/billing-renewals";
+import { maintainCreatorSupport } from "@/lib/creator-support-server";
 import { getDb } from "@/lib/db";
 import { processTossBillingRenewals } from "@/lib/toss-billing-renewals";
 
@@ -21,7 +22,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ detail: "Unauthorized" }, { status: 401 });
   }
   const db = getDb();
-  const failedEngines: Array<"legacy" | "toss"> = [];
+  const failedEngines: Array<"legacy" | "toss" | "creator-support"> = [];
   let legacy: Awaited<ReturnType<typeof processBillingRenewals>> | null = null;
   let toss: Awaited<ReturnType<typeof processTossBillingRenewals>> | null = null;
 
@@ -43,8 +44,15 @@ export async function GET(request: Request) {
     });
   }
 
+  let creatorSupport: Awaited<ReturnType<typeof maintainCreatorSupport>> | null = null;
+  try { creatorSupport = await maintainCreatorSupport(db); }
+  catch (error) {
+    failedEngines.push("creator-support");
+    console.error("creator_support_maintenance_failed", { errorName: error instanceof Error ? error.name : "UnknownError" });
+  }
+
   return NextResponse.json(
-    { legacy, toss, failedEngines },
+    { legacy, toss, creatorSupport, failedEngines },
     { status: failedEngines.length > 0 ? 500 : 200 },
   );
 }

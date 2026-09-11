@@ -1,3 +1,4 @@
+import { AdminCreatorSupport } from "./admin-creator-support";
 import { AdminYoutubeDiscovery } from "./admin-youtube-discovery";
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
@@ -126,6 +127,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
     "feedback",
     "onboarding",
     "creator-projects",
+    "creator-support",
     "settings",
     "installments",
     "editor-releases",
@@ -808,6 +810,8 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
           discoverySourceCounts={onboardingDiscoverySourceCounts}
           query={query}
         />
+      ) : tab === "creator-support" ? (
+        <AdminCreatorSupport />
       ) : tab === "creator-projects" ? (
         <AdminCreatorProjects shares={creatorProjectShares} />
       ) : tab === "editor-releases" ? (

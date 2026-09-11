@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdminUser } from "@/lib/admin";
 import { ADMIN_USAGE_GRANT_PRODUCT_CODE } from "@/lib/admin-usage-grant";
+import { CREATOR_SUPPORT_PRODUCT_CODE } from "@/lib/creator-support";
 import { getDb } from "@/lib/db";
 import { apiError } from "@/lib/http";
 import { ONBOARDING_WELCOME_PRODUCT_CODE } from "@/lib/onboarding-welcome";
@@ -54,7 +55,8 @@ export async function GET(request: Request) {
                 grant_row.product_code in (
                   ${ONBOARDING_WELCOME_PRODUCT_CODE},
                   ${SHORTS_THANK_YOU_EVENT_PRODUCT_CODE},
-                  ${ADMIN_USAGE_GRANT_PRODUCT_CODE}
+                  ${ADMIN_USAGE_GRANT_PRODUCT_CODE},
+                  ${CREATOR_SUPPORT_PRODUCT_CODE}
                 )
                 or account.manual_service_access_until>clock_timestamp()
                 or exists (

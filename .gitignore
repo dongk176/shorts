@@ -11,8 +11,10 @@
 # JavaScript and framework build products
 node_modules/
 **/node_modules/
+**/node_modules
 .next/
 **/.next/
+**/.next-dev/
 *.tsbuildinfo
 
 # AWS CDK synthesis products
@@ -30,3 +32,4 @@ venv/
 # Test and coverage output
 coverage/
 htmlcov/
+.tmp/creator-support-*

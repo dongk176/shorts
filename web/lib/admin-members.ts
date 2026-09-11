@@ -1,6 +1,7 @@
 import "server-only";
 
 import { ADMIN_USAGE_GRANT_PRODUCT_CODE } from "@/lib/admin-usage-grant";
+import { CREATOR_SUPPORT_PRODUCT_CODE } from "@/lib/creator-support";
 import { getDb } from "@/lib/db";
 import { ONBOARDING_WELCOME_PRODUCT_CODE } from "@/lib/onboarding-welcome";
 import { SHORTS_THANK_YOU_EVENT_PRODUCT_CODE } from "@/lib/shorts-thank-you-event";
@@ -227,7 +228,8 @@ export async function loadAdminMembers({
               grant_row.product_code in (
                 ${ONBOARDING_WELCOME_PRODUCT_CODE},
                 ${SHORTS_THANK_YOU_EVENT_PRODUCT_CODE},
-                ${ADMIN_USAGE_GRANT_PRODUCT_CODE}
+                ${ADMIN_USAGE_GRANT_PRODUCT_CODE},
+                ${CREATOR_SUPPORT_PRODUCT_CODE}
               )
               or page_user.manual_service_access_until>clock_timestamp()
               or exists (

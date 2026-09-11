@@ -42,6 +42,7 @@ function minutes(value: unknown, locale: SiteLocale) {
 }
 const eventLabels: Record<string, LocalizedLabel> = {
   plan_grant: { ko: "플랜 시간 지급", en: "Plan time granted", ja: "プラン時間付与" },
+  creator_support_grant: { ko: "크리에이터 지원 지급", en: "Creator support credit", ja: "クリエイター支援付与" },
   addon_grant: { ko: "추가시간 지급", en: "Additional time granted", ja: "追加時間付与" },
   feedback_reward: { ko: "피드백 보상", en: "Feedback reward", ja: "フィードバック特典" },
   update_event_bonus: { ko: "업데이트 이벤트 지급", en: "Update event bonus", ja: "アップデート特典" },
@@ -54,6 +55,7 @@ const eventLabels: Record<string, LocalizedLabel> = {
   reservation_released: { ko: "작업 시간 복구", en: "Job time restored", ja: "処理時間を復元" },
 };
 const productLabels: Record<string, LocalizedLabel> = {
+  creator_support_30min_v1: { ko: "크리에이터 지원 30분", en: "Creator support 30 min", ja: "クリエイター支援30分" },
   feedback_reward_30m: { ko: "원본 영상 처리시간 30분", en: "30 min of source-video processing", ja: "元動画処理時間30分" },
   editor_launch_bonus_20260728: { ko: "편집 기능 업데이트 월 사용량 100% 보너스", en: "Editor update · 100% monthly usage bonus", ja: "編集機能アップデート・月間利用量100%ボーナス" },
   onboarding_welcome_20min_v1: { ko: "무료 체험 원본 영상 처리시간 20분", en: "Free trial · 20 min of source-video processing", ja: "無料体験・元動画処理時間20分" },

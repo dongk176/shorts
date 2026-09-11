@@ -18,6 +18,7 @@ export type AdminTab =
   | "feedback"
   | "onboarding"
   | "creator-projects"
+  | "creator-support"
   | "settings"
   | "editor-releases"
   | "installments";
@@ -97,6 +98,7 @@ const navigationGroups: Array<{
       { tab: "inquiries", label: "고객 문의", icon: "inquiries" },
       { tab: "feedback", label: "제품 피드백", icon: "feedback" },
       { tab: "onboarding", label: "온보딩 분석", icon: "onboarding" },
+      { tab: "creator-support", label: "크리에이터 지원", icon: "creator-projects" },
       { tab: "creator-projects", label: "크리에이터 프로젝트", icon: "creator-projects" },
     ],
   },
@@ -119,6 +121,7 @@ const pageCopy: Record<AdminTab, { eyebrow: string; title: string }> = {
   inquiries: { eyebrow: "Support / Inquiries", title: "고객 문의" },
   feedback: { eyebrow: "Insights / Feedback", title: "제품 피드백" },
   onboarding: { eyebrow: "Insights / Onboarding", title: "온보딩 분석" },
+  "creator-support": { eyebrow: "Growth / Creator support", title: "크리에이터 지원" },
   "creator-projects": { eyebrow: "Growth / Creator outreach", title: "크리에이터 프로젝트" },
   settings: { eyebrow: "System / Runtime", title: "운영 설정" },
   "editor-releases": { eyebrow: "System / Editor releases", title: "편집기 릴리스" },

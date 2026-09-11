@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Sql, TransactionSql } from "postgres";
 import { ADMIN_USAGE_GRANT_PRODUCT_CODE } from "@/lib/admin-usage-grant";
+import { CREATOR_SUPPORT_PRODUCT_CODE } from "@/lib/creator-support";
 import type {
   BillingCycle,
   BillingSummary,
@@ -304,7 +305,8 @@ export async function getBillingSummary(db: BillingDb, userId: string | null): P
           and welcome_grant.product_code in (
             ${ONBOARDING_WELCOME_PRODUCT_CODE},
             ${SHORTS_THANK_YOU_EVENT_PRODUCT_CODE},
-            ${ADMIN_USAGE_GRANT_PRODUCT_CODE}
+            ${ADMIN_USAGE_GRANT_PRODUCT_CODE},
+            ${CREATOR_SUPPORT_PRODUCT_CODE}
           )
           and welcome_grant.status='active'
           and welcome_grant.valid_from<=clock_timestamp()
