@@ -30,9 +30,14 @@ export function normalizeYoutubeUrl(input: string) {
 }
 
 export function parseIsoDuration(value: string) {
-  const match = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(value);
-  if (!match) throw new Error("영상 길이를 확인하지 못했습니다.");
-  return Number(match[1] || 0) * 3600 + Number(match[2] || 0) * 60 + Number(match[3] || 0);
+  const match = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/.exec(value);
+  if (!match || !match.slice(1).some(part => part !== undefined)
+    || (value.includes("T") && !match.slice(2).some(part => part !== undefined)))
+    throw new Error("영상 길이를 확인하지 못했습니다.");
+  const seconds = Number(match[1] || 0) * 86400 + Number(match[2] || 0) * 3600
+    + Number(match[3] || 0) * 60 + Number(match[4] || 0);
+  if (!Number.isSafeInteger(seconds)) throw new Error("영상 길이를 확인하지 못했습니다.");
+  return seconds;
 }
 
 const responseSchema = z.object({

@@ -347,6 +347,7 @@ export async function getTrendingCalendar(
     ), records as (
       select d.day,count(*)::int as attempts,
         count(*) filter(where status='success')::int as successes,
+        count(*) filter(where legacy)::int as legacy_attempts,
         bool_and(legacy) as legacy from run_days d join shorts_mvp.youtube_collection_runs r on r.id=d.run_id where lane='trending'
         group by 1
     ), members as (
@@ -355,7 +356,8 @@ export async function getTrendingCalendar(
       from shorts_mvp.youtube_trending_days d join shorts_mvp.youtube_catalog c on c.id=d.catalog_id
       where d.day>=${`${month}-01`}::date and d.day<${`${month}-01`}::date+interval '1 month' group by 1
     ) select days.day::text,coalesce(r.attempts,0)::int as attempts,coalesce(r.successes,0)::int as successes,
-      coalesce(r.legacy,false) as legacy,coalesce(m.total,0)::int as total,coalesce(m.unavailable,0)::int as unavailable,
+      coalesce(r.legacy,false) as legacy,coalesce(r.legacy_attempts,0)::int as legacy_attempts,
+      coalesce(m.total,0)::int as total,coalesce(m.unavailable,0)::int as unavailable,
       (select min(expanded_at) from shorts_mvp.youtube_quota_verifications) as expanded_at
     from days left join records r on r.day=days.day left join members m on m.day=days.day order by days.day`;
   return {
@@ -363,12 +365,12 @@ export async function getTrendingCalendar(
     today: kstDate(now),
     days: rows.map((row) => {
       let expected = Number(row.attempts);
-      if (row.expandedAt && !row.legacy) {
+      if (row.expandedAt) {
         const start = new Date(`${row.day}T00:00:00+09:00`).getTime();
         const enabled = new Date(row.expandedAt).getTime();
         expected = Math.max(
           expected,
-          Array.from(
+          Number(row.legacyAttempts) + Array.from(
             { length: 12 },
             (_, i) => start + (1 + 2 * i) * 3_600_000,
           ).filter((t) => t >= enabled && t <= now.getTime()).length,

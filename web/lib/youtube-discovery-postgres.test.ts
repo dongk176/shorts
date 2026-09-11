@@ -634,6 +634,19 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
       getCatalogVideos(filters({ cursor: first.nextCursor }), db, now),
     ).rejects.toBeInstanceOf(CatalogCursorExpiredError);
   });
+  it("counts missed new slots separately from old daily records on the activation date", async () => {
+    await run(new Date('2026-09-10T08:00:00Z'),'success',true);
+    await run(new Date('2026-09-11T04:00:00Z'),'success',true);
+    await db`update shorts_mvp.youtube_quota_verifications set expanded_at='2026-09-11T05:00:00Z'`;
+    const day = async (now:string) => (await getTrendingCalendar('2026-09',db,new Date(now))).days.find(d=>d.date==='2026-09-11');
+    expect(await day('2026-09-11T05:30:00Z')).toMatchObject({collections:1,status:'complete'});
+    expect(await day('2026-09-11T07:00:00Z')).toMatchObject({collections:1,status:'partial'});
+    await run(new Date('2026-09-11T06:00:00Z'));
+    expect(await day('2026-09-11T07:00:00Z')).toMatchObject({collections:2,status:'complete'});
+    expect(await day('2026-09-11T09:00:00Z')).toMatchObject({collections:2,status:'partial'});
+    expect((await getTrendingCalendar('2026-09',db,new Date('2026-09-11T09:00:00Z'))).days.find(d=>d.date==='2026-09-10')).toMatchObject({collections:1,legacy:true,status:'complete'});
+  });
+
   it("represents legacy daily history, missing and partial days across month end", async () => {
     await run(new Date("2026-08-30T08:00:00Z"), "success", true);
     await run(new Date("2026-08-31T08:00:00Z"), "partial");

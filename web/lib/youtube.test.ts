@@ -1,6 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { analyzeYoutubeUrl, normalizeYoutubeUrl } from "./youtube";
+import { analyzeYoutubeUrl, normalizeYoutubeUrl, parseIsoDuration } from "./youtube";
+import { assertSupportedSourceVideoDuration } from "./source-video";
+
+describe("YouTube duration metadata", () => {
+  it.each([["PT0S",0],["PT3M",180],["PT1H2M3S",3723],["P1D",86400],["P2DT42M37S",175357]])("reads %s without changing ingestion limits", (duration, seconds) => {
+    expect(parseIsoDuration(String(duration))).toBe(seconds);
+  });
+  it.each(["P","PT","P2DT","P-1D","PT3Mgarbage","P999999999999999D"])("rejects malformed or unsafe durations %s", duration => {
+    expect(() => parseIsoDuration(duration)).toThrow();
+  });
+  it("still rejects multi-day sources for both stable and source-range creation", () => {
+    const seconds = parseIsoDuration("P2DT42M37S");
+    expect(() => assertSupportedSourceVideoDuration(seconds)).toThrow();
+    expect(() => assertSupportedSourceVideoDuration(seconds, {sourceRangeSelectionEnabled:true})).toThrow();
+  });
+});
 
 beforeEach(() => {
   vi.unstubAllGlobals();
