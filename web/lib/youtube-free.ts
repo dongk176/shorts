@@ -563,15 +563,30 @@ function catalogLiveState(item: DetailItem): "available" | "live" | "unknown" {
 }
 
 /** Reject incomplete public metadata before making any availability or license decision. */
-export function verifiedCatalogDetails(videoIds: string[], response: z.infer<typeof detailsResponseSchema>) {
+export function verifiedCatalogDetails(videoIds: string[], response: z.infer<typeof detailsResponseSchema>, allowPending = false) {
   const items=normalizeDetails(videoIds,response,1,0);
   const normalized=new Set(items.map(item=>item.videoId));
+  const pendingIds: string[] = [];
   for (const item of response.items) {
+    // Missing optional statistics are not evidence of deletion. Only defer this
+    // specific case; malformed privacy, live state or other metadata still fails
+    // the whole batch before any writes. Never synthesize a zero view count.
+    if (allowPending && videoIds.includes(item.id)
+      && item.status.privacyStatus === 'public'
+      && catalogLiveState(item) === 'available'
+      && (item.status.license === 'youtube' || item.status.license === 'creativeCommon')
+      && item.statistics?.viewCount === undefined
+      && item.snippet.title.trim() && item.snippet.channelTitle.trim()
+      && selectThumbnail(item.snippet.thumbnails)) {
+      let duration = 0;
+      try { duration = parseIsoDuration(item.contentDetails.duration); } catch { /* reject below */ }
+      if (duration > 0) { pendingIds.push(item.id); continue; }
+    }
     if (!item.status.privacyStatus || (item.status.privacyStatus === 'public'
       && (catalogLiveState(item) === 'unknown' || (catalogLiveState(item) === 'available'
         && (!normalized.has(item.id) || !item.status.license))))) {
       throw new YoutubeFreeApiError('YouTube 영상의 전체 정보를 확인하지 못했습니다.');
     }
   }
-  return { items, unavailableIds: videoIds.filter(id=>!normalized.has(id)) };
+  return { items, pendingIds, unavailableIds: videoIds.filter(id=>!normalized.has(id) && !pendingIds.includes(id)) };
 }

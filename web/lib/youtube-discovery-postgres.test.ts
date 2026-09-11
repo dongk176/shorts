@@ -14,6 +14,7 @@ import {
 vi.mock("server-only", () => ({}));
 import {
   saveCatalogPage,
+  markCatalogMetadataPending,
   getCatalogVideos,
   getTrendingCalendar,
   purgeExpiredCatalog,
@@ -159,6 +160,7 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
         "202607150009_korean_video_filter.sql",
         "202609090001_youtube_discovery_catalog.sql",
         "202609110001_youtube_quota_opening_balances.sql",
+        "202609110002_youtube_pending_metadata.sql",
       ]) {
         await migrationDb.unsafe(
           readFileSync(path.resolve("../supabase/migrations", name), "utf8"),
@@ -200,6 +202,66 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
       values(${runId},${id},'entertainment',1,1,'Old snapshot','channel','https://example.com/old.jpg',600,1,${at},'youtube',true,${at})`;
     return runId;
   }
+
+  it("copies history with missing statistics into a hidden retry state, then recovers without changing discovery dates", async () => {
+    const id = "avTQRPUU1IM", old = new Date(Date.now() - 35 * DAY_MS);
+    await legacyVideo(id, old);
+    await legacyVideo(id, new Date(old.getTime() + DAY_MS));
+    const incomplete = vi.fn(async () => new Response(JSON.stringify({ items: [{ ...youtubeItem(id), statistics: {} }] })));
+    await backfillCatalogBatch(db, incomplete);
+    await backfillCatalogBatch(db, incomplete);
+    expect(incomplete).toHaveBeenCalledTimes(1);
+    expect(await getCatalogBackfillReadiness(db)).toMatchObject({ ready: true, pendingMetadata: 1 });
+    const [pending] = await db`select * from shorts_mvp.youtube_catalog`;
+    expect(pending.videoId).toBe(id);
+    expect(pending.availability).toBe("public");
+    expect(pending.metadata).toBeNull();
+    expect(pending.metadataPendingAt).toBeTruthy();
+    expect(new Date(pending.verifiedAt).toISOString()).toBe(old.toISOString());
+    expect((await getCatalogVideos(filters(), db)).totalCount).toBe(0);
+    expect((await db`select count(*)::int n from shorts_mvp.youtube_trending_days`)[0].n).toBe(2);
+    // A later import of stale API fields cannot revive the pending item.
+    await saveCatalogPage(db, [fixture(id)], { observedAt: new Date(old.getTime() + DAY_MS) });
+    expect((await db`select metadata from shorts_mvp.youtube_catalog`)[0].metadata).toBeNull();
+    await db`update shorts_mvp.youtube_catalog set refresh_after=now()-interval '1 minute'`;
+    const valid = vi.fn(async () => new Response(JSON.stringify({ items: [youtubeItem(id, 'creativeCommon')] })));
+    await refreshCatalogBatch({ db, fetchImpl: valid });
+    const [recovered] = await db`select * from shorts_mvp.youtube_catalog`;
+    expect(recovered.metadataPendingAt).toBeNull();
+    expect(recovered.metadata.license).toBe('creativeCommon');
+    expect(new Date(recovered.firstDiscoveredAt).toISOString()).toBe(old.toISOString());
+    expect((await getCatalogVideos(filters({type:'reusable'}), db)).totalCount).toBe(1);
+    expect((await db`select count(*)::int n from shorts_mvp.popular_video_items`)[0].n).toBe(2);
+  });
+
+  it("leaves a malformed import batch checkpoint unchanged", async () => {
+    await legacyVideo('invalid0001', new Date(Date.now() - 35 * DAY_MS));
+    await expect(backfillCatalogBatch(db, async () => new Response(JSON.stringify({items:[{...youtubeItem('invalid0001'),status:{}}]})))).rejects.toThrow();
+    expect((await db`select next_offset from shorts_mvp.youtube_catalog_imports`)[0].nextOffset).toBe(0);
+    expect((await db`select count(*)::int n from shorts_mvp.youtube_catalog`)[0].n).toBe(0);
+  });
+
+  it("refreshes valid neighbors while retaining an incomplete public identifier for a later retry", async () => {
+    const old = new Date(Date.now() - 2 * DAY_MS);
+    await saveCatalogPage(db, [fixture('avTQRPUU1IM'), fixture('valid000001')], { observedAt: old });
+    const response = async () => new Response(JSON.stringify({items:[{...youtubeItem('avTQRPUU1IM'),statistics:{}},youtubeItem('valid000001','creativeCommon')]}));
+    await refreshCatalogBatch({db, fetchImpl:response});
+    const rows = await db`select video_id,metadata,metadata_pending_at,verified_at from shorts_mvp.youtube_catalog order by video_id`;
+    expect(rows[0].metadata).toBeNull();
+    expect(rows[0].metadataPendingAt).toBeTruthy();
+    expect(new Date(rows[0].verifiedAt).toISOString()).toBe(old.toISOString());
+    expect(rows[1].metadata.license).toBe('creativeCommon');
+    await purgeExpiredCatalog(db, new Date(Date.now() + 31 * DAY_MS));
+    expect((await db`select count(*)::int n from shorts_mvp.youtube_catalog where video_id is not null`)[0].n).toBe(0);
+    expect((await db`select count(*)::int n from shorts_mvp.youtube_catalog`)[0].n).toBe(2);
+  });
+
+  it("does not let an older partial response overwrite a newer full verification", async () => {
+    const now = new Date();
+    await saveCatalogPage(db, [fixture('avTQRPUU1IM')], {observedAt:now});
+    await markCatalogMetadataPending(db, ['avTQRPUU1IM'], now, new Date(now.getTime()-1000));
+    expect((await db`select metadata,metadata_pending_at from shorts_mvp.youtube_catalog`)[0]).toMatchObject({metadataPendingAt:null,metadata:{viewCount:100}});
+  });
 
   it("does not replace the live legacy counter with an incomplete backfill", async () => {
     vi.stubEnv("YOUTUBE_CATALOG_READS_ENABLED", "false");

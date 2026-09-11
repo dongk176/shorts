@@ -3,6 +3,7 @@ import { getDb } from "@/lib/db";
 import {
   catalogId,
   markCatalogUnavailable,
+  markCatalogMetadataPending,
   saveCatalogPage,
   type CatalogVideo,
 } from "@/lib/youtube-catalog";
@@ -345,7 +346,7 @@ export async function refreshCatalogBatch(
           ids,
           options.fetchImpl || fetch,
         );
-        const verified = verifiedCatalogDetails(ids, details);
+        const verified = verifiedCatalogDetails(ids, details, true);
         const byId = new Map(
           verified.items.map((item) => [item.videoId, item]),
         );
@@ -358,6 +359,8 @@ export async function refreshCatalogBatch(
                 observedAt: now,
                 firstDiscoveredAt: String(row.firstDiscoveredAt),
               });
+            else if (verified.pendingIds.includes(String(row.videoId)))
+              await markCatalogMetadataPending(tx, [String(row.videoId)], String(row.firstDiscoveredAt), now);
             else await markCatalogUnavailable(tx, [String(row.videoId)], now);
           }
           await tx`update shorts_mvp.youtube_collection_runs set page_count=page_count+1,item_count=item_count+${batch.length} where id=${runId}`;

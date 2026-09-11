@@ -67,9 +67,10 @@ export async function saveCatalogPage(
     from jsonb_to_recordset(${db.json(records)}) as r(id text,video_id text,metadata jsonb,rank integer)
     on conflict(id) do update set
       first_discovered_at=least(youtube_catalog.first_discovered_at,excluded.first_discovered_at),
-      video_id=case when excluded.verified_at>=youtube_catalog.verified_at then excluded.video_id else youtube_catalog.video_id end,
-      metadata=case when excluded.verified_at>=youtube_catalog.verified_at then excluded.metadata else youtube_catalog.metadata end,
-      availability=case when excluded.verified_at>=youtube_catalog.verified_at then 'public' else youtube_catalog.availability end,
+      video_id=case when excluded.verified_at>=greatest(youtube_catalog.verified_at,youtube_catalog.metadata_pending_at) then excluded.video_id else youtube_catalog.video_id end,
+      metadata=case when excluded.verified_at>=greatest(youtube_catalog.verified_at,youtube_catalog.metadata_pending_at) then excluded.metadata else youtube_catalog.metadata end,
+      availability=case when excluded.verified_at>=greatest(youtube_catalog.verified_at,youtube_catalog.metadata_pending_at) then 'public' else youtube_catalog.availability end,
+      metadata_pending_at=case when excluded.verified_at>=youtube_catalog.metadata_pending_at then null else youtube_catalog.metadata_pending_at end,
       verified_at=greatest(youtube_catalog.verified_at,excluded.verified_at),updated_at=clock_timestamp(),
       refresh_after=greatest(youtube_catalog.refresh_after,excluded.refresh_after),refresh_lease_until=null,
       last_trending_at=greatest(youtube_catalog.last_trending_at,excluded.last_trending_at),
@@ -88,6 +89,25 @@ export async function saveCatalogPage(
   if (input.runId)
     await db`insert into shorts_mvp.youtube_trending_run_items(run_id,catalog_id)
     select ${input.runId}::uuid,unnest(${records.map((r) => r.id)}::text[]) on conflict do nothing`;
+}
+
+/** Preserve a confirmed public identifier for a bounded retry, without storing
+ * incomplete API metadata or extending its full-verification freshness clock. */
+export async function markCatalogMetadataPending(
+  db: CatalogSql, videoIds: string[], observedAt: CatalogTimestamp,
+  checkedAt: CatalogTimestamp = new Date(),
+) {
+  if (!videoIds.length) return;
+  const records = videoIds.map(videoId => ({ id: catalogId(videoId), video_id: videoId }));
+  await db`insert into shorts_mvp.youtube_catalog(id,video_id,first_discovered_at,verified_at,metadata_pending_at,refresh_after)
+    select r.id,r.video_id,${catalogTimestamp(db,observedAt)}::timestamptz,${catalogTimestamp(db,observedAt)}::timestamptz,
+      ${catalogTimestamp(db,checkedAt)}::timestamptz,${catalogTimestamp(db,checkedAt)}::timestamptz+interval '1 hour'
+    from jsonb_to_recordset(${db.json(records)}) r(id text,video_id text)
+    on conflict(id) do update set
+      first_discovered_at=least(youtube_catalog.first_discovered_at,excluded.first_discovered_at),
+      video_id=excluded.video_id,metadata=null,availability='public',metadata_pending_at=excluded.metadata_pending_at,
+      refresh_after=excluded.refresh_after,refresh_lease_until=null,updated_at=clock_timestamp()
+    where excluded.metadata_pending_at>=greatest(youtube_catalog.verified_at,youtube_catalog.metadata_pending_at)`;
 }
 
 export async function catalogStatus(
@@ -377,7 +397,8 @@ export async function purgeExpiredCatalog(db: Sql = getDb(), now = new Date()) {
     // Internal hash membership survives; expired API identifiers and payload do not.
     const expired =
       await tx`update shorts_mvp.youtube_catalog set metadata=null,video_id=null,availability='expired',trending_rank=null,updated_at=clock_timestamp()
-      where verified_at<=${new Date(now.getTime() - 30 * DAY_MS)} and metadata is not null returning id`;
+      where greatest(verified_at,metadata_pending_at)<=${new Date(now.getTime() - 30 * DAY_MS)}
+        and (metadata is not null or video_id is not null) returning id`;
     if (expired.length) {
       const { refreshCatalogViewCounter } = await import(
         "@/lib/reusable-view-counter-server"
@@ -402,8 +423,8 @@ export async function markCatalogUnavailable(
 ) {
   if (!videoIds.length) return [];
   return await db`update shorts_mvp.youtube_catalog set metadata=null,video_id=null,availability='unavailable',
-    trending_rank=null,verified_at=${catalogTimestamp(db,checkedAt)}::timestamptz,updated_at=clock_timestamp(),refresh_lease_until=null
-    where id in ${db(videoIds.map(catalogId))} and verified_at<=${catalogTimestamp(db,checkedAt)}::timestamptz returning id`;
+    trending_rank=null,metadata_pending_at=null,verified_at=${catalogTimestamp(db,checkedAt)}::timestamptz,updated_at=clock_timestamp(),refresh_lease_until=null
+    where id in ${db(videoIds.map(catalogId))} and greatest(verified_at,metadata_pending_at)<=${catalogTimestamp(db,checkedAt)}::timestamptz returning id`;
 }
 
 /** A source analysis can confirm a license/status change without rechecking views.

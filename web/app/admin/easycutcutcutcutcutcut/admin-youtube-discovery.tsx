@@ -35,6 +35,7 @@ type State = {
     missingDays: number;
     incorrectFirstDiscovery: number;
     expiredMetadata: number;
+    pendingMetadata?: number;
   };
   remaining?: { search: number; general: number; background: number };
 };
@@ -120,6 +121,11 @@ export function AdminYoutubeDiscovery() {
               ? "통과"
               : `대기 ${state.backfill?.pendingRuns ?? "미확인"}회 · 영상 누락 ${state.backfill?.missingVideos ?? "미확인"}개 · 날짜 누락 ${state.backfill?.missingDays ?? "미확인"}개 · 최초 발견일 오류 ${state.backfill?.incorrectFirstDiscovery ?? "미확인"}개 · 만료 정보 ${state.backfill?.expiredMetadata ?? "미확인"}개`}
           </p>
+          {Boolean(state.backfill?.pendingMetadata) && (
+            <p className="mt-2 text-sm text-amber-700">
+              정보 불완전 {state.backfill?.pendingMetadata}개 · 발견 기록 보존, 목록 숨김, 재확인 대기
+            </p>
+          )}
           <div className="mt-4 overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead>

@@ -36,6 +36,21 @@ afterEach(() => {
 });
 
 describe("free YouTube search collection", () => {
+  it("defers an omitted view count without inventing zero or classifying a public video as unavailable", () => {
+    const ids = ["avTQRPUU1IM", "valid000001", "gone0000001"];
+    const response = detailsResponseSchema.parse({ items: [detail(ids[0], { statistics: {} }), detail(ids[1])] });
+    expect(() => verifiedCatalogDetails(ids, response)).toThrow(YoutubeFreeApiError);
+    const result = verifiedCatalogDetails(ids, response, true);
+    expect(result.pendingIds).toEqual([ids[0]]);
+    expect(result.items.map(item => item.videoId)).toEqual([ids[1]]);
+    expect(result.unavailableIds).toEqual([ids[2]]);
+  });
+  it("does not defer malformed metadata or ambiguous live history as a missing statistic", () => {
+    for (const extra of [{ contentDetails: { duration: "bad" } }, { liveStreamingDetails: {} }, { status: {} }]) {
+      const response = detailsResponseSchema.parse({ items: [detail("avTQRPUU1IM", { statistics: {}, ...extra })] });
+      expect(() => verifiedCatalogDetails(["avTQRPUU1IM"], response, true)).toThrow(YoutubeFreeApiError);
+    }
+  });
   it("retains the manually imported completed replays with current CC metadata", () => {
     const ids = ["jDPal12pVno", "xgBS4yDSNV0", "wKjpYOR8_F0"];
     const result = verifiedCatalogDetails(ids, detailsResponseSchema.parse({ items: ids.map(id => detail(id, {

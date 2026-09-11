@@ -4,6 +4,7 @@ import {
   catalogId,
   catalogTimestamp,
   markCatalogUnavailable,
+  markCatalogMetadataPending,
   saveCatalogPage,
   type CatalogVideo,
 } from "@/lib/youtube-catalog";
@@ -51,23 +52,24 @@ export async function backfillCatalogBatch(
         const batch = rows.slice(offset, offset + 50);
         const ids = batch.map((row) => String(row.videoId));
         const current =
-          await db`select id,metadata,verified_at,verified_at::text as verified_at_exact from shorts_mvp.youtube_catalog where id in ${db(ids.map(catalogId))}`;
+          await db`select id,metadata,metadata_pending_at,metadata_pending_at::text as pending_at_exact,verified_at,verified_at::text as verified_at_exact from shorts_mvp.youtube_catalog where id in ${db(ids.map(catalogId))}`;
         const existing = new Map(current.map((row) => [String(row.id), row]));
         const stale = ids.filter(
           (id, index) =>
             new Date(batch[index].collectedAt).getTime() <=
               Date.now() - 30 * DAY_MS &&
             (!existing.get(catalogId(id)) ||
-              new Date(existing.get(catalogId(id))!.verifiedAt).getTime() <=
+              new Date(existing.get(catalogId(id))!.metadataPendingAt || existing.get(catalogId(id))!.verifiedAt).getTime() <=
                 Date.now() - 30 * DAY_MS),
         );
-        const fresh = stale.length
+        const verification = stale.length
           ? verifiedCatalogDetails(
               stale,
               await requestVideoDetails(stale, fetchImpl),
-            ).items
-          : [];
-        const freshById = new Map(fresh.map((item) => [item.videoId, item]));
+              true,
+            )
+          : { items: [], pendingIds: [] as string[] };
+        const freshById = new Map(verification.items.map((item) => [item.videoId, item]));
         const now = new Date();
         await db.begin(async (tx) => {
           const groups = new Map<string, { items: CatalogVideo[]; observedAt: string; verifiedAt: Date | string }>();
@@ -77,7 +79,8 @@ export async function backfillCatalogBatch(
             const known = existing.get(internalId);
             const observedAt = String(row.collectedAtExact);
             const rechecked = stale.includes(id);
-            const useKnown = known && new Date(known.verifiedAt) > new Date(observedAt);
+            const useKnown = known && new Date(known.metadataPendingAt || known.verifiedAt) > new Date(observedAt);
+            const pending = verification.pendingIds.includes(id) || (!rechecked && useKnown && known.metadataPendingAt);
             const item = rechecked
               ? freshById.get(id)
               : useKnown
@@ -106,11 +109,19 @@ export async function backfillCatalogBatch(
               groups.set(key, group);
             }
             else {
-              await tx`insert into shorts_mvp.youtube_catalog(id,first_discovered_at,verified_at,availability)
-                values(${internalId},${catalogTimestamp(tx,observedAt)}::timestamptz,${catalogTimestamp(tx,verifiedAt)}::timestamptz,'unavailable')
-                on conflict(id) do update set first_discovered_at=least(youtube_catalog.first_discovered_at,excluded.first_discovered_at)`;
-              await markCatalogUnavailable(tx, [id], verifiedAt);
+              if (pending) {
+                await markCatalogMetadataPending(tx, [id], observedAt, rechecked ? now : String(known!.pendingAtExact));
+              } else {
+                await tx`insert into shorts_mvp.youtube_catalog(id,first_discovered_at,verified_at,availability)
+                  values(${internalId},${catalogTimestamp(tx,observedAt)}::timestamptz,${catalogTimestamp(tx,verifiedAt)}::timestamptz,'unavailable')
+                  on conflict(id) do update set first_discovered_at=least(youtube_catalog.first_discovered_at,excluded.first_discovered_at)`;
+                await markCatalogUnavailable(tx, [id], verifiedAt);
+              }
+              await tx`insert into shorts_mvp.youtube_trending_run_items(run_id,catalog_id)
+                values(${newRun.id},${internalId}) on conflict do nothing`;
               if (source.lane === "trending") {
+                await tx`update shorts_mvp.youtube_catalog set last_trending_at=greatest(last_trending_at,${catalogTimestamp(tx,observedAt)}::timestamptz)
+                  where id=${internalId}`;
                 await tx`insert into shorts_mvp.youtube_collection_run_days(run_id,day)
                   values(${newRun.id},${kstDate(new Date(observedAt))}) on conflict do nothing`;
                 await tx`insert into shorts_mvp.youtube_trending_days(day,catalog_id,first_seen_at,last_seen_at)
@@ -192,6 +203,7 @@ export async function getCatalogBackfillReadiness(db: Sql = getDb()) {
       or not exists(select 1 from shorts_mvp.youtube_collection_run_days d
         where d.run_id=r.id and d.day=(i.collected_at at time zone 'Asia/Seoul')::date)`;
   const [catalog] = await db`select count(*)::int as total,
+    count(*) filter(where metadata_pending_at is not null and video_id is not null)::int as pending_metadata,
     count(*) filter(where metadata is not null and verified_at<=clock_timestamp()-interval '30 days')::int as expired
     from shorts_mvp.youtube_catalog`;
   const missingDays = Number(days.missing);
@@ -202,6 +214,7 @@ export async function getCatalogBackfillReadiness(db: Sql = getDb()) {
     incorrectFirstDiscovery,
     missingDays,
     expiredMetadata,
+    pendingMetadata: Number(catalog.pendingMetadata),
     ready:
       Number(catalog.total) > 0 &&
       pendingRuns +
