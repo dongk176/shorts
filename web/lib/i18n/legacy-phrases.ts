@@ -669,7 +669,7 @@ const phrases: readonly Phrase[] = [
   ["각 쇼츠 아래의 ‘다운로드’를 누르면 해당 영상 하나만 기기에 저장할 수 있어요.", "Select Download below a Short to save only that video to your device.", "各ショート動画の下にある「ダウンロード」を選ぶと、その動画だけを端末に保存できます。"],
   ["한 번에 저장", "Save all at once", "まとめて保存"],
   ["완성된 쇼츠를 한꺼번에 받을 수 있어요", "Download all finished Shorts at once", "完成したショート動画をまとめてダウンロード"],
-  ["상단 버튼으로 다운로드 가능한 쇼츠를 모두 저장하세요. 기기에서 여러 파일 저장을 제한하면 쇼츠별 다운로드 방법을 안내해 드려요.", "Use the top button to save every available Short. If your device limits multiple downloads, we'll show you how to download each one.", "上部のボタンでダウンロード可能なショート動画をすべて保存できます。端末で複数ファイルの保存が制限されている場合は、個別のダウンロード方法をご案内します。"],
+  ["상단 버튼을 누르면 다운로드 가능한 쇼츠가 ZIP 파일 하나로 저장돼요. 압축을 풀면 각 영상을 사용할 수 있어요.", "Use the top button to save all available Shorts in one ZIP file. Extract it to access each video.", "上部のボタンでダウンロード可能なショート動画を1つのZIPファイルに保存できます。解凍すると各動画を利用できます。"],
   ["다른 프로젝트로 돌아갈 수 있어요", "Return to another project", "別のプロジェクトに戻れます"],
   ["왼쪽 위 프로젝트 경로를 누르면 지금까지 만든 프로젝트 목록으로 돌아갑니다.", "Select the project path at the top left to return to your project list.", "左上のプロジェクトパスを選ぶと、これまでに作成したプロジェクト一覧に戻ります。"],
   ["프로젝트 가이드 완료", "Project guide complete", "プロジェクトガイド完了"],

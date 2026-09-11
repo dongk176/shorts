@@ -31,7 +31,7 @@ export const projectActionGuideSteps: readonly ProjectActionGuideStep[] = [
     feature: "bulk-download",
     eyebrow: "한 번에 저장",
     title: "완성된 쇼츠를 한꺼번에 받을 수 있어요",
-    description: "상단 버튼으로 다운로드 가능한 쇼츠를 모두 저장하세요. 기기에서 여러 파일 저장을 제한하면 쇼츠별 다운로드 방법을 안내해 드려요.",
+    description: "상단 버튼을 누르면 다운로드 가능한 쇼츠가 ZIP 파일 하나로 저장돼요. 압축을 풀면 각 영상을 사용할 수 있어요.",
     targetSelector: '[data-project-guide="bulk-download"]',
   },
   {

@@ -109,7 +109,8 @@ import {
   type TimedRangeAdjustment,
 } from "@/lib/range-editing";
 import { userFacingErrorMessage } from "@/lib/public-error";
-import { isIosDownloadDevice, shortDownloadFilename } from "@/lib/short-download";
+import { shortDownloadFilename } from "@/lib/short-download";
+import { ProjectDownloadButton } from "@/components/project-download-button";
 import { STATE_REQUEST_TIMEOUT_MS, stateRetryDelayMs } from "@/lib/state-loading";
 import {
   markSubtitleTemplateUsed,
@@ -12435,8 +12436,6 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
     url: string;
     posterUrl: string | null;
   }>>({});
-  const [iosDownloadDevice, setIosDownloadDevice] = useState(false);
-  const [downloadNoticeOpen, setDownloadNoticeOpen] = useState(false);
   const [downloadPaywallOpen, setDownloadPaywallOpen] = useState(false);
   const [editorDraftsByShortId, setEditorDraftsByShortId] = useState<
     Record<string, EditorDraftRecord>
@@ -12459,10 +12458,6 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
 
   useEffect(() => {
     mounted.current = true;
-    setIosDownloadDevice(isIosDownloadDevice(
-      window.navigator.userAgent,
-      window.navigator.maxTouchPoints,
-    ));
     return () => { mounted.current = false; };
   }, []);
 
@@ -12599,26 +12594,6 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
   const guideDownloadShortId = job.shorts.find((item) => (
     !job.isExample && item.status === "ready"
   ))?.id;
-  const downloadAll = () => {
-    if (job.isExample || !downloadableItems.length) return;
-    if (!access.canDownload) {
-      setDownloadPaywallOpen(true);
-      return;
-    }
-    if (iosDownloadDevice) {
-      setDownloadNoticeOpen(true);
-      return;
-    }
-    for (const item of downloadableItems) {
-      const anchor = document.createElement("a");
-      anchor.href = `/api/shorts/${encodeURIComponent(item.id)}/download`;
-      anchor.download = shortDownloadFilename(item.hookTitle);
-      anchor.hidden = true;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-    }
-  };
 
   if (!selected) {
     const projectExpired = isProjectExpired(job);
@@ -12652,7 +12627,7 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
     <div className="project-workspace">
       <header className="workspace-header">
         <div className="min-w-0"><button data-project-guide="back" onClick={onBack} className="text-xs font-semibold text-neutral-400 hover:text-white">{locale === "ko" ? `← 프로젝트 /${job.projectNumber}` : locale === "en" ? `← Project /${job.projectNumber}` : `← プロジェクト /${job.projectNumber}`}</button><div className="mt-1 flex min-w-0 items-center gap-3"><h1 data-i18n-skip className="truncate text-base font-bold">{job.videoTitle}</h1>{job.isExample && <span className="shrink-0 rounded bg-red-500/15 px-2 py-1 text-[11px] font-extrabold text-red-300">예시 작업 · 읽기 전용</span>}<span className="shrink-0 text-xs text-neutral-500">{locale === "ko" ? `쇼츠 ${job.shorts.length}개` : locale === "en" ? `${job.shorts.length} Shorts` : `ショート動画 ${job.shorts.length}件`}</span></div></div>
-        <button data-project-guide="bulk-download" disabled={job.isExample || !downloadableItems.length} title={job.isExample ? "예시 작업은 다운로드할 수 없습니다." : undefined} onClick={downloadAll} className="workspace-button workspace-button-primary shrink-0 disabled:cursor-not-allowed disabled:opacity-40">{iosDownloadDevice ? "↓ 쇼츠별 다운로드 안내" : "↓ 모든 쇼츠 다운로드"}</button>
+        <ProjectDownloadButton key={job.id} projectNumber={job.projectNumber} disabled={job.isExample || !downloadableItems.length} canDownload={access.canDownload} onPaywall={() => setDownloadPaywallOpen(true)} locale={locale} />
       </header>
       <ProjectActionGuide
         enabled={!job.isExample && job.status === "completed"}
@@ -12664,14 +12639,6 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
         action="download"
         open={downloadPaywallOpen}
         onClose={() => setDownloadPaywallOpen(false)}
-      />
-      <NoticeDialog
-        open={downloadNoticeOpen}
-        dialogId="ios-download-notice"
-        title="쇼츠별로 바로 저장해 주세요"
-        description="iPhone과 iPad는 여러 파일의 자동 저장을 제한합니다. 아래 각 쇼츠의 다운로드 버튼을 누르면 파일 앱의 다운로드 폴더에 안전하게 저장됩니다."
-        variant="info"
-        onClose={() => setDownloadNoticeOpen(false)}
       />
       <EditorDraftEntryDialog
         draft={editorDraftDiscardConfirmationOpen
