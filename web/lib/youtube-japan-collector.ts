@@ -39,6 +39,10 @@ export async function collectJapanVideos(options: {
   const project = process.env.YOUTUBE_QUOTA_PROJECT_ID || "";
   const claimed = await db.begin(async tx => {
     await tx`select pg_advisory_xact_lock(hashtextextended('youtube-japan-batch:' || ${project},0))`;
+    // A platform timeout can leave a run open. Retire it before the batch guard;
+    // the Pacific-day batch record still prevents another attempt that same day.
+    await tx`update shorts_mvp.youtube_collection_runs set status='failed',finished_at=clock_timestamp(),failed_pages=failed_pages+1
+      where region_code='JP' and status='running' and started_at<clock_timestamp()-interval '10 minutes'`;
     const [existing] = await tx`select 1 from shorts_mvp.youtube_collection_runs
       where region_code='JP' and (scheduled_at=${scheduledAt} or status='running') limit 1`;
     if (existing) return false;

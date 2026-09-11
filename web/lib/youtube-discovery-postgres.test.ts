@@ -1489,6 +1489,22 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
     expect((await db`select bool_and(quota_day=(started_at at time zone 'America/Los_Angeles')::date) as valid from shorts_mvp.youtube_japan_batches`)[0].valid).toBe(true);
   });
 
+  it("recovers an abandoned Japanese run on a later quota day without repeating the spent day", async () => {
+    await enableJapan();
+    const oldSlot=new Date(Date.now()-86400000);
+    const [abandoned]=await db`insert into shorts_mvp.youtube_collection_runs(lane,region_code,scheduled_at,status,started_at)
+      values('trending','JP',${oldSlot},'running',${oldSlot}) returning id`;
+    await db`insert into shorts_mvp.youtube_japan_batches(project_id,quota_day,scheduled_at,started_at)
+      values('test-project',(clock_timestamp() at time zone 'America/Los_Angeles')::date-1,${oldSlot},${oldSlot})`;
+    const fetchImpl=vi.fn(async()=>new Response(JSON.stringify({items:[]})));
+    expect(await collectJapanVideos({db,fetchImpl,scheduledAt:new Date()})).toMatchObject({skipped:false,failed:false});
+    expect((await db`select status from shorts_mvp.youtube_collection_runs where id=${abandoned.id}`)[0].status).toBe('failed');
+    const calls=fetchImpl.mock.calls.length;
+    expect(calls).toBe(17);
+    expect(await collectJapanVideos({db,fetchImpl,scheduledAt:new Date()})).toMatchObject({skipped:true,reason:'already_collected'});
+    expect(fetchImpl).toHaveBeenCalledTimes(calls);
+  });
+
   it("starts a fresh Pacific-day budget without counting the previous day's reservations", async () => {
     await enableJapan();
     await db`insert into shorts_mvp.youtube_quota_attempts(project_id,quota_day,bucket,purpose,units,region_code)
