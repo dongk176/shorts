@@ -1384,10 +1384,8 @@ export function PopularVideosExplorer({
         />}
       </div>
 
-      {catalogEnabled && <div className="mb-5 space-y-2 text-xs text-neutral-400" aria-live="polite">
-        {dataType === "trending" && selectedDate ? <p>{discoveryCopy[locale].note}</p> : dataType === "trending" && response?.delayed ? <p className="text-amber-300">{discoveryCopy[locale].delayed}</p> : null}
-        {dataType === "trending" && selectedDate && response?.collectionStatus && <p>{discoveryCopy[locale][response.collectionStatus === "complete" ? "complete" : response.collectionStatus === "partial" ? "partial" : "none"]}</p>}
-        {Boolean(response?.unavailableCount) && <p>{discoveryCopy[locale].unavailable}</p>}
+      {catalogEnabled && ((dataType === "trending" && !selectedDate && response?.delayed) || cursorNotice || hasNewList) && <div className="mb-5 space-y-2 text-xs text-neutral-400" aria-live="polite">
+        {dataType === "trending" && !selectedDate && response?.delayed && <p className="text-amber-300">{discoveryCopy[locale].delayed}</p>}
         {cursorNotice && <p>{discoveryCopy[locale].expired}</p>}
         {hasNewList && <button type="button" className="min-h-10 rounded-lg border border-violet-300/40 px-4 font-bold text-violet-100" onClick={() => setRetryCount(value => value + 1)}>{discoveryCopy[locale].fresh}</button>}
       </div>}

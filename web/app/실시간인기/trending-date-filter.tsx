@@ -16,17 +16,15 @@ export const discoveryCopy = {
     none: "수집 기록 없음",
     partial: "일부 수집 기록",
     complete: "수집 기록 있음",
-    note: "이날 수집된 영상 · 조회수는 최신 확인값",
     delayed: "갱신 지연",
     fresh: "새 목록 보기",
     current: "지금 급상승",
     previous: "이전 달",
     next: "다음 달",
     close: "닫기",
-    loading: "수집 기록 확인 중",
-    error: "수집 기록을 불러오지 못했습니다.",
+    loading: "불러오는 중…",
+    error: "날짜를 불러오지 못했습니다.",
     expired: "목록 유효기간이 지나 첫 페이지를 다시 불러왔습니다.",
-    unavailable: "현재 정보를 확인할 수 없는 영상이 있습니다.",
     days: ["일", "월", "화", "수", "목", "금", "토"],
   },
   en: {
@@ -35,17 +33,15 @@ export const discoveryCopy = {
     none: "No collection records",
     partial: "Partial collection records",
     complete: "Collection records available",
-    note: "Collected on this date · Views reflect the latest check",
     delayed: "Update delayed",
     fresh: "View new list",
     current: "Trending now",
     previous: "Previous month",
     next: "Next month",
     close: "Close",
-    loading: "Loading collection records",
-    error: "Could not load collection records.",
+    loading: "Loading…",
+    error: "Could not load dates.",
     expired: "This list expired. The first page has been reloaded.",
-    unavailable: "Some videos no longer have available information.",
     days: ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"],
   },
   ja: {
@@ -54,17 +50,15 @@ export const discoveryCopy = {
     none: "収集記録なし",
     partial: "一部の収集記録",
     complete: "収集記録あり",
-    note: "この日に収集した動画 · 再生回数は最新の確認値",
     delayed: "更新が遅れています",
     fresh: "新しい一覧を見る",
     current: "現在急上昇",
     previous: "前月",
     next: "翌月",
     close: "閉じる",
-    loading: "収集記録を確認中",
-    error: "収集記録を読み込めませんでした。",
+    loading: "読み込み中…",
+    error: "日付を読み込めませんでした。",
     expired: "一覧の有効期限が切れたため、最初のページを読み込みました。",
-    unavailable: "現在の情報を確認できない動画があります。",
     days: ["日", "月", "火", "水", "木", "金", "土"],
   },
 } as const;
@@ -95,12 +89,34 @@ export function TrendingDateFilter({
   const [error, setError] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
-  const popup = useRef<HTMLDivElement>(null);
+  const popup = useRef<HTMLDialogElement>(null);
+  const [mobile, setMobile] = useState(false);
   const [popupStyle, setPopupStyle] = useState<CSSProperties>({});
   const close = () => {
+    popup.current?.close();
     setOpen(false);
     trigger.current?.focus();
   };
+  useLayoutEffect(() => {
+    const dialog = popup.current;
+    if (!open || !dialog) return;
+    const media = window.matchMedia("(max-width: 767px)");
+    const previousOverflow = document.body.style.overflow;
+    const syncMode = () => {
+      if (dialog.open) dialog.close();
+      setMobile(media.matches);
+      document.body.style.overflow = media.matches ? "hidden" : previousOverflow;
+      if (media.matches) dialog.showModal();
+      else dialog.show();
+    };
+    syncMode();
+    media.addEventListener("change", syncMode);
+    return () => {
+      media.removeEventListener("change", syncMode);
+      dialog.close();
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open, canUseFilters]);
   useLayoutEffect(() => {
     if (!open) return;
     const place = () => {
@@ -150,6 +166,7 @@ export function TrendingDateFilter({
   useEffect(() => {
     if (!open) return;
     const outside = (event: PointerEvent) => {
+      if (popup.current?.matches(":modal")) return;
       if (!root.current?.contains(event.target as Node)) setOpen(false);
     };
     document.addEventListener("pointerdown", outside);
@@ -204,15 +221,39 @@ export function TrendingDateFilter({
         {date || copy.choose}
       </button>
       {open && canUseFilters && (
-        <div
+        <dialog
           ref={popup}
           id="trending-calendar"
           role="dialog"
           aria-label={copy.choose}
+          aria-modal={mobile || undefined}
           style={popupStyle}
-          className="fixed bottom-5 right-5 z-50 max-h-[calc(100dvh-2.5rem)] w-[min(21rem,calc(100vw-2.5rem))] overflow-y-auto rounded-2xl border border-white/15 bg-[#1d2025] p-4 text-white shadow-2xl md:absolute md:bottom-auto md:right-0 md:top-full md:mt-2"
+          onCancel={(event) => {
+            event.preventDefault();
+            close();
+          }}
+          onKeyDown={(event) => {
+            if (!mobile || event.key !== "Tab") return;
+            const buttons = event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not([disabled])");
+            const first = buttons[0];
+            const last = buttons[buttons.length - 1];
+            if (event.shiftKey && document.activeElement === first) {
+              event.preventDefault();
+              last?.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+              event.preventDefault();
+              first?.focus();
+            }
+          }}
+          onClick={(event) => {
+            if (event.target !== event.currentTarget) return;
+            const bounds = event.currentTarget.getBoundingClientRect();
+            if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) close();
+          }}
+          className="fixed inset-x-0 bottom-0 top-auto z-50 m-0 max-h-[90dvh] w-full max-w-none overflow-y-auto overscroll-contain rounded-t-[28px] border border-b-0 border-white/15 bg-[#1d2025] px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3 text-white shadow-2xl backdrop:bg-black/65 backdrop:backdrop-blur-sm md:absolute md:bottom-auto md:left-auto md:right-0 md:top-full md:mt-2 md:w-[21rem] md:rounded-2xl md:border-b md:p-4"
         >
           <style>{`body:has(#trending-calendar) .language-selector-floating { display: none; }`}</style>
+          <div aria-hidden="true" className="mx-auto mb-5 h-1 w-10 rounded-full bg-white/25 md:hidden" />
           <div className="flex items-center justify-between gap-2">
             <button
               type="button"
@@ -253,7 +294,6 @@ export function TrendingDateFilter({
                   key={value}
                   disabled={value > today || !days}
                   aria-label={label}
-                  title={label}
                   aria-pressed={value === date}
                   className={`relative min-h-10 rounded-lg pb-1 disabled:opacity-25 ${value === date ? "bg-violet-400/30 ring-1 ring-violet-300" : "hover:bg-white/10"}`}
                   onClick={() => {
@@ -270,13 +310,9 @@ export function TrendingDateFilter({
               );
             })}
           </div>
-          <p role="status" className="mt-3 text-xs leading-5 text-neutral-400">
-            {error
-              ? copy.error
-              : !days
-                ? copy.loading
-                : `● ${copy.complete} · ◐ ${copy.partial}`}
-          </p>
+          {(error || !days) && <p role="status" className="mt-3 text-xs leading-5 text-neutral-400">
+            {error ? copy.error : copy.loading}
+          </p>}
           <button
             type="button"
             className="mt-3 min-h-10 w-full rounded-lg border border-white/15 text-sm"
@@ -284,7 +320,7 @@ export function TrendingDateFilter({
           >
             {copy.close}
           </button>
-        </div>
+        </dialog>
       )}
     </div>
   );
