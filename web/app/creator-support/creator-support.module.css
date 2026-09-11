@@ -1,6 +1,6 @@
-.page { min-height: var(--creator-viewport-height, 100dvh); background: #101415; color: #f5f5f5; color-scheme: dark; }
+.page { min-height: 100dvh; background: #101415; color: #f5f5f5; color-scheme: dark; }
 .introPage { display: block; padding: 0; }
-.introShell { width: min(100%, 1280px); min-height: var(--creator-viewport-height, 100dvh); margin-inline: auto; padding-top: 88px; display: flex; flex-direction: column; }
+.introShell { width: min(100%, 1280px); min-height: 100dvh; margin-inline: auto; padding-top: 88px; display: flex; flex-direction: column; }
 .introContent { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 36px 24px 88px; text-align: center; }
 .introHeading { margin: 0; font-size: clamp(30px, 3.6vw, 48px); font-weight: 750; letter-spacing: -.055em; line-height: 1.4; word-break: keep-all; outline: none; }
 .introHeading span { color: #ff8b78; }
@@ -13,7 +13,12 @@
 .introApply { display: flex; align-items: center; justify-content: center; gap: 20px; width: min(100%, 408px); min-height: 64px; margin-top: 40px; padding: 16px 20px; border: 1px solid transparent; border-radius: 12px; color: #fff; font-size: 18px; font-weight: 750; line-height: 1.4; cursor: pointer; }
 .introApply svg { width: 24px; height: 24px; flex-shrink: 0; }
 .introApply:focus-visible { outline: 2px solid #ffac9e; outline-offset: 5px; }
-.shell { width: min(100%, 1280px); height: var(--creator-viewport-height, 100dvh); min-height: 0; margin-inline: auto; display: flex; flex-direction: column; overflow: hidden; }
+.shell { width: min(100%, 1280px); height: 100dvh; min-height: 0; margin-inline: auto; display: flex; flex-direction: column; overflow: hidden; }
+/* Input screens use one document scroll. The browser can reveal each field
+   above its keyboard without a shrinking nested scroller or an overlapping CTA. */
+.inputPage .shell { height: auto; min-height: 100dvh; overflow: visible; }
+.inputPage .content { overflow: visible; flex: 1 0 auto; }
+.inputPage input { scroll-margin-block: 24px; }
 .header { min-height: 88px; padding: 30px 48px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .progress { width: 160px; max-width: 100%; height: 4px; flex-shrink: 0; overflow: hidden; border-radius: 999px; background: #ffffff1a; }
 .progress span { display: block; width: 100%; height: 100%; border-radius: inherit; background: #ff8b78; transform-origin: left center; transition: transform .25s ease; }
@@ -45,7 +50,7 @@
 .stepBody > .note { text-align: center; }
 .previewNote { flex-basis: 100%; margin: -3px 0 0; color: #687577; font-size: 10px; line-height: 1.5; text-align: center; }
 .notice { padding: 10px 12px; background: #ff9b8d0c; color: #ffb4a8; border-radius: 8px; font-size: 12px; line-height: 1.6; margin-top: 8px; word-break: keep-all; }
-.toastOverlay { position: fixed; z-index: 150; top: 0; left: 0; right: 0; height: var(--creator-viewport-height, 100dvh); display: grid; place-items: center; padding: 24px; pointer-events: none; }
+.toastOverlay { position: fixed; z-index: 150; top: var(--creator-overlay-top, 0px); left: var(--creator-overlay-left, 0px); width: var(--creator-overlay-width, 100%); height: var(--creator-overlay-height, 100dvh); display: grid; grid-template-columns: minmax(0, 1fr); place-items: center; padding: 24px; pointer-events: none; }
 .errorToast { display: flex; align-items: center; justify-content: center; gap: 12px; width: max-content; max-width: min(360px, 100%); padding: 18px 20px; border: 1px solid #ffffff2e; border-radius: 15px; background: #22282bf5; color: #f6f7f7; box-shadow: 0 12px 40px #0006; backdrop-filter: blur(12px); font-size: 14px; font-weight: 600; line-height: 1.6; text-align: center; word-break: keep-all; overflow-wrap: anywhere; animation: creatorToastIn .14s ease-out; }
 .errorToast svg { width: 22px; height: 22px; flex-shrink: 0; color: #ffac9e; }
 @keyframes creatorToastIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }

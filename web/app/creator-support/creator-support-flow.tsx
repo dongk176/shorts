@@ -56,11 +56,16 @@ export function CreatorSupportFlow({ startAtAccount = false, initialAuthError = 
     const element = surface.current;
     if (!viewport || !element) return;
     const resize = () => {
-      if (viewport.scale === 1) element.style.setProperty("--creator-viewport-height", `${viewport.height}px`);
-      else element.style.removeProperty("--creator-viewport-height");
+      // Only overlays follow the visual viewport. Resizing the form itself fights
+      // iOS's keyboard pan and can move the footer over the focused input.
+      element.style.setProperty("--creator-overlay-height", `${viewport.height}px`);
+      element.style.setProperty("--creator-overlay-top", `${viewport.offsetTop}px`);
+      element.style.setProperty("--creator-overlay-left", `${viewport.offsetLeft}px`);
+      element.style.setProperty("--creator-overlay-width", `${viewport.width}px`);
     };
     resize(); viewport.addEventListener("resize", resize);
-    return () => viewport.removeEventListener("resize", resize);
+    viewport.addEventListener("scroll", resize);
+    return () => { viewport.removeEventListener("resize", resize); viewport.removeEventListener("scroll", resize); };
   }, [isIntro]);
   const acceptAccount = useCallback((next: CreatorApplicationMe) => {
     if (accountRef.current !== next.account.key) {
@@ -100,7 +105,11 @@ export function CreatorSupportFlow({ startAtAccount = false, initialAuthError = 
     window.addEventListener("focus", onFocus); document.addEventListener("visibilitychange", onFocus);
     return () => { accountRequest.current += 1; controller.abort(); clearTimeout(timer); window.removeEventListener("focus", onFocus); document.removeEventListener("visibilitychange", onFocus); };
   }, [isIntro, loadAccount, setError]);
-  useEffect(() => { content.current?.scrollTo({ top: 0 }); heading.current?.focus({ preventScroll: true }); }, [step, detail]);
+  useEffect(() => {
+    content.current?.scrollTo({ top: 0, behavior: "instant" });
+    window.scrollTo({ top: 0, behavior: "instant" });
+    heading.current?.focus({ preventScroll: true });
+  }, [step, detail]);
   async function next() {
     if (!me || busy) return;
     setError("");
@@ -144,7 +153,7 @@ export function CreatorSupportFlow({ startAtAccount = false, initialAuthError = 
     return <CreatorSupportIntro surfaceRef={surface} headingRef={heading} onApply={() => { setLoading(true); setError(""); setStep(1); }} />;
   }
   return (
-    <main ref={surface} className={styles.page} data-i18n-skip lang="ko">
+    <main ref={surface} className={`${styles.page} ${step === 2 ? styles.inputPage : ""}`} data-i18n-skip lang="ko">
       {error.message && <div className={styles.toastOverlay}>
         <div key={error.revision} className={styles.errorToast} role="alert" aria-atomic="true">
           <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="9" /><path d="M12 7v6m0 3v1" /></svg>
@@ -157,7 +166,15 @@ export function CreatorSupportFlow({ startAtAccount = false, initialAuthError = 
             <span style={{ transform: `scaleX(${Math.min(step, 3) / 3})` }} />
           </div>
         </header>
-        <div className={styles.content} ref={content}>
+        <div className={styles.content} ref={content} onKeyDown={(event) => {
+          if (event.key !== "Enter" || event.nativeEvent.isComposing || !(event.target instanceof HTMLInputElement)
+            || !["url", "tel"].includes(event.target.type)) return;
+          event.preventDefault();
+          const fields = Array.from(event.currentTarget.querySelectorAll<HTMLInputElement>('input[type="url"], input[type="tel"]'));
+          const nextField = fields[fields.indexOf(event.target) + 1];
+          if (nextField) nextField.focus();
+          else event.target.blur();
+        }}>
           <div className={styles.stepBody} data-step={step} data-detail={Boolean(detail)}>
           {currentDetail ? <>
             <p className={styles.eyebrow}>참여 조건 · {CREATOR_APPLICATION_TERMS_VERSION}</p>
@@ -186,7 +203,7 @@ export function CreatorSupportFlow({ startAtAccount = false, initialAuthError = 
               setChannelLinks((current) => ({ ...current, [platform]: value })); setError("");
             }} />
             <div className={styles.phoneField}>
-              <label className={styles.field}>휴대폰 번호<input type="tel" inputMode="tel" autoComplete="tel-national" required maxLength={13} disabled={busy} value={phoneNumber} onChange={(event) => setPhoneNumber(event.target.value)} placeholder="010-1234-5678" aria-describedby="phone-help" /></label>
+              <label className={styles.field}>휴대폰 번호<input type="tel" inputMode="tel" enterKeyHint="done" autoComplete="tel-national" required maxLength={13} disabled={busy} value={phoneNumber} onChange={(event) => setPhoneNumber(event.target.value)} placeholder="010-1234-5678" aria-describedby="phone-help" /></label>
               <p id="phone-help" className={styles.phoneHelp}>선정되신 경우 개별 연락드릴 번호를 입력해 주세요.</p>
             </div>
           </> : step === 3 ? <>

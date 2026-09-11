@@ -28,7 +28,7 @@ export function CreatorChannelLinks({ values, disabled, onChange }: {
         </span>
         <strong>{label}</strong>
       </span>
-      <input type="url" inputMode="url" aria-label={`${label} 링크`} autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={400}
+      <input type="url" inputMode="url" enterKeyHint="next" aria-label={`${label} 링크`} autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={400}
         disabled={disabled} value={values[platform]} onChange={(event) => onChange(platform, event.target.value)} placeholder={placeholder} />
     </label>)}
   </div>;
