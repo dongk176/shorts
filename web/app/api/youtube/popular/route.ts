@@ -35,6 +35,7 @@ const querySchema = z.object({
   longForm: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
   korean: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
   period: z.enum(popularDiscoveryPeriods).default("all"),
+  periodBasis: z.literal("collected").optional(),
   date: z.string().refine(value => validKstDate(value)).optional(),
   cursor: z.string().max(500).optional(),
   interactionId: z.string().uuid().optional(),
@@ -52,6 +53,7 @@ export async function GET(request: Request) {
       || url.searchParams.get("reusablePeriod")
       || undefined,
     date: url.searchParams.get("date") || undefined,
+    periodBasis: url.searchParams.get("periodBasis") || undefined,
     cursor: url.searchParams.get("cursor") || undefined,
     interactionId: url.searchParams.get("interactionId") || undefined,
   });

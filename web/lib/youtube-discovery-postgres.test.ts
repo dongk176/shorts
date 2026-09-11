@@ -161,6 +161,7 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
         "202609090001_youtube_discovery_catalog.sql",
         "202609110001_youtube_quota_opening_balances.sql",
         "202609110002_youtube_pending_metadata.sql",
+        "202609110003_youtube_collection_recency.sql",
       ]) {
         await migrationDb.unsafe(
           readFileSync(path.resolve("../supabase/migrations", name), "utf8"),
@@ -633,6 +634,86 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
     await expect(
       getCatalogVideos(filters({ cursor: first.nextCursor }), db, now),
     ).rejects.toBeInstanceOf(CatalogCursorExpiredError);
+  });
+  it("shows cumulative collected periods, including every CC source, without confusing refreshes with collections", async () => {
+    const now = new Date("2026-09-11T09:00:00Z");
+    const old = new Date("2026-09-01T08:00:00Z");
+    const week = new Date("2026-09-06T08:00:00Z");
+    const oldRun = await run(old);
+    const weekRun = await run(week);
+    const currentRun = await run(now);
+    const cc = (id: string) => fixture(id, {license:"creativeCommon"});
+    await saveCatalogPage(db, [cc("oldtrend001"),cc("repeated001"),fixture("oldplain001")], {runId:oldRun,trending:true,observedAt:old,verifiedAt:now});
+    await saveCatalogPage(db, [cc("weekseen001")], {runId:weekRun,trending:true,observedAt:week,verifiedAt:now});
+    await saveCatalogPage(db, [cc("nowtrend001")], {runId:currentRun,trending:true,observedAt:now});
+    const [freeRun] = await db`insert into shorts_mvp.youtube_collection_runs(lane,scheduled_at,started_at,finished_at,status) values('free',${now},${now},${now},'success') returning id`;
+    await saveCatalogPage(db, [cc("freeonly001"),cc("repeated001")], {runId:String(freeRun.id),observedAt:now});
+    // Same ID in more than one page must remain one result and keep its first date.
+    await saveCatalogPage(db, [cc("repeated001")], {runId:String(freeRun.id),observedAt:now});
+    await saveCatalogPage(db, [cc("oldtrend001")], {observedAt:now});
+    const scope = filters({type:"trending",reusable:true,periodBasis:"collected"});
+    const all = await getCatalogVideos(scope,db,now);
+    expect(all.totalCount).toBe(5);
+    expect(all.items[0]).toMatchObject({videoId:"nowtrend001",isCurrentTrending:true});
+    const today = await getCatalogVideos({...scope,period:"today"},db,now);
+    expect(today.items.map(v=>v.videoId).sort()).toEqual(["freeonly001","nowtrend001","repeated001"]);
+    expect(today.periodCounts).toEqual({all:5,today:3,week:4});
+    const weekly = await getCatalogVideos({...scope,period:"week"},db,now);
+    expect(weekly.items).toHaveLength(4);
+    const [unchanged] = await db`select first_discovered_at from shorts_mvp.youtube_catalog where video_id='repeated001'`;
+    expect(unchanged.firstDiscoveredAt.toISOString()).toBe(old.toISOString());
+    const mainCC = await getCatalogVideos({...scope,type:"reusable",reusable:false,period:"today"},db,now);
+    expect(mainCC.items.map(v=>v.videoId).sort()).toEqual(today.items.map(v=>v.videoId).sort());
+    const plainTrending = await getCatalogVideos({...scope,reusable:false},db,now);
+    expect(plainTrending.items.some(v=>v.videoId==="oldplain001")).toBe(true);
+    expect(plainTrending.items.some(v=>v.videoId==="freeonly001")).toBe(false);
+    // API clients retaining the old contract and historical-date reads still work.
+    expect((await getCatalogVideos({...scope,periodBasis:undefined},db,now)).totalCount).toBe(1);
+    expect((await getCatalogVideos({...scope,date:"2026-09-01"},db,now)).totalCount).toBe(2);
+    const nextDay = new Date("2026-09-11T15:00:00Z");
+    expect((await getCatalogVideos({...scope,period:"today"},db,nextDay)).totalCount).toBe(0);
+    expect((await getCatalogVideos(scope,db,nextDay)).totalCount).toBe(5);
+    // Refresh writes with a run ID are also excluded from the collected clock.
+    const [refreshRun] = await db`insert into shorts_mvp.youtube_collection_runs(lane,scheduled_at,started_at,status) values('refresh',${nextDay},${nextDay},'running') returning id`;
+    await saveCatalogPage(db,[cc("oldtrend001")],{runId:String(refreshRun.id),observedAt:nextDay});
+    expect((await getCatalogVideos({...scope,period:"today"},db,nextDay)).totalCount).toBe(0);
+    expect((await db`select count(*)::int n from shorts_mvp.youtube_quota_attempts`)[0].n).toBe(0);
+  });
+
+  it("keeps collected-page cursors stable and separate from old 24-hour lists", async () => {
+    const now=new Date();
+    const old=new Date(now.getTime()-10*DAY_MS);
+    const oldRun=await run(old);
+    const videos=Array.from({length:100},(_,i)=>fixture(`coll${String(i).padStart(7,"0")}`,{license:"creativeCommon",viewCount:1000-i}));
+    await saveCatalogPage(db,videos,{runId:oldRun,observedAt:old,verifiedAt:now,trending:true});
+    const scope=filters({type:"trending",reusable:true,periodBasis:"collected"});
+    const first=await getCatalogVideos(scope,db,now);
+    expect(first.items).toHaveLength(48);
+    await expect(getCatalogVideos({...scope,periodBasis:undefined,cursor:first.nextCursor},db,now)).rejects.toBeInstanceOf(CatalogCursorExpiredError);
+    await saveCatalogPage(db,[fixture("coll0000060",{license:"creativeCommon",viewCount:9999}),fixture("coll0000050")],{observedAt:new Date(now.getTime()+1000)});
+    const second=await getCatalogVideos({...scope,cursor:first.nextCursor},db,now);
+    expect(second.items[0].videoId).toBe("coll0000048");
+    expect(second.items.some(v=>v.videoId==="coll0000050")).toBe(false);
+    expect(new Set([...first.items,...second.items].map(v=>v.videoId)).size).toBe(96);
+  });
+  it("restores collection recency from old records without rewriting catalog or source data", async () => {
+    const old = new Date("2026-09-01T08:00:00Z");
+    await legacyVideo("restore0001",old);
+    await saveCatalogPage(db,[fixture("restore0001")],{observedAt:old,verifiedAt:new Date()});
+    const original=await db`select (select jsonb_agg(to_jsonb(c)) from shorts_mvp.youtube_catalog c) catalog,
+      (select jsonb_agg(to_jsonb(i)) from shorts_mvp.popular_video_items i) items,
+      (select jsonb_agg(to_jsonb(r)) from shorts_mvp.popular_video_runs r) runs`;
+    await db.unsafe(`drop trigger youtube_collection_recency_record on shorts_mvp.youtube_trending_run_items;
+      drop function shorts_mvp.record_youtube_collection_recency();drop table shorts_mvp.youtube_collection_recency;`);
+    const connection=await db.reserve();
+    try { await connection.unsafe(readFileSync(path.resolve("../supabase/migrations/202609110003_youtube_collection_recency.sql"),"utf8")); }
+    finally { connection.release(); }
+    const after=await db`select (select jsonb_agg(to_jsonb(c)) from shorts_mvp.youtube_catalog c) catalog,
+      (select jsonb_agg(to_jsonb(i)) from shorts_mvp.popular_video_items i) items,
+      (select jsonb_agg(to_jsonb(r)) from shorts_mvp.popular_video_runs r) runs`;
+    expect(after).toEqual(original);
+    const [recency]=await db`select last_collected_at from shorts_mvp.youtube_collection_recency`;
+    expect(recency.lastCollectedAt.toISOString()).toBe(old.toISOString());
   });
   it("counts missed new slots separately from old daily records on the activation date", async () => {
     await run(new Date('2026-09-10T08:00:00Z'),'success',true);

@@ -77,4 +77,13 @@ describe("visible catalog safety updates", () => {
     expect(result.map((v) => v.videoId)).toEqual(items.map((v) => v.videoId));
     expect(result.every((v) => v.isCurrentTrending === false)).toBe(true);
   });
+  it("keeps previously collected CC cards after 24 hours while still removing changed licenses", () => {
+    const result = reconcileCatalogVisibility(items, [
+      status(items[0].videoId, { recentTrending: false, currentTrending: false }),
+      status(items[1].videoId, { license: "youtube" }),
+      status(items[2].videoId, { available: false }),
+    ], { ...filters, reusable: true, periodBasis: "collected" });
+    expect(result.map(v => v.videoId)).toEqual([items[0].videoId]);
+    expect(result[0].isCurrentTrending).toBe(false);
+  });
 });

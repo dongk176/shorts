@@ -89,6 +89,11 @@ export async function saveCatalogPage(
   if (input.runId)
     await db`insert into shorts_mvp.youtube_trending_run_items(run_id,catalog_id)
     select ${input.runId}::uuid,unnest(${records.map((r) => r.id)}::text[]) on conflict do nothing`;
+  if (input.runId)
+    await db`insert into shorts_mvp.youtube_collection_recency(catalog_id,last_collected_at)
+      select unnest(${records.map(r => r.id)}::text[]),${catalogTimestamp(db,input.observedAt)}::timestamptz
+      from shorts_mvp.youtube_collection_runs where id=${input.runId} and lane<>'refresh'
+      on conflict(catalog_id) do update set last_collected_at=greatest(youtube_collection_recency.last_collected_at,excluded.last_collected_at)`;
 }
 
 /** Preserve a confirmed public identifier for a bounded retry, without storing
@@ -178,6 +183,7 @@ export type CatalogFilters = {
   longForm: boolean;
   korean: boolean;
   period: PopularDiscoveryPeriod;
+  periodBasis?: "collected";
   date?: string;
   cursor?: string;
 };
@@ -199,9 +205,11 @@ export async function getCatalogVideos(
     filters.korean,
     filters.period,
     filters.date || null,
+    filters.periodBasis || null,
   ]);
-  const since =
-    filters.type === "trending" ? null : discoverySince(filters.period, now);
+  const collectedPeriod = filters.periodBasis === "collected" && !filters.date;
+  const since = filters.type === "trending" && !collectedPeriod
+    ? null : discoverySince(filters.period, now);
   const today = discoverySince("today", now)!;
   const week = discoverySince("week", now)!;
   const state = await catalogStatus(db, filters.type, now);
@@ -210,6 +218,10 @@ export async function getCatalogVideos(
     where lane='trending' and status='success' order by finished_at desc limit 1`;
   const currentRunId = currentRun?.id || null;
   const reusable = filters.type === "reusable" || filters.reusable;
+  const collectionTime = filters.type === "trending" && !reusable
+    ? db`c.last_trending_at`
+    : db`(select cr.last_collected_at from shorts_mvp.youtube_collection_recency cr where cr.catalog_id=c.id)`;
+  const periodTime = collectedPeriod ? collectionTime : db`c.first_discovered_at`;
   const base = db`c.availability='public' and c.metadata is not null and c.video_id is not null
     and c.verified_at>${new Date(now.getTime() - 30 * DAY_MS)}
     and (${filters.category}='all' or c.metadata->>'category'=${filters.category})
@@ -218,7 +230,10 @@ export async function getCatalogVideos(
     and (${reusable}=false or c.metadata->>'license'='creativeCommon')
     and (${filters.type !== "views" || reusable}=true or c.metadata->>'license'='youtube')
     and (${filters.type !== "trending"}=true or
-      (${filters.date || null}::date is null and c.last_trending_at>${new Date(now.getTime() - DAY_MS)}) or
+      (${filters.date || null}::date is null and (
+        (${collectedPeriod} and (${reusable} or c.last_trending_at is not null)) or
+        (${!collectedPeriod} and c.last_trending_at>${new Date(now.getTime() - DAY_MS)})
+      )) or
       exists(select 1 from shorts_mvp.youtube_trending_days d where d.catalog_id=c.id and d.day=${filters.date || null}::date))`;
   let versionId: string;
   let offset = 0;
@@ -267,7 +282,7 @@ export async function getCatalogVideos(
           case when ${filters.type === "trending" && !filters.date} then c.last_trending_at end desc nulls last,
           (c.metadata->>'viewCount')::bigint desc,(c.metadata->>'publishedAt')::timestamptz desc,c.id) as position
         from shorts_mvp.youtube_catalog c where ${base}
-          and (${since}::timestamptz is null or c.first_discovered_at>=${since})
+          and (${since}::timestamptz is null or ${periodTime}>=${since})
       ) ranked returning id`
       )[0];
     versionId = String(version.id);
@@ -286,8 +301,8 @@ export async function getCatalogVideos(
       select c.* from shorts_mvp.youtube_catalog c where c.id=entry.id and ${base} offset 0
     ) c order by entry.ordinal limit 49`;
   const [counts] = await db`select count(*)::int as all_count,
-    count(*) filter(where c.first_discovered_at>=${today})::int as today_count,
-    count(*) filter(where c.first_discovered_at>=${week})::int as week_count
+    count(*) filter(where ${periodTime}>=${today})::int as today_count,
+    count(*) filter(where ${periodTime}>=${week})::int as week_count
     from shorts_mvp.youtube_catalog c where ${base}`;
   const periodCounts = {
     all: Number(counts.allCount),
@@ -313,7 +328,7 @@ export async function getCatalogVideos(
     date: filters.date || null,
     periodCounts,
     totalCount:
-      periodCounts[filters.type === "trending" ? "all" : filters.period],
+      periodCounts[filters.type === "trending" && !collectedPeriod ? "all" : filters.period],
     collectionStatus: day?.status,
     unavailableCount: day?.unavailableCount,
     ...(rows.length > 48

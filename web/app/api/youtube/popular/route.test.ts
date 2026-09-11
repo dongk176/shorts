@@ -64,6 +64,16 @@ beforeEach(() => {
 });
 
 describe("popular YouTube API route", () => {
+  it("passes collected periods to the catalog and retains filter authorization", async () => {
+    vi.stubEnv("YOUTUBE_DISCOVERY_ENABLED", "true");
+    vi.stubEnv("YOUTUBE_CATALOG_READS_ENABLED", "true");
+    mocks.getCatalogVideos.mockResolvedValue({ items: [], updatedAt: "", totalCount: 0 });
+    const response = await GET(new Request("http://localhost/api/youtube/popular?type=trending&reusable=true&period=today&periodBasis=collected"));
+    expect(response.status).toBe(200);
+    expect(mocks.authenticatedSession).toHaveBeenCalledOnce();
+    expect(mocks.getCatalogVideos).toHaveBeenCalledWith(expect.objectContaining({type:"trending",reusable:true,period:"today",periodBasis:"collected"}), "database");
+    expect(mocks.getPopularVideos).not.toHaveBeenCalled();
+  });
   it("rejects unsupported filters before reading the database", async () => {
     const response = await GET(new Request("http://localhost/api/youtube/popular?type=unknown"));
     expect(response.status).toBe(400);

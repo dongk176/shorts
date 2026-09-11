@@ -17,6 +17,7 @@ export function reconcileCatalogVisibility(
     reusable: boolean;
     date: string | null;
     delayed: boolean;
+    periodBasis?: "collected";
   },
 ) {
   const byId = new Map(statuses.map((status) => [status.videoId, status]));
@@ -27,6 +28,7 @@ export function reconcileCatalogVisibility(
       if (
         filters.type === "trending" &&
         !filters.date &&
+        filters.periodBasis !== "collected" &&
         !status.recentTrending
       )
         return [];

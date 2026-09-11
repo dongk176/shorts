@@ -1,6 +1,6 @@
 "use client";
 
-import { TrendingDateFilter, discoveryCopy } from "./trending-date-filter";
+import { discoveryCopy } from "./trending-date-filter";
 import { reconcileCatalogVisibility, type CatalogVisibility } from "@/lib/youtube-catalog-visibility";
 
 import Image from "next/image";
@@ -42,9 +42,9 @@ const mobileRankingButtonTone: Record<PopularVideoType, { selected: string; idle
 };
 
 const discoveryPeriodOptions: Array<{ value: PopularDiscoveryPeriod; labels: Record<SiteLocale, string> }> = [
-  { value: "today", labels: { ko: "오늘 발견", en: "Found today", ja: "今日発見" } },
+  { value: "all", labels: { ko: "전체", en: "All", ja: "すべて" } },
+  { value: "today", labels: { ko: "오늘 수집", en: "Collected today", ja: "今日収集" } },
   { value: "week", labels: { ko: "최근 7일", en: "Last 7 days", ja: "直近7日" } },
-  { value: "all", labels: { ko: "전체 인기", en: "All popular", ja: "全期間の人気" } },
 ];
 
 const categoryOptions: Array<{ value: PopularVideoCategory }> = [
@@ -813,7 +813,6 @@ function popularVideoParams(
   discoveryPeriod: PopularDiscoveryPeriod,
   cursor?: string,
   interactionId?: string,
-  date?: string | null,
 ) {
   const params = new URLSearchParams({
     type,
@@ -822,8 +821,8 @@ function popularVideoParams(
     longForm: String(longForm),
     korean: String(korean),
   });
-  params.set("period", type === "trending" && date ? "all" : discoveryPeriod);
-  if (type === "trending" && date) params.set("date", date);
+  params.set("period", discoveryPeriod);
+  params.set("periodBasis", "collected");
   if (cursor) params.set("cursor", cursor);
   if (interactionId) params.set("interactionId", interactionId);
   return params;
@@ -929,7 +928,6 @@ export function PopularVideosExplorer({
   const [koreanOnly, setKoreanOnly] = useState(false);
   const [longFormOnly, setLongFormOnly] = useState(false);
   const [reusableOnly, setReusableOnly] = useState(false);
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [catalogEnabled, setCatalogEnabled] = useState(false);
   const [hasNewList, setHasNewList] = useState(false);
   const [cursorNotice, setCursorNotice] = useState(false);
@@ -975,7 +973,7 @@ export function PopularVideosExplorer({
     setLoadMoreError(null);
     setError(null);
     setResponse(null);
-    const endpoint = `/api/youtube/popular?${popularVideoParams(dataType, category, reusableOnly, longFormOnly, koreanOnly, discoveryPeriod, undefined, filterInteractionId || undefined, selectedDate)}`;
+    const endpoint = `/api/youtube/popular?${popularVideoParams(dataType, category, reusableOnly, longFormOnly, koreanOnly, discoveryPeriod, undefined, filterInteractionId || undefined)}`;
     fetch(endpoint, { cache: "no-store", signal: controller.signal })
       .then(async (result) => {
         if (!result.ok) {
@@ -993,7 +991,7 @@ export function PopularVideosExplorer({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [category, dataType, discoveryPeriod, selectedDate, filterInteractionId, koreanOnly, locale, longFormOnly, reusableOnly, retryCount, uiCopy.loadFailed]);
+  }, [category, dataType, discoveryPeriod, filterInteractionId, koreanOnly, locale, longFormOnly, reusableOnly, retryCount, uiCopy.loadFailed]);
 
   const visibleVideoIds = response?.items.map(video => video.videoId).join(",") || "";
   useEffect(() => {
@@ -1015,13 +1013,13 @@ export function PopularVideosExplorer({
           setResponse(current => {
             if (!current) return current;
             const listDelayed = Boolean(current.delayed || delayed);
-            const items = reconcileCatalogVisibility(current.items, statuses, {type:dataType,reusable:reusableOnly,date:selectedDate,delayed:listDelayed});
+            const items = reconcileCatalogVisibility(current.items, statuses, {type:dataType,reusable:reusableOnly,date:null,delayed:listDelayed,periodBasis:"collected"});
             return {...current, delayed:listDelayed, items, totalCount: current.totalCount === undefined ? undefined : Math.max(0,current.totalCount-current.items.length+items.length)};
           });
         }).catch(() => undefined).finally(() => { checking = false; });
     }, 60_000);
     return () => { clearInterval(timer); controller.abort(); };
-  }, [catalogEnabled, dataType, response?.generation, visibleVideoIds, reusableOnly, selectedDate]);
+  }, [catalogEnabled, dataType, response?.generation, visibleVideoIds, reusableOnly]);
 
   const selectedTypeLabel = dataType === "trending"
     ? filterCopy.trending
@@ -1037,7 +1035,7 @@ export function PopularVideosExplorer({
     setLoadingMore(true);
     setLoadMoreError(null);
     try {
-      const endpoint = `/api/youtube/popular?${popularVideoParams(dataType, category, reusableOnly, longFormOnly, koreanOnly, discoveryPeriod, response.nextCursor, undefined, selectedDate)}`;
+      const endpoint = `/api/youtube/popular?${popularVideoParams(dataType, category, reusableOnly, longFormOnly, koreanOnly, discoveryPeriod, response.nextCursor, undefined)}`;
       const result = await fetch(endpoint, { cache: "no-store", signal: controller.signal });
       if (controller.signal.aborted) return;
       if (result.status === 410) {
@@ -1372,20 +1370,17 @@ export function PopularVideosExplorer({
           <h2 className="text-xl font-black tracking-[-.025em] text-white">{selectedTypeLabel}</h2>
           <p className="mt-1 text-xs font-bold tabular-nums text-neutral-500" aria-live="polite">{!loading && response && displayedTotalCount !== undefined ? (locale === "ko" ? `${formatNumber(displayedTotalCount, locale)}개` : locale === "en" ? formatNumber(displayedTotalCount, locale) : `${formatNumber(displayedTotalCount, locale)}件`) : uiCopy.countLoading}</p>
         </div>
-        {dataType === "trending" && catalogEnabled ? <TrendingDateFilter date={selectedDate} locale={locale} canUseFilters={canUseFilters}
-          onRequestAccess={() => applyFilter(() => undefined)}
-          onChange={date => date ? applyFilter(() => { setSelectedDate(date); setDiscoveryPeriod("all"); }) : (() => { setSelectedDate(null); setDiscoveryPeriod("all"); setCursorNotice(false); setActiveVideoId(null); })()}
-        /> : <DiscoveryPeriodDropdown
+        <DiscoveryPeriodDropdown
           value={discoveryPeriod}
           counts={periodCounts}
           locale={locale}
           disabled={loading}
           onChange={(period) => applyFilter(() => setDiscoveryPeriod(period))}
-        />}
+        />
       </div>
 
-      {catalogEnabled && ((dataType === "trending" && !selectedDate && response?.delayed) || cursorNotice || hasNewList) && <div className="mb-5 space-y-2 text-xs text-neutral-400" aria-live="polite">
-        {dataType === "trending" && !selectedDate && response?.delayed && <p className="text-amber-300">{discoveryCopy[locale].delayed}</p>}
+      {catalogEnabled && ((dataType === "trending" && response?.delayed) || cursorNotice || hasNewList) && <div className="mb-5 space-y-2 text-xs text-neutral-400" aria-live="polite">
+        {dataType === "trending" && response?.delayed && <p className="text-amber-300">{discoveryCopy[locale].delayed}</p>}
         {cursorNotice && <p>{discoveryCopy[locale].expired}</p>}
         {hasNewList && <button type="button" className="min-h-10 rounded-lg border border-violet-300/40 px-4 font-bold text-violet-100" onClick={() => setRetryCount(value => value + 1)}>{discoveryCopy[locale].fresh}</button>}
       </div>}
