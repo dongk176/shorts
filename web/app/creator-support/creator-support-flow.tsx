@@ -10,6 +10,7 @@ import type { CreatorApplicationMe } from "@/lib/creator-application-server";
 import styles from "./creator-support.module.css";
 import { CreatorSupportIntro } from "./creator-support-intro";
 import { CreatorChannelLinks, creatorPlatforms } from "./creator-channel-links";
+import { useCreatorViewport } from "./use-creator-viewport";
 
 const emptyConsents = { collection: false, disclosure: false, license: false };
 class FlowError extends Error { constructor(message: string, public code: string) { super(message); } }
@@ -46,27 +47,12 @@ export function CreatorSupportFlow({ startAtAccount = false, initialAuthError = 
   const monthlyMinutes = CREATOR_APPLICATION_MINUTES;
   const application = me?.application;
   const primaryClassName = `${styles.primary} easycut-private-entry`;
+  useCreatorViewport(surface, content, isIntro);
   useEffect(() => {
     if (!error.message) return;
     const timer = window.setTimeout(() => setErrorState(current => current === error ? { ...current, message: "" } : current), 2000);
     return () => window.clearTimeout(timer);
   }, [error]);
-  useEffect(() => {
-    const viewport = window.visualViewport;
-    const element = surface.current;
-    if (!viewport || !element) return;
-    const resize = () => {
-      // Only overlays follow the visual viewport. Resizing the form itself fights
-      // iOS's keyboard pan and can move the footer over the focused input.
-      element.style.setProperty("--creator-overlay-height", `${viewport.height}px`);
-      element.style.setProperty("--creator-overlay-top", `${viewport.offsetTop}px`);
-      element.style.setProperty("--creator-overlay-left", `${viewport.offsetLeft}px`);
-      element.style.setProperty("--creator-overlay-width", `${viewport.width}px`);
-    };
-    resize(); viewport.addEventListener("resize", resize);
-    viewport.addEventListener("scroll", resize);
-    return () => { viewport.removeEventListener("resize", resize); viewport.removeEventListener("scroll", resize); };
-  }, [isIntro]);
   const acceptAccount = useCallback((next: CreatorApplicationMe) => {
     if (accountRef.current !== next.account.key) {
       generation.current += 1; requestId.current = null;
@@ -153,7 +139,7 @@ export function CreatorSupportFlow({ startAtAccount = false, initialAuthError = 
     return <CreatorSupportIntro surfaceRef={surface} headingRef={heading} onApply={() => { setLoading(true); setError(""); setStep(1); }} />;
   }
   return (
-    <main ref={surface} className={`${styles.page} ${step === 2 ? styles.inputPage : ""}`} data-i18n-skip lang="ko">
+    <main ref={surface} className={`${styles.page} ${styles.wizardPage}`} data-i18n-skip lang="ko">
       {error.message && <div className={styles.toastOverlay}>
         <div key={error.revision} className={styles.errorToast} role="alert" aria-atomic="true">
           <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="9" /><path d="M12 7v6m0 3v1" /></svg>
