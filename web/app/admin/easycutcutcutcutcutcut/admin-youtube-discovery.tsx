@@ -6,11 +6,14 @@ type State = {
   reads?: boolean;
   legacyCleanupEnabled?: boolean;
   project?: string;
+  accounting?: { ready: boolean; accountingReadyFrom: string | null };
   usage?: {
     bucket: string;
     purpose: string;
     units: number;
     attempts: number;
+    openingUnits: number;
+    meteredUnits: number;
   }[];
   runs?: {
     lane: string;
@@ -94,6 +97,7 @@ export function AdminYoutubeDiscovery() {
             {state.remaining?.general}유닛 · 백그라운드{" "}
             {state.remaining?.background}유닛
           </p>
+          {!state.accounting?.ready && <p className="mt-2 text-sm">이전 사용량 확인 중 · 추가 수집 중지</p>}
           <p className="mt-1 text-xs text-neutral-400">
             사용량 날짜는 미국 태평양 시간 기준입니다. 실패한 요청 시도도
             포함합니다.
@@ -123,7 +127,9 @@ export function AdminYoutubeDiscovery() {
                   <th>용도</th>
                   <th>할당량</th>
                   <th>요청 시도</th>
-                  <th>소비량</th>
+                  <th>시작 사용량</th>
+                  <th>계측 사용량</th>
+                  <th>합계</th>
                 </tr>
               </thead>
               <tbody>
@@ -132,6 +138,8 @@ export function AdminYoutubeDiscovery() {
                     <td className="py-2">{purposes[row.purpose]}</td>
                     <td>{row.bucket === "search" ? "검색" : "일반"}</td>
                     <td>{row.attempts}</td>
+                    <td>{row.openingUnits}</td>
+                    <td>{row.meteredUnits}</td>
                     <td>{row.units}</td>
                   </tr>
                 ))}

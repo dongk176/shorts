@@ -17,6 +17,11 @@ import {
 } from "@/lib/youtube-discovery-time";
 
 type CatalogSql = Sql | TransactionSql;
+type CatalogTimestamp = Date | string;
+// postgres.js serializes inferred timestamptz parameters through JS Date. Bind
+// text explicitly and cast in SQL to retain original PostgreSQL microseconds.
+export const catalogTimestamp = (db: CatalogSql, value: CatalogTimestamp) =>
+  db.typed(value instanceof Date ? value.toISOString() : value, 25);
 export const catalogId = (videoId: string) =>
   createHash("sha256").update(videoId).digest("hex");
 export type CatalogVideo = PopularVideo & {
@@ -29,9 +34,9 @@ export async function saveCatalogPage(
   input: {
     runId?: string;
     trending?: boolean;
-    observedAt: Date;
-    firstDiscoveredAt?: Date;
-    verifiedAt?: Date;
+    observedAt: CatalogTimestamp;
+    firstDiscoveredAt?: CatalogTimestamp;
+    verifiedAt?: CatalogTimestamp;
   },
 ) {
   if (!items.length) return;
@@ -57,8 +62,8 @@ export async function saveCatalogPage(
   }));
   await db`insert into shorts_mvp.youtube_catalog
     (id,video_id,metadata,first_discovered_at,verified_at,refresh_after,last_trending_at,trending_rank)
-    select r.id,r.video_id,r.metadata,${input.firstDiscoveredAt || input.observedAt},${verifiedAt},
-      ${new Date(verifiedAt.getTime() + DAY_MS)},${input.trending ? input.observedAt : null},case when ${Boolean(input.trending)} then r.rank end
+    select r.id,r.video_id,r.metadata,${catalogTimestamp(db,input.firstDiscoveredAt || input.observedAt)}::timestamptz,${catalogTimestamp(db,verifiedAt)}::timestamptz,
+      ${catalogTimestamp(db,verifiedAt)}::timestamptz+interval '1 day',case when ${Boolean(input.trending)} then ${catalogTimestamp(db,input.observedAt)}::timestamptz end,case when ${Boolean(input.trending)} then r.rank end
     from jsonb_to_recordset(${db.json(records)}) as r(id text,video_id text,metadata jsonb,rank integer)
     on conflict(id) do update set
       first_discovered_at=least(youtube_catalog.first_discovered_at,excluded.first_discovered_at),
@@ -73,9 +78,9 @@ export async function saveCatalogPage(
   if (input.trending) {
     if (input.runId)
       await db`insert into shorts_mvp.youtube_collection_run_days(run_id,day)
-        values(${input.runId},${kstDate(input.observedAt)}) on conflict do nothing`;
+        values(${input.runId},${kstDate(new Date(input.observedAt))}) on conflict do nothing`;
     await db`insert into shorts_mvp.youtube_trending_days(day,catalog_id,first_seen_at,last_seen_at)
-      select ${kstDate(input.observedAt)}::date,unnest(${records.map((r) => r.id)}::text[]),${input.observedAt},${input.observedAt}
+      select ${kstDate(new Date(input.observedAt))}::date,unnest(${records.map((r) => r.id)}::text[]),${catalogTimestamp(db,input.observedAt)}::timestamptz,${catalogTimestamp(db,input.observedAt)}::timestamptz
       on conflict(day,catalog_id) do update set
         first_seen_at=least(youtube_trending_days.first_seen_at,excluded.first_seen_at),
         last_seen_at=greatest(youtube_trending_days.last_seen_at,excluded.last_seen_at)`;
@@ -393,12 +398,12 @@ export async function purgeExpiredCatalog(db: Sql = getDb(), now = new Date()) {
 export async function markCatalogUnavailable(
   db: CatalogSql,
   videoIds: string[],
-  checkedAt: Date,
+  checkedAt: CatalogTimestamp,
 ) {
   if (!videoIds.length) return [];
   return await db`update shorts_mvp.youtube_catalog set metadata=null,video_id=null,availability='unavailable',
-    trending_rank=null,verified_at=${checkedAt},updated_at=clock_timestamp(),refresh_lease_until=null
-    where id in ${db(videoIds.map(catalogId))} and verified_at<=${checkedAt} returning id`;
+    trending_rank=null,verified_at=${catalogTimestamp(db,checkedAt)}::timestamptz,updated_at=clock_timestamp(),refresh_lease_until=null
+    where id in ${db(videoIds.map(catalogId))} and verified_at<=${catalogTimestamp(db,checkedAt)}::timestamptz returning id`;
 }
 
 /** A source analysis can confirm a license/status change without rechecking views.

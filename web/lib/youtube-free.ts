@@ -70,8 +70,13 @@ export const detailsResponseSchema = z.object({
       privacyStatus: z.string().optional(),
       license: z.string().optional(),
       embeddable: z.boolean().optional(),
+      uploadStatus: z.string().optional(),
     }),
-    liveStreamingDetails: z.unknown().optional(),
+    liveStreamingDetails: z.object({
+      actualStartTime: z.string().optional(),
+      actualEndTime: z.string().optional(),
+      scheduledStartTime: z.string().optional(),
+    }).optional(),
   })),
 });
 
@@ -235,7 +240,7 @@ export function normalizeDetails(
     const liveState = item.snippet.liveBroadcastContent;
     if (
       (liveState && liveState !== "none")
-      || item.liveStreamingDetails !== undefined
+      || catalogLiveState(item) !== "available"
       || item.status.privacyStatus !== "public"
     ) return;
     const title = item.snippet.title.trim();
@@ -544,14 +549,27 @@ export class InvalidSearchPageTokenError extends YoutubeFreeApiError {
   constructor() { super("검색 페이지가 만료되었습니다."); this.name = "InvalidSearchPageTokenError"; }
 }
 
+type DetailItem = z.infer<typeof detailsResponseSchema>["items"][number];
+/** A completed broadcast is a normal replay. Ambiguous history is retryable,
+ * never evidence that a previously discovered video has disappeared. */
+function catalogLiveState(item: DetailItem): "available" | "live" | "unknown" {
+  if (item.snippet.liveBroadcastContent === "live" || item.snippet.liveBroadcastContent === "upcoming") return "live";
+  if (item.snippet.liveBroadcastContent && item.snippet.liveBroadcastContent !== "none") return "unknown";
+  if (item.liveStreamingDetails === undefined) return "available";
+  const start = Date.parse(item.liveStreamingDetails.actualStartTime || "");
+  const end = Date.parse(item.liveStreamingDetails.actualEndTime || "");
+  return Number.isFinite(start) && Number.isFinite(end) && end > start
+    && item.status.uploadStatus === "processed" ? "available" : "unknown";
+}
+
 /** Reject incomplete public metadata before making any availability or license decision. */
 export function verifiedCatalogDetails(videoIds: string[], response: z.infer<typeof detailsResponseSchema>) {
   const items=normalizeDetails(videoIds,response,1,0);
   const normalized=new Set(items.map(item=>item.videoId));
   for (const item of response.items) {
     if (!item.status.privacyStatus || (item.status.privacyStatus === 'public'
-      && (!item.snippet.liveBroadcastContent || item.snippet.liveBroadcastContent === 'none')
-      && item.liveStreamingDetails === undefined && (!normalized.has(item.id) || !item.status.license))) {
+      && (catalogLiveState(item) === 'unknown' || (catalogLiveState(item) === 'available'
+        && (!normalized.has(item.id) || !item.status.license))))) {
       throw new YoutubeFreeApiError('YouTube 영상의 전체 정보를 확인하지 못했습니다.');
     }
   }

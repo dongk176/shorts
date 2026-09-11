@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { Sql, TransactionSql } from "postgres";
+import { catalogReadsEnabled } from "@/lib/youtube-quota";
 import {
   nextDailyReusableCollectionAt,
   projectReusableViewCounter,
@@ -167,6 +168,9 @@ export async function refreshReusableViewCounterSchedule(
 
 /** Canonical current CC metadata includes every discovery source, including free. */
 export async function refreshCatalogViewCounter(db: CounterSql, now: Date) {
+  // During backfill the catalog is intentionally incomplete. Keep the live
+  // legacy counter until the validated catalog actually serves the UI.
+  if (!catalogReadsEnabled()) return;
   const [row] = await db`select coalesce(sum((metadata->>'viewCount')::bigint),0)::bigint as total
     from shorts_mvp.youtube_catalog where availability='public' and metadata->>'license'='creativeCommon'
       and verified_at>clock_timestamp()-interval '30 days'`;

@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import postgres, { type Sql } from "postgres";
 import {
   beforeAll,
@@ -39,6 +39,7 @@ import {
 } from "./youtube-quota";
 import { analyzeYoutubeUrl } from "./youtube";
 import { collectFreeVideos } from "./youtube-free";
+import { refreshCatalogViewCounter } from "./reusable-view-counter-server";
 import {
   kstDate,
   discoverySince,
@@ -157,6 +158,7 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
         "202607150007_popular_search_snapshots.sql",
         "202607150009_korean_video_filter.sql",
         "202609090001_youtube_discovery_catalog.sql",
+        "202609110001_youtube_quota_opening_balances.sql",
       ]) {
         await migrationDb.unsafe(
           readFileSync(path.resolve("../supabase/migrations", name), "utf8"),
@@ -170,11 +172,14 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
     vi.stubEnv("YOUTUBE_DISCOVERY_ENABLED", "true");
+    vi.stubEnv("YOUTUBE_CATALOG_READS_ENABLED", "true");
     vi.stubEnv("YOUTUBE_QUOTA_PROJECT_ID", "test-project");
     vi.stubEnv("YOUTUBE_API_KEY", "test-api-key");
     await db.unsafe(`truncate shorts_mvp.youtube_catalog,shorts_mvp.youtube_collection_runs,shorts_mvp.youtube_quota_attempts,
       shorts_mvp.youtube_search_positions,shorts_mvp.youtube_list_versions,shorts_mvp.youtube_catalog_imports,shorts_mvp.youtube_quota_verifications,
       shorts_mvp.popular_video_runs,shorts_mvp.popular_search_runs,shorts_mvp.free_video_runs cascade`);
+    await db`insert into shorts_mvp.youtube_quota_verifications(project_id,key_fingerprint,search_daily_limit,general_daily_limit,verified_at,evidence,accounting_ready_from)
+      values('test-project','test',100,10000,now(),'isolated fixture',(now() at time zone 'America/Los_Angeles')::date)`;
   });
   afterAll(async () => {
     vi.unstubAllEnvs();
@@ -195,6 +200,85 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
       values(${runId},${id},'entertainment',1,1,'Old snapshot','channel','https://example.com/old.jpg',600,1,${at},'youtube',true,${at})`;
     return runId;
   }
+
+  it("does not replace the live legacy counter with an incomplete backfill", async () => {
+    vi.stubEnv("YOUTUBE_CATALOG_READS_ENABLED", "false");
+    await db`insert into shorts_mvp.site_metrics(key,value,updated_at) values('reusable_views_target',12345,now()) on conflict(key) do update set value=12345`;
+    await saveCatalogPage(db,[fixture('counter0001',{license:'creativeCommon',viewCount:500})],{observedAt:new Date()});
+    await refreshCatalogViewCounter(db,new Date());
+    expect((await db`select value from shorts_mvp.site_metrics where key='reusable_views_target'`)[0].value).toBe('12345');
+    vi.stubEnv("YOUTUBE_CATALOG_READS_ENABLED", "true");
+    await refreshCatalogViewCounter(db,new Date());
+    expect((await db`select value from shorts_mvp.site_metrics where key='reusable_views_target'`)[0].value).toBe('500');
+  });
+
+  it("adds opening balances atomically without fabricating requests or counting a replayed setup twice", async () => {
+    for (const [purpose, units] of [["views",38],["reusable",20],["free",30]] as const) {
+      for (let retry=0;retry<2;retry++) await db`insert into shorts_mvp.youtube_quota_opening_balances(project_id,quota_day,bucket,purpose,units,observed_through,evidence)
+        values('test-project',(now() at time zone 'America/Los_Angeles')::date,'search',${purpose},${units},now(),'observed usage')
+        on conflict(project_id,quota_day,bucket,purpose) do update set units=greatest(youtube_quota_opening_balances.units,excluded.units)`;
+    }
+    const calls=await Promise.all(Array.from({length:20},()=>db`select shorts_mvp.reserve_youtube_quota('test-project','search','views',1) as id`));
+    expect(calls.filter(rows=>rows[0].id)).toHaveLength(2);
+    expect((await db`select count(*)::int as n from shorts_mvp.youtube_quota_attempts`)[0].n).toBe(2);
+    await expect(db`update shorts_mvp.youtube_quota_opening_balances set units=0 where purpose='views'`).rejects.toThrow('YOUTUBE_OPENING_BALANCE_CANNOT_DECREASE');
+  });
+
+  it("counts general opening usage against background and total limits, but ignores another PT day", async () => {
+    await db`insert into shorts_mvp.youtube_quota_opening_balances(project_id,quota_day,bucket,purpose,units,observed_through,evidence)
+      values('test-project',(now() at time zone 'America/Los_Angeles')::date,'general','refresh',2999,now(),'background'),
+      ('test-project',(now() at time zone 'America/Los_Angeles')::date,'general','analysis',5999,now(),'foreground'),
+      ('test-project',(now() at time zone 'America/Los_Angeles')::date-1,'general','analysis',9000,now()-interval '1 day','previous day')`;
+    const calls=await Promise.all(Array.from({length:10},()=>db`select shorts_mvp.reserve_youtube_quota('test-project','general','refresh',1) as id`));
+    expect(calls.filter(rows=>rows[0].id)).toHaveLength(1);
+    expect((await db`select shorts_mvp.reserve_youtube_quota('test-project','general','analysis',1) as id`)[0].id).toBeTruthy();
+    expect((await db`select shorts_mvp.reserve_youtube_quota('test-project','general','analysis',1) as id`)[0].id).toBeNull();
+  });
+
+  it("blocks background reservations until prior usage is reconciled", async () => {
+    await db`update shorts_mvp.youtube_quota_verifications set accounting_ready_from=null`;
+    expect((await db`select shorts_mvp.reserve_youtube_quota('test-project','general','refresh',1) as id`)[0].id).toBeNull();
+    expect((await db`select shorts_mvp.reserve_youtube_quota('test-project','general','analysis',1) as id`)[0].id).toBeTruthy();
+  });
+
+  it("preserves completed replays and original discovery dates through import and refresh", async () => {
+    const ids=["jDPal12pVno","xgBS4yDSNV0","wKjpYOR8_F0"];
+    const old=new Date(Date.now()-35*DAY_MS);
+    for(let i=0;i<ids.length;i++) await legacyVideo(ids[i],new Date(old.getTime()+i*1000));
+    const fetchImpl=vi.fn<typeof fetch>(async input=>{
+      const requested=new URL(String(input)).searchParams.get('id')!.split(',');
+      return new Response(JSON.stringify({items:requested.map(id=>({...youtubeItem(id,'creativeCommon'),liveStreamingDetails:{actualStartTime:'2026-08-01T00:00:00Z',actualEndTime:'2026-08-01T00:30:00Z'}}))}));
+    });
+    for(let i=0;i<3;i++) await backfillCatalogBatch(db,fetchImpl);
+    expect(await getCatalogBackfillReadiness(db)).toMatchObject({ready:true});
+    const before=await db`select id,first_discovered_at,last_trending_at from shorts_mvp.youtube_catalog order by id`;
+    await db`update shorts_mvp.youtube_catalog set refresh_after=now()-interval '1 minute'`;
+    expect(await refreshCatalogBatch({db,fetchImpl})).toMatchObject({failed:false,pages:1});
+    expect(await db`select id,first_discovered_at,last_trending_at from shorts_mvp.youtube_catalog order by id`).toEqual(before);
+    expect((await getCatalogVideos(filters({type:'reusable'}),db)).totalCount).toBe(3);
+    await db`update shorts_mvp.youtube_catalog set refresh_after=now()-interval '1 minute'`;
+    const incomplete=async()=>new Response(JSON.stringify({items:[{...youtubeItem(ids[0]),liveStreamingDetails:{actualStartTime:'2026-08-01T00:00:00Z'}}]}));
+    expect(await refreshCatalogBatch({db,fetchImpl:incomplete,scheduledAt:new Date(Date.now()+900000)})).toMatchObject({failed:true});
+    expect((await db`select count(*)::int n from shorts_mvp.youtube_catalog where availability='public'`)[0].n).toBe(3);
+  });
+
+  it("preserves database microseconds in discovery and day history, including later refresh", async () => {
+    const id='precise0001';
+    const old=new Date(Date.now()-35*DAY_MS);
+    const runId=await legacyVideo(id,old);
+    await db`update shorts_mvp.popular_video_items set collected_at=collected_at+interval '150 microseconds' where run_id=${runId}`;
+    const [source]=await db`select collected_at::text as original from shorts_mvp.popular_video_items where run_id=${runId}`;
+    const fetchImpl=async()=>new Response(JSON.stringify({items:[youtubeItem(id)]}));
+    await backfillCatalogBatch(db,fetchImpl);
+    await db`update shorts_mvp.youtube_catalog set refresh_after=now()-interval '1 minute'`;
+    await refreshCatalogBatch({db,fetchImpl});
+    const [catalog]=await db`select first_discovered_at::text as first,last_trending_at::text as trending from shorts_mvp.youtube_catalog`;
+    const [day]=await db`select first_seen_at::text as first,last_seen_at::text as last from shorts_mvp.youtube_trending_days`;
+    expect(catalog.first).toBe(source.original);
+    expect(catalog.trending).toBe(source.original);
+    expect(day.first).toBe(source.original);
+    expect(day.last).toBe(source.original);
+  });
 
   it.each([undefined, "false", "true"])(
     "keeps expired legacy free history unless cleanup is explicitly released (%s)",
@@ -784,7 +868,11 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
     vi.stubEnv("YOUTUBE_DISCOVERY_EXPANDED", "true");
     expect(await expandedDiscoveryEnabled(db)).toBe(false);
     await db`insert into shorts_mvp.youtube_quota_verifications(project_id,key_fingerprint,search_daily_limit,general_daily_limit,other_clients_reviewed,verified_at,evidence,expanded_at,backfill_verified_at)
-      values('test-project','wrong-key',100,10000,true,now(),'mock test evidence',now(),now())`;
+      values('test-project','wrong-key',100,10000,true,now(),'mock test evidence',now(),now()) on conflict(project_id) do update set key_fingerprint=excluded.key_fingerprint,other_clients_reviewed=true,expanded_at=now(),backfill_verified_at=now()`;
+    expect(await expandedDiscoveryEnabled(db)).toBe(false);
+    await db`update shorts_mvp.youtube_quota_verifications set key_fingerprint=${createHash('sha256').update('test-api-key').digest('hex')}`;
+    expect(await expandedDiscoveryEnabled(db)).toBe(true);
+    await db`update shorts_mvp.youtube_quota_verifications set accounting_ready_from=(now() at time zone 'America/Los_Angeles')::date+1`;
     expect(await expandedDiscoveryEnabled(db)).toBe(false);
   });
   it("backfills old days honestly and rechecks stale metadata before storing it", async () => {
@@ -828,7 +916,7 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
       processed: 0,
     });
     await db`insert into shorts_mvp.youtube_quota_verifications(project_id,key_fingerprint,search_daily_limit,general_daily_limit,verified_at,evidence,backfill_verified_at)
-      values('test-project','test-only',100,10000,now(),'integration comparison passed',now())`;
+      values('test-project','test-only',100,10000,now(),'integration comparison passed',now()) on conflict(project_id) do update set backfill_verified_at=now()`;
     // A completed backfill must not itself authorize destruction of old rows.
     vi.stubEnv("YOUTUBE_LEGACY_SNAPSHOT_CLEANUP_ENABLED", "false");
     await cleanupImportedSnapshots(db);

@@ -326,7 +326,7 @@ export async function refreshCatalogBatch(
     for (let page = 0; page < Math.min(options.maxPages || 12, 25); page++) {
       const batch = await db.begin(async (tx) => {
         const rows =
-          await tx`select id,video_id,first_discovered_at from shorts_mvp.youtube_catalog
+          await tx`select id,video_id,first_discovered_at::text as first_discovered_at from shorts_mvp.youtube_catalog
           where video_id is not null and refresh_after<=clock_timestamp()
             and (refresh_lease_until is null or refresh_lease_until<clock_timestamp())
           order by (verified_at<clock_timestamp()-interval '25 days') desc,
@@ -356,7 +356,7 @@ export async function refreshCatalogBatch(
             if (item)
               await saveCatalogPage(tx, [item], {
                 observedAt: now,
-                firstDiscoveredAt: new Date(row.firstDiscoveredAt),
+                firstDiscoveredAt: String(row.firstDiscoveredAt),
               });
             else await markCatalogUnavailable(tx, [String(row.videoId)], now);
           }

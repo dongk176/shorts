@@ -63,7 +63,8 @@ export async function expandedDiscoveryEnabled(db: Sql = getDb()) {
   const rows = await db`select 1 from shorts_mvp.youtube_quota_verifications
     where project_id=${project} and key_fingerprint=${fingerprint}
       and search_daily_limit>=100 and general_daily_limit>=10000
-      and other_clients_reviewed and backfill_verified_at is not null and expanded_at is not null`;
+      and other_clients_reviewed and backfill_verified_at is not null and expanded_at is not null
+      and accounting_ready_from <= (clock_timestamp() at time zone 'America/Los_Angeles')::date`;
   return Boolean(rows[0]);
 }
 

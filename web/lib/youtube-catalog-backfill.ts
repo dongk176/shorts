@@ -2,6 +2,7 @@ import type { Sql } from "postgres";
 import { getDb } from "@/lib/db";
 import {
   catalogId,
+  catalogTimestamp,
   markCatalogUnavailable,
   saveCatalogPage,
   type CatalogVideo,
@@ -26,7 +27,7 @@ export async function backfillCatalogBatch(
   return withYoutubePurpose("refresh", db, async () => {
     for (const source of sources) {
       const [run] =
-        await db`select r.*,coalesce(i.next_offset,0)::int as next_offset
+        await db`select r.*,r.started_at::text as started_at_exact,r.completed_at::text as completed_at_exact,coalesce(i.next_offset,0)::int as next_offset
         from ${db(`shorts_mvp.${source.prefix}_runs`)} r
         left join shorts_mvp.youtube_catalog_imports i on i.source=${source.prefix} and i.legacy_run_id=r.id
         where r.status in ('ready','failed') and i.completed_at is null
@@ -35,14 +36,14 @@ export async function backfillCatalogBatch(
       if (!run) continue;
       const [newRun] =
         await db`insert into shorts_mvp.youtube_collection_runs(id,lane,scheduled_at,started_at,finished_at,status,page_count,item_count,legacy)
-        values(${run.id},${source.lane},${run.startedAt},${run.startedAt},${run.completedAt || run.startedAt},
+        values(${run.id},${source.lane},${catalogTimestamp(db,String(run.startedAtExact))}::timestamptz,${catalogTimestamp(db,String(run.startedAtExact))}::timestamptz,${catalogTimestamp(db,String(run.completedAtExact || run.startedAtExact))}::timestamptz,
           ${run.status === "ready" ? "success" : "failed"},${run.pageCount},${run.itemCount},true)
         on conflict(lane,scheduled_at) do update set legacy=youtube_collection_runs.legacy returning id`;
       await db`insert into shorts_mvp.youtube_catalog_imports(source,legacy_run_id) values(${source.prefix},${run.id}) on conflict do nothing`;
       const rows =
         run.status === "ready"
           ? await db`select distinct on(video_id) video_id,category,title,channel_name,thumbnail_url,duration_seconds,
-          view_count,published_at,license,is_korean,collected_at from ${db(`shorts_mvp.${source.prefix}_items`)}
+          view_count,published_at,license,is_korean,collected_at,collected_at::text as collected_at_exact from ${db(`shorts_mvp.${source.prefix}_items`)}
           where run_id=${run.id} order by video_id,collected_at desc offset ${run.nextOffset} limit 500`
           : [];
       let processed = 0;
@@ -50,7 +51,7 @@ export async function backfillCatalogBatch(
         const batch = rows.slice(offset, offset + 50);
         const ids = batch.map((row) => String(row.videoId));
         const current =
-          await db`select id,metadata,verified_at from shorts_mvp.youtube_catalog where id in ${db(ids.map(catalogId))}`;
+          await db`select id,metadata,verified_at,verified_at::text as verified_at_exact from shorts_mvp.youtube_catalog where id in ${db(ids.map(catalogId))}`;
         const existing = new Map(current.map((row) => [String(row.id), row]));
         const stale = ids.filter(
           (id, index) =>
@@ -69,13 +70,14 @@ export async function backfillCatalogBatch(
         const freshById = new Map(fresh.map((item) => [item.videoId, item]));
         const now = new Date();
         await db.begin(async (tx) => {
+          const groups = new Map<string, { items: CatalogVideo[]; observedAt: string; verifiedAt: Date | string }>();
           for (const row of batch) {
             const id = String(row.videoId);
             const internalId = catalogId(id);
             const known = existing.get(internalId);
-            const observedAt = new Date(row.collectedAt);
+            const observedAt = String(row.collectedAtExact);
             const rechecked = stale.includes(id);
-            const useKnown = known && new Date(known.verifiedAt) > observedAt;
+            const useKnown = known && new Date(known.verifiedAt) > new Date(observedAt);
             const item = rechecked
               ? freshById.get(id)
               : useKnown
@@ -95,28 +97,33 @@ export async function backfillCatalogBatch(
             const verifiedAt = rechecked
               ? now
               : useKnown
-                ? new Date(known.verifiedAt)
+                ? String(known.verifiedAtExact)
                 : observedAt;
-            if (item)
-              await saveCatalogPage(tx, [item], {
-                runId: String(newRun.id),
-                trending: source.lane === "trending",
-                observedAt,
-                verifiedAt,
-              });
+            if (item) {
+              const key = `${observedAt}/${verifiedAt instanceof Date ? verifiedAt.toISOString() : verifiedAt}`;
+              const group = groups.get(key) || { items: [], observedAt, verifiedAt };
+              group.items.push(item);
+              groups.set(key, group);
+            }
             else {
               await tx`insert into shorts_mvp.youtube_catalog(id,first_discovered_at,verified_at,availability)
-                values(${internalId},${observedAt},${verifiedAt},'unavailable')
+                values(${internalId},${catalogTimestamp(tx,observedAt)}::timestamptz,${catalogTimestamp(tx,verifiedAt)}::timestamptz,'unavailable')
                 on conflict(id) do update set first_discovered_at=least(youtube_catalog.first_discovered_at,excluded.first_discovered_at)`;
               await markCatalogUnavailable(tx, [id], verifiedAt);
               if (source.lane === "trending") {
                 await tx`insert into shorts_mvp.youtube_collection_run_days(run_id,day)
-                  values(${newRun.id},${kstDate(observedAt)}) on conflict do nothing`;
+                  values(${newRun.id},${kstDate(new Date(observedAt))}) on conflict do nothing`;
                 await tx`insert into shorts_mvp.youtube_trending_days(day,catalog_id,first_seen_at,last_seen_at)
-                values(${kstDate(observedAt)},${internalId},${observedAt},${observedAt}) on conflict(day,catalog_id) do update set
+                values(${kstDate(new Date(observedAt))},${internalId},${catalogTimestamp(tx,observedAt)}::timestamptz,${catalogTimestamp(tx,observedAt)}::timestamptz) on conflict(day,catalog_id) do update set
                   first_seen_at=least(youtube_trending_days.first_seen_at,excluded.first_seen_at),last_seen_at=greatest(youtube_trending_days.last_seen_at,excluded.last_seen_at)`;
               }
             }
+          }
+          for (const group of groups.values()) {
+            await saveCatalogPage(tx, group.items, {
+              runId: String(newRun.id), trending: source.lane === "trending",
+              observedAt: group.observedAt, verifiedAt: group.verifiedAt,
+            });
           }
           await tx`update shorts_mvp.youtube_catalog_imports set next_offset=greatest(next_offset,${Number(run.nextOffset) + offset + batch.length})
             where source=${source.prefix} and legacy_run_id=${run.id}`;

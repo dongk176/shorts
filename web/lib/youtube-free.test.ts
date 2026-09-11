@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { collectSearchVideoPages, YoutubeFreeApiError } from "./youtube-free";
+import { collectSearchVideoPages, detailsResponseSchema, verifiedCatalogDetails, YoutubeFreeApiError } from "./youtube-free";
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -36,6 +36,26 @@ afterEach(() => {
 });
 
 describe("free YouTube search collection", () => {
+  it("retains the manually imported completed replays with current CC metadata", () => {
+    const ids = ["jDPal12pVno", "xgBS4yDSNV0", "wKjpYOR8_F0"];
+    const result = verifiedCatalogDetails(ids, detailsResponseSchema.parse({ items: ids.map(id => detail(id, {
+      status: { privacyStatus: "public", license: "creativeCommon", uploadStatus: "processed" },
+      liveStreamingDetails: { actualStartTime: "2026-08-01T00:00:00Z", actualEndTime: "2026-08-01T00:30:00Z" },
+    })) }));
+    expect(result.items.map(item => item.videoId)).toEqual(ids);
+    expect(result.unavailableIds).toEqual([]);
+    expect(result.items.every(item => item.license === "creativeCommon")).toBe(true);
+  });
+
+  it.each([
+    {}, { actualStartTime: "2026-08-01T00:00:00Z" },
+    { actualStartTime: "bad", actualEndTime: "2026-08-01T00:30:00Z" },
+    { actualStartTime: "2026-08-01T01:00:00Z", actualEndTime: "2026-08-01T00:30:00Z" },
+  ])("never treats ambiguous replay history as deleted: %j", history => {
+    expect(() => verifiedCatalogDetails(["jDPal12pVno"], detailsResponseSchema.parse({
+      items: [detail("jDPal12pVno", { liveStreamingDetails: history })],
+    }))).toThrow(YoutubeFreeApiError);
+  });
   it("uses one search page with the agreed filters and one detail request", async () => {
     const fetchMock = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(jsonResponse({
