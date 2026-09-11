@@ -1,6 +1,8 @@
 "use client";
 
 import type { CreatorPlatform } from "@/lib/creator-support";
+import { useEffect, useState } from "react";
+import { creatorYouTubeUrl, YOUTUBE_WEB_URL } from "./creator-input-helpers";
 import styles from "./creator-support.module.css";
 
 export const creatorPlatforms = [
@@ -13,11 +15,13 @@ export function CreatorChannelLinks({ values, disabled, onChange }: {
   disabled: boolean;
   onChange: (platform: CreatorPlatform, value: string) => void;
 }) {
+  const [youtubeUrl, setYoutubeUrl] = useState(YOUTUBE_WEB_URL);
+  useEffect(() => { setYoutubeUrl(creatorYouTubeUrl(navigator)); }, []);
   return <div className={styles.channelCards}>
     {creatorPlatforms.map(({ platform, label, placeholder, url }) => <div key={platform} className={styles.channelCard}>
       <span className={styles.channelCardHeading}>
-        {/* Official HTTPS app links fall back to the web and keep this form open. */}
-        <a className={styles.channelIcon} data-platform={platform} href={url} target="_blank" rel="noopener noreferrer"
+        <a className={styles.channelIcon} data-platform={platform} href={platform === "youtube" ? youtubeUrl : url}
+          target={platform === "youtube" && youtubeUrl !== YOUTUBE_WEB_URL ? "_self" : "_blank"} rel="noopener noreferrer"
           aria-label={`${label} 열기 (앱 또는 새 창)`} title={`${label} 열기`}>
           {platform === "youtube" ? <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <rect x="2" y="5" width="20" height="14" rx="4" fill="currentColor" />

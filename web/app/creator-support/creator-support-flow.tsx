@@ -11,6 +11,7 @@ import styles from "./creator-support.module.css";
 import { CreatorSupportIntro } from "./creator-support-intro";
 import { CreatorChannelLinks, creatorPlatforms } from "./creator-channel-links";
 import { useCreatorViewport } from "./use-creator-viewport";
+import { editCreatorPhone } from "./creator-input-helpers";
 
 const emptyConsents = { collection: false, disclosure: false, license: false };
 class FlowError extends Error { constructor(message: string, public code: string) { super(message); } }
@@ -40,7 +41,7 @@ export function CreatorSupportFlow({ startAtAccount = false, initialAuthError = 
   const requestId = useRef<string | null>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const content = useRef<HTMLDivElement>(null);
-  const detailTrigger = useRef<HTMLButtonElement | null>(null);
+  const detailTrigger = useRef<CreatorConsentKey | null>(null);
   const accountRequest = useRef(0);
   const surface = useRef<HTMLElement>(null);
   const isIntro = step === 0;
@@ -130,7 +131,15 @@ export function CreatorSupportFlow({ startAtAccount = false, initialAuthError = 
       window.location.assign("/creator-support?step=account");
     } catch (cause) { handleError(cause); setBusy(false); }
   }
-  function closeDetail() { setDetail(null); requestAnimationFrame(() => detailTrigger.current?.focus()); }
+  function closeDetail() {
+    setDetail(null);
+    requestAnimationFrame(() => content.current?.querySelector<HTMLButtonElement>(`[data-consent-detail="${detailTrigger.current}"]`)?.focus());
+  }
+  function agreeToDetail() {
+    if (!detail || busy) return;
+    setConsents(current => ({ ...current, [detail]: true }));
+    closeDetail();
+  }
   const terms = creatorApplicationTerms;
   const currentDetail = terms.find((item) => item.key === detail);
   const status = me?.status;
@@ -147,11 +156,6 @@ export function CreatorSupportFlow({ startAtAccount = false, initialAuthError = 
         </div>
       </div>}
       <div className={styles.shell}>
-        <header className={styles.header}>
-          <div className={styles.progress} role="progressbar" aria-label="파트너 지원 진행 상황" aria-valuemin={0} aria-valuemax={3} aria-valuenow={Math.min(step, 3)} aria-valuetext={step === 4 ? "신청 완료" : `${step}단계, 총 3단계`}>
-            <span style={{ transform: `scaleX(${Math.min(step, 3) / 3})` }} />
-          </div>
-        </header>
         <div className={styles.content} ref={content} onKeyDown={(event) => {
           if (event.key !== "Enter" || event.nativeEvent.isComposing || !(event.target instanceof HTMLInputElement)
             || !["url", "tel"].includes(event.target.type)) return;
@@ -189,7 +193,13 @@ export function CreatorSupportFlow({ startAtAccount = false, initialAuthError = 
               setChannelLinks((current) => ({ ...current, [platform]: value })); setError("");
             }} />
             <div className={styles.phoneField}>
-              <label className={styles.field}>휴대폰 번호<input type="tel" inputMode="tel" enterKeyHint="done" autoComplete="tel-national" required maxLength={13} disabled={busy} value={phoneNumber} onChange={(event) => setPhoneNumber(event.target.value)} placeholder="010-1234-5678" aria-describedby="phone-help" /></label>
+              <label className={styles.field}>휴대폰 번호<input type="tel" inputMode="tel" enterKeyHint="done" autoComplete="tel-national" required maxLength={20} disabled={busy} value={phoneNumber} onChange={(event) => {
+                const input = event.currentTarget;
+                const next = editCreatorPhone(phoneNumber, input.value, input.selectionStart ?? input.value.length, (event.nativeEvent as InputEvent).inputType);
+                input.value = next.value;
+                input.setSelectionRange(next.caret, next.caret);
+                setPhoneNumber(next.value);
+              }} placeholder="010-1234-5678" aria-describedby="phone-help" /></label>
               <p id="phone-help" className={styles.phoneHelp}>선정되신 경우 개별 연락드릴 번호를 입력해 주세요.</p>
             </div>
           </> : step === 3 ? <>
@@ -201,7 +211,7 @@ export function CreatorSupportFlow({ startAtAccount = false, initialAuthError = 
             </div>
             <div className={styles.consents}>{terms.map((item) => <div key={item.key} className={styles.consentRow}>
               <label className={styles.check}><input type="checkbox" checked={consents[item.key]} disabled={busy} onChange={(e) => setConsents({ ...consents, [item.key]: e.target.checked })} /><span>[필수] {item.title}</span></label>
-              <button className={styles.detailButton} aria-label={`${item.title} 자세히 보기`} onClick={(e) => { detailTrigger.current = e.currentTarget; setDetail(item.key); }}>보기</button>
+              <button className={styles.detailButton} data-consent-detail={item.key} aria-label={`${item.title} 자세히 보기`} onClick={() => { detailTrigger.current = item.key; setDetail(item.key); }}>보기</button>
             </div>)}</div>
           </> : application && !status ? <>
             <div className={styles.successMark} aria-hidden>✓</div>
@@ -230,9 +240,12 @@ export function CreatorSupportFlow({ startAtAccount = false, initialAuthError = 
         <footer className={styles.footer}>
           {step === 2 && !detail && <label className={`${styles.check} ${styles.footerConsent}`}>
             <input type="checkbox" checked={ownsChannel} disabled={busy} onChange={(e) => setOwnsChannel(e.target.checked)} />
-            <span>등록한 채널의 운영자이거나 이용허락 권한이 있는 담당자입니다.</span>
+            <span>채널 운영자 또는 사용 허락을 받은 담당자입니다.</span>
           </label>}
-          {detail ? <button className={primaryClassName} onClick={closeDetail}>닫고 동의 화면으로</button> : step === 4 ? <Link className={primaryClassName} href="/">이지컷으로 돌아가기 <span aria-hidden>↗</span></Link> : <>
+          {detail ? <>
+            <button className={styles.back} disabled={busy} onClick={closeDetail}>이전</button>
+            <button className={primaryClassName} disabled={busy} onClick={agreeToDetail}>동의하기</button>
+          </> : step === 4 ? <Link className={primaryClassName} href="/">이지컷으로 돌아가기 <span aria-hidden>↗</span></Link> : <>
             {step === 1 && <button className={styles.back} disabled={busy} onClick={() => { setError(""); setStep(0); }}>이전</button>}
             {step > 1 && <button className={styles.back} disabled={busy} onClick={() => { setError(""); setStep(step === 3 ? 2 : 1); }}>이전</button>}
             <button className={primaryClassName} onClick={() => void next()} disabled={busy || loading || !me || (me && !me.enrollmentOpen && !me.status && !me.application) || (step === 3 && !Object.values(consents).every(Boolean))}>

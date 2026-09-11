@@ -63,7 +63,8 @@ try {
     await page.goto(`${origin}/creator-support?step=account`);
     await page.getByRole("button", { name: "이 계정으로 계속" }).click();
     const fields = ["유튜브 링크", "인스타그램 링크", "휴대폰 번호"].map(name => page.getByRole("textbox", { name, exact: true }));
-    const values = ["youtube.com/@keyboardcheck", "instagram.com/keyboardcheck", "01000000000"];
+    const values = ["youtube.com/@keyboardcheck", "instagram.com/keyboardcheck", "010-0000-0000"];
+    assert.equal(await page.getByRole("progressbar").count(), 0);
     await assertPinned(size.height);
     // Regression from the reported screenshot: scrolling long content cannot move CTA off-screen.
     await page.locator('[data-step="2"]').evaluate(element => { element.parentElement.scrollTop = element.parentElement.scrollHeight; });
@@ -71,7 +72,7 @@ try {
     await page.locator('[data-step="2"]').evaluate(element => { element.parentElement.scrollTop = 0; });
     if (output) await page.screenshot({ path: `${output}/fixed-initial-${size.width}x${size.height}.png` });
     for (let i = 0; i < fields.length; i++) {
-      await fields[i].fill(values[i]); await assertPinned(size.height, 0, true);
+      await fields[i].fill(i === 2 ? "01000000000" : values[i]); await assertPinned(size.height, 0, true);
       // iOS: the keyboard shrinks AND pans the visual viewport.
       await setViewport({ height: 280, offsetTop: 80 }); await assertPinned(280, 80, true);
       // A scroll-only viewport event must also reposition the pinned shell.
@@ -127,11 +128,11 @@ try {
     assert.equal((await page.locator("main footer").boundingBox()).height, beforeZoom.footer.height);
     await page.getByRole("alert").filter({ hasText: "운영 또는 이용허락" }).waitFor({ state: "hidden", timeout: 3000 });
     await setViewport({ height: size.height, width: size.width, offsetTop: 0, offsetLeft: 0, scale: 1 });
-    await page.getByRole("checkbox", { name: "등록한 채널의 운영자이거나 이용허락 권한이 있는 담당자입니다." }).check();
+    await page.getByRole("checkbox", { name: "채널 운영자 또는 사용 허락을 받은 담당자입니다." }).check();
     await page.getByRole("button", { name: "다음", exact: true }).click(); await assertPinned(size.height);
     await page.getByRole("button", { name: "개인정보 수집·이용 동의 자세히 보기" }).click();
     await assertPinned(size.height);
-    await page.getByRole("button", { name: "닫고 동의 화면으로" }).click();
+    await page.getByRole("button", { name: "동의하기" }).click();
     // Keyboard navigation avoids the local Next dev indicator over the back button.
     await page.getByRole("button", { name: "이전", exact: true }).focus();
     await page.getByRole("button", { name: "이전", exact: true }).press("Enter");
