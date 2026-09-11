@@ -123,8 +123,8 @@ describe.skipIf(!connection)("creator support PostgreSQL and authenticated APIs"
     await db.unsafe(funding.slice(funding.indexOf("alter table shorts_mvp.usage_grants"), funding.indexOf("create or replace function")));
     const migrationConnection = await db.reserve();
     try {
-      await migrationConnection.unsafe(migration("202609110001_creator_support.sql"));
-      await migrationConnection.unsafe(migration("202609110002_creator_support_usage.sql"));
+      await migrationConnection.unsafe(migration("202609110004_creator_support.sql"));
+      await migrationConnection.unsafe(migration("202609110005_creator_support_usage.sql"));
     } finally { migrationConnection.release(); }
   }, 30_000);
   beforeEach(async () => {

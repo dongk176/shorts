@@ -42,6 +42,15 @@ export const PROTECTED_APP_ROUTES = [
 // These routes are the only intentional additions relative to the currently
 // promoted production manifest. Everything else must still fail closed.
 export const ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE = [
+  "/api/projects/[projectNumber]/download/route",
+  "/creator-support/page",
+  "/api/admin/creator-support/route",
+  "/api/creator-support/assets/route",
+  "/api/creator-support/assets/[id]/route",
+  "/api/creator-support/channel/route",
+  "/api/creator-support/enroll/route",
+  "/api/creator-support/me/route",
+  "/api/creator-support/status/route",
   "/api/admin/youtube-discovery/route",
   "/api/admin/youtube-discovery/backfill/route",
   "/api/cron/youtube-discovery/route",
