@@ -1004,9 +1004,13 @@ export function PopularVideosExplorer({
       const ids = visibleVideoIds ? visibleVideoIds.split(",") : [];
       const chunks = Array.from({length: Math.max(1, Math.ceil(ids.length / 200))}, (_, index) => ids.slice(index * 200, index * 200 + 200));
       Promise.all(chunks.map(chunk => fetch(`/api/youtube/popular/status?${new URLSearchParams({type:dataType, ...(chunk.length ? {ids:chunk.join(",")} : {})})}`, { cache: "no-store", signal: controller.signal })
-        .then(async result => result.ok ? result.json() as Promise<{ generation?: string; delayed?: boolean; visibility?: CatalogVisibility[] }> : null)))
+        .then(async result => result.ok ? result.json() as Promise<{ generation?: string; collectionWindowStart?: string; delayed?: boolean; visibility?: CatalogVisibility[] }> : null)))
         .then(states => {
           if (controller.signal.aborted) return;
+          if (response.collectionWindowStart && states.some(state => state?.collectionWindowStart && state.collectionWindowStart !== response.collectionWindowStart)) {
+            setRetryCount(value => value + 1);
+            return;
+          }
           if (states.some(state => state?.generation && state.generation !== response.generation)) setHasNewList(true);
           const delayed = states.some(state => state?.delayed);
           const statuses = states.flatMap(state => state?.visibility || []);
@@ -1019,7 +1023,7 @@ export function PopularVideosExplorer({
         }).catch(() => undefined).finally(() => { checking = false; });
     }, 60_000);
     return () => { clearInterval(timer); controller.abort(); };
-  }, [catalogEnabled, dataType, response?.generation, visibleVideoIds, reusableOnly]);
+  }, [catalogEnabled, dataType, response?.generation, response?.collectionWindowStart, visibleVideoIds, reusableOnly]);
 
   const selectedTypeLabel = dataType === "trending"
     ? filterCopy.trending
@@ -1370,13 +1374,18 @@ export function PopularVideosExplorer({
           <h2 className="text-xl font-black tracking-[-.025em] text-white">{selectedTypeLabel}</h2>
           <p className="mt-1 text-xs font-bold tabular-nums text-neutral-500" aria-live="polite">{!loading && response && displayedTotalCount !== undefined ? (locale === "ko" ? `${formatNumber(displayedTotalCount, locale)}개` : locale === "en" ? formatNumber(displayedTotalCount, locale) : `${formatNumber(displayedTotalCount, locale)}件`) : uiCopy.countLoading}</p>
         </div>
-        <DiscoveryPeriodDropdown
-          value={discoveryPeriod}
-          counts={periodCounts}
-          locale={locale}
-          disabled={loading}
-          onChange={(period) => applyFilter(() => setDiscoveryPeriod(period))}
-        />
+        <div className="flex flex-col items-end gap-2">
+          <DiscoveryPeriodDropdown
+            value={discoveryPeriod}
+            counts={periodCounts}
+            locale={locale}
+            disabled={loading}
+            onChange={(period) => applyFilter(() => setDiscoveryPeriod(period))}
+          />
+          {catalogEnabled && dataType !== "trending" && <p className="text-[11px] text-neutral-500">
+            {locale === "ko" ? "매일 오후 5:20 기준 · 수집 완료 후 갱신" : locale === "en" ? "Daily at 5:20 PM KST · after collection completes" : "毎日17:20（韓国時間）基準・収集完了後に更新"}
+          </p>}
+        </div>
       </div>
 
       {catalogEnabled && ((dataType === "trending" && response?.delayed) || cursorNotice || hasNewList) && <div className="mb-5 space-y-2 text-xs text-neutral-400" aria-live="polite">

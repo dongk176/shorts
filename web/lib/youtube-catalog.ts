@@ -12,6 +12,7 @@ import type {
 import {
   DAY_MS,
   discoverySince,
+  latestPublishableDiscoverySlot,
   kstDate,
   validKstDate,
 } from "@/lib/youtube-discovery-time";
@@ -122,6 +123,11 @@ export async function catalogStatus(
 ) {
   const [row] = await db`select
     (select max(finished_at) from shorts_mvp.youtube_collection_runs where status='success' and ((${type}='trending' and lane='trending') or (${type}='views' and lane='views') or (${type}='reusable' and lane<>'refresh'))) as collected_at,
+    (select max(scheduled_at) from shorts_mvp.youtube_collection_runs
+      where ${type !== "trending"} and lane=${type} and status='success'
+        and finished_at<=${now}
+        and scheduled_at<=${latestPublishableDiscoverySlot(now)}
+        and (scheduled_at at time zone 'UTC')::time=time '08:10') as collection_window_start,
     (select max(verified_at) from shorts_mvp.youtube_catalog) as verified_at,
     (select max(updated_at) from shorts_mvp.youtube_catalog) as changed_at`;
   const updatedAt = row?.collectedAt
@@ -130,10 +136,15 @@ export async function catalogStatus(
   const verifiedAt = row?.verifiedAt
     ? new Date(row.verifiedAt).toISOString()
     : null;
+  // Until the first successful afternoon search, retain the existing catalog.
+  // Failed/missing afternoon runs and successful morning runs cannot reset it.
+  const collectionWindowStart = type === "trending" ? undefined
+    : new Date(row?.collectionWindowStart || 0).toISOString();
   return {
     updatedAt,
     verifiedAt,
-    generation: `${updatedAt || ""}/${row?.changedAt ? new Date(row.changedAt).toISOString() : ""}`,
+    collectionWindowStart,
+    generation: `${updatedAt || ""}/${row?.changedAt ? new Date(row.changedAt).toISOString() : ""}${collectionWindowStart ? `/${collectionWindowStart}` : ""}`,
     delayed:
       !updatedAt || now.getTime() - Date.parse(updatedAt) >= 3 * 3_600_000,
   };
@@ -197,6 +208,17 @@ export async function getCatalogVideos(
     (filters.type !== "trending" || !validKstDate(filters.date, now))
   )
     throw new Error("INVALID_CATALOG_DATE");
+  const collectedPeriod = filters.periodBasis === "collected" && !filters.date;
+  const state = await catalogStatus(db, filters.type, now);
+  const afternoonPeriod = collectedPeriod && filters.type !== "trending";
+  const today = afternoonPeriod
+    ? new Date(state.collectionWindowStart!) : discoverySince("today", now)!;
+  const week = afternoonPeriod
+    ? new Date(today.getTime() - 6 * DAY_MS) : discoverySince("week", now)!;
+  const since = afternoonPeriod
+    ? (filters.period === "all" ? null : filters.period === "today" ? today : week)
+    : filters.type === "trending" && !collectedPeriod
+      ? null : discoverySince(filters.period, now);
   const filterKey = JSON.stringify([
     filters.type,
     filters.category,
@@ -206,13 +228,8 @@ export async function getCatalogVideos(
     filters.period,
     filters.date || null,
     filters.periodBasis || null,
+    ...(afternoonPeriod ? ["afternoon-1720-v1", filters.period === "all" ? null : today.toISOString()] : []),
   ]);
-  const collectedPeriod = filters.periodBasis === "collected" && !filters.date;
-  const since = filters.type === "trending" && !collectedPeriod
-    ? null : discoverySince(filters.period, now);
-  const today = discoverySince("today", now)!;
-  const week = discoverySince("week", now)!;
-  const state = await catalogStatus(db, filters.type, now);
   const [currentRun] =
     await db`select id from shorts_mvp.youtube_collection_runs
     where lane='trending' and status='success' order by finished_at desc limit 1`;
@@ -322,6 +339,7 @@ export async function getCatalogVideos(
     updatedAt: collectedAt || "",
     verifiedAt: state.verifiedAt,
     generation: state.generation,
+    ...(afternoonPeriod ? { collectionWindowStart: state.collectionWindowStart } : {}),
     delayed: state.delayed,
     version: versionId,
     catalogEnabled: true,

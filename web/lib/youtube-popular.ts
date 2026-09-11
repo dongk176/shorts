@@ -76,6 +76,7 @@ export type PopularVideoResponse = {
   collectionStatus?: "complete" | "partial" | "none";
   catalogEnabled?: boolean;
   generation?: string;
+  collectionWindowStart?: string;
 };
 
 export type PopularCollectionCategoryResult = {

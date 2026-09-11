@@ -14,6 +14,7 @@ import {
 vi.mock("server-only", () => ({}));
 import {
   saveCatalogPage,
+  catalogStatus,
   markCatalogMetadataPending,
   getCatalogVideos,
   getTrendingCalendar,
@@ -635,6 +636,75 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
       getCatalogVideos(filters({ cursor: first.nextCursor }), db, now),
     ).rejects.toBeInstanceOf(CatalogCursorExpiredError);
   });
+  it.each(["views", "reusable"] as const)("rolls %s over only after 17:20 and successful afternoon collection", async (type) => {
+    const scope = filters({ type, periodBasis: "collected", period: "today" });
+    const previousSlot = new Date("2026-09-10T08:10:00Z");
+    const nextSlot = new Date("2026-09-11T08:10:00Z");
+    const makeRun = async (at: Date, status: string, finished: Date | null) => {
+      const [r] = await db`insert into shorts_mvp.youtube_collection_runs(lane,scheduled_at,started_at,finished_at,status)
+        values(${type},${at},${at},${finished},${status}) returning id`;
+      return String(r.id);
+    };
+    const video = (id: string, viewCount = 100) => fixture(id, { license: type === "reusable" ? "creativeCommon" : "youtube", viewCount });
+    const previousRun = await makeRun(previousSlot, "success", new Date("2026-09-10T08:15:00Z"));
+    await saveCatalogPage(db, Array.from({ length: 49 }, (_, i) => video(String(i).padStart(11, "0"), 1000 - i)), { runId: previousRun, observedAt: previousSlot });
+    const nextRun = await makeRun(nextSlot, "running", null);
+    await saveCatalogPage(db, [video("newvideo001")], { runId: nextRun, observedAt: new Date("2026-09-11T08:11:00Z") });
+    const early = await getCatalogVideos(scope, db, new Date("2026-09-11T08:19:59Z"));
+    expect(early.totalCount).toBe(50);
+    expect(early.collectionWindowStart).toBe(previousSlot.toISOString());
+    expect(early.nextCursor).toBeTruthy();
+    const pending = await getCatalogVideos(scope, db, new Date("2026-09-11T08:20:00Z"));
+    expect(pending.version).toBe(early.version);
+    expect(pending.totalCount).toBe(50);
+    await db`update shorts_mvp.youtube_collection_runs set status='failed',finished_at='2026-09-11T08:30:00Z' where id=${nextRun}`;
+    expect((await getCatalogVideos(scope, db, new Date("2026-09-11T08:31:00Z"))).collectionWindowStart).toBe(previousSlot.toISOString());
+    // A retried/delayed run must not switch the list until its success is visible.
+    await db`update shorts_mvp.youtube_collection_runs set status='success',finished_at='2026-09-11T08:35:00Z' where id=${nextRun}`;
+    expect((await getCatalogVideos(scope, db, new Date("2026-09-11T08:34:59Z"))).totalCount).toBe(50);
+    const switched = await getCatalogVideos(scope, db, new Date("2026-09-11T08:35:00Z"));
+    expect(switched.items.map(v => v.videoId)).toEqual(["newvideo001"]);
+    expect(switched.totalCount).toBe(1);
+    expect(switched.periodCounts).toEqual({ all: 50, today: 1, week: 50 });
+    expect(switched.collectionWindowStart).toBe(nextSlot.toISOString());
+    await expect(getCatalogVideos({ ...scope, cursor: early.nextCursor }, db, new Date("2026-09-11T08:35:00Z"))).rejects.toBeInstanceOf(CatalogCursorExpiredError);
+    // Even when the run finishes early, 17:20 itself changes generation/cache.
+    await db`update shorts_mvp.youtube_collection_runs set finished_at='2026-09-11T08:15:00Z' where id=${nextRun}`;
+    const before = await getCatalogVideos(scope, db, new Date("2026-09-11T08:19:59Z"));
+    const after = await getCatalogVideos(scope, db, new Date("2026-09-11T08:20:00Z"));
+    expect(before.totalCount).toBe(50);
+    expect(after.totalCount).toBe(1);
+    expect(before.generation).not.toBe(after.generation);
+    expect((await catalogStatus(db, type, new Date("2026-09-11T08:20:00Z"))).generation).toBe(after.generation);
+    const midnight = await getCatalogVideos(scope, db, new Date("2026-09-11T15:00:00Z"));
+    expect(midnight.totalCount).toBe(1);
+    expect(midnight.collectionWindowStart).toBe(after.collectionWindowStart);
+    const morning = new Date("2026-09-11T20:10:00Z");
+    const morningRun = await makeRun(morning, "success", new Date("2026-09-11T20:15:00Z"));
+    await saveCatalogPage(db, [video("morning0001", 200)], { runId: morningRun, observedAt: morning });
+    const combined = await getCatalogVideos(scope, db, new Date("2026-09-11T20:15:00Z"));
+    expect(combined.items.map(v => v.videoId)).toEqual(["morning0001", "newvideo001"]);
+    expect(combined.collectionWindowStart).toBe(after.collectionWindowStart);
+    expect((await getCatalogVideos({ ...scope, period: "all" }, db, new Date("2026-09-11T20:15:00Z"))).totalCount).toBe(51);
+    // A missing next afternoon run also retains this completed window.
+    expect((await getCatalogVideos(scope, db, new Date("2026-09-12T08:25:00Z"))).totalCount).toBe(2);
+  });
+
+  it("keeps seven-day counts aligned and preserves the catalog before the first successful afternoon", async () => {
+    const now = new Date("2026-09-11T08:20:00Z");
+    const scope = filters({ type: "views", periodBasis: "collected", period: "today" });
+    const oldRun = await run(new Date("2026-09-05T08:09:59Z"));
+    await saveCatalogPage(db, [fixture("beforeweek1")], { runId: oldRun, observedAt: new Date("2026-09-05T08:09:59Z"), verifiedAt: now });
+    await saveCatalogPage(db, [fixture("weekedge001")], { runId: oldRun, observedAt: new Date("2026-09-05T08:10:00Z"), verifiedAt: now });
+    expect((await getCatalogVideos(scope, db, now)).totalCount).toBe(2);
+    const [r] = await db`insert into shorts_mvp.youtube_collection_runs(lane,scheduled_at,started_at,finished_at,status)
+      values('views','2026-09-11T08:10:00Z','2026-09-11T08:10:00Z','2026-09-11T08:15:00Z','success') returning id`;
+    await saveCatalogPage(db, [fixture("todayedge01")], { runId: String(r.id), observedAt: new Date("2026-09-11T08:10:00Z") });
+    const weekly = await getCatalogVideos({ ...scope, period: "week" }, db, now);
+    expect(weekly.items.map(v => v.videoId).sort()).toEqual(["todayedge01", "weekedge001"]);
+    expect(weekly.periodCounts).toEqual({ all: 3, today: 1, week: 2 });
+  });
+
   it("shows cumulative collected periods, including every CC source, without confusing refreshes with collections", async () => {
     const now = new Date("2026-09-11T09:00:00Z");
     const old = new Date("2026-09-01T08:00:00Z");
@@ -662,6 +732,8 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
     expect(weekly.items).toHaveLength(4);
     const [unchanged] = await db`select first_discovered_at from shorts_mvp.youtube_catalog where video_id='repeated001'`;
     expect(unchanged.firstDiscoveredAt.toISOString()).toBe(old.toISOString());
+    await db`insert into shorts_mvp.youtube_collection_runs(lane,scheduled_at,started_at,finished_at,status)
+      values('reusable','2026-09-11T08:10:00Z','2026-09-11T08:10:00Z','2026-09-11T08:15:00Z','success')`;
     const mainCC = await getCatalogVideos({...scope,type:"reusable",reusable:false,period:"today"},db,now);
     expect(mainCC.items.map(v=>v.videoId).sort()).toEqual(today.items.map(v=>v.videoId).sort());
     const plainTrending = await getCatalogVideos({...scope,reusable:false},db,now);

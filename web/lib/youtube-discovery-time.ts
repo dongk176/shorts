@@ -19,6 +19,14 @@ export function discoverySince(
   const today = new Date(`${kstDate(now)}T00:00:00+09:00`);
   return new Date(today.getTime() - (period === "week" ? 6 * DAY_MS : 0));
 }
+
+// The list switches at 17:20 KST, but includes the search that starts at 17:10.
+export function latestPublishableDiscoverySlot(now = new Date()) {
+  const releaseAt = new Date(`${kstDate(now)}T17:20:00+09:00`);
+  const slot = new Date(releaseAt.getTime() - 10 * 60_000);
+  if (now < releaseAt) slot.setTime(slot.getTime() - DAY_MS);
+  return slot;
+}
 export function discoverySlot(
   lane: "trending" | "views" | "reusable" | "free" | "refresh",
   now = new Date(),
