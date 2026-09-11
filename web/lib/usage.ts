@@ -1,3 +1,4 @@
+import { CREATOR_APPLICATION_PRODUCT_CODE } from "@/lib/creator-application";
 import type { Sql, TransactionSql } from "postgres";
 import { ADMIN_USAGE_GRANT_PRODUCT_CODE } from "@/lib/admin-usage-grant";
 import { CREATOR_SUPPORT_PRODUCT_CODE } from "@/lib/creator-support";
@@ -100,7 +101,7 @@ export async function getUsageSnapshot(
             ${ONBOARDING_WELCOME_PRODUCT_CODE},
             ${SHORTS_THANK_YOU_EVENT_PRODUCT_CODE},
             ${ADMIN_USAGE_GRANT_PRODUCT_CODE},
-            ${CREATOR_SUPPORT_PRODUCT_CODE}
+            ${CREATOR_SUPPORT_PRODUCT_CODE}, ${CREATOR_APPLICATION_PRODUCT_CODE}
           )
         )
     )

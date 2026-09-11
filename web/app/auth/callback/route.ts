@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { OAUTH_NEXT_COOKIE, requestAppOrigin, safeNextPath } from "@/lib/auth";
+import { authFailureUrl, OAUTH_NEXT_COOKIE, requestAppOrigin, safeNextPath } from "@/lib/auth";
 import { claimMvpSession } from "@/lib/session";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -16,16 +16,15 @@ export async function GET(request: NextRequest) {
       if (!error && data.user) {
         await claimMvpSession(data.user);
         const response = NextResponse.redirect(new URL(next, requestAppOrigin(request)), { status: 303 });
-        response.cookies.delete(OAUTH_NEXT_COOKIE);
+        response.cookies.set(OAUTH_NEXT_COOKIE, "", { path: "/auth/callback", maxAge: 0 });
         return response;
       }
     }
   } catch {
     // Redirect to a user-facing error instead of exposing provider or DB details.
   }
-  const target = new URL("/", requestAppOrigin(request));
-  target.searchParams.set("auth_error", "AUTH_CALLBACK_FAILED");
+  const target = authFailureUrl(request, next, "AUTH_CALLBACK_FAILED");
   const response = NextResponse.redirect(target, { status: 303 });
-  response.cookies.delete(OAUTH_NEXT_COOKIE);
+  response.cookies.set(OAUTH_NEXT_COOKIE, "", { path: "/auth/callback", maxAge: 0 });
   return response;
 }

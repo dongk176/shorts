@@ -13,6 +13,10 @@ describe("OAuth redirect path", () => {
     expect(OAUTH_NEXT_COOKIE).toBe("easy_cut_oauth_next");
   });
 
+  it.each(["/\\attacker.example", "/\n/attacker.example", "/\t/attacker.example"])("rejects URL-normalized external return paths: %s", (value) => {
+    expect(safeNextPath(value)).toBe("/");
+  });
+
   it("uses the browser localhost Host instead of the 0.0.0.0 dev bind address", () => {
     const request = new Request("http://0.0.0.0:3000/auth/sign-in", {
       headers: { Host: "localhost:3000", "X-Forwarded-Proto": "http" },

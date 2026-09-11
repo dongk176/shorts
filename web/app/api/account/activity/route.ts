@@ -110,13 +110,13 @@ export async function GET(request: Request) {
       db`
         with activity as (
           select g.id::text || ':credited' as id,
-            case when g.product_code='creator_support_30min_v1' then g.valid_from else g.created_at end as occurred_at,
+            case when g.product_code in ('creator_support_30min_v1','creator_support_100min_v2') then g.valid_from else g.created_at end as occurred_at,
             case
               when enterprise_item.id is not null then 'enterprise_grant'
               when g.product_code='feedback_reward_30m' then 'feedback_reward'
               when g.product_code='editor_launch_bonus_20260728' then 'update_event_bonus'
               when g.product_code='onboarding_welcome_20min_v1' then 'welcome_grant'
-              when g.product_code='creator_support_30min_v1' then 'creator_support_grant'
+              when g.product_code in ('creator_support_30min_v1','creator_support_100min_v2') then 'creator_support_grant'
               when g.kind='addon' then 'addon_grant'
               when s.billing_cycle='yearly'
                 and o.approved_at is not null
@@ -137,7 +137,7 @@ export async function GET(request: Request) {
           left join shorts_mvp.enterprise_payment_items enterprise_item
             on enterprise_item.id=enterprise_entitlement.payment_item_id
           where g.user_id=${session.userId} and g.credited_seconds > 0
-            and (g.product_code<>'creator_support_30min_v1' or (g.valid_from<=clock_timestamp() and g.status<>'revoked'))
+            and (g.product_code not in ('creator_support_30min_v1','creator_support_100min_v2') or (g.valid_from<=clock_timestamp() and g.status<>'revoked'))
           union all
           select g.id::text || ':carried',g.created_at,'upgrade_carryover',
             g.product_code,enterprise_item.name,g.carried_seconds,
@@ -162,7 +162,7 @@ export async function GET(request: Request) {
       db`
         select (
           (select count(*) from shorts_mvp.usage_grants where user_id=${session.userId} and credited_seconds > 0
-            and (product_code<>'creator_support_30min_v1' or (valid_from<=clock_timestamp() and status<>'revoked')))
+            and (product_code not in ('creator_support_30min_v1','creator_support_100min_v2') or (valid_from<=clock_timestamp() and status<>'revoked')))
           +(select count(*) from shorts_mvp.usage_grants where user_id=${session.userId} and carried_seconds > 0)
           +(select count(*) from shorts_mvp.usage_events where user_id=${session.userId})
         )::integer as count

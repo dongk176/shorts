@@ -1,8 +1,17 @@
 export const OAUTH_NEXT_COOKIE = "easy_cut_oauth_next";
 
 export function safeNextPath(value: string | null) {
-  if (!value || !value.startsWith("/") || value.startsWith("//")) return "/";
+  if (!value || !value.startsWith("/") || value.startsWith("//") || /[\\\u0000-\u001f\u007f]/.test(value)) return "/";
   return value;
+}
+
+export function authFailureUrl(request: Pick<Request, "headers" | "url">, next: string, error: string) {
+  const origin = requestAppOrigin(request);
+  const destination = new URL(safeNextPath(next), origin);
+  const target = destination.pathname === "/creator-support" ? destination : new URL("/", origin);
+  if (target.pathname === "/creator-support") target.searchParams.set("step", "account");
+  target.searchParams.set("auth_error", error);
+  return target;
 }
 
 export function requestAppOrigin(request: Pick<Request, "headers" | "url">) {

@@ -140,8 +140,9 @@ describe.skipIf(!connection)("creator support PostgreSQL and authenticated APIs"
     const closed = await enrollPOST(jsonRequest("creator-support/enroll", await input()));
     expect(closed.status).toBe(409);
     context.authId = adminAuthId;
+    await db`update shorts_mvp.creator_support_programs set terms_version='2026-09-11.v2'`;
     expect((await adminPOST(jsonRequest("admin/creator-support", { action: "recruitment", open: true }))).status).toBe(409);
-    expect((await adminPOST(jsonRequest("admin/creator-support", { action: "legal_review", reference: "LOCAL TEST ONLY", reviewed: true }))).status).toBe(200);
+    expect((await adminPOST(jsonRequest("admin/creator-support", { action: "legal_review", reference: "LOCAL TEST ONLY", reviewed: true, termsVersion: "2026-09-11.v2" }))).status).toBe(200);
     expect((await adminPOST(jsonRequest("admin/creator-support", { action: "recruitment", open: true }))).status).toBe(200);
     expect((await db`select enrollment_open from shorts_mvp.creator_support_programs`)[0].enrollmentOpen).toBe(true);
   });

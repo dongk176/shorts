@@ -1,6 +1,7 @@
+import { CREATOR_APPLICATION_TERMS_VERSION as CREATOR_SUPPORT_TERMS_VERSION } from "@/lib/creator-application";
 import { z } from "zod";
 import { requireAdminUser } from "@/lib/admin";
-import { CREATOR_SUPPORT_PROGRAM, CREATOR_SUPPORT_TERMS_VERSION } from "@/lib/creator-support";
+import { CREATOR_SUPPORT_PROGRAM } from "@/lib/creator-support";
 import { creatorError, creatorJson, creatorProgram, getCreatorStatus, maintainCreatorSupport } from "@/lib/creator-support-server";
 import { readCreatorJson } from "@/lib/creator-support-upload";
 import { getDb } from "@/lib/db";
@@ -45,7 +46,7 @@ export async function GET(request: Request) {
 
 const reference = z.string().trim().min(5).max(500);
 const mutation = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("legal_review"), reference, reviewed: z.literal(true) }).strict(),
+  z.object({ action: z.literal("legal_review"), reference, reviewed: z.literal(true), termsVersion: z.literal(CREATOR_SUPPORT_TERMS_VERSION) }).strict(),
   z.object({ action: z.literal("recruitment"), open: z.boolean() }).strict(),
   z.object({ action: z.literal("verify_rights"), id: z.uuid(), reference, verified: z.literal(true) }).strict(),
   z.object({ action: z.literal("stop"), id: z.uuid(), reference }).strict(),
@@ -101,6 +102,10 @@ export async function POST(request: Request) {
           ${input.action === "recruitment" ? input.open ? "recruitment_opened" : "recruitment_closed" : input.action},
           ${"reference" in input ? input.reference : null})`;
     });
+    if (input.action === "stop") {
+      const { maintainCreatorApplications } = await import("@/lib/creator-application-server");
+      await maintainCreatorApplications(db);
+    }
     return creatorJson({ ok: true });
   } catch (error) { return creatorError(error); }
 }

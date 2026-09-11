@@ -1,8 +1,10 @@
 "use client";
 
 import Image from "next/image";
+import { creatorApplicationTerms as creatorSupportTerms, CREATOR_APPLICATION_TERMS_VERSION as CREATOR_SUPPORT_TERMS_VERSION } from "@/lib/creator-application";
+import { AdminCreatorApplications } from "./admin-creator-applications";
 import { useCallback, useEffect, useState } from "react";
-import { creatorKstDate, creatorSupportTerms, CREATOR_SUPPORT_TERMS_VERSION, type CreatorSupportStatus } from "@/lib/creator-support";
+import { creatorKstDate, type CreatorSupportStatus } from "@/lib/creator-support";
 
 type Program = { enrollmentOpen: boolean; retiredAt: string | null; legalReviewVersion: string | null; legalReviewReference: string | null; legalReviewedAt: string | null };
 type Item = {
@@ -66,19 +68,20 @@ export function AdminCreatorSupport() {
   }
   return <section className="space-y-5 text-neutral-200" data-i18n-skip>
     <div className="rounded-2xl border border-white/10 bg-white/[.025] p-5">
-      <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-bold">크리에이터 지원</h2><p className="mt-1 text-sm text-neutral-400">매월 30분 × 3회 · 홍보 이용 1년 · 추천인 수익형 파트너와 별도</p></div><a href="/creator-support" target="_blank" rel="noreferrer" className={buttonClass}>신청 화면 보기 ↗</a></div>
+      <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-bold">크리에이터 지원</h2><p className="mt-1 text-sm text-neutral-400">10명 선정 · 선정 후 매월 100분 × 3회 · 기존 참여자의 지급은 유지</p></div><a href="/creator-support" target="_blank" rel="noreferrer" className={buttonClass}>신청 화면 보기 ↗</a></div>
       <div className="mt-5 flex flex-wrap items-center gap-3"><strong className={data?.program?.enrollmentOpen ? "text-emerald-300" : "text-orange-200"}>신규 모집 {data?.program?.enrollmentOpen ? "ON" : "OFF"}</strong><button className={buttonClass} disabled={busy || !data?.schemaReady || Boolean(data.program?.retiredAt)} onClick={() => void mutate({ action: "recruitment", open: !data?.program?.enrollmentOpen }, "모집 상태를 변경했습니다. 기존 참여자의 지급 일정은 유지됩니다.")}>{data?.program?.enrollmentOpen ? "모집 중단" : "모집 시작"}</button><span className="text-xs text-neutral-400">모집 중단은 기존 참여자의 지급에 영향을 주지 않습니다.</span></div>
       {data && !data.schemaReady && <p className="mt-3 text-sm text-orange-200">데이터베이스 변경 적용 전입니다. 신규 모집은 OFF 상태입니다.</p>}
       <details className="mt-4 rounded-xl border border-white/10 p-4"><summary className="cursor-pointer text-sm font-semibold">공개 전 이용약정 법률 검토 · {CREATOR_SUPPORT_TERMS_VERSION}</summary>
-        <p className="my-3 text-xs text-neutral-400">완료 기록: {data?.program?.legalReviewedAt ? `${creatorKstDate(data.program.legalReviewedAt, true)} · ${data.program.legalReviewReference}` : "아직 없음"}</p>
+        <p className="my-3 text-xs text-neutral-400">완료 기록: {data?.program?.legalReviewVersion === CREATOR_SUPPORT_TERMS_VERSION && data.program.legalReviewedAt ? `${creatorKstDate(data.program.legalReviewedAt, true)} · ${data.program.legalReviewReference}` : "아직 없음"}</p>
         <p className="mb-3 text-sm text-neutral-300">필수 참여 동의, 제공받는 자·보유 기간, 광고 플랫폼 국외 이전, 1년 이용약정 및 철회 처리 조건을 실제 법률 검토한 뒤 기록해 주세요. 모집 시작은 검토 완료 기록이 있어야 가능합니다.</p>
         {creatorSupportTerms.map((term) => <details key={term.key} className="my-2 text-sm"><summary className="cursor-pointer text-orange-200">{term.title}</summary>{term.paragraphs.map((paragraph) => <p className="my-3 leading-7 text-neutral-400" key={paragraph}>{paragraph}</p>)}</details>)}
         <label className="mt-4 block text-sm">검토 문서·티켓 참조<input className="mt-2 w-full rounded-lg border border-white/20 bg-black/20 p-3" value={legalReference} maxLength={500} placeholder="개인정보를 적지 말고 검토 문서 번호 또는 내부 링크를 입력" onChange={(e) => setLegalReference(e.target.value)} /></label>
         <label className="my-3 flex items-start gap-2 text-sm"><input type="checkbox" checked={reviewed} onChange={(e) => setReviewed(e.target.checked)} />현재 버전의 이용약정에 대한 법률 검토가 실제로 완료됐습니다.</label>
-        <button className={buttonClass} disabled={busy || !data?.schemaReady || !reviewed || legalReference.trim().length < 5} onClick={() => void mutate({ action: "legal_review", reference: legalReference, reviewed: true }, "법률 검토 완료 기록을 저장했습니다.")}>검토 완료 기록 저장</button>
+        <button className={buttonClass} disabled={busy || !data?.schemaReady || !reviewed || legalReference.trim().length < 5} onClick={() => void mutate({ action: "legal_review", reference: legalReference, reviewed: true, termsVersion: CREATOR_SUPPORT_TERMS_VERSION }, "법률 검토 완료 기록을 저장했습니다.")}>검토 완료 기록 저장</button>
       </details>
       <details className="mt-3 rounded-xl border border-white/10 p-4 text-sm"><summary className="cursor-pointer">프로그램 영구 종료·최소 기록 보관 종료</summary><p className="my-3 text-neutral-400">영구 종료 후 같은 프로그램의 모집을 다시 열 수 없습니다. 기존 지급·이용약정은 유지되며, 지원 종료 후 1년이 지나면 중복 참여 확인용 최소 기록도 정리됩니다.</p><label className="flex items-start gap-2"><input type="checkbox" checked={retireConfirmed} onChange={(e) => setRetireConfirmed(e.target.checked)} />이번 프로그램의 신규 모집을 영구 종료합니다.</label><button className={`${buttonClass} mt-3`} disabled={busy || !retireConfirmed || !data?.schemaReady || Boolean(data.program?.retiredAt)} onClick={() => void mutate({ action: "retire", reference: "관리자 화면에서 모집 영구 종료 확인", confirmed: true }, "모집을 영구 종료했습니다. 기존 지원 약속은 유지됩니다.")}>{data?.program?.retiredAt ? "영구 종료됨" : "모집 영구 종료"}</button></details>
     </div>
+    <AdminCreatorApplications onSelected={() => { void refresh(); }} />
     {error && <p role="alert" className="rounded-xl bg-red-500/10 p-4 text-sm text-red-200">{error}</p>}
     {message && <p role="status" className="rounded-xl bg-emerald-500/10 p-4 text-sm text-emerald-200">{message}</p>}
     <div className="flex flex-wrap items-center justify-between gap-3"><label className="flex gap-2 text-sm"><input type="checkbox" checked={eligible} onChange={(e) => { setEligible(e.target.checked); setPage(1); }} />권리 확인이 완료된 홍보 사용 가능 목록만</label><div className="flex gap-2"><button className={buttonClass} disabled={busy} onClick={() => void refresh()}>새로고침</button><button className={buttonClass} disabled={busy || !data?.schemaReady} onClick={() => void mutate({ action: "maintenance" }, "종료 및 보관 기간이 지난 자료를 정리했습니다. 외부 게시·광고 중단은 아래에서 별도로 확인해 주세요.")}>종료·자료 정리 실행</button></div></div>

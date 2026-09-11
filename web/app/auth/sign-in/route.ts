@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { OAUTH_NEXT_COOKIE, requestAppOrigin, safeNextPath } from "@/lib/auth";
+import { authFailureUrl, OAUTH_NEXT_COOKIE, requestAppOrigin, safeNextPath } from "@/lib/auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function GET(request: NextRequest) {
+  const next = safeNextPath(request.nextUrl.searchParams.get("next"));
   try {
-    const next = safeNextPath(request.nextUrl.searchParams.get("next"));
     const provider = request.nextUrl.searchParams.get("provider");
     if (!provider) {
       const target = new URL("/", requestAppOrigin(request));
@@ -14,6 +14,7 @@ export async function GET(request: NextRequest) {
     }
     if (provider !== "google" && provider !== "kakao") throw new Error("AUTH_UNSUPPORTED_PROVIDER");
     const callback = new URL("/auth/callback", requestAppOrigin(request));
+    callback.searchParams.set("next", next);
     const supabase = await createSupabaseServerClient();
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider,
@@ -33,8 +34,7 @@ export async function GET(request: NextRequest) {
     });
     return response;
   } catch {
-    const target = new URL("/", requestAppOrigin(request));
-    target.searchParams.set("auth_error", "AUTH_START_FAILED");
+    const target = authFailureUrl(request, next, "AUTH_START_FAILED");
     return NextResponse.redirect(target, { status: 302 });
   }
 }

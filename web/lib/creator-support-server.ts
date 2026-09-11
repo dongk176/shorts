@@ -37,6 +37,15 @@ export function creatorJson(value: unknown, status = 200) {
 export function creatorError(error: unknown) {
   const message = error instanceof Error ? error.message : "";
   const codes: Record<string, [number, string]> = {
+    CREATOR_ALREADY_ENROLLED: [409, "이미 크리에이터 지원에 참여한 계정입니다."],
+    CREATOR_SELECTION_FULL: [409, "이번 파트너 모집이 마감됐어요."],
+    CREATOR_DUPLICATE_CHANNEL: [409, "이미 신청된 채널입니다."],
+    CREATOR_INVALID_CHANNEL: [400, "채널 링크를 확인해 주세요."],
+    CREATOR_INVALID_PHONE: [400, "휴대폰 번호를 확인해 주세요."],
+    CREATOR_APPLICATION_CLOSED: [409, "검토 대기 중인 신청만 선정할 수 있습니다."],
+    CREATOR_APPLICATION_NOT_FOUND: [404, "신청을 찾을 수 없습니다."],
+    CREATOR_ADMIN_REQUIRED: [403, "관리자 권한이 필요합니다."],
+    CREATOR_REVIEW_REQUIRED: [400, "선정 확인 내용을 입력해 주세요."],
     CREATOR_ENROLLMENT_CLOSED: [409, "지금은 신규 모집을 준비 중이거나 마감했어요. 기존 지원 일정은 유지됩니다."],
     CREATOR_TERMS_CHANGED: [409, "참여 조건이 변경됐어요. 새로고침 후 동의를 다시 확인해 주세요."],
     CREATOR_CONSENT_REQUIRED: [400, "참여 동의를 모두 확인해 주세요."],
@@ -122,6 +131,8 @@ export async function enrollCreator(account: Awaited<ReturnType<typeof requireCr
 /** Uses the existing billing maintenance invocation; grants activate without it. */
 export async function maintainCreatorSupport(db: Sql = getDb()) {
   if (!await creatorSchemaReady(db)) return { schemaReady: false, stopped: 0, materialsDeleted: 0 };
+  const { maintainCreatorApplications } = await import("./creator-application-server");
+  await maintainCreatorApplications(db);
   return db.begin(async (tx) => {
     const stopped = await tx`
       update shorts_mvp.creator_support_enrollments e set promotion_status='expired'
