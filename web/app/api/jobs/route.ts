@@ -420,7 +420,11 @@ export async function POST(request: Request) {
         dispatchTarget,
       });
       if (resolvedExecution.usesCustomTemplateDesign) {
-        await assertCustomTemplateDesignRenderRelease(tx, initialRenderRelease?.releaseId);
+        if (languageTest) {
+          await assertCustomTemplateDesignRenderRelease(tx, initialRenderRelease?.releaseId, { languageTest: true });
+        } else {
+          await assertCustomTemplateDesignRenderRelease(tx, initialRenderRelease?.releaseId);
+        }
       }
       if (initialRenderRelease) {
         initialEditorReleaseId = initialRenderRelease.releaseId;

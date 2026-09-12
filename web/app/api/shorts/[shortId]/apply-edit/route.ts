@@ -782,7 +782,11 @@ async function applyEditorDocument({
       if (!renderSpecV4Requested) {
         throw new HttpError(409, "새 배경·템플릿 편집기를 다시 열어 주세요.", "CUSTOM_TEMPLATE_DESIGN_RENDER_UNAVAILABLE");
       }
-      await assertCustomTemplateDesignRenderRelease(tx, lockedRelease.releaseId);
+      if (lockedRelease.languageTest) {
+        await assertCustomTemplateDesignRenderRelease(tx, lockedRelease.releaseId, { languageTest: true });
+      } else {
+        await assertCustomTemplateDesignRenderRelease(tx, lockedRelease.releaseId);
+      }
       if (backgroundIds.some((id) => !previousBackgroundIds.has(id))) {
         assertCustomTemplateDesignAccess(await lockCustomTemplateDesignAccess(tx, session.userId));
       }

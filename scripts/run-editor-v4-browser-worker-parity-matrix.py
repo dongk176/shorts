@@ -14,7 +14,7 @@ from typing import Any
 
 _CASE_ID = re.compile(r"^[a-z0-9-]{3,100}$")
 _HEX_SHA256 = re.compile(r"^[0-9a-f]{64}$")
-_REQUIRED_CASE_COUNT = 66
+_REQUIRED_CASE_COUNT = 69  # 21 fonts in both caption modes and title, plus boundaries.
 _OVERALL_TIMEOUT_SECONDS = 45 * 60
 
 

@@ -37,6 +37,7 @@ export async function lockTemplateDesignForSave(
 export async function assertCustomTemplateDesignRenderRelease(
   tx: TransactionSql,
   releaseId: string | null | undefined,
+  options?: { languageTest: boolean },
 ) {
   const unavailable = () => new HttpError(
     503,
@@ -44,7 +45,29 @@ export async function assertCustomTemplateDesignRenderRelease(
     "CUSTOM_TEMPLATE_DESIGN_RENDER_UNAVAILABLE",
   );
   if (!releaseId) throw unavailable();
-  const rows = await tx`
+  const rows = options?.languageTest ? await tx`
+    select r.git_sha,r.worker_image_digest,r.font_manifest_sha256,
+      r.render_spec_version,r.caption_render_spec_version,
+      l.verification#>>'{probe,id}' as probe_run_id,
+      l.verification#>>'{probe,gitSha}' as probe_git_sha,
+      l.verification#>>'{probe,workerImageDigest}' as probe_worker_image_digest,
+      l.verification#>>'{probe,fontManifestSha256}' as probe_font_manifest_sha256,
+      l.verification#>>'{probe,artifactUri}' as artifact_uri,
+      l.verification#>>'{probe,manifestSha256}' as manifest_sha256,
+      l.verification#>>'{probe,manifestS3VersionId}' as manifest_s3_version_id,
+      l.verification#>>'{probe,matrixSha256}' as matrix_sha256,
+      l.verification#>>'{probe,matrixS3VersionId}' as matrix_s3_version_id,
+      l.verification->>'details' as details_json,
+      l.verification#>>'{probe,artifactUri}' as check_artifact_uri
+    from shorts_mvp.editor_releases r
+    join shorts_mvp.language_test_releases l on l.id=r.id
+    where r.id=${releaseId} and l.verified_at is not null
+      and l.verification->>'kind'='admin-language-isolated-v1'
+      and l.verification#>>'{probe,batchStatus}'='SUCCEEDED'
+      and l.verification#>>'{browser,checks,browser-worker-visual-parity}'='true'
+      and l.verification#>>'{browser,checks,actualChromium}'='true'
+    for share of r,l
+  ` : await tx`
     select r.git_sha,r.worker_image_digest,r.font_manifest_sha256,
       r.render_spec_version,r.caption_render_spec_version,
       p.id as probe_run_id,p.git_sha as probe_git_sha,
@@ -89,7 +112,9 @@ export async function assertCustomTemplateDesignRenderRelease(
     || !row.manifestS3VersionId || !row.matrixS3VersionId) {
     throw unavailable();
   }
-  const checks = await tx`
+  const checks = options?.languageTest ? CUSTOM_TEMPLATE_DESIGN_ISOLATED_CHECKS
+    .filter((check) => details?.checks?.[check] === true)
+    .map((checkName) => ({ checkName, status: "passed" })) : await tx`
     select check_name,status from shorts_mvp.editor_release_checks
     where release_id=${releaseId} and environment='isolated'
       and check_name=any(${[...CUSTOM_TEMPLATE_DESIGN_ISOLATED_CHECKS]})

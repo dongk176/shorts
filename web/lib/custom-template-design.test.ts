@@ -86,6 +86,28 @@ describe("design save admission", () => {
 });
 
 describe("immutable design renderer evidence", () => {
+  it("uses separately attested feature artifacts without changing public evidence", async () => {
+    const row = verifiedRow();
+    const featureRow = databaseRow({ ...row, details: { ...row.details,
+      checks: Object.fromEntries(CUSTOM_TEMPLATE_DESIGN_ISOLATED_CHECKS.map((name) => [name, true])),
+    } });
+    const db = vi.fn().mockResolvedValue([featureRow]);
+    await expect(assertCustomTemplateDesignRenderRelease(db as never, RELEASE, { languageTest: true }))
+      .resolves.toEqual({ compatibleSuccessor: undefined });
+    expect(db).toHaveBeenCalledTimes(1);
+    const query = db.mock.calls[0][0].join("?");
+    expect(query).toContain("admin-language-isolated-v1");
+    expect(query).toContain("batchStatus}");
+    expect(query).toContain("actualChromium}");
+    for (const failed of CUSTOM_TEMPLATE_DESIGN_ISOLATED_CHECKS) {
+      const details = JSON.parse(featureRow.detailsJson);
+      details.checks[failed] = false;
+      db.mockResolvedValue([{ ...featureRow, detailsJson: JSON.stringify(details) }]);
+      await expect(assertCustomTemplateDesignRenderRelease(db as never, RELEASE, { languageTest: true }))
+        .rejects.toMatchObject({ status: 503 });
+    }
+  });
+
   it("preserves exact attested lane keys without changing the shared database transform", async () => {
     const row = databaseRow();
     const compatibleSuccessor = { projectTargets: {

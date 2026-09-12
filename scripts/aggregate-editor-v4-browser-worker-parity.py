@@ -66,7 +66,7 @@ def _validate_matrix_coverage(matrix: dict[str, Any]) -> set[str]:
         or matrix.get("renderer") != "isolated-linux-worker-v4"
         or not isinstance(cases, list)
         or matrix.get("caseCount") != len(cases)
-        or len(cases) != 66
+        or len(cases) != 69
     ):
         raise RuntimeError("Worker browser parity matrix is incomplete")
     coverage: set[str] = set()
@@ -199,7 +199,7 @@ def _validate_matrix_coverage(matrix: dict[str, Any]) -> set[str]:
         or set(font_modes) != fonts
         or title_fonts != fonts
         or any(modes != {"pop", "highlight"} for modes in font_modes.values())
-        or len(fonts) != 20
+        or len(fonts) != 21
     ):
         raise RuntimeError("Worker browser parity coverage/font matrix is incomplete")
     return fonts
