@@ -5,6 +5,7 @@ import { TEAM_PAGE_VISIBLE } from "@/lib/site-visibility";
 const publicRoutes = [
   { path: "/", changeFrequency: "weekly", priority: 1 },
   { path: "/ai-shorts-maker", changeFrequency: "monthly", priority: 0.9 },
+  { path: "/guidebook", changeFrequency: "monthly", priority: 0.8 },
   { path: "/templates", changeFrequency: "monthly", priority: 0.8 },
   { path: "/pricing", changeFrequency: "monthly", priority: 0.8 },
   { path: "/popular", changeFrequency: "daily", priority: 0.8 },

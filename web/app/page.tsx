@@ -5,15 +5,16 @@ import { createPageMetadata, DEFAULT_DESCRIPTION, SITE_NAME, SITE_URL } from "@/
 import { getRequestLocale } from "@/lib/i18n/server";
 import { localizedValue } from "@/lib/i18n/config";
 import { loadMvpState } from "@/lib/mvp-state";
+import { tossPlan } from "@/lib/toss-subscription";
 import { ShortsApp } from "./shorts-app";
 
 export async function generateMetadata(): Promise<Metadata> {
   const locale = await getRequestLocale();
   return createPageMetadata({
     title: localizedValue(locale, {
-      ko: "이지컷",
-      en: "Easy Cut",
-      ja: "Easy Cut",
+      ko: "이지컷 | AI 쇼츠 자동 제작·유튜브 영상 편집",
+      en: "Easy Cut | AI YouTube Shorts Maker & Video Editor",
+      ja: "Easy Cut | AIショート動画作成・YouTube動画編集",
     }),
     description: localizedValue(locale, { ko: DEFAULT_DESCRIPTION, en: "Paste a YouTube link and let AI find highlights, create 30–60 second Shorts, hook titles, and captions automatically.", ja: "YouTubeリンクを貼り付けるだけで、AIがハイライトを見つけ、30〜60秒のショート動画、フックタイトル、字幕を自動作成します。" }),
     path: "/",
@@ -30,6 +31,7 @@ export default async function Home() {
       return null;
     }),
   ]);
+  const monthlyPlan = tossPlan("toss_easycut_pro_1m");
   const applicationData = {
     "@context": "https://schema.org",
     "@type": "WebApplication",
@@ -51,9 +53,14 @@ export default async function Home() {
       localizedValue(locale, { ko: "제목과 자막 편집", en: "Title and caption editing", ja: "タイトルと字幕の編集" }),
     ],
     offers: [
-      { "@type": "Offer", name: "PLUS", price: "9900", priceCurrency: "KRW", url: `${SITE_URL}/pricing` },
-      { "@type": "Offer", name: "STANDARD", price: "19900", priceCurrency: "KRW", url: `${SITE_URL}/pricing` },
-      { "@type": "Offer", name: "PRO", price: "49900", priceCurrency: "KRW", url: `${SITE_URL}/pricing` },
+      {
+        "@type": "Offer",
+        name: monthlyPlan.displayName,
+        description: "월간 구독 · 매월 결제",
+        price: String(monthlyPlan.priceKrw),
+        priceCurrency: "KRW",
+        url: `${SITE_URL}/pricing`,
+      },
     ],
     provider: { "@id": `${SITE_URL}/#organization` },
   };

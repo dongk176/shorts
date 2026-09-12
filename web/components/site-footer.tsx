@@ -29,6 +29,9 @@ export function SiteFooter() {
           <li><a href="tel:010-4836-2874">{t("footer.supportPhone")}</a></li>
         </ul>
         <nav className="site-footer-links" aria-label={t("footer.links")}>
+          <Link href="/ai-shorts-maker">{t("footer.shortsGuide")}</Link>
+          <Link href="/guidebook">{t("footer.guidebook")}</Link>
+          <Link href="/compare/ai-shorts-tools">{t("footer.toolsComparison")}</Link>
           <Link href="/pricing">{t("nav.pricing")}</Link>
           {TEAM_PAGE_VISIBLE ? (
             <Link href="/team">{t("footer.team")}</Link>
