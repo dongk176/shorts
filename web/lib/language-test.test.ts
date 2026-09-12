@@ -13,7 +13,7 @@ const registry = { version: 1, environment: "production", lanes: Object.fromEntr
   jobQueueArn: "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-language-test-production",
   renderSpecVersion: 4, captionRenderSpecVersion: 4, fontManifestSha256: font,
 } }])) };
-const ready = { enabled: true, verifiedAt: new Date(), stagingVerifiedAt: new Date(), registry, releaseId: id,
+const ready = { enabled: true, verifiedAt: new Date(), stagingVerifiedAt: new Date(), registryJson: JSON.stringify(registry), releaseId: id,
   gitSha: sha, workerImageDigest: digest, fontManifestSha256: font, status: "canary_ready",
   uiVersion: 3, documentVersion: 3, renderSpecVersion: 4, captionRenderSpecVersion: 4 };
 function database(run: (sql: string) => unknown[]) {
@@ -23,7 +23,8 @@ function database(run: (sql: string) => unknown[]) {
 describe("independent administrator language release", () => {
   it("accepts only exact registered source, image and font identities", async () => {
     for (const change of [{}, { gitSha: "d".repeat(40) }, { workerImageDigest: `sha256:${"e".repeat(64)}` },
-      { fontManifestSha256: "f".repeat(64) }, { stagingVerifiedAt: null }, { status: "draft" }, { registry: { ...registry, environment: "lab" } }]) {
+      { fontManifestSha256: "f".repeat(64) }, { stagingVerifiedAt: null }, { status: "draft" },
+      { registryJson: JSON.stringify({ ...registry, environment: "lab" }) }, { registryJson: "invalid" }]) {
       const state = await languageTestStatus(database(() => [{ ...ready, ...change }]));
       expect(state.ready).toBe(Object.keys(change).length === 0);
       if (state.registry) expect(languageTestTarget({ registry: state.registry }, "legacy_project").workerImageDigest).toBe(digest);

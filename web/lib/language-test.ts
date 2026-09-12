@@ -15,7 +15,7 @@ const targetSchema = z.object({
   renderSpecVersion: z.literal(4), captionRenderSpecVersion: z.literal(4),
   fontManifestSha256: z.string().regex(/^[a-f0-9]{64}$/),
 }).strict();
-const lane = z.object({ current: targetSchema, previous: z.null(), schedulingMode: z.enum(["fair_share", "fifo"]) }).strict();
+const lane = z.object({ current: targetSchema, previous: z.null(), schedulingMode: z.literal("fifo") }).strict();
 export const languageTestRegistrySchema = z.object({
   version: z.literal(1), environment: z.literal("production"),
   lanes: z.object({ legacy_project: lane, source_range: lane, elevenlabs_transcription: lane, subtitle_templates: lane, unified_template_subtitles: lane }).strict(),
@@ -26,17 +26,20 @@ export function languageTestUnavailable() { return new HttpError(503, LANGUAGE_T
 
 export async function languageTestStatus(db: Db) {
   const rows = await db`
-    select s.enabled,s.release_id,r.verified_at,r.registry,
+    select s.enabled,s.release_id,r.verified_at,r.registry::text as registry_json,
       e.git_sha,e.worker_image_digest,e.font_manifest_sha256,e.status,e.ui_version,e.document_version,e.staging_verified_at,e.render_spec_version,e.caption_render_spec_version
     from shorts_mvp.language_test_settings s
     left join shorts_mvp.language_test_releases r on r.id=s.release_id
     left join shorts_mvp.editor_releases e on e.id=r.id where s.singleton
   `;
   const row = rows[0];
-  const parsed = languageTestRegistrySchema.safeParse(row?.registry);
+  // postgres.camel also transforms JSON keys, including immutable lane names.
+  let registry: unknown = null;
+  try { registry = JSON.parse(row?.registryJson ?? "null"); } catch { /* Fail closed. */ }
+  const parsed = languageTestRegistrySchema.safeParse(registry);
   const ready = Boolean(row?.verifiedAt && parsed.success
     && ["canary_ready", "canary_active", "approved"].includes(row.status)
-    && row.documentVersion === 3 && row.stagingVerifiedAt
+    && row.uiVersion === 3 && row.documentVersion === 3 && row.stagingVerifiedAt
     && row.renderSpecVersion === 4 && row.captionRenderSpecVersion === 4
     && Object.values(parsed.data!.lanes).every(({ current: t }) => t.workerSourceGitSha === row.gitSha
       && t.imageUri.endsWith(`@${row.workerImageDigest}`) && t.fontManifestSha256 === row.fontManifestSha256));
