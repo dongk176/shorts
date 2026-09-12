@@ -1,8 +1,9 @@
 import type { Sql } from "postgres";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 import {
   getPublicSiteMetrics,
+  refreshCatalogViewCounter,
   refreshReusableViewCounterSchedule,
 } from "./reusable-view-counter-server";
 import { projectReusableViewCounter } from "./reusable-view-counter";
@@ -23,7 +24,7 @@ function fakeDb(options: {
     if (text.includes("from shorts_mvp.site_metrics")) {
       return Promise.resolve(options.metrics || []);
     }
-    if (text.includes("with run_window as")) {
+    if (text.includes("with run_window as") || text.includes("from shorts_mvp.youtube_catalog c")) {
       return Promise.resolve(options.aggregate ? [options.aggregate] : []);
     }
     return Promise.resolve([]);
@@ -132,5 +133,102 @@ describe("reusable view counter persistence", () => {
     expect(result.startValue).toBe(projected);
     expect(result.targetValue).toBe(900_000_000);
     expect(result.endsAt).toBe("2026-09-04T08:00:00.000Z");
+  });
+});
+
+describe("catalog view counter animation", () => {
+  afterEach(() => vi.unstubAllEnvs());
+  const existing = {
+    startValue: 1_000_000,
+    targetValue: 1_086_400,
+    startedAt: "2026-09-12T00:00:00.000Z",
+    endsAt: "2026-09-12T12:00:00.000Z",
+  };
+  function catalogDb(total: string, schedule: typeof existing | null = existing) {
+    vi.stubEnv("YOUTUBE_DISCOVERY_ENABLED", "true");
+    vi.stubEnv("YOUTUBE_CATALOG_READS_ENABLED", "true");
+    return fakeDb({
+      metrics: schedule ? [
+        { key: "reusable_views_start", value: String(schedule.startValue) },
+        { key: "reusable_views_target", value: String(schedule.targetValue) },
+        { key: "reusable_views_started_at_ms", value: String(Date.parse(schedule.startedAt)) },
+        { key: "reusable_views_ends_at_ms", value: String(Date.parse(schedule.endsAt)) },
+      ] : [],
+      aggregate: { total },
+    });
+  }
+  function writes(db: Sql) {
+    return (db as unknown as ReturnType<typeof vi.fn>).mock.calls
+      .filter(([first]) => sqlText(first).includes("insert into shorts_mvp.site_metrics"));
+  }
+
+  it("restores five-second increases from the flat counter saved by the old catalog", async () => {
+    const db = catalogDb("1100000", { ...existing, targetValue: existing.startValue });
+    const now = new Date("2026-09-12T06:00:00Z");
+    const schedule = await refreshCatalogViewCounter(db, now);
+    expect(schedule).toMatchObject({ startValue: 1_000_000, targetValue: 1_100_000 });
+    expect(projectReusableViewCounter(schedule!, now.getTime() + 5_000).value).toBeGreaterThan(1_000_000);
+    expect(writes(db)[0]).toContain(1_000_000);
+    expect(writes(db)[0]).toContain(1_100_000);
+  });
+
+  it("continues from the displayed count and retains the deadline when the total grows again", async () => {
+    const db = catalogDb("1200000");
+    const now = new Date("2026-09-12T06:00:00Z");
+    const schedule = await refreshCatalogViewCounter(db, now);
+    expect(schedule).toEqual({
+      startValue: projectReusableViewCounter(existing, now.getTime()).value,
+      targetValue: 1_200_000,
+      startedAt: now.toISOString(),
+      endsAt: existing.endsAt,
+    });
+  });
+
+  it.each(["2026-09-12T06:00:00Z", "2026-09-13T06:00:00Z"])("keeps an unchanged target without restarting the animation at %s", async (time) => {
+    const db = catalogDb(String(existing.targetValue));
+    expect(await refreshCatalogViewCounter(db, new Date(time))).toEqual(existing);
+    expect(writes(db)).toHaveLength(0);
+  });
+
+  it("immediately removes views below the displayed count", async () => {
+    const db = catalogDb("800000");
+    const now = new Date("2026-09-12T06:00:00Z");
+    const schedule = await refreshCatalogViewCounter(db, now);
+    expect(schedule).toMatchObject({ startValue: 800_000, targetValue: 800_000 });
+    expect(projectReusableViewCounter(schedule!, now.getTime()).value).toBe(800_000);
+  });
+
+  it("caps remaining animation at a reduced total that is still above the displayed count", async () => {
+    const db = catalogDb("1060000");
+    const now = new Date("2026-09-12T06:00:00Z");
+    const schedule = await refreshCatalogViewCounter(db, now);
+    expect(schedule?.startValue).toBe(1_043_200);
+    expect(projectReusableViewCounter(schedule!, Date.parse(existing.endsAt)).value).toBe(1_060_000);
+  });
+
+  it("starts a new twelve-hour window after the previous increase has finished", async () => {
+    const db = catalogDb("1200000");
+    expect(await refreshCatalogViewCounter(db, new Date("2026-09-13T06:00:00Z"))).toMatchObject({
+      startValue: existing.targetValue,
+      endsAt: "2026-09-13T18:00:00.000Z",
+    });
+  });
+
+  it("uses the actual total on first collection without inventing a starting count", async () => {
+    const db = catalogDb("1200000", null);
+    expect(await refreshCatalogViewCounter(db, new Date(existing.startedAt))).toMatchObject({ startValue: 1_200_000, targetValue: 1_200_000 });
+  });
+
+  it("leaves legacy metrics untouched when catalog reads are off", async () => {
+    const db = catalogDb("1200000");
+    vi.stubEnv("YOUTUBE_CATALOG_READS_ENABLED", "false");
+    await refreshCatalogViewCounter(db, new Date());
+    expect(db).not.toHaveBeenCalled();
+  });
+
+  it.each(["-1", "NaN", "9007199254740992"])("does not overwrite the last good schedule with invalid total %s", async (total) => {
+    const db = catalogDb(total);
+    await expect(refreshCatalogViewCounter(db, new Date())).rejects.toThrow("REUSABLE_VIEW_COUNTER_VALUE_OUT_OF_RANGE");
+    expect(writes(db)).toHaveLength(0);
   });
 });

@@ -43,7 +43,8 @@ import {
 } from "./youtube-quota";
 import { analyzeYoutubeUrl } from "./youtube";
 import { collectFreeVideos } from "./youtube-free";
-import { refreshCatalogViewCounter } from "./reusable-view-counter-server";
+import { getReusableViewCounterSchedule, refreshCatalogViewCounter } from "./reusable-view-counter-server";
+import { projectReusableViewCounter } from "./reusable-view-counter";
 import {
   kstDate,
   discoverySince,
@@ -303,6 +304,29 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
     vi.stubEnv("YOUTUBE_CATALOG_READS_ENABLED", "true");
     await refreshCatalogViewCounter(db,new Date());
     expect((await db`select value from shorts_mvp.site_metrics where key='reusable_views_target'`)[0].value).toBe('500');
+  });
+
+  it("persists animation through concurrent collections, unchanged totals, and license removal", async () => {
+    const now = new Date();
+    await db`delete from shorts_mvp.site_metrics where key like 'reusable_views_%'`;
+    await db.begin(async (tx) => {
+      await saveCatalogPage(tx, [fixture('counter0001', { license: 'creativeCommon', viewCount: 1_000_000 })], { observedAt: now });
+      await refreshCatalogViewCounter(tx, now);
+    });
+    await Promise.all(['counter0002', 'counter0003'].map((id) => db.begin(async (tx) => {
+      await saveCatalogPage(tx, [fixture(id, { license: 'creativeCommon', viewCount: 500_000 })], { observedAt: now });
+      await refreshCatalogViewCounter(tx, now);
+    })));
+    const growing = await getReusableViewCounterSchedule(db);
+    expect(growing).toMatchObject({ startValue: 1_000_000, targetValue: 2_000_000 });
+    expect(projectReusableViewCounter(growing!, now.getTime() + 5_000).value).toBeGreaterThan(1_000_000);
+    await db.begin((tx) => refreshCatalogViewCounter(tx, new Date(now.getTime() + 60_000)));
+    expect(await getReusableViewCounterSchedule(db)).toEqual(growing);
+    await db.begin(async (tx) => {
+      await tx`update shorts_mvp.youtube_catalog set metadata=jsonb_set(metadata,'{license}','"youtube"') where video_id in ('counter0001','counter0002')`;
+      await refreshCatalogViewCounter(tx, new Date(now.getTime() + 60_000));
+    });
+    expect(await getReusableViewCounterSchedule(db)).toMatchObject({ startValue: 500_000, targetValue: 500_000 });
   });
 
   it("adds opening balances atomically without fabricating requests or counting a replayed setup twice", async () => {

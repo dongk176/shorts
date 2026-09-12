@@ -171,15 +171,37 @@ export async function refreshCatalogViewCounter(db: CounterSql, now: Date) {
   // During backfill the catalog is intentionally incomplete. Keep the live
   // legacy counter until the validated catalog actually serves the UI.
   if (!catalogReadsEnabled()) return;
+  if (!Number.isFinite(now.getTime())) {
+    throw new Error("REUSABLE_VIEW_COUNTER_TIME_INVALID");
+  }
+  // Collection callers already hold a transaction. Serialize only counter
+  // refreshes so overlapping collectors continue the latest saved animation.
+  await db`select pg_advisory_xact_lock(hashtext('shorts_mvp.reusable_views_counter'))`;
+  const storedSchedule = await getReusableViewCounterSchedule(db);
   const [row] = await db`select coalesce(sum((metadata->>'viewCount')::bigint),0)::bigint as total
     from shorts_mvp.youtube_catalog c where (exists(select 1 from shorts_mvp.youtube_catalog_regions r where r.catalog_id=c.id and (r.region_code='KR' or (${japaneseDiscoveryEnabled()} and exists(select 1 from shorts_mvp.youtube_quota_verifications q where q.project_id=${process.env.YOUTUBE_QUOTA_PROJECT_ID || ""} and q.japan_discovery_enabled)))) or not exists(select 1 from shorts_mvp.youtube_catalog_regions r where r.catalog_id=c.id)) and availability='public' and metadata->>'license'='creativeCommon'
       and verified_at>clock_timestamp()-interval '30 days'`;
   const total=Number(row.total);
   if (!Number.isSafeInteger(total) || total<0) throw new Error("REUSABLE_VIEW_COUNTER_VALUE_OUT_OF_RANGE");
-  // License removals must also decrease the displayed counter immediately.
+  // Repeated metadata refreshes must not restart or postpone the same increase.
+  if (storedSchedule?.targetValue === total) return storedSchedule;
+  const startedAtMs = Math.max(now.getTime(), storedSchedule ? Date.parse(storedSchedule.startedAt) : 0);
+  const displayedValue = storedSchedule
+    ? projectReusableViewCounter(storedSchedule, startedAtMs).value
+    : total;
+  // Never animate invented views or retain views removed by a license change.
+  const startValue = Math.min(total, displayedValue);
+  const previousEnd = storedSchedule ? Date.parse(storedSchedule.endsAt) : 0;
+  const endsAtMs = previousEnd > startedAtMs ? previousEnd : startedAtMs + 12 * 3_600_000;
   await db`insert into shorts_mvp.site_metrics(key,value,updated_at) values
-    ('reusable_views_start',${total},${now}),('reusable_views_target',${total},${now}),
-    ('reusable_views_started_at_ms',${now.getTime()},${now}),
-    ('reusable_views_ends_at_ms',${now.getTime()+12*3_600_000},${now})
+    ('reusable_views_start',${startValue},${now}),('reusable_views_target',${total},${now}),
+    ('reusable_views_started_at_ms',${startedAtMs},${now}),
+    ('reusable_views_ends_at_ms',${endsAtMs},${now})
     on conflict(key) do update set value=excluded.value,updated_at=excluded.updated_at`;
+  return {
+    startValue,
+    targetValue: total,
+    startedAt: new Date(startedAtMs).toISOString(),
+    endsAt: new Date(endsAtMs).toISOString(),
+  } satisfies ReusableViewCounterSchedule;
 }
