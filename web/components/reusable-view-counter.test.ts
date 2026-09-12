@@ -22,13 +22,19 @@ describe("reusable view counter UI", () => {
     expect(source).not.toContain('href="/popular"');
   });
 
-  it("updates locally without polling the server", () => {
+  it("animates locally and checks only stored public metrics once a minute", () => {
     expect(source).toContain("window.setTimeout(");
     expect(source).toContain("COUNTER_ANIMATION_DURATION_MS = 1_800");
     expect(source).toContain("window.requestAnimationFrame(animate)");
     expect(source).toContain('document.addEventListener("visibilitychange"');
-    expect(source).not.toContain("fetch(");
+    expect(source).toContain("METRIC_REFRESH_INTERVAL_MS = 60_000");
+    expect(source.match(/fetch\(/g)).toHaveLength(1);
+    expect(source).toContain('fetch("/api/site-metrics"');
+    expect(source).not.toContain("/api/mvp/state");
+    expect(source).not.toContain("/api/youtube");
     expect(source).not.toContain("requestJson");
+    expect(source).toContain("stopped || document.hidden || controller");
+    expect(source).toContain("[changeTimes, schedule]");
   });
 
   it("automatically rotates metrics every seven seconds and restarts after a click", () => {

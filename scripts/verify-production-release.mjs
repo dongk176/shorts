@@ -42,6 +42,7 @@ export const PROTECTED_APP_ROUTES = [
 // These routes are the only intentional additions relative to the currently
 // promoted production manifest. Everything else must still fail closed.
 export const ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE = [
+  "/api/site-metrics/route",
   "/api/admin/language-test/route",
   "/api/creator-support/application/route",
   "/api/admin/creator-support/applications/route",

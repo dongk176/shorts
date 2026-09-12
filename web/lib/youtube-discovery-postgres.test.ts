@@ -1262,15 +1262,20 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
       return new Response(JSON.stringify({items:[item],nextPageToken:"never-follow"}));
     });
     const scheduledAt = new Date();
-    const [result] = await Promise.all([
+    const results = await Promise.all([
       collectJapanVideos({db,fetchImpl:fake,scheduledAt}),
       collectJapanVideos({db,fetchImpl:fake,scheduledAt}),
     ]);
-    expect(result).toMatchObject({skipped:false,failed:false}); expect(fake).toHaveBeenCalledTimes(27);
+    expect(results.filter(result => !result.skipped)).toEqual([expect.objectContaining({skipped:false,failed:false})]);
+    expect(results.filter(result => result.skipped)).toHaveLength(1);
+    expect(fake).toHaveBeenCalledTimes(27);
     expect(maximumFetches).toBe(1);
     const counts = await db`select bucket,sum(units)::int as units from shorts_mvp.youtube_quota_attempts where region_code='JP' group by bucket order by bucket`;
     expect(counts.map(row=>[row.bucket,row.units])).toEqual([["general",17],["search",10]]);
     expect((await getCatalogVideos(filters({japanese:true}),db)).items.every(item=>item.title==="楽しい動画")).toBe(true);
+    // Japan's successful collection updates the counter without waiting for a
+    // later Korean metadata refresh, and adds no YouTube requests.
+    expect((await getReusableViewCounterSchedule(db))?.targetValue).toBe(700);
     await collectJapanVideos({db,fetchImpl:fake,scheduledAt}); expect(fake).toHaveBeenCalledTimes(27);
     expect((await db`select count(*)::int n from shorts_mvp.popular_video_runs`)[0].n).toBe(0);
   });

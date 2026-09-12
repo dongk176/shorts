@@ -2,6 +2,7 @@ import "server-only";
 
 import type { Sql, TransactionSql } from "postgres";
 import { catalogReadsEnabled, japaneseDiscoveryEnabled } from "@/lib/youtube-quota";
+import { nextReusableDiscoveryAt } from "@/lib/youtube-discovery-time";
 import {
   nextDailyReusableCollectionAt,
   projectReusableViewCounter,
@@ -183,16 +184,16 @@ export async function refreshCatalogViewCounter(db: CounterSql, now: Date) {
       and verified_at>clock_timestamp()-interval '30 days'`;
   const total=Number(row.total);
   if (!Number.isSafeInteger(total) || total<0) throw new Error("REUSABLE_VIEW_COUNTER_VALUE_OUT_OF_RANGE");
-  // Repeated metadata refreshes must not restart or postpone the same increase.
-  if (storedSchedule?.targetValue === total) return storedSchedule;
   const startedAtMs = Math.max(now.getTime(), storedSchedule ? Date.parse(storedSchedule.startedAt) : 0);
+  const endsAtMs = nextReusableDiscoveryAt(new Date(startedAtMs)).getTime();
+  // Keep repeated updates in the same collection interval stable. This also
+  // repairs schedules saved with the old arbitrary twelve-hour deadline.
+  if (storedSchedule?.targetValue === total && Date.parse(storedSchedule.endsAt) === endsAtMs) return storedSchedule;
   const displayedValue = storedSchedule
     ? projectReusableViewCounter(storedSchedule, startedAtMs).value
     : total;
   // Never animate invented views or retain views removed by a license change.
   const startValue = Math.min(total, displayedValue);
-  const previousEnd = storedSchedule ? Date.parse(storedSchedule.endsAt) : 0;
-  const endsAtMs = previousEnd > startedAtMs ? previousEnd : startedAtMs + 12 * 3_600_000;
   await db`insert into shorts_mvp.site_metrics(key,value,updated_at) values
     ('reusable_views_start',${startValue},${now}),('reusable_views_target',${total},${now}),
     ('reusable_views_started_at_ms',${startedAtMs},${now}),

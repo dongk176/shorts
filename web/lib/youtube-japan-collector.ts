@@ -7,6 +7,7 @@ import { DAY_MS, kstDate } from "@/lib/youtube-discovery-time";
 import { requestFreeSearchPage, requestVideoDetails, verifiedCatalogDetails, type SearchVideoSource } from "@/lib/youtube-free";
 import { normalizePage, popularVideoSourceCategories, requestPopularPage } from "@/lib/youtube-popular";
 import { japaneseCollectionEnabled, japaneseQuotaVerified, withYoutubePurpose, YoutubeQuotaError } from "@/lib/youtube-quota";
+import { refreshCatalogViewCounter } from "@/lib/reusable-view-counter-server";
 
 type JapanLane = "trending" | "reusable" | "views";
 export function japanSearchSources(lane: "views" | "reusable", scheduledAt: Date): SearchVideoSource[] {
@@ -87,6 +88,8 @@ export async function collectJapanVideos(options: {
         await saveCatalogPage(tx, items, { runId, regionCode: "JP", trending: lane === "trending", observedAt: now });
         await tx`update shorts_mvp.youtube_collection_runs set status='success',finished_at=${now},page_count=${pages},
           item_count=${new Set(items.map(item => item.videoId)).size} where id=${runId}`;
+        await tx.savepoint(counterDb => refreshCatalogViewCounter(counterDb, now))
+          .catch(() => console.error("youtube_catalog_counter_refresh_failed"));
       });
       results.push({ lane, items: new Set(items.map(item => item.videoId)).size });
     } catch (error) {

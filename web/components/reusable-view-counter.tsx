@@ -11,14 +11,16 @@ import {
 
 const COUNTER_ANIMATION_DURATION_MS = 1_800;
 const METRIC_ROTATION_INTERVAL_MS = 7_000;
+const METRIC_REFRESH_INTERVAL_MS = 60_000;
 
-function scheduleFromState(counter: ReusableViewCounterState) {
-  return {
-    startValue: counter.startValue,
-    targetValue: counter.targetValue,
-    startedAt: counter.startedAt,
-    endsAt: counter.endsAt,
-  };
+type PublicMetrics = {
+  reusableViewCounter: ReusableViewCounterState | null;
+  generatedShortCount: number | null;
+};
+
+function sameSchedule(left: ReusableViewCounterState | null, right: ReusableViewCounterState | null) {
+  return left?.startValue === right?.startValue && left?.targetValue === right?.targetValue
+    && left?.startedAt === right?.startedAt && left?.endsAt === right?.endsAt;
 }
 
 function numberLocale(locale: SiteLocale) {
@@ -69,8 +71,8 @@ function accessibleLabel(
 }
 
 export function ReusableViewCounter({
-  counter,
-  generatedShortCount,
+  counter: initialCounter,
+  generatedShortCount: initialGeneratedShortCount,
   locale,
   className = "",
 }: {
@@ -79,11 +81,77 @@ export function ReusableViewCounter({
   locale: SiteLocale;
   className?: string;
 }) {
+  const [liveMetrics, setLiveMetrics] = useState<PublicMetrics | null>(null);
+  const useLiveMetrics = Boolean(liveMetrics?.reusableViewCounter && (
+    !initialCounter
+    || Date.parse(liveMetrics.reusableViewCounter.startedAt) > Date.parse(initialCounter.startedAt)
+    || (liveMetrics.reusableViewCounter.startedAt === initialCounter.startedAt
+      && Date.parse(liveMetrics.reusableViewCounter.serverNow) >= Date.parse(initialCounter.serverNow))
+  ));
+  const counter = useLiveMetrics ? liveMetrics!.reusableViewCounter : initialCounter;
+  const generatedShortCount = useLiveMetrics ? liveMetrics!.generatedShortCount : initialGeneratedShortCount;
+
+  useEffect(() => {
+    let stopped = false;
+    let timer: number | undefined;
+    let controller: AbortController | null = null;
+    const clearTimer = () => {
+      if (timer !== undefined) window.clearTimeout(timer);
+      timer = undefined;
+    };
+    const refresh = async () => {
+      clearTimer();
+      if (stopped || document.hidden || controller) return;
+      const request = new AbortController();
+      controller = request;
+      const deadline = window.setTimeout(() => request.abort(), 8_000);
+      try {
+        const response = await fetch("/api/site-metrics", { signal: request.signal, cache: "no-store" });
+        if (!response.ok) return;
+        const value = await response.json() as PublicMetrics;
+        const next = value.reusableViewCounter;
+        if (!next || !Number.isSafeInteger(next.startValue) || !Number.isSafeInteger(next.targetValue)
+          || next.startValue < 0 || next.targetValue < next.startValue
+          || !Number.isFinite(Date.parse(next.serverNow))
+          || !Number.isFinite(Date.parse(next.startedAt)) || !Number.isFinite(Date.parse(next.endsAt))
+          || Date.parse(next.endsAt) <= Date.parse(next.startedAt)
+          || !Number.isSafeInteger(value.generatedShortCount) || value.generatedShortCount! < 0) return;
+        if (!stopped && !request.signal.aborted) setLiveMetrics(previous =>
+          previous && sameSchedule(previous.reusableViewCounter, next)
+            && previous.generatedShortCount === value.generatedShortCount ? previous : value);
+      } catch {
+        // Keep animating the last verified schedule during network failures.
+      } finally {
+        window.clearTimeout(deadline);
+        controller = null;
+        if (!stopped && !document.hidden) timer = window.setTimeout(refresh, METRIC_REFRESH_INTERVAL_MS);
+      }
+    };
+    const handleVisibility = () => {
+      clearTimer();
+      if (document.hidden) controller?.abort();
+      else void refresh();
+    };
+    void refresh();
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      stopped = true;
+      clearTimer();
+      controller?.abort();
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, []);
+
   const [showingViews, setShowingViews] = useState(true);
   const [rotationResetToken, setRotationResetToken] = useState(0);
+  const startValue = counter?.startValue;
+  const targetValue = counter?.targetValue;
+  const startedAt = counter?.startedAt;
+  const endsAt = counter?.endsAt;
   const schedule = useMemo(
-    () => counter ? scheduleFromState(counter) : null,
-    [counter],
+    () => startValue !== undefined && targetValue !== undefined && startedAt && endsAt
+      ? { startValue, targetValue, startedAt, endsAt } : null,
+    [startValue, targetValue, startedAt, endsAt],
   );
   const changeTimes = useMemo(
     () => schedule ? reusableViewCounterChangeTimes(schedule) : [],
@@ -99,6 +167,12 @@ export function ReusableViewCounter({
   }, [changeTimes, counter, schedule]);
   const [displayedValue, setDisplayedValue] = useState<number | null>(initialValue);
   const displayedValueRef = useRef<number | null>(initialValue);
+  const clockOffsetRef = useRef(0);
+  const serverNow = counter?.serverNow;
+  useEffect(() => {
+    const time = Date.parse(serverNow ?? "");
+    if (Number.isFinite(time)) clockOffsetRef.current = time - Date.now();
+  }, [serverNow]);
 
   useEffect(() => {
     let timeout: number | undefined;
@@ -125,15 +199,11 @@ export function ReusableViewCounter({
   }, [rotationResetToken]);
 
   useEffect(() => {
-    if (!counter || !schedule) {
+    if (!schedule) {
       displayedValueRef.current = null;
       setDisplayedValue(null);
       return;
     }
-    const serverNowMs = Date.parse(counter.serverNow);
-    const clockOffsetMs = Number.isFinite(serverNowMs)
-      ? serverNowMs - Date.now()
-      : 0;
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     let timeout: number | undefined;
     let animationFrame: number | undefined;
@@ -177,7 +247,7 @@ export function ReusableViewCounter({
     const update = (animateChange: boolean) => {
       stopTimer();
       if (document.hidden) return;
-      const now = Date.now() + clockOffsetMs;
+      const now = Date.now() + clockOffsetRef.current;
       const projection = projectReusableViewCounter(schedule, now, changeTimes);
       if (animateChange && !reducedMotion) animateTo(projection.value);
       else {
@@ -195,17 +265,17 @@ export function ReusableViewCounter({
       if (document.hidden) {
         stopTimer();
         stopAnimation();
-      } else update(false);
+      } else update(true);
     };
 
-    update(false);
+    update(true);
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
       stopTimer();
       stopAnimation();
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [changeTimes, counter, schedule]);
+  }, [changeTimes, schedule]);
 
   const viewValue = visibleValue(displayedValue, locale);
   const generatedValue = generatedShortCount === null

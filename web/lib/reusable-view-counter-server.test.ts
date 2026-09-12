@@ -142,7 +142,7 @@ describe("catalog view counter animation", () => {
     startValue: 1_000_000,
     targetValue: 1_086_400,
     startedAt: "2026-09-12T00:00:00.000Z",
-    endsAt: "2026-09-12T12:00:00.000Z",
+    endsAt: "2026-09-12T08:10:00.000Z",
   };
   function catalogDb(total: string, schedule: typeof existing | null = existing) {
     vi.stubEnv("YOUTUBE_DISCOVERY_ENABLED", "true");
@@ -184,7 +184,7 @@ describe("catalog view counter animation", () => {
     });
   });
 
-  it.each(["2026-09-12T06:00:00Z", "2026-09-13T06:00:00Z"])("keeps an unchanged target without restarting the animation at %s", async (time) => {
+  it.each(["2026-09-12T06:00:00Z", "2026-09-12T07:00:00Z"])("keeps an unchanged target without restarting the animation at %s", async (time) => {
     const db = catalogDb(String(existing.targetValue));
     expect(await refreshCatalogViewCounter(db, new Date(time))).toEqual(existing);
     expect(writes(db)).toHaveLength(0);
@@ -199,18 +199,30 @@ describe("catalog view counter animation", () => {
   });
 
   it("caps remaining animation at a reduced total that is still above the displayed count", async () => {
-    const db = catalogDb("1060000");
+    const db = catalogDb("1080000");
     const now = new Date("2026-09-12T06:00:00Z");
     const schedule = await refreshCatalogViewCounter(db, now);
-    expect(schedule?.startValue).toBe(1_043_200);
-    expect(projectReusableViewCounter(schedule!, Date.parse(existing.endsAt)).value).toBe(1_060_000);
+    expect(schedule?.startValue).toBe(projectReusableViewCounter(existing, now.getTime()).value);
+    expect(projectReusableViewCounter(schedule!, Date.parse(existing.endsAt)).value).toBe(1_080_000);
   });
 
-  it("starts a new twelve-hour window after the previous increase has finished", async () => {
+  it("uses the next scheduled search after the previous increase has finished", async () => {
     const db = catalogDb("1200000");
     expect(await refreshCatalogViewCounter(db, new Date("2026-09-13T06:00:00Z"))).toMatchObject({
       startValue: existing.targetValue,
-      endsAt: "2026-09-13T18:00:00.000Z",
+      endsAt: "2026-09-13T08:10:00.000Z",
+    });
+  });
+
+  it("repairs an arbitrary deadline without jumping to the target or rewinding", async () => {
+    const old = { ...existing, endsAt: "2026-09-12T17:02:23.152Z" };
+    const now = new Date("2026-09-12T06:00:00Z");
+    const db = catalogDb(String(old.targetValue), old);
+    expect(await refreshCatalogViewCounter(db, now)).toEqual({
+      startValue: projectReusableViewCounter(old, now.getTime()).value,
+      targetValue: old.targetValue,
+      startedAt: now.toISOString(),
+      endsAt: "2026-09-12T08:10:00.000Z",
     });
   });
 

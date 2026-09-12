@@ -60,3 +60,9 @@ export function latestExpectedJapanSlot(now = new Date()) {
   if (now.getTime() < slot.getTime() + 10 * 60_000) slot.setTime(slot.getTime() - DAY_MS);
   return slot;
 }
+
+// The main reusable searches start at 05:10 and 17:10 KST. Japan's 17:15
+// additions belong to the same afternoon interval, rather than a five-minute ramp.
+export function nextReusableDiscoveryAt(now = new Date()) {
+  return new Date(discoverySlot("reusable", now).getTime() + 12 * 3_600_000);
+}
