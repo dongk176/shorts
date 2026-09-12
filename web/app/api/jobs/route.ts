@@ -1,3 +1,4 @@
+import { lockLanguageTestAdmission, languageTestTarget, languageTestUnavailable } from "@/lib/language-test";
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -64,6 +65,8 @@ const schema = z.object({
   customTemplateVersion: z.number().int().positive().optional(),
   videoAspectRatio: z.enum(videoAspectRatios).default("1:1"),
   outputLanguage: z.enum(outputLanguages).default("ko"),
+  languageTest: z.boolean().default(false),
+  sourceLanguage: z.enum(["auto", "ko", "en", "ja"]).optional(),
   rightsConfirmed: z.boolean().optional(),
   requestId: z.string().uuid(),
   rangeStartSeconds: z.number().finite().nonnegative().optional(),
@@ -93,8 +96,14 @@ export async function POST(request: Request) {
     ) {
       throw new HttpError(400, "기본 댓글 템플릿에서는 세로형과 세로 꽉참 비율을 사용할 수 없습니다.");
     }
+    if (input.languageTest ? !["ko", "en", "ja"].includes(input.outputLanguage) : input.sourceLanguage !== undefined) {
+      throw new HttpError(400, "언어 테스트 설정을 확인해 주세요.", "LANGUAGE_TEST_INVALID_INPUT");
+    }
     const rightsConfirmed = input.rightsConfirmed === true;
     const session = await requireAuthenticatedMvpSession();
+    if (input.languageTest && session.isAdmin !== true) {
+      throw new HttpError(403, "관리자 전용 테스트입니다.", "LANGUAGE_TEST_ADMIN_REQUIRED");
+    }
     const db = getDb();
     const enterpriseAccess = await assertEnterpriseSessionServiceAccess(db, session);
     const enterpriseUsage = enterpriseAccess.accountType === "enterprise";
@@ -284,6 +293,9 @@ export async function POST(request: Request) {
           status: concurrentExisting[0].status,
         };
       }
+      const languageTest = input.languageTest
+        ? await lockLanguageTestAdmission(tx, session.userId, input.requestId) : null;
+      if (languageTest && executionBackend !== "aws_batch") throw languageTestUnavailable();
       shortsThankYouEventReward =
         await issueShortsThankYouEventGrantIfEligible(tx, session.userId);
       const billing = await getBillingSummary(tx, session.userId);
@@ -347,6 +359,10 @@ export async function POST(request: Request) {
             transcriptionEnabled: transcriptionAccess.enabled,
             sourceRangeSelectionEnabled,
           });
+      if (languageTest) {
+        if (!dispatchTarget) throw languageTestUnavailable();
+        dispatchTarget = languageTestTarget(languageTest, dispatchTarget.targetKey);
+      }
       let initialRenderSpecVersion: 4 | null = null;
       let initialCaptionRenderSpecVersion: 4 | null = null;
       let initialEditorReleaseId: string | null = null;
@@ -399,7 +415,7 @@ export async function POST(request: Request) {
       // The DB resolver takes shared locks on the runtime/state rows until this
       // transaction commits, so an emergency stop or infrastructure lease is
       // strictly ordered before or after this job instead of racing the INSERT.
-      const initialRenderRelease = await resolveInitialRenderRelease(tx, {
+      const initialRenderRelease = languageTest ? { releaseId: languageTest.releaseId } : await resolveInitialRenderRelease(tx, {
         userId: session.userId,
         dispatchTarget,
       });
@@ -424,7 +440,7 @@ export async function POST(request: Request) {
           batch_job_definition, batch_job_queue,
           initial_editor_release_id,
           initial_render_spec_version, initial_caption_render_spec_version
-          ,selected_source_duration_seconds,billable_source_seconds
+          ,selected_source_duration_seconds,billable_source_seconds,source_language_hint,language_test_release_id
         ) values (
           ${jobId}, ${session.id}, ${session.userId}, ${input.requestId}, ${metadata.normalizedUrl}, ${metadata.videoId}, ${metadata.title},
           ${metadata.channelName}, ${metadata.channelThumbnailUrl}, ${metadata.thumbnailUrl}, ${sourceDurationSeconds}, ${rangeStartSeconds},
@@ -440,7 +456,8 @@ export async function POST(request: Request) {
           ${dispatchTarget?.jobQueueArn || null},
           ${initialEditorReleaseId},
           ${initialRenderSpecVersion}, ${initialCaptionRenderSpecVersion},
-          ${selectedDurationSeconds},${usageSeconds}
+          ${selectedDurationSeconds},${usageSeconds},
+          ${languageTest ? input.sourceLanguage || "auto" : null},${languageTest?.releaseId || null}
         )
         returning project_number
       `;

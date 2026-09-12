@@ -49,7 +49,7 @@ export async function GET(_: Request, context: { params: Promise<{ shortId: stri
     if (!rows[0]) throw new HttpError(404, "이 쇼츠에는 편집 가능한 영상이 없습니다.");
     if (rows[0].subtitleTemplateId) {
       const { editorRelease, subtitleAccess } =
-        await resolveUnifiedTemplateSubtitleEditorContext(db, session.userId);
+        await resolveUnifiedTemplateSubtitleEditorContext(db, session.userId, shortId);
       if (!subtitleEditingReleaseEnabled(editorRelease)) {
         throw new HttpError(
           409,

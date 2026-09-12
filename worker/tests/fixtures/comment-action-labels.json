@@ -1,0 +1,110 @@
+[
+  {
+    "language": "ko",
+    "count": 999,
+    "likes": "999",
+    "reply": "답글"
+  },
+  {
+    "language": "ko",
+    "count": 1000,
+    "likes": "1천",
+    "reply": "답글"
+  },
+  {
+    "language": "ko",
+    "count": 9999,
+    "likes": "9.9천",
+    "reply": "답글"
+  },
+  {
+    "language": "ko",
+    "count": 10000,
+    "likes": "1만",
+    "reply": "답글"
+  },
+  {
+    "language": "ko",
+    "count": 19999,
+    "likes": "1.9만",
+    "reply": "답글"
+  },
+  {
+    "language": "ko",
+    "count": 999999,
+    "likes": "99.9만",
+    "reply": "답글"
+  },
+  {
+    "language": "en",
+    "count": 999,
+    "likes": "999",
+    "reply": "Reply"
+  },
+  {
+    "language": "en",
+    "count": 1000,
+    "likes": "1K",
+    "reply": "Reply"
+  },
+  {
+    "language": "en",
+    "count": 9999,
+    "likes": "9.9K",
+    "reply": "Reply"
+  },
+  {
+    "language": "en",
+    "count": 10000,
+    "likes": "10K",
+    "reply": "Reply"
+  },
+  {
+    "language": "en",
+    "count": 19999,
+    "likes": "19.9K",
+    "reply": "Reply"
+  },
+  {
+    "language": "en",
+    "count": 999999,
+    "likes": "999.9K",
+    "reply": "Reply"
+  },
+  {
+    "language": "ja",
+    "count": 999,
+    "likes": "999",
+    "reply": "返信"
+  },
+  {
+    "language": "ja",
+    "count": 1000,
+    "likes": "1,000",
+    "reply": "返信"
+  },
+  {
+    "language": "ja",
+    "count": 9999,
+    "likes": "9,999",
+    "reply": "返信"
+  },
+  {
+    "language": "ja",
+    "count": 10000,
+    "likes": "1万",
+    "reply": "返信"
+  },
+  {
+    "language": "ja",
+    "count": 19999,
+    "likes": "1.9万",
+    "reply": "返信"
+  },
+  {
+    "language": "ja",
+    "count": 999999,
+    "likes": "99.9万",
+    "reply": "返信"
+  }
+]

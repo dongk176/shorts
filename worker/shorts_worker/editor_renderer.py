@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
+from io import BytesIO
 from math import ceil, floor
 from pathlib import Path
 
@@ -22,6 +23,7 @@ from .caption_templates import (
 from .config import Settings
 from .editor_text_layout import composition_steps, normalize_composition_layer_order
 from .errors import RenderError
+from .font_manifest import normalized_editor_font_bytes
 from .media import media_duration, probe_media, run_command, video_fps
 from .overlays import (
     CUSTOM_BACKGROUND_ASSETS,
@@ -76,6 +78,7 @@ EDITOR_FONT_FILES = {
     EditorFontId.SUIT: "SUIT-Bold.woff2",
     EditorFontId.SPOQA_HAN_SANS_NEO: "SpoqaHanSansNeo-Bold.woff2",
     EditorFontId.NOTO_SANS_KR: "NotoSansKR-Variable.ttf",
+    EditorFontId.NOTO_SANS_JP: "NotoSansCJKjp-Variable.ttf",
     EditorFontId.NANUM_SQUARE_NEO: "NanumSquareNeo-Bold.ttf",
     EditorFontId.SANDBOX_AGGRO: "SandboxAggro-Bold.ttf",
     EditorFontId.JUA: "Jua-Regular.ttf",
@@ -92,6 +95,7 @@ EDITOR_FONT_DIRECTORY = Path(__file__).parent / "assets" / "editor_fonts"
 EDITOR_FONT_DEFAULT_VARIATION_WEIGHTS = {
     EditorFontId.NOTO_SERIF_KR: 700,
     EditorFontId.NOTO_SANS_KR: 700,
+    EditorFontId.NOTO_SANS_JP: 700,
 }
 TIMED_OVERLAY_TRANSITION_FRAMES = 3
 TIMED_OVERLAY_CONTIGUOUS_TOLERANCE_SECONDS = 0.001
@@ -192,8 +196,9 @@ def load_editor_font(
     *,
     weight: int | None = None,
 ) -> ImageFont.FreeTypeFont:
+    editor_font_path(font_id)
     font = ImageFont.truetype(
-        str(editor_font_path(font_id)),
+        BytesIO(normalized_editor_font_bytes(font_id)),
         size=max(1, round(size)),
     )
     variation_weight = (
@@ -215,6 +220,9 @@ def verify_editor_fonts() -> None:
         box = font.getbbox("한글 Aa 123")
         if box[2] <= box[0] or box[3] <= box[1]:
             raise RenderError(f"편집기 폰트 글리프를 읽지 못했습니다: {font_id.value}")
+        # A visible .notdef box has a valid text bbox, so also verify spaces.
+        if font.getmask(" ").getbbox() is not None or font.getlength(" ") <= 0:
+            raise RenderError(f"편집기 폰트 공백이 올바르지 않습니다: {font_id.value}")
 
 
 def _custom_template_config(document: EditorDocument) -> CustomTemplateConfig | None:
@@ -1671,6 +1679,7 @@ def create_editor_comment_layers(
     document: EditorDocument,
     directory: Path,
     caption_render_spec: dict[str, object] | None = None,
+    output_language: str = "ko",
 ) -> list[EditorLayerAsset]:
     if not document.overlays.visible["comment"]:
         return []
@@ -1696,6 +1705,11 @@ def create_editor_comment_layers(
             overlay_mode=True,
             theme=theme,
             size=size,
+            output_language=output_language,
+            japanese_font_enabled=bool(
+                document.render_spec
+                and document.render_spec.title.font.font_id == EditorFontId.NOTO_SANS_JP
+            ),
         )
         with Image.open(panel_path) as source:
             panel = source.convert("RGBA")
@@ -2002,6 +2016,7 @@ class EditorDocumentRenderer:
         caption_composition_spec: dict[str, object] | None = None,
         caption_overlay_only: bool = False,
         uploaded_background_path: Path | None = None,
+        comment_output_language: str = "ko",
     ) -> Path:
         work_dir.mkdir(parents=True, exist_ok=True)
         if document.render_spec is not None and document.render_spec.version == 4:
@@ -2086,6 +2101,7 @@ class EditorDocumentRenderer:
             document,
             assets_dir,
             resolved_caption_composition_spec,
+            output_language=comment_output_language,
         )
         render_text_specs = {
             item.id: item

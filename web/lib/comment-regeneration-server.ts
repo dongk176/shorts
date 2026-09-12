@@ -1,8 +1,10 @@
 import "server-only";
+import type { OutputLanguage } from "./contracts";
 import {
   buildCommentRegenerationMessages,
   commentRegenerationResponseSchema,
   parseCommentRegenerationResponse,
+  type CommentRejectionCounts,
 } from "@/lib/comment-regeneration";
 
 const DEFAULT_GEMINI_OPENAI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/";
@@ -14,6 +16,8 @@ type GenerateCommentsInput = {
   highlightReason: string;
   transcript: Array<{ start: number; end: number; text: string }>;
   targetCount: number;
+  outputLanguage?: OutputLanguage;
+  sourceLanguage?: string;
 };
 
 export function paidGeminiCommentGenerationEnabled(
@@ -35,6 +39,10 @@ export async function generateCommentsWithGemini(
   const baseUrl = environment.GEMINI_OPENAI_BASE_URL
     || DEFAULT_GEMINI_OPENAI_BASE_URL;
   const endpoint = new URL("chat/completions", baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`);
+  const configuredLimit = environment.GEMINI_MAX_OUTPUT_TOKENS?.trim();
+  const parsedLimit = Number(configuredLimit);
+  const maxTokens = Number.isInteger(parsedLimit)
+    ? Math.min(65_536, Math.max(1_024, parsedLimit)) : 16_384;
   const response = await fetch(endpoint, {
     method: "POST",
     headers: {
@@ -46,6 +54,7 @@ export async function generateCommentsWithGemini(
         || environment.GEMINI_TEXT_MODEL
         || DEFAULT_GEMINI_COMMENT_MODEL,
       messages: buildCommentRegenerationMessages(input),
+      ...(configuredLimit ? { max_tokens: maxTokens } : {}),
       response_format: {
         type: "json_schema",
         json_schema: {
@@ -59,8 +68,21 @@ export async function generateCommentsWithGemini(
     signal: AbortSignal.timeout(GEMINI_COMMENT_TIMEOUT_MS),
   });
   if (!response.ok) throw new Error(`gemini_http_${response.status}`);
-  return parseCommentRegenerationResponse(
-    await response.json(),
-    input.targetCount,
-  );
+  const rejectionCounts: CommentRejectionCounts = {};
+  let qualityStatus = "rejected";
+  try {
+    const comments = parseCommentRegenerationResponse(
+      await response.json(), input.targetCount, input.outputLanguage, rejectionCounts,
+      input.sourceLanguage === undefined ? undefined : input.transcript.map((s) => s.text).join("\n"),
+    );
+    qualityStatus = "complete";
+    return comments;
+  } finally {
+    console.info("comment_regeneration_validation", {
+      outputLanguage: input.outputLanguage || "ko",
+      targetCount: input.targetCount,
+      qualityStatus,
+      rejectedCommentCounts: rejectionCounts,
+    });
+  }
 }

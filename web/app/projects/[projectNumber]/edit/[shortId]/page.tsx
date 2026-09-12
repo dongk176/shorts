@@ -46,7 +46,7 @@ export default async function EditShortPage({ params }: { params: Promise<{ proj
     const {
       editorRelease: resolvedEditorRelease,
       subtitleAccess,
-    } = await resolveUnifiedTemplateSubtitleEditorContext(db, session.userId);
+    } = await resolveUnifiedTemplateSubtitleEditorContext(db, session.userId, shortId);
     editorRelease = resolvedEditorRelease;
     unifiedTemplateSubtitleCanaryEnabled = subtitleAccess.unifiedEnabled;
     customTemplateDesignEnabled = (await getCustomTemplateDesignAccess(db, session.userId)).enabled;

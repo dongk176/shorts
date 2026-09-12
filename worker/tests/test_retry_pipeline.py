@@ -30,6 +30,7 @@ from shorts_worker.worker_pipeline import (
     _caption_compile_options,
     _initial_title_text_styles,
     _offset_highlight_clip,
+    _project_caption_options,
     _relative_source_transcript,
     _subtitle_template_timing_lead_frames,
     _unified_template_subtitle,
@@ -1559,16 +1560,33 @@ def test_project_isolates_unavailable_or_uncompilable_caption_clips() -> None:
 
     assert "TranscriptionRangeUnavailable" in source
     assert "project_caption_clip_rejected" in source
-    assert 'subtitle_template_snapshot.get("captionPlacement")' in source
-    assert "caption_placement=caption_placement" in source
-    assert source.count(
-        "timing_lead_frames=caption_timing_lead_frames",
-    ) == 2
     assert source.count("CaptionCompileError,") >= 2
     assert source.count("RenderError,") >= 2
     assert source.count("TranscriptionError,") >= 2
     assert "len(compiled_clips) < required_minimum_count" in source
     assert "clips = [clip for clip, _spec in compiled_clips]" in source
+
+
+@pytest.mark.parametrize("template_id", ["highlight", "pop"])
+@pytest.mark.parametrize("translated", [True, False])
+@pytest.mark.parametrize("v4", [True, False])
+def test_project_caption_style_preserves_preset_and_translated_settings(
+    template_id, translated, v4,
+):
+    options = _project_caption_options(
+        {"output_language": "ja", "video_aspect_ratio": "9:16",
+         "subtitle_template_snapshot": {
+             "captionPlacement": "upper", "timingLeadFrames": 7,
+             "font": {"id": "paperlogy"},
+         }},
+        None, template_id="basic" if translated else template_id,
+        translated=translated, initial_render_v4=v4,
+    )
+    assert options["caption_placement"] == "upper"
+    assert options["timing_lead_frames"] == (4 if translated else 7)
+    assert options["font_id"] == ("noto-sans-jp" if translated else "paperlogy")
+    assert options["template_id"] == ("basic" if translated else template_id)
+    assert options["schema_version"] == (4 if v4 else 3)
 
 
 def test_subtitle_template_timing_lead_defaults_stable_and_accepts_admin() -> None:

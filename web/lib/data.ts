@@ -1,3 +1,4 @@
+import { subtitleTranslationOutcome } from "./subtitle-translation-outcome";
 import type { Row, Sql } from "postgres";
 import type { GeneratedShort, Plan, VideoJob } from "@/lib/contracts";
 import {
@@ -217,6 +218,7 @@ export async function getShortsForJobs(
       subtitleSegments: row.subtitleSegments,
       commentOverlays: row.commentOverlays || [],
       subtitlesEnabled: row.subtitlesEnabled,
+      subtitleTranslation: subtitleTranslationOutcome(row.subtitleTemplateSnapshot),
       templateId: row.templateId,
       customTemplateId: row.customTemplateId || null,
       templateSnapshot: row.templateSnapshot || null,
@@ -225,7 +227,7 @@ export async function getShortsForJobs(
         row.subtitleTemplateSnapshot,
       ),
       captionRenderSpec: parseCaptionRenderSpec(row.captionRenderSpec),
-      wordTimedSubtitlesAvailable: wordTimedShortIds.has(String(row.id)),
+      wordTimedSubtitlesAvailable: subtitleTranslationOutcome(row.subtitleTemplateSnapshot)?.status !== "unavailable" && wordTimedShortIds.has(String(row.id)),
       videoAspectRatio: row.videoAspectRatio || "1:1",
       titleFontScale: Number(row.titleFontScale),
       titleTextStyles: row.titleTextStyles || [],
@@ -382,6 +384,7 @@ async function mapJobs(
       thumbnailUrl: row.thumbnailUrl,
       sourceDurationSeconds: row.sourceDurationSeconds,
       outputLanguage: row.outputLanguage,
+      ...(row.languageTestReleaseId ? { sourceLanguage: row.sourceLanguageHint, languageTest: true } : {}),
       expectedShortCount: row.expectedShortCount,
       plannedShortCount: Number(row.plannedShortCount ?? row.expectedShortCount),
       readyShortCount: Number(row.readyShortCount ?? 0),

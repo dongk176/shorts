@@ -110,6 +110,10 @@ class Settings:
         default_factory=lambda: os.getenv("GEMINI_COMMENT_MODEL")
         or "gemini-2.5-flash-lite"
     )
+    gemini_max_output_tokens: int | None = field(
+        default_factory=lambda: _bounded_int("GEMINI_MAX_OUTPUT_TOKENS", 16384, 1024, 65536)
+        if os.getenv("GEMINI_MAX_OUTPUT_TOKENS", "").strip() else None
+    )
     gemini_openai_base_url: str = field(
         default_factory=lambda: os.getenv("GEMINI_OPENAI_BASE_URL")
         or "https://generativelanguage.googleapis.com/v1beta/openai/"

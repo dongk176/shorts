@@ -1,3 +1,4 @@
+import { resolveSourceLanguage } from "@/lib/language-context";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getBillingSummary } from "@/lib/billing";
@@ -6,6 +7,7 @@ import {
   paidGeminiCommentGenerationEnabled,
 } from "@/lib/comment-regeneration-server";
 import { getDb } from "@/lib/db";
+import { normalizeOutputLanguage } from "@/lib/content-language";
 import { assertEnterpriseSessionServiceAccess } from "@/lib/enterprise-access";
 import { editorOverlayPreviewEnabled } from "@/lib/editor-overlay-preview-flag";
 import { editorRenderingV2Enabled } from "@/lib/editor-rendering-release";
@@ -91,6 +93,10 @@ export async function POST(
           generated_short.hook_title,
           generated_short.highlight_reason,
           generated_short.subtitle_segments,
+          case when to_jsonb(job)->>'language_test_release_id' is not null then job.output_language else 'ko' end as output_language,
+          to_jsonb(job)->>'source_language_hint' as source_language_hint,
+          coalesce(job.transcription_language_code,
+            job.performance_metrics #>> '{transcription,languageCode}') as source_language_code,
           generated_short.status,
           generated_short.subtitle_template_id,
           generated_short.subtitle_template_snapshot
@@ -113,6 +119,9 @@ export async function POST(
       hookTitle: string;
       highlightReason: string | null;
       subtitleSegments: TranscriptSegment[];
+      outputLanguage: string;
+      sourceLanguageHint?: string | null;
+      sourceLanguageCode?: string | null;
       status: string;
       subtitleTemplateId: string | null;
       subtitleTemplateSnapshot: unknown;
@@ -194,6 +203,10 @@ export async function POST(
           ? generatedShort.subtitleSegments
           : [],
         targetCount: input.commentCount,
+        outputLanguage: normalizeOutputLanguage(generatedShort.outputLanguage),
+        sourceLanguage: resolveSourceLanguage(
+          generatedShort.sourceLanguageHint, generatedShort.sourceLanguageCode,
+        ),
       });
     } catch {
       await db`

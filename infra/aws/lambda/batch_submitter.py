@@ -95,6 +95,10 @@ def _production_project_target_registry() -> dict[str, Any] | None:
         registry = json.loads(raw)
     except json.JSONDecodeError as exc:
         raise RuntimeError("Production project target registry is invalid JSON") from exc
+    return _validate_project_target_registry(registry)
+
+
+def _validate_project_target_registry(registry: Any) -> dict[str, Any]:
     if (
         not isinstance(registry, dict)
         or set(registry) != {"version", "environment", "lanes"}
@@ -225,6 +229,54 @@ def _production_project_target_registry() -> dict[str, Any] | None:
                     f"Project target lane {target_key} submit-as release is invalid"
                 )
     return registry
+
+
+_LANGUAGE_TEST_QUEUE = re.compile(
+    r"^arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-language-test-[a-z0-9-]+$"
+)
+_LANGUAGE_TEST_EDITOR_DEFINITION = re.compile(
+    r"^arn:aws:batch:ap-northeast-2:181651591905:job-definition/"
+    r"shorts-mvp-editor-release-language-test-[a-z0-9-]+:[1-9][0-9]*$"
+)
+_LANGUAGE_TEST_DEFINITION = re.compile(
+    r"^arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-language-test-[a-z0-9-]+:[1-9][0-9]*$"
+)
+
+
+def _language_test_release(job: dict[str, Any]) -> dict[str, Any] | None:
+    release_id = job.get("language_test_release_id")
+    if release_id is None:
+        return None
+    if not isinstance(release_id, str) or not re.fullmatch(r"[0-9a-f-]{36}", release_id):
+        raise BatchTargetTrustRejected("Invalid language-test release binding")
+    if job.get("initial_editor_release_id") != release_id:
+        raise BatchTargetTrustRejected("Language-test initial release mismatch")
+    rows = rest("language_test_releases", query=(
+        "select=id,registry,editor_job_queue_arn,verified_at"
+        f"&id=eq.{release_id}&limit=2"
+    )) or []
+    if len(rows) != 1 or rows[0].get("id") != release_id or not rows[0].get("verified_at"):
+        raise BatchTargetTrustRejected("Language-test release is not verified")
+    release = rows[0]
+    registry = _validate_project_target_registry(release.get("registry"))
+    if not _LANGUAGE_TEST_QUEUE.fullmatch(str(release.get("editor_job_queue_arn") or "")):
+        raise BatchTargetTrustRejected("Language-test editor queue is not isolated")
+    for lane in registry["lanes"].values():
+        target = lane["current"]
+        if (lane["previous"] is not None or lane["schedulingMode"] != "fifo"
+            or not _LANGUAGE_TEST_QUEUE.fullmatch(target["jobQueueArn"])
+            or not _LANGUAGE_TEST_DEFINITION.fullmatch(target["jobDefinitionArn"])
+            or not target["imageUri"].startswith(
+                "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/"
+            )
+            or target.get("renderSpecVersion") != 4 or target.get("captionRenderSpecVersion") != 4):
+            raise BatchTargetTrustRejected("Language-test registry is not isolated")
+    return release
+
+
+def _project_registry_for_job(job: dict[str, Any]) -> dict[str, Any] | None:
+    release = _language_test_release(job)
+    return release["registry"] if release else _production_project_target_registry()
 
 
 def _target_release(
@@ -479,7 +531,7 @@ def _project_dispatch_target(
             "Unified template candidate requires the word-timed transcription policy"
         )
 
-    registry = _production_project_target_registry()
+    registry = _project_registry_for_job(job)
     if registry is not None:
         expected_target_key = _expected_target_key(
             job,
@@ -684,6 +736,8 @@ def _project_scheduling_overrides(
     priority_class: object,
     *identity_values: object,
 ) -> dict[str, object]:
+    if _LANGUAGE_TEST_QUEUE.fullmatch(job_queue):
+        return {}
     # Scheduling mode belongs to the logical lane. Queue rotations therefore
     # cannot accidentally attach fair-share-only fields to a FIFO queue.
     registry = _production_project_target_registry()
@@ -736,6 +790,8 @@ def _rerender_scheduling_overrides(
     priority_class: object,
     *identity_values: object,
 ) -> dict[str, object]:
+    if _LANGUAGE_TEST_QUEUE.fullmatch(job_queue):
+        return {}
     # The isolated editor canary queue intentionally uses simple FIFO
     # scheduling. AWS Batch rejects fair-share-only fields on that queue.
     if job_queue == os.environ.get("EDITOR_CANARY_BATCH_QUEUE", "").strip():
@@ -777,7 +833,7 @@ def _initial_render_v4_environment(
         raise BatchTargetTrustRejected(
             "Initial render v4 version pair is incomplete or unsupported"
         )
-    registry = _production_project_target_registry()
+    registry = _project_registry_for_job(job)
     if registry is None:
         raise BatchTargetTrustRejected(
             "Initial render v4 requires the immutable project target registry"
@@ -848,6 +904,8 @@ def _initial_render_v4_environment(
         )
     release = releases[0]
     status = str(release.get("status") or "")
+    if job.get("language_test_release_id") and release.get("id") != job["language_test_release_id"]:
+        raise BatchTargetTrustRejected("Language-test release provenance mismatch")
     if (
         release.get("git_sha") != worker_source_git_sha
         or release.get("worker_image_digest") != worker_image_digest
@@ -934,8 +992,11 @@ def _verify_recorded_previous_project_job(
 
 def _editor_release_target(
     pending_request_id: str | None,
+    parent_job: dict[str, Any] | None = None,
 ) -> tuple[str, str, str, str] | None:
     if not pending_request_id:
+        if parent_job and parent_job.get("language_test_release_id"):
+            raise BatchTargetTrustRejected("Language-test editing requires a pinned request")
         return None
     encoded_request_id = urllib.parse.quote(pending_request_id, safe="")
     requests = rest("editor_render_requests", query=(
@@ -943,6 +1004,8 @@ def _editor_release_target(
         f"&id=eq.{encoded_request_id}&limit=1"
     )) or []
     if not requests or not requests[0].get("release_id"):
+        if parent_job and parent_job.get("language_test_release_id"):
+            raise BatchTargetTrustRejected("Language-test editor request is missing")
         # Requests queued before release routing was installed retain the
         # known-good legacy definition instead of being moved implicitly.
         return None
@@ -960,12 +1023,20 @@ def _editor_release_target(
     job_definition = str(
         releases[0].get("production_job_definition_arn") or ""
     )
-    if not _EDITOR_RELEASE_JOB_DEFINITION.fullmatch(job_definition):
+    language_release = _language_test_release(parent_job) if parent_job else None
+    if language_release and (language_release["id"] != release_id or channel != "canary"):
+        raise BatchTargetTrustRejected("Editor request is not bound to its language-test project")
+    definition_pattern = (
+        _LANGUAGE_TEST_EDITOR_DEFINITION if language_release else _EDITOR_RELEASE_JOB_DEFINITION
+    )
+    if not definition_pattern.fullmatch(job_definition):
         raise RuntimeError("Editor release job definition is not trusted")
     worker_image_digest = str(releases[0].get("worker_image_digest") or "")
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", worker_image_digest):
         raise RuntimeError("Editor release image digest is invalid")
-    if channel == "canary":
+    if language_release:
+        job_queue = str(language_release["editor_job_queue_arn"])
+    elif channel == "canary":
         job_queue = os.environ.get("EDITOR_CANARY_BATCH_QUEUE", "").strip()
         if not job_queue:
             raise RuntimeError("Editor canary queue is not configured")
@@ -1173,7 +1244,7 @@ def _submit(payload: dict[str, Any]) -> str | None:
             "batch_target_key,batch_target_release_id,"
             "source_range_selection_enabled,transcription_policy,subtitle_template_id,"
             "initial_render_spec_version,initial_caption_render_spec_version,"
-            "initial_editor_release_id,"
+            "initial_editor_release_id,language_test_release_id,"
             "template_snapshot,subtitle_template_snapshot,"
             "dispatch_priority_class,project_dispatch_generation"
             f"&id=eq.{encoded_job_id}&limit=1"
@@ -1291,7 +1362,7 @@ def _submit(payload: dict[str, Any]) -> str | None:
             if dispatch_generation == 0
             else f"project:{job_id}:generation:{dispatch_generation}"
         )
-        registry = _production_project_target_registry()
+        registry = _project_registry_for_job(job)
         previous = next((
             lane.get("previous") for lane in (registry or {}).get("lanes", {}).values()
             if isinstance(lane.get("previous"), dict)
@@ -1519,7 +1590,7 @@ def _submit(payload: dict[str, Any]) -> str | None:
         if shorts[0].get("rerender_batch_job_id"):
             return str(shorts[0]["rerender_batch_job_id"])
         parent_jobs = rest("video_jobs", query=(
-            "select=id,user_id,mvp_session_id,dispatch_priority_class"
+            "select=id,user_id,mvp_session_id,dispatch_priority_class,language_test_release_id,initial_editor_release_id"
             f"&id=eq.{urllib.parse.quote(str(shorts[0]['job_id']), safe='')}&limit=1"
         )) or []
         parent_job = parent_jobs[0] if parent_jobs else {}
@@ -1529,7 +1600,8 @@ def _submit(payload: dict[str, Any]) -> str | None:
         version = int(shorts[0]["render_version"]) + 1
         pending_request_id = shorts[0].get("pending_edit_request_id")
         release_target = _editor_release_target(
-            str(pending_request_id) if pending_request_id else None
+            str(pending_request_id) if pending_request_id else None,
+            parent_job,
         )
         legacy_save_identity = None
         if not pending_request_id:

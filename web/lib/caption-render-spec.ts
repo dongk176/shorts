@@ -17,6 +17,12 @@ export const CAPTION_ASS_PREVIEW_FONT_SCALE = 0.84 as const;
 const finiteNumber = z.number().finite();
 const frame = z.number().int().nonnegative();
 const color = z.string().regex(/^#[0-9A-Fa-f]{6}$/);
+const translationSchema = z.object({
+  policy: z.literal("translated-basic-v1"),
+  sourceLanguage: z.string().min(2).max(20),
+  outputLanguage: z.enum(["ko", "en", "ja"]),
+  requestedTemplateId: z.enum(["pop", "highlight"]).nullable(),
+}).strict();
 
 const captionWordSchema = z.object({
   text: z.string().min(1).max(200),
@@ -110,8 +116,9 @@ const captionFontV4Schema = z.object({
 }).strict();
 
 const compiledCaptionRenderSpecV3Schema = z.object({
+  translation: translationSchema.optional(),
   schemaVersion: z.literal(3),
-  templateId: z.enum(["pop", "highlight"]),
+  templateId: z.enum(["pop", "highlight", "basic"]),
   captionPlacement: z.enum(["lower", "center"]),
   fps: z.literal(30),
   timingLeadFrames: z.number().int().min(0).max(30).optional(),
@@ -168,8 +175,9 @@ const captionCueV4Schema = z.object({
 }).strict().refine((cue) => cue.endFrame > cue.startFrame);
 
 const compiledCaptionRenderSpecV4Schema = z.object({
+  translation: translationSchema.optional(),
   schemaVersion: z.literal(4),
-  templateId: z.enum(["pop", "highlight"]),
+  templateId: z.enum(["pop", "highlight", "basic"]),
   layoutMode: z.literal("absolute-word-positions-v1"),
   wordGapPx: z.literal(6),
   joinedWordGapPx: z.literal(0),
@@ -226,13 +234,21 @@ const captionRenderSpecV4Schema = compiledCaptionRenderSpecV4Schema.extend({
       message: "Caption font metadata must match the approved font manifest.",
     });
   }
-  if (spec.templateId === "highlight") {
+  if (spec.templateId === "highlight" || spec.templateId === "basic") {
     spec.cues.forEach((cue, cueIndex) => {
       if (cue.separatorAdvanceWidth == null) {
         context.addIssue({
           code: "custom",
           path: ["cues", cueIndex, "separatorAdvanceWidth"],
           message: "V4 highlight captions require an exact separator advance.",
+        });
+      }
+      if (spec.templateId === "basic" && (cue.events.length !== 1
+        || cue.events[0].activeWordIndex != null
+        || cue.events[0].positions != null)) {
+        context.addIssue({
+          code: "custom", path: ["cues", cueIndex, "events"],
+          message: "Basic captions must have one static event without word effects.",
         });
       }
     });
@@ -294,6 +310,15 @@ export type CaptionRenderSpecV4 = Extract<
 >;
 export type CaptionRenderCue = CaptionRenderSpec["cues"][number];
 export type CaptionRenderEvent = CaptionRenderCue["events"][number];
+
+export function isTranslatedCaptionSpec(spec: CaptionRenderSpec | null | undefined) {
+  return spec?.templateId === "basic" && spec.translation?.policy === "translated-basic-v1";
+}
+
+export function captionSpecMatchesTemplate(spec: CaptionRenderSpec, templateId: string | null | undefined) {
+  return spec.templateId === templateId || (isTranslatedCaptionSpec(spec)
+    && spec.translation?.requestedTemplateId === (templateId || null));
+}
 
 export function parseCaptionRenderSpec(value: unknown): CaptionRenderSpec | null {
   const parsed = captionRenderSpecSchema.safeParse(value);

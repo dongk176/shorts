@@ -1,3 +1,4 @@
+import { languageTestEditorRelease } from "./language-test";
 import type { Sql, TransactionSql } from "postgres";
 import {
   editorRenderingV2GlobalEnabled,
@@ -301,10 +302,19 @@ async function resolveEffectiveSubtitleTemplateContext(
   return { editorRelease, subtitleAccess };
 }
 
-export function resolveUnifiedTemplateSubtitleEditorContext(
+export async function resolveUnifiedTemplateSubtitleEditorContext(
   db: Sql | TransactionSql,
   userId: string | null,
+  shortId?: string,
 ) {
+  if (shortId) {
+    const editorRelease = await languageTestEditorRelease(db, userId, shortId);
+    if (editorRelease) return { editorRelease, subtitleAccess: {
+      ...disabledAccess(), enabled: true, unifiedEnabled: true,
+      masterEnabled: true, featureEnabled: true, unifiedCanaryEnabled: true,
+      isAdmin: true, pilotEnabled: true,
+    } };
+  }
   return resolveEffectiveSubtitleTemplateContext(db, userId, false);
 }
 

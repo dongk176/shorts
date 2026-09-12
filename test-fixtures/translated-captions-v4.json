@@ -1,0 +1,266 @@
+{
+  "en": {
+    "schemaVersion": 4,
+    "templateId": "basic",
+    "captionPlacement": "lower",
+    "fps": 30,
+    "clipStartSeconds": 0,
+    "clipEndSeconds": 3,
+    "timingLeadFrames": 7,
+    "layout": {
+      "canvas": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 1920
+      },
+      "video": {
+        "x": 0,
+        "y": 432,
+        "width": 1080,
+        "height": 608
+      },
+      "title": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 432
+      },
+      "channel": {
+        "x": 0,
+        "y": 1710,
+        "width": 1080,
+        "height": 160
+      },
+      "caption": {
+        "x": 120,
+        "y": 1088,
+        "width": 840,
+        "height": 140
+      }
+    },
+    "safeArea": {
+      "x": 120,
+      "y": 1088,
+      "width": 840,
+      "height": 140
+    },
+    "font": {
+      "fontId": "pretendard",
+      "fileId": "Pretendard-Bold.woff2",
+      "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+      "family": "\"Editor V4 Pretendard\"",
+      "weight": 700,
+      "metrics": {
+        "revision": "editor-font-metrics-v2",
+        "cssToAssScale": 0.838314,
+        "cssToAssBaselineOffsetEm": -0.000205
+      }
+    },
+    "style": {
+      "fontSize": 72,
+      "textColor": "#FFFFFF",
+      "accentColor": "#35E6E3",
+      "outlineColor": "#080808",
+      "outlineWidth": 7,
+      "shadow": 0,
+      "background": null,
+      "maxLines": 1
+    },
+    "cues": [
+      {
+        "startFrame": 0,
+        "endFrame": 60,
+        "fontSize": 72,
+        "scaleX": 100,
+        "centerX": 540,
+        "centerY": 1158,
+        "words": [
+          {
+            "text": "It",
+            "startFrame": 0,
+            "endFrame": 60,
+            "spaceBefore": false,
+            "sourceWordIndexes": [
+              0
+            ],
+            "speechStartFrame": 0,
+            "speechEndFrame": 60
+          },
+          {
+            "text": "weighs",
+            "startFrame": 0,
+            "endFrame": 60,
+            "spaceBefore": true,
+            "sourceWordIndexes": [
+              1
+            ],
+            "speechStartFrame": 0,
+            "speechEndFrame": 60
+          },
+          {
+            "text": "10.5",
+            "startFrame": 0,
+            "endFrame": 60,
+            "spaceBefore": true,
+            "sourceWordIndexes": [
+              2
+            ],
+            "speechStartFrame": 0,
+            "speechEndFrame": 60
+          },
+          {
+            "text": "kg.",
+            "startFrame": 0,
+            "endFrame": 60,
+            "spaceBefore": true,
+            "sourceWordIndexes": [
+              3
+            ],
+            "speechStartFrame": 0,
+            "speechEndFrame": 60
+          }
+        ],
+        "lines": [
+          [
+            0,
+            1,
+            2,
+            3
+          ]
+        ],
+        "wordSeparator": " ",
+        "separatorAdvanceWidth": 6.955,
+        "events": [
+          {
+            "startFrame": 0,
+            "endFrame": 60
+          }
+        ]
+      }
+    ],
+    "layoutMode": "absolute-word-positions-v1",
+    "wordGapPx": 6,
+    "joinedWordGapPx": 0,
+    "translation": {
+      "policy": "translated-basic-v1",
+      "sourceLanguage": "ko",
+      "outputLanguage": "en",
+      "requestedTemplateId": "pop"
+    }
+  },
+  "ja": {
+    "schemaVersion": 4,
+    "templateId": "basic",
+    "captionPlacement": "lower",
+    "fps": 30,
+    "clipStartSeconds": 0,
+    "clipEndSeconds": 3,
+    "timingLeadFrames": 7,
+    "layout": {
+      "canvas": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 1920
+      },
+      "video": {
+        "x": 0,
+        "y": 432,
+        "width": 1080,
+        "height": 608
+      },
+      "title": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 432
+      },
+      "channel": {
+        "x": 0,
+        "y": 1710,
+        "width": 1080,
+        "height": 160
+      },
+      "caption": {
+        "x": 120,
+        "y": 1088,
+        "width": 840,
+        "height": 140
+      }
+    },
+    "safeArea": {
+      "x": 120,
+      "y": 1088,
+      "width": 840,
+      "height": 140
+    },
+    "font": {
+      "fontId": "noto-sans-jp",
+      "fileId": "NotoSansCJKjp-Variable.ttf",
+      "sha256": "240c9b83bf7b386edbae39995ae7e068ed4583f484d92e4a74c34158b5f27b1a",
+      "family": "\"Editor V4 Noto Sans JP\"",
+      "weight": 700,
+      "metrics": {
+        "revision": "editor-font-metrics-v2",
+        "cssToAssScale": 0.690608,
+        "cssToAssBaselineOffsetEm": 0.024862
+      }
+    },
+    "style": {
+      "fontSize": 72,
+      "textColor": "#FFFFFF",
+      "accentColor": "#35E6E3",
+      "outlineColor": "#080808",
+      "outlineWidth": 7,
+      "shadow": 0,
+      "background": null,
+      "maxLines": 1
+    },
+    "cues": [
+      {
+        "startFrame": 0,
+        "endFrame": 60,
+        "fontSize": 72,
+        "scaleX": 100,
+        "centerX": 540,
+        "centerY": 1158,
+        "words": [
+          {
+            "text": "重さは10.5kgです。",
+            "startFrame": 0,
+            "endFrame": 60,
+            "spaceBefore": false,
+            "sourceWordIndexes": [
+              0
+            ],
+            "speechStartFrame": 0,
+            "speechEndFrame": 60
+          }
+        ],
+        "lines": [
+          [
+            0
+          ]
+        ],
+        "wordSeparator": " ",
+        "separatorAdvanceWidth": 9.949,
+        "events": [
+          {
+            "startFrame": 0,
+            "endFrame": 60
+          }
+        ]
+      }
+    ],
+    "layoutMode": "absolute-word-positions-v1",
+    "wordGapPx": 6,
+    "joinedWordGapPx": 0,
+    "translation": {
+      "policy": "translated-basic-v1",
+      "sourceLanguage": "ko",
+      "outputLanguage": "ja",
+      "requestedTemplateId": "pop"
+    }
+  }
+}

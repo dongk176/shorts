@@ -1,0 +1,416 @@
+{
+  "ko": {
+    "name": "한국어",
+    "intro": "너는 한국 유튜브와 숏폼 커뮤니티의 말투를 정확히 이해하는 댓글 작가다.",
+    "style": "자연스러운 반말과 ㅋㅋ, ㄹㅇ 같은 표현은 문맥에 맞을 때만 사용하고 반복하지 않는다.",
+    "title": [
+      "놓치면 안 되는",
+      "핵심 장면"
+    ],
+    "reason": "AI를 사용할 수 없어 영상 전체에 고르게 배치한 구간입니다.",
+    "prefixes": [
+      "하루",
+      "모카",
+      "여름",
+      "초코",
+      "구름",
+      "새벽",
+      "라온",
+      "소담"
+    ],
+    "suffixes": [
+      "기록",
+      "한스푼",
+      "로그",
+      "이야기",
+      "채널",
+      "노트",
+      "생활",
+      "공간"
+    ],
+    "age": [
+      "{count}개월 전",
+      "{count}개월 전"
+    ],
+    "comments": [
+      "이 장면 다시 보게 되네",
+      "생각보다 흥미로운데",
+      "다음 이야기도 궁금하다",
+      "이런 관점은 신선하네",
+      "한 번 더 보고 싶다",
+      "짧은데 기억에 남네",
+      "이 부분에서 집중하게 됨",
+      "나도 이 얘기 더 듣고 싶다",
+      "여기서 잠깐 멈춰 봤다",
+      "보고 나니 생각이 많아지네",
+      "이 장면은 좀 인상적이다",
+      "다시 보면 느낌이 다르네",
+      "이 부분 어떻게 생각해",
+      "이야기가 은근 빠져드네",
+      "끝까지 보게 되네",
+      "이 대목은 기억해 둬야겠다",
+      "댓글도 같이 보고 싶다",
+      "이 장면이 제일 궁금했어",
+      "짧게 보기 딱 좋네",
+      "다른 사람 반응도 궁금하다"
+    ],
+    "reply": "답글"
+  },
+  "en": {
+    "name": "English",
+    "intro": "You write natural English comments for short videos.",
+    "style": "Use conversational English and occasional light humor. Avoid forced slang, translated Korean expressions, and repetitive reactions.",
+    "title": [
+      "The Moment You",
+      "Cannot Miss"
+    ],
+    "reason": "AI was unavailable, so this segment was spaced across the video.",
+    "prefixes": [
+      "Sunny",
+      "Mellow",
+      "Pixel",
+      "Cloud",
+      "River",
+      "Coffee"
+    ],
+    "suffixes": [
+      "Notes",
+      "Corner",
+      "Diary",
+      "View"
+    ],
+    "age": [
+      "{count} month ago",
+      "{count} months ago"
+    ],
+    "comments": [
+      "This part made me pause",
+      "I had to watch that again",
+      "Now I want to hear more",
+      "That is an interesting perspective",
+      "Anyone else replay this part?",
+      "There is a lot to think about here",
+      "This caught my attention",
+      "I was not expecting that",
+      "I would love more context",
+      "That moment really stands out",
+      "I have a few questions now",
+      "This deserves a second watch",
+      "What do you think about this part?",
+      "I stayed for the whole thing",
+      "I keep coming back to this bit",
+      "The comments should be interesting",
+      "I want to see what happens next",
+      "This is worth talking about",
+      "That got me thinking",
+      "I would watch a longer version"
+    ],
+    "reply": "Reply"
+  },
+  "ja": {
+    "name": "日本語",
+    "intro": "日本語のショート動画に合う自然なコメントを書く作家です。",
+    "style": "自然な日本語の口語で書く。軽い笑いや共感を適度に混ぜ、韓国語の笑い表現や不自然な直訳は使わない。",
+    "title": [
+      "見逃せない",
+      "注目の場面"
+    ],
+    "reason": "AIを利用できなかったため、動画全体から均等に選んだ場面です。",
+    "prefixes": [
+      "そら",
+      "もか",
+      "なつ",
+      "くも",
+      "あさ",
+      "ひなた"
+    ],
+    "suffixes": [
+      "日記",
+      "ノート",
+      "だより",
+      "の部屋"
+    ],
+    "age": [
+      "{count}か月前",
+      "{count}か月前"
+    ],
+    "comments": [
+      "ここで思わず止めて見た",
+      "もう一回見たくなる場面",
+      "続きも聞いてみたい",
+      "こういう見方もあるんだね",
+      "ここを見返した人いる？",
+      "いろいろ考えさせられる",
+      "この場面は気になった",
+      "これはちょっと予想外だった",
+      "もう少し詳しく知りたい",
+      "この瞬間が印象に残った",
+      "聞いてみたいことが増えた",
+      "見返すとまた違って見える",
+      "この部分どう思った？",
+      "気づいたら最後まで見てた",
+      "ついここに戻ってしまう",
+      "みんなのコメントも気になる",
+      "この先がどうなるか見たい",
+      "誰かと話したくなる内容",
+      "なんだか考え込んでしまった",
+      "長い版も見てみたい"
+    ],
+    "reply": "返信"
+  },
+  "zh-CN": {
+    "name": "简体中文",
+    "intro": "你是一位用简体中文为短视频撰写自然评论的作者。",
+    "style": "使用自然的简体中文口语，适量加入幽默和共鸣，避免生硬翻译或重复反应。",
+    "title": [
+      "不容错过的",
+      "精彩片段"
+    ],
+    "reason": "AI暂不可用，因此从整段视频中均匀选取了片段。",
+    "prefixes": [
+      "晴天",
+      "白云",
+      "小河",
+      "晨光",
+      "咖啡",
+      "微风"
+    ],
+    "suffixes": [
+      "笔记",
+      "日记",
+      "小屋",
+      "视角"
+    ],
+    "age": [
+      "{count}个月前",
+      "{count}个月前"
+    ],
+    "comments": [
+      "这段让我停下来想了想",
+      "忍不住又看了一遍",
+      "还想听听后面的内容",
+      "这个角度还挺有意思",
+      "有人也回放了这一段吗",
+      "这里有不少值得思考的地方",
+      "这个片段吸引了我",
+      "这一点倒是没想到",
+      "想再了解一些背景",
+      "这个瞬间让人印象深刻",
+      "看完又多了几个问题",
+      "值得再看一遍的片段",
+      "大家怎么看这一部分",
+      "不知不觉就看完了",
+      "总想回头再看看这里",
+      "评论区应该也挺有意思",
+      "想知道接下来会怎样",
+      "这话题值得聊一聊",
+      "看完开始认真思考了",
+      "有完整版的话也想看看"
+    ],
+    "reply": "回复"
+  },
+  "es": {
+    "name": "español",
+    "intro": "Escribes comentarios naturales en español para vídeos cortos.",
+    "style": "Usa español coloquial, humor ligero y reacciones variadas. Evita traducciones forzadas y frases repetidas.",
+    "title": [
+      "Un momento que",
+      "no te puedes perder"
+    ],
+    "reason": "La IA no estaba disponible; se eligió un tramo repartido a lo largo del vídeo.",
+    "prefixes": [
+      "Sol",
+      "Nube",
+      "Rio",
+      "Cafe",
+      "Luna",
+      "Brisa"
+    ],
+    "suffixes": [
+      "Notas",
+      "Diario",
+      "Vista",
+      "Rincon"
+    ],
+    "age": [
+      "hace {count} mes",
+      "hace {count} meses"
+    ],
+    "comments": [
+      "Esta parte me hizo parar",
+      "Tuve que verlo otra vez",
+      "Ahora quiero escuchar más",
+      "Es una perspectiva interesante",
+      "¿Alguien más repitió esta parte?",
+      "Aquí hay mucho que pensar",
+      "Este momento me llamó la atención",
+      "No me esperaba eso",
+      "Me gustaría tener más contexto",
+      "Ese momento se queda en la memoria",
+      "Ahora tengo varias preguntas",
+      "Merece una segunda mirada",
+      "¿Qué pensáis de esta parte?",
+      "Me quedé hasta el final",
+      "Siempre vuelvo a este momento",
+      "Quiero leer los comentarios",
+      "Quiero ver qué pasa después",
+      "Esto da para una buena charla",
+      "Me dejó pensando un rato",
+      "Vería una versión más larga"
+    ],
+    "reply": "Responder"
+  },
+  "fr": {
+    "name": "français",
+    "intro": "Tu écris des commentaires naturels en français pour des vidéos courtes.",
+    "style": "Utilise un français courant, un humour léger et des réactions variées, sans traductions forcées ni répétitions.",
+    "title": [
+      "Le moment à",
+      "ne pas manquer"
+    ],
+    "reason": "L’IA était indisponible ; ce passage a été réparti sur la durée de la vidéo.",
+    "prefixes": [
+      "Soleil",
+      "Nuage",
+      "Riviere",
+      "Cafe",
+      "Lune",
+      "Brise"
+    ],
+    "suffixes": [
+      "Notes",
+      "Journal",
+      "Vue",
+      "Coin"
+    ],
+    "age": [
+      "il y a {count} mois",
+      "il y a {count} mois"
+    ],
+    "comments": [
+      "Ce passage m’a fait réfléchir",
+      "J’ai dû regarder une deuxième fois",
+      "Maintenant, je veux en savoir plus",
+      "C’est un point de vue intéressant",
+      "Qui a revu ce passage ?",
+      "Il y a de quoi réfléchir ici",
+      "Ce moment a retenu mon attention",
+      "Je ne m’attendais pas à ça",
+      "Un peu plus de contexte serait bien",
+      "Ce moment reste en tête",
+      "Maintenant, j’ai plusieurs questions",
+      "Ça mérite un deuxième visionnage",
+      "Vous en pensez quoi ?",
+      "Je suis resté jusqu’au bout",
+      "Je reviens toujours à ce passage",
+      "Hâte de lire les commentaires",
+      "Je veux voir la suite",
+      "Ça donne envie d’en discuter",
+      "Ça m’a laissé songeur",
+      "Je regarderais une version plus longue"
+    ],
+    "reply": "Répondre"
+  },
+  "de": {
+    "name": "Deutsch",
+    "intro": "Du schreibst natürliche deutsche Kommentare zu kurzen Videos.",
+    "style": "Schreibe in lockerem Deutsch mit etwas Humor und abwechslungsreichen Reaktionen. Vermeide steife Übersetzungen und Wiederholungen.",
+    "title": [
+      "Diesen Moment",
+      "nicht verpassen"
+    ],
+    "reason": "Die KI war nicht verfügbar; der Ausschnitt wurde gleichmäßig im Video verteilt.",
+    "prefixes": [
+      "Sonne",
+      "Wolke",
+      "Fluss",
+      "Kaffee",
+      "Mond",
+      "Wind"
+    ],
+    "suffixes": [
+      "Notiz",
+      "Tagebuch",
+      "Blick",
+      "Ecke"
+    ],
+    "age": [
+      "vor {count} Monat",
+      "vor {count} Monaten"
+    ],
+    "comments": [
+      "Da musste ich kurz innehalten",
+      "Das musste ich noch mal ansehen",
+      "Jetzt möchte ich mehr hören",
+      "Eine interessante Sichtweise",
+      "Wer hat diese Stelle auch wiederholt?",
+      "Da gibt es einiges zum Nachdenken",
+      "Dieser Moment hat mich gepackt",
+      "Damit hatte ich nicht gerechnet",
+      "Ich hätte gern etwas mehr Kontext",
+      "Der Moment bleibt im Kopf",
+      "Jetzt habe ich ein paar Fragen",
+      "Das lohnt einen zweiten Blick",
+      "Was denkt ihr über diese Stelle?",
+      "Ich bin bis zum Ende geblieben",
+      "Ich komme immer zu dieser Stelle zurück",
+      "Bin gespannt auf die Kommentare",
+      "Ich will sehen, wie es weitergeht",
+      "Darüber kann man gut reden",
+      "Das hat mich nachdenklich gemacht",
+      "Eine längere Version würde ich ansehen"
+    ],
+    "reply": "Antworten"
+  },
+  "pt-BR": {
+    "name": "português brasileiro",
+    "intro": "Você escreve comentários naturais em português brasileiro para vídeos curtos.",
+    "style": "Use português brasileiro coloquial, humor leve e reações variadas. Evite traduções artificiais e frases repetidas.",
+    "title": [
+      "Um momento que",
+      "você precisa ver"
+    ],
+    "reason": "A IA estava indisponível; o trecho foi distribuído ao longo do vídeo.",
+    "prefixes": [
+      "Sol",
+      "Nuvem",
+      "Rio",
+      "Cafe",
+      "Lua",
+      "Brisa"
+    ],
+    "suffixes": [
+      "Notas",
+      "Diario",
+      "Olhar",
+      "Canto"
+    ],
+    "age": [
+      "há {count} mês",
+      "há {count} meses"
+    ],
+    "comments": [
+      "Essa parte me fez parar",
+      "Tive que assistir de novo",
+      "Agora quero ouvir mais",
+      "É um ponto de vista interessante",
+      "Alguém mais voltou nessa parte?",
+      "Tem bastante coisa pra pensar aqui",
+      "Esse momento chamou minha atenção",
+      "Eu não estava esperando isso",
+      "Queria um pouco mais de contexto",
+      "Esse momento ficou na memória",
+      "Agora tenho algumas perguntas",
+      "Vale assistir mais uma vez",
+      "O que vocês acharam dessa parte?",
+      "Fiquei até o final",
+      "Sempre volto nesse trecho",
+      "Quero ver os comentários",
+      "Quero saber o que acontece depois",
+      "Isso rende uma boa conversa",
+      "Fiquei pensando nisso",
+      "Eu assistiria uma versão mais longa"
+    ],
+    "reply": "Responder"
+  }
+}

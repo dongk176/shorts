@@ -1,4 +1,5 @@
 import { AdminCreatorSupport } from "./admin-creator-support";
+import { AdminLanguageTest } from "./admin-language-test";
 import { AdminYoutubeDiscovery } from "./admin-youtube-discovery";
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
@@ -894,6 +895,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
             <AdminTossBillingSettings initialState={tossBillingRuntimeState} />
           ) : null}
           <AdminYoutubeDiscovery />
+          <AdminLanguageTest />
           <AdminRuntimeSettings
             initialEnabled={Boolean(runtimeSettingRows[0]?.enabled)}
             environmentEnabled={onboardingWelcomeGrantEnabled()}

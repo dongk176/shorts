@@ -52,6 +52,7 @@ CAPTION_FONT_FAMILIES = {
     EditorFontId.SUIT: "SUIT",
     EditorFontId.SPOQA_HAN_SANS_NEO: "Spoqa Han Sans Neo",
     EditorFontId.NOTO_SANS_KR: "Noto Sans KR",
+    EditorFontId.NOTO_SANS_JP: "Noto Sans CJK JP",
     EditorFontId.NANUM_SQUARE_NEO: "NanumSquare Neo",
     EditorFontId.SANDBOX_AGGRO: "SB Aggro",
     EditorFontId.JUA: "Jua",
@@ -1172,7 +1173,7 @@ def _basic_or_highlight_cues(
             require_word_frames=highlighted,
             word_separator=word_separator,
         )
-        if (cleaned := _without_display_periods(group))
+        if (cleaned := (_without_display_periods(group) if highlighted else group))
     ]
     cues: list[dict[str, object]] = []
     previous_end_frame = 0
@@ -1242,6 +1243,12 @@ def _basic_or_highlight_cues(
             if highlighted
             else [{"startFrame": start_frame, "endFrame": end_frame}]
         )
+        if not highlighted:
+            # Plain captions are phrase-timed. Trimming a translated phrase
+            # must not remove words using invented word-to-speech alignment.
+            for word in cue["words"]:
+                word.update(startFrame=start_frame, endFrame=end_frame,
+                            speechStartFrame=start_frame, speechEndFrame=end_frame)
         cues.append(cue)
     return cues
 
@@ -1452,7 +1459,7 @@ def rebuild_caption_cue_text(
     schema_version: int = 3,
 ) -> list[dict[str, object]]:
     """Reflow one trusted cue while preserving its compiled frame window."""
-    if template_id not in {"highlight", "pop"}:
+    if template_id not in CAPTION_TEMPLATE_IDS:
         raise CaptionCompileError("편집할 수 없는 자막 템플릿입니다.")
     if fps != CAPTION_FPS:
         raise CaptionCompileError("편집 자막 프레임레이트가 올바르지 않습니다.")
@@ -1519,7 +1526,7 @@ def rebuild_caption_cue_text(
         if template_id == "pop"
         else _basic_or_highlight_cues(
             words,
-            highlighted=True,
+            highlighted=template_id == "highlight",
             safe_area=safe_area,
             fps=fps,
             font_size=font_size or 72,
@@ -2004,7 +2011,7 @@ def create_caption_ass(spec: dict[str, Any], output_path: Path) -> Path:
         events = list(cue.get("events") or [])
         if not words or not events:
             continue
-        if schema_version == 4 and template_id == "highlight":
+        if schema_version == 4 and template_id in {"basic", "highlight"}:
             with _caption_font_context(font_id):
                 expected_separator_advance = canonical_px_v4(
                     _measure(

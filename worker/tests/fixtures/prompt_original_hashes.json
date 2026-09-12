@@ -1,0 +1,34 @@
+{
+  "ko": {
+    "selection": "a52301339115678b63c4bd906ae47f28a9b1d91103c3da0ade7c4ac6b801a0f8",
+    "comments": "c54d6d108d490732aca13f654831289c6a3699a73a066b5da6bd51ac45539c68"
+  },
+  "en": {
+    "selection": "b5a8608af36850fac4c70bebf4d0aaf8f1997a4d66b50da68aa6ecf3f38b6f31",
+    "comments": "76168a3d488ac768a6c26edad39169ea55a6a51ebb5f995c83d64d3d6a270c42"
+  },
+  "ja": {
+    "selection": "cc01eb955e5fdb48f0f815377c830336b63361491c4ea745c87eab282dcfeaaa",
+    "comments": "4d58890120b825f5db93ea61068618b43cd57eb9d8f41bc8d4e9bb03a65a18eb"
+  },
+  "zh-CN": {
+    "selection": "32489328c95b24df8e2e5e2a21bb01fb46758a865e3dba39354cc94e28bfd730",
+    "comments": "5e7c18829ea99638c3b1dcfbc32cacc126d6654bbdfe04e9c0d1063b9b2d1031"
+  },
+  "es": {
+    "selection": "ab30df3968cd2cd525066ed6e4913006a6f410be8e4e3c5f8ed1ffd7707e944d",
+    "comments": "0f260947d2f9ead2413c0143866148d948735ea7cc038def9e011e5444b97bc0"
+  },
+  "fr": {
+    "selection": "28001d52fea40ae4e396a475efa9cf137445663427c089fc9d7d772be16af82d",
+    "comments": "e1970121b574900a005672535ed920c9450d7d464bf61e75502a55b89d96ea43"
+  },
+  "de": {
+    "selection": "60239b26eef0e95730964b1aea48235cd65e79f910affb5bce484ac982f29bd1",
+    "comments": "a6015c6dc80e39e1c1061ed330b5354a156c4c15205b0a2287288faa8cac13b4"
+  },
+  "pt-BR": {
+    "selection": "44b9e6abf47112e36e8a1afd537bce51ec4447a24d013e78ae09d28cd0769766",
+    "comments": "1fa188e38438d02a7b35a48cc47d79ee4a44ad8515f7248e18d39cdb7ea50ee4"
+  }
+}

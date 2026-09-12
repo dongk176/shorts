@@ -30,6 +30,15 @@ const mocks = vi.hoisted(() => ({
   paidCommentGenerationEnabled: vi.fn(),
 }));
 
+vi.mock("@/lib/language-test", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/language-test")>()),
+  languageTestEditorRelease: async () => null,
+  resolveOwnedProjectEditorRelease: async (...args: Parameters<typeof import("@/lib/editor-rendering-release").resolveRequestedEditorRelease>) => {
+    const { resolveRequestedEditorRelease } = await import("@/lib/editor-rendering-release");
+    return resolveRequestedEditorRelease(args[0], args[1], args[2]);
+  },
+}));
+
 vi.mock("@aws-sdk/cloudfront-signer", () => ({
   getSignedUrl: mocks.signedUrl,
 }));

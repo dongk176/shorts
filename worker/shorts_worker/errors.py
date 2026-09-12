@@ -72,6 +72,10 @@ class TranscriptionError(ShortsMakerError):
     """Required audio transcription failed or produced no usable text."""
 
 
+class SubtitleTranslationError(ShortsMakerError):
+    """Transcription exists, but translated captions could not be validated."""
+
+
 class RenderError(ShortsMakerError):
     pass
 

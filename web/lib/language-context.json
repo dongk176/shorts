@@ -1,0 +1,63 @@
+{
+  "aliases": {
+    "kor": "ko",
+    "korean": "ko",
+    "eng": "en",
+    "english": "en",
+    "jpn": "ja",
+    "japanese": "ja",
+    "zho": "zh-cn",
+    "cmn": "zh-cn",
+    "zh": "zh-cn",
+    "chinese": "zh-cn",
+    "spa": "es",
+    "spanish": "es",
+    "fra": "fr",
+    "french": "fr",
+    "deu": "de",
+    "german": "de",
+    "por": "pt-br",
+    "pt": "pt-br",
+    "portuguese": "pt-br"
+  },
+  "names": {
+    "ko": {
+      "ko": "한국어",
+      "en": "영어",
+      "ja": "일본어",
+      "und": "감지되지 않음"
+    },
+    "en": {
+      "ko": "Korean",
+      "en": "English",
+      "ja": "Japanese",
+      "und": "Unknown"
+    },
+    "ja": {
+      "ko": "韓国語",
+      "en": "英語",
+      "ja": "日本語",
+      "und": "未検出"
+    }
+  },
+  "instructions": {
+    "ko": "원본 영상의 언어: {source} ({source_code})\n제목·댓글의 출력 언어: {target} ({target_code})\n제목·댓글은 출력 언어로 작성한다. 원문의 의미·수치·통화를 유지하며, 통화를 변경하거나 환산하지 않는다.",
+    "en": "Source video language: {source} ({source_code})\nOutput language for titles and comments: {target} ({target_code})\nWrite titles and comments in the output language. Preserve the original meaning, quantities, and currencies; do not change or convert currencies. Include the currency name or code beside every monetary amount, even when repeated. Preserve numeric ranges and bounds. If a monetary amount is unclear in the transcript, omit it rather than infer a value. Base factual claims only on the transcript. Do not omit qualifiers when shortening a claim; if it cannot fit accurately, omit the claim. Preserve actors, relationships, and certainty; do not turn a metaphor or demonstration into a factual result.",
+    "ja": "元動画の言語: {source} ({source_code})\nタイトル・コメントの出力言語: {target} ({target_code})\nタイトル・コメントは出力言語で書く。原文の意味・数量・通貨を保ち、通貨を変更・換算しない。金額には毎回、通貨名か通貨コードを付ける。 数値の範囲と上限・下限を保つ。文字起こしで不明確な金額は推測せず、書かない。 事実の主張は文字起こしだけに基づける。短縮時に限定条件を省かず、正確に収まらない主張は書かない。対象者・組織の関係や確実性を保ち、比喩や実演を事実としての成果に変えない。"
+  },
+  "currencyPatterns": {
+    "KRW": "₩|(?<![A-Za-z])KRW(?![A-Za-z])|\\bKorean won\\b|ウォン|\\d[\\d,.\\s천만억조]*원|\\d[\\d,.\\s]*(?:(?:[kmb]|thousand|million|billion|trillion)\\s*)?won\\b",
+    "USD": "\\$|(?<![A-Za-z])USD(?![A-Za-z])|\\bdollars?\\b|달러|ドル",
+    "JPY": "[¥￥]|(?<![A-Za-z])JPY(?![A-Za-z])|\\byen\\b|\\d[\\d,.\\s万億兆]*円|\\d[\\d,.\\s만억조]*엔",
+    "EUR": "€|(?<![A-Za-z])EUR(?![A-Za-z])|\\beuros?\\b|유로|ユーロ",
+    "GBP": "£|(?<![A-Za-z])GBP(?![A-Za-z])|\\bBritish pounds?\\b|\\bpounds? sterling\\b"
+  },
+  "scaledNumberPattern": "(?:\\d[\\d,]*(?:\\.\\d+)?\\s*(?:trillion|billion|million|thousand|[kmbt])\\b|\\d[\\d,]*(?:\\.\\d+)?\\s*[千万億兆]+(?:\\s*\\d[\\d,]*(?:\\.\\d+)?\\s*[千万億兆]+)*)",
+  "amountCurrencyLabelPattern": "(?:KRW(?![A-Za-z])|USD(?![A-Za-z])|JPY(?![A-Za-z])|EUR(?![A-Za-z])|GBP(?![A-Za-z])|(?:(?:South )?Korean )?won\\b|(?:US |U\\.S\\. )?dollars?\\b|(?:Japanese )?yen\\b|euros?\\b|(?:British )?pounds?\\b|(?:韓国)?ウォン|(?:米|米国|アメリカ)?ドル|(?:日本)?円|ユーロ|(?:英)?ポンド|[₩$¥￥€£])",
+  "amountCountUnitPattern": "(?:(?:PCs?|computers?|models?|GB|MB|KB|TB|pixels?|views?|people|users?|subscribers?|followers?|likes?|comments?|shares?|times?|years?|months?|days?|hours?|minutes?|seconds?|employees?|members?|copies|words?|characters?|stars?|cells?|jobs?)\\b|世代|代|位|人|件|回|台|本|個|枚|社|字|文字|秒|分|時間|日|年|PV\\b|再生|登録|いいね|フォロワー|%|パーセント)",
+  "amountRangeSeparatorPattern": "(?:[〜～~–—-]|to\\b|から)\\s*",
+  "vagueScaledNumberPattern": "(?:数[千万億兆]+|\\b(?:(?:several|many|a few|tens of|hundreds of)\\s+(?:thousand|million|billion|trillion)s?|(?:thousands|millions|billions|trillions))\\b)",
+  "monetaryContextPattern": "(?:\\b(?:costs?|expenses?|price|rent|fees?|money|income|earn(?:s|ed|ing)?|profit|asset|revenue|salary|wealth|cash|interest|bank)\\b|固定費|費用|支出|家賃|価格|入って|入り|入る|利息|利子|銀行|資産|収益|収入|売上|稼|給料|年収|고정비|비용|지출|돈|이자|은행|자산|수익|매출|연봉|급여)",
+  "bareLargeNumberPattern": "(?<![A-Za-z0-9.,])(?:[1-9]\\d{3,}|[1-9]\\d{0,2}(?:,\\d{3})+)(?:\\.\\d+)?(?![A-Za-z0-9.,])",
+  "nonAmountNumberPrefixPattern": "(?:\\b(?:in|since|during|year|RTX|GTX|model)\\s*)$"
+}

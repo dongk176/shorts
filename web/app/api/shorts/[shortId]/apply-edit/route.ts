@@ -1,3 +1,5 @@
+import { resolveOwnedProjectEditorRelease } from "@/lib/language-test";
+import { subtitleTranslationOutcome } from "@/lib/subtitle-translation-outcome";
 import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -5,6 +7,7 @@ import { putEditorChannelAsset } from "@/lib/aws";
 import { getBillingSummary } from "@/lib/billing";
 import {
   captionRenderSpecForEditor,
+  captionSpecMatchesTemplate,
   parseCaptionRenderSpec,
 } from "@/lib/caption-render-spec";
 import { templateIds } from "@/lib/contracts";
@@ -33,11 +36,10 @@ import {
   editorReleaseSupportsRenderSpecV3,
   editorReleaseSupportsRenderSpecV4,
   subtitleEditingReleaseEnabled,
-  resolveRequestedEditorRelease,
   type EditorReleaseAssignment,
   type RequestedEditorRelease,
 } from "@/lib/editor-rendering-release";
-import { isStableEditorFontId } from "@/lib/editor-fonts";
+import { editorSupportsJapaneseFont, isStableEditorFontId } from "@/lib/editor-fonts";
 import { resolveEditedTemplateSelection } from "@/lib/edit-template-selection";
 import { apiError, HttpError } from "@/lib/http";
 import {
@@ -175,7 +177,7 @@ function sameTimelineSecond(left: number, right: number) {
   return Math.abs(left - right) <= RANGE_EDIT_BOUNDARY_TOLERANCE_SECONDS;
 }
 
-function usesCandidateOnlyEditorFont(
+function editorDocumentFontIds(
   document: ValidatedEditorDocumentSnapshot,
 ) {
   return [
@@ -187,7 +189,7 @@ function usesCandidateOnlyEditorFont(
       && document.renderSpec.subtitles
       ? [document.renderSpec.subtitles.fontId]
       : []),
-  ].some((fontId) => fontId != null && !isStableEditorFontId(fontId));
+  ];
 }
 
 async function applyEditorDocument({
@@ -208,10 +210,11 @@ async function applyEditorDocument({
   const session = await requireAuthenticatedMvpSession();
   const db = getDb();
   await assertEnterpriseSessionServiceAccess(db, session);
-  const release = await resolveRequestedEditorRelease(
+  const release = await resolveOwnedProjectEditorRelease(
     db,
     session.userId,
     requestedRelease,
+    shortId,
   );
   if (release.channel === "legacy" || !release.releaseId) {
     throw new HttpError(404, "새 편집 저장 기능을 찾을 수 없습니다.");
@@ -223,9 +226,17 @@ async function applyEditorDocument({
       "EDITOR_RELEASE_VERSION_CONFLICT",
     );
   }
-  const candidateOnlyFontRequested = usesCandidateOnlyEditorFont(
-    requestedDocument,
-  );
+  const fontIds = editorDocumentFontIds(requestedDocument);
+  const candidateOnlyFontRequested = fontIds.some((fontId) => fontId != null && !isStableEditorFontId(fontId));
+  // Japanese text uses the exact renderer manifest check below. It does not
+  // grant access to unified subtitles or other candidate-only fonts.
+  const unifiedFontAccessRequired = fontIds.some((fontId) => (
+    fontId != null && fontId !== "noto-sans-jp" && !isStableEditorFontId(fontId)
+  ));
+  const japaneseFontRequested = fontIds.includes("noto-sans-jp");
+  if (japaneseFontRequested && !editorSupportsJapaneseFont(release.fontManifestSha256)) {
+    throw new HttpError(409, "현재 프로젝트에서 사용할 수 있는 글꼴로 다시 저장해 주세요.", "EDITOR_FONT_UNSUPPORTED");
+  }
   const renderSpecV4Requested = requestedDocument.version === 3
     && requestedDocument.renderSpec.version === EDITOR_RENDER_SPEC_V4_VERSION;
   const subtitleEditingRequested = requestedDocument.version === 3
@@ -379,14 +390,16 @@ async function applyEditorDocument({
       "SUBTITLE_TEMPLATE_EDIT_UNSUPPORTED",
     );
   }
-  if (unifiedSubtitleEditRequested || candidateOnlyFontRequested) {
+  if (!release.languageTest && (unifiedSubtitleEditRequested || unifiedFontAccessRequired)) {
     assertUnifiedTemplateSubtitleCanaryAccess(
       await getEffectiveSubtitleTemplateAccess(db, session.userId),
     );
   }
-  const storedCaptionRenderSpec = existing.subtitleTemplateId
-    ? parseCaptionRenderSpec(existing.captionRenderSpec)
-    : null;
+  if (subtitleTranslationOutcome(existing.subtitleTemplateSnapshot)?.status === "unavailable"
+    && requestedDocument.subtitles.enabled) {
+    throw new HttpError(409, "번역이 완료되지 않아 자막을 켤 수 없습니다.", "SUBTITLE_TRANSLATION_UNAVAILABLE");
+  }
+  const storedCaptionRenderSpec = parseCaptionRenderSpec(existing.captionRenderSpec);
   const captionRenderSpec = storedCaptionRenderSpec
     ? captionRenderSpecForEditor(storedCaptionRenderSpec)
     : null;
@@ -400,7 +413,7 @@ async function applyEditorDocument({
   if (
     captionRenderSpec
     && existing.subtitleTemplateId
-    && captionRenderSpec.templateId !== existing.subtitleTemplateId
+    && !captionSpecMatchesTemplate(captionRenderSpec, existing.subtitleTemplateId)
   ) {
     throw new HttpError(
       409,
@@ -703,15 +716,17 @@ async function applyEditorDocument({
   let persistedRelease = release;
   await db.begin(async (tx) => {
     const lockedRelease: EditorReleaseAssignment =
-      await resolveRequestedEditorRelease(
+      await resolveOwnedProjectEditorRelease(
         tx,
         session.userId,
         requestedRelease,
+        shortId,
       );
     if (
       lockedRelease.channel === "legacy"
       || !lockedRelease.releaseId
       || lockedRelease.releaseId !== release.releaseId
+      || (japaneseFontRequested && !editorSupportsJapaneseFont(lockedRelease.fontManifestSha256))
       || (
         renderSpecV4Requested
         && !editorReleaseSupportsRenderSpecV4(lockedRelease)
@@ -746,7 +761,7 @@ async function applyEditorDocument({
         "EDITOR_RELEASE_CHANGED",
       );
     }
-    if (unifiedSubtitleEditRequested || candidateOnlyFontRequested) {
+    if (!lockedRelease.languageTest && (unifiedSubtitleEditRequested || unifiedFontAccessRequired)) {
       assertUnifiedTemplateSubtitleCanaryAccess(
         await lockEffectiveSubtitleTemplateAccess(tx, session.userId),
       );

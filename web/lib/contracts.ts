@@ -199,6 +199,7 @@ export type Plan = {
 };
 
 export type GeneratedShort = {
+  subtitleTranslation?: import("./subtitle-translation-outcome").SubtitleTranslationOutcome | null;
   id: string;
   clipIndex: number;
   startSeconds: number;
@@ -247,6 +248,8 @@ export type VideoJob = {
   thumbnailUrl: string;
   sourceDurationSeconds: number;
   outputLanguage: OutputLanguage;
+  sourceLanguage?: import("./language-context").SourceLanguage | null;
+  languageTest?: boolean;
   expectedShortCount: number;
   plannedShortCount: number;
   readyShortCount: number;
@@ -318,6 +321,7 @@ export type MvpState = {
   paymentMethodAction: PaymentMethodAction;
   usage: UsageSnapshot;
   capabilities: {
+    languageTest?: boolean;
     fileUpload: boolean;
     customTemplateDesign?: boolean;
     unifiedTemplateSubtitles: boolean;

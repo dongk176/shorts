@@ -1628,3 +1628,26 @@
     min-height: 0;
   }
 }
+
+/* Separate immutable Japanese face; existing KR font files stay unchanged. */
+@font-face {
+  font-family: "Editor Noto Sans JP";
+  src: url("/fonts/editor/NotoSansCJKjp-Variable.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Editor V3 Noto Sans JP";
+  src: url("/fonts/editor/NotoSansCJKjp-Variable.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Editor V4 Noto Sans JP";
+  src: url("/fonts/editor/NotoSansCJKjp-Variable.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}

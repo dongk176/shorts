@@ -63,7 +63,7 @@ test("release switches default to legacy and v2 saving is server-authorized", as
   );
   assert.match(
     page,
-    /resolveUnifiedTemplateSubtitleEditorContext\(db, session\.userId\)[\s\S]*editorRelease = resolvedEditorRelease/,
+    /resolveUnifiedTemplateSubtitleEditorContext\(db, session\.userId, shortId\)[\s\S]*editorRelease = resolvedEditorRelease/,
   );
   assert.match(
     subtitleRelease,

@@ -1,4 +1,6 @@
 import fallbackComments from "./fallback-comments.json";
+import { commentDuplicateKey, contentLanguages } from "./content-language";
+import type { OutputLanguage } from "./contracts";
 
 export const FALLBACK_COMMENT_TEXTS: readonly string[] = Object.freeze([
   ...fallbackComments,
@@ -8,16 +10,20 @@ export function selectRandomFallbackCommentTexts(
   count: number,
   excludedTexts: Iterable<string> = [],
   random: () => number = Math.random,
+  outputLanguage: OutputLanguage = "ko",
 ) {
   const requestedCount = Math.max(0, Math.floor(count));
-  const excluded = new Set(excludedTexts);
-  let candidates = FALLBACK_COMMENT_TEXTS.filter((text) => !excluded.has(text));
+  const catalog = outputLanguage === "ko"
+    ? FALLBACK_COMMENT_TEXTS : contentLanguages[outputLanguage].comments;
+  const excluded = new Set(Array.from(excludedTexts, commentDuplicateKey));
+  let candidates = catalog.filter((text) => !excluded.has(commentDuplicateKey(text)));
   if (candidates.length === 0 && requestedCount > 0) {
-    candidates = [...FALLBACK_COMMENT_TEXTS];
+    candidates = [...catalog];
   }
 
   const selected: string[] = [];
-  while (selected.length < Math.min(requestedCount, candidates.length)) {
+  const selectedCount = Math.min(requestedCount, candidates.length);
+  while (selected.length < selectedCount) {
     const randomIndex = Math.min(
       candidates.length - 1,
       Math.max(0, Math.floor(random() * candidates.length)),

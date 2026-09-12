@@ -1,5 +1,6 @@
 "use client";
 
+import { sourceLanguages, type SourceLanguage } from "@/lib/language-context";
 import { Fragment, FormEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type {
   ChangeEvent,
@@ -15,6 +16,7 @@ import { AuthControls } from "@/components/auth-controls";
 import { BackgroundShowcase } from "@/components/background-showcase";
 import { BackgroundAssetPicker } from "@/components/background-asset-picker";
 import { BrandColorPicker } from "@/components/brand-color-picker";
+import { ContentLanguageSelect } from "@/components/content-language-select";
 import { CustomTemplateCanvasPreview } from "@/components/custom-template-canvas-preview";
 import { CustomTemplateTitlePreview } from "@/components/custom-template-title-preview";
 import { DesktopEditorGuide } from "@/components/desktop-editor-guide";
@@ -66,13 +68,14 @@ import type {
   VideoJob,
   YoutubeAnalysis,
 } from "@/lib/contracts";
-import { expectedShortCount, videoAspectRatioOptions } from "@/lib/contracts";
+import { expectedShortCount, outputLanguageOptions, videoAspectRatioOptions } from "@/lib/contracts";
 import { builtInSubtitlePresentation } from "@/lib/built-in-subtitle-presentation";
 import { videoAspectRatioForTemplate } from "@/lib/video-aspect-ratio-selection";
 import { presetTemplateDisplayName } from "@/lib/admin-template-copy";
 import {
   CAPTION_ASS_PREVIEW_FONT_SCALE,
   captionRenderSpecForEditor,
+  captionSpecMatchesTemplate,
   type CaptionRenderSpec,
 } from "@/lib/caption-render-spec";
 import {
@@ -167,6 +170,8 @@ import {
   COMMENT_LIKE_COUNT_MIN,
   randomCommentLikeCount,
 } from "@/lib/comment-overlay";
+import { commentActionLabels, commentAgeLabel, commentFontFamily, contentLanguages, contentTitleFont } from "@/lib/content-language";
+import { outputLanguageName } from "@/lib/i18n/product";
 import { selectRandomFallbackCommentTexts } from "@/lib/fallback-comments";
 import {
   createProjectEditRefreshSignal,
@@ -223,6 +228,7 @@ import {
   DEFAULT_EDITOR_FONT_ID,
   editorFontFamily,
   editorFontOptions,
+  editorUsesJapaneseFont,
   ensureEditorFontFaceV4Loaded,
   resolveEditorFontFace,
   resolveEditorFontFaceV4,
@@ -327,6 +333,7 @@ import {
 } from "@/lib/editor-video-cuts";
 import { CENTER_SNAP_THRESHOLD_PX } from "@/lib/template-editor-snap";
 import { billingSupportsCustomTemplates } from "@/lib/template-entitlements";
+import { SubtitleTranslationNotice } from "@/components/subtitle-translation-notice";
 import { currentClientLocale, localizeApiError, localizeAuthError } from "@/lib/i18n/errors";
 import { messagesByLocale } from "@/lib/i18n/messages";
 import { useI18n } from "@/lib/i18n/provider";
@@ -499,8 +506,6 @@ const titleBackgroundColorOptions = [
 ] as const;
 
 const commentAvatarColors = ["#8B2CC4", "#D84572", "#2674C8", "#257A5A", "#C76624", "#6655C7"];
-const commentNicknamePrefixes = ["하루", "모카", "여름", "초코", "구름", "새벽", "라온", "소담"];
-const commentNicknameSuffixes = ["기록", "한스푼", "로그", "이야기", "채널", "노트", "생활", "공간"];
 
 function randomItem<T>(values: T[]) {
   return values[Math.floor(Math.random() * values.length)];
@@ -509,9 +514,11 @@ function randomItem<T>(values: T[]) {
 function randomComment(
   startSeconds: number,
   endSeconds: number,
-  text = selectRandomFallbackCommentTexts(1)[0] || "아 진짜 ㅋㅋㅋㅋㅋㅋㅋㅋ",
+  outputLanguage: OutputLanguage,
+  text = selectRandomFallbackCommentTexts(1, [], Math.random, outputLanguage)[0],
 ): CommentOverlay {
-  const nickname = `${randomItem(commentNicknamePrefixes)}${randomItem(commentNicknameSuffixes)}${Math.floor(Math.random() * 90) + 10}`;
+  const profile = contentLanguages[outputLanguage];
+  const nickname = `${randomItem(profile.prefixes)}${randomItem(profile.suffixes)}${Math.floor(Math.random() * 90) + 10}`;
   return {
     id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`,
     startSeconds: Math.round(startSeconds * 1000) / 1000,
@@ -521,16 +528,17 @@ function randomComment(
     avatarColor: randomItem(commentAvatarColors),
     nickname,
     likeCount: randomCommentLikeCount(),
-    ageLabel: `${Math.floor(Math.random() * 11) + 1}개월 전`,
+    ageLabel: commentAgeLabel(Math.floor(Math.random() * 11) + 1, outputLanguage),
   };
 }
 
-function defaultComments(durationSeconds: number) {
+function defaultComments(durationSeconds: number, outputLanguage: OutputLanguage) {
   const duration = Math.max(0.3, durationSeconds);
-  const commentTexts = selectRandomFallbackCommentTexts(3);
+  const commentTexts = selectRandomFallbackCommentTexts(3, [], Math.random, outputLanguage);
   return [0, 1, 2].map((index) => randomComment(
     duration * index / 3,
     duration * (index + 1) / 3,
+    outputLanguage,
     commentTexts[index],
   ));
 }
@@ -994,20 +1002,18 @@ function ReactionIcon({ down = false }: { down?: boolean }) {
   );
 }
 
-function formatCompactKoreanCount(value: number) {
-  const compact = (amount: number) => Number.isInteger(amount) ? String(amount) : amount.toFixed(1);
-  if (value >= 10_000) return `${compact(Math.floor(value / 1_000) / 10)}만`;
-  if (value >= 1_000) return `${compact(Math.floor(value / 100) / 10)}천`;
-  return value.toLocaleString("ko-KR");
-}
-
 function CommentCaptureCard({
   comment,
   theme = "dark",
+  japaneseFontEnabled = false,
+  outputLanguage = "ko",
 }: {
   comment: CommentOverlay | null;
   theme?: EditorCommentTheme;
+  japaneseFontEnabled?: boolean;
+  outputLanguage?: OutputLanguage;
 }) {
+  const actions = commentActionLabels(comment?.likeCount || 0, outputLanguage);
   const dark = theme === "dark";
   const foreground = dark ? "#f5f5f6" : "#18181b";
   const muted = dark ? "#a3a3aa" : "#6b6b73";
@@ -1017,14 +1023,14 @@ function CommentCaptureCard({
       style={{ backgroundColor: dark ? "#040404" : "#ffffff", color: foreground }}
     >
       {comment ? <div className="flex items-start gap-[2.7cqw]">
-        <div className="grid h-[8.6cqw] w-[8.6cqw] shrink-0 place-items-center rounded-full text-[3.7cqw] font-bold text-white blur-[0.65cqw]" style={{ background: comment.avatarColor }}>{comment.initial}</div>
+        <div className="grid h-[8.6cqw] w-[8.6cqw] shrink-0 place-items-center rounded-full text-[3.7cqw] font-bold text-white blur-[0.65cqw]" style={{ background: comment.avatarColor, fontFamily: commentFontFamily(comment.initial, japaneseFontEnabled) }}>{comment.initial}</div>
         <div className="min-w-0 flex-1">
-          <div className="w-fit max-w-[74cqw] truncate text-[3.45cqw] font-bold leading-tight blur-[0.52cqw]" style={{ color: foreground }}>@{comment.nickname} <span className="font-normal" style={{ color: muted }}>{comment.ageLabel}</span></div>
-          <p className="mt-[1.5cqw] line-clamp-2 whitespace-pre-wrap font-normal leading-[1.28] blur-[0.05cqw]" style={{ color: foreground, fontSize: `${COMMENT_CAPTURE_BODY_FONT_CQW}cqw` }}>{comment.text}</p>
+          <div className="w-fit max-w-[74cqw] truncate text-[3.45cqw] font-bold leading-tight blur-[0.52cqw]" style={{ color: foreground, fontFamily: commentFontFamily(comment.nickname + comment.ageLabel, japaneseFontEnabled) }}>@{comment.nickname} <span className="font-normal" style={{ color: muted }}>{comment.ageLabel}</span></div>
+          <p className="mt-[1.5cqw] line-clamp-2 whitespace-pre-wrap font-normal leading-[1.28] blur-[0.05cqw]" style={{ color: foreground, fontSize: `${COMMENT_CAPTURE_BODY_FONT_CQW}cqw`, fontFamily: commentFontFamily(comment.text, japaneseFontEnabled) }}>{comment.text}</p>
           <div className="mt-[2.1cqw] flex items-center gap-[1.25cqw] text-[3.4cqw] blur-[0.035cqw]" style={{ color: muted }}>
-            <ReactionIcon /><span>{formatCompactKoreanCount(comment.likeCount)}</span>
+            <ReactionIcon /><span data-i18n-skip>{actions.likes}</span>
             <span className="ml-[2.2cqw]"><ReactionIcon down /></span>
-            <span className="ml-[3cqw] text-[3.25cqw]">답글</span>
+            <span data-i18n-skip className="ml-[3cqw] text-[3.25cqw]" style={{ fontFamily: commentFontFamily(actions.reply, outputLanguage === "ja") }}>{actions.reply}</span>
           </div>
         </div>
       </div> : null}
@@ -1925,8 +1931,8 @@ function CaptionTemplateEditorPreview({
         role="button"
         tabIndex={0}
         aria-label={textEditingEnabled
-          ? "강조형 자막 위치·크기·텍스트 편집"
-          : "강조형 자막 위치·크기 설정"}
+          ? `${spec.templateId === "basic" ? "기본형" : "강조형"} 자막 위치·크기·텍스트 편집`
+          : `${spec.templateId === "basic" ? "기본형" : "강조형"} 자막 위치·크기 설정`}
         title={textEditingEnabled
           ? "드래그해서 이동 · 더블클릭해서 자막 수정"
           : "드래그해서 자막 위치 이동"}
@@ -2025,6 +2031,7 @@ function TemplatePicker({
   brandColor,
   onBrandColorChange,
   settingsBelowRail,
+  translationNotice,
 }: {
   value: TemplateId;
   onChange: (value: TemplateId) => void;
@@ -2047,6 +2054,7 @@ function TemplatePicker({
   brandColor: TemplatePresetColor;
   onBrandColorChange: (value: TemplatePresetColor) => void;
   settingsBelowRail: boolean;
+  translationNotice?: string | null;
 }) {
   const positionedWordsV4Enabled = isEditorRenderSpecV4Enabled();
   const usablePersonalTemplates = canUseCustomTemplates ? personalTemplates : [];
@@ -2131,6 +2139,11 @@ function TemplatePicker({
         <h2 className="text-xl font-bold">템플릿</h2>
         <span className="text-xs font-semibold text-red-300">{selectedSubtitleTemplate?.name || selectedCustom?.name || selectedPresetDisplayName}</span>
       </div>
+      {translationNotice && (
+        <p role="status" data-subtitle-translation-notice className="mt-3 rounded-xl border border-[#ff715e]/25 bg-[#ff715e]/[.07] px-4 py-3 text-sm leading-6 text-neutral-200">
+          {translationNotice}
+        </p>
+      )}
       {!settingsBelowRail && templateSettings}
       <div
         aria-label="템플릿 선택 레일"
@@ -3985,7 +3998,9 @@ function CommentTimelineEditor({
   </section>;
 }
 
-function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = false, projectLabel, projectNumber, rangeEditingEnabled = false, overlayPreviewEnabled = false, editorSaveEnabled = false, editorRelease, unifiedTemplateSubtitleCanaryEnabled = false, customTemplateDesignEnabled = false, wordTimedSubtitlesAvailable = false, paidAccessBlocked = false }: { item: GeneratedShort; channelThumbnailUrl: string | null; onClose: () => void; onChanged: () => Promise<void>; standalone?: boolean; projectLabel?: string; projectNumber?: number; rangeEditingEnabled?: boolean; overlayPreviewEnabled?: boolean; editorSaveEnabled?: boolean; editorRelease: EditorReleaseAssignment; unifiedTemplateSubtitleCanaryEnabled?: boolean; customTemplateDesignEnabled?: boolean; wordTimedSubtitlesAvailable?: boolean; paidAccessBlocked?: boolean }) {
+function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThumbnailUrl, onClose, onChanged, standalone = false, projectLabel, projectNumber, rangeEditingEnabled = false, overlayPreviewEnabled = false, editorSaveEnabled = false, editorRelease, unifiedTemplateSubtitleCanaryEnabled = false, customTemplateDesignEnabled = false, wordTimedSubtitlesAvailable = false, paidAccessBlocked = false }: { item: GeneratedShort; outputLanguage: OutputLanguage; commentOutputLanguage?: OutputLanguage; channelThumbnailUrl: string | null; onClose: () => void; onChanged: () => Promise<void>; standalone?: boolean; projectLabel?: string; projectNumber?: number; rangeEditingEnabled?: boolean; overlayPreviewEnabled?: boolean; editorSaveEnabled?: boolean; editorRelease: EditorReleaseAssignment; unifiedTemplateSubtitleCanaryEnabled?: boolean; customTemplateDesignEnabled?: boolean; wordTimedSubtitlesAvailable?: boolean; paidAccessBlocked?: boolean }) {
+  const { locale: editorLocale } = useI18n();
+  const translationUnavailable = item.subtitleTranslation?.status === "unavailable";
   const positionedWordsV4Enabled = isEditorRenderSpecV4Enabled();
   const adminSubtitleLayoutEnabled = subtitleEditingReleaseEnabled(
     editorRelease,
@@ -4000,19 +4015,24 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       editorRenderSpecVersion === 3
       || editorRenderSpecVersion === EDITOR_RENDER_SPEC_V4_VERSION
     );
-  const availableEditorFontOptions = fullSubtitleStyleEditingEnabled
+  const japaneseFontEnabled = editorUsesJapaneseFont(
+    outputLanguage, editorRelease.fontManifestSha256,
+    item.initialRenderSpec?.version === EDITOR_RENDER_SPEC_V4_VERSION
+      ? item.initialRenderSpec.title.font.fontId : undefined,
+  );
+  const availableEditorFontOptions = (fullSubtitleStyleEditingEnabled || japaneseFontEnabled
     ? editorFontOptions
-    : stableEditorFontOptions;
+    : stableEditorFontOptions).filter((font) => font.id !== "noto-sans-jp" || japaneseFontEnabled);
   const captionTemplateEditorSpec = adminSubtitleLayoutEnabled
     && item.captionRenderSpec
-    && item.subtitleTemplateId === item.captionRenderSpec.templateId
+    && captionSpecMatchesTemplate(item.captionRenderSpec, item.subtitleTemplateId)
     ? captionRenderSpecForEditor(item.captionRenderSpec)
     : null;
   const dynamicWordTimedSubtitleEditing = unifiedSubtitleLayoutEnabled
-    && !captionTemplateEditorSpec;
+    && !translationUnavailable && !captionTemplateEditorSpec;
   const captionTextEditingEnabled = !dynamicWordTimedSubtitleEditing;
   const adminSubtitleEditingEnabled = adminSubtitleLayoutEnabled
-    && (wordTimedSubtitlesAvailable || Boolean(captionTemplateEditorSpec));
+    && !translationUnavailable && (wordTimedSubtitlesAvailable || Boolean(captionTemplateEditorSpec));
   const subtitleToolVisible = unifiedSubtitleLayoutEnabled
     ? adminSubtitleLayoutEnabled
     : adminSubtitleEditingEnabled;
@@ -4273,7 +4293,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       ...comment,
       likeCount: Math.max(COMMENT_LIKE_COUNT_MIN, comment.likeCount),
     }));
-    return defaultComments(item.durationSeconds);
+    return defaultComments(item.durationSeconds, outputLanguage);
   });
   const commentsRef = useRef(comments);
   const [titleFontScale, setTitleFontScale] = useState(
@@ -4976,7 +4996,13 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       enabled: subtitlesEnabled,
       segments: cloneEditorSubtitleSegments(segments),
     },
-    overlays: overlayLayout,
+    overlays: {
+      ...overlayLayout,
+      fonts: {
+        ...overlayLayout.fonts,
+        title: contentTitleFont(title, overlayLayout.fonts?.title || DEFAULT_EDITOR_FONT_ID, japaneseFontEnabled),
+      },
+    },
     video: {
       clips: videoClips,
       aspectRatio: item.videoAspectRatio || "1:1",
@@ -5030,6 +5056,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     videoClips,
     editTimeline?.timelineEndSeconds,
     editTimeline?.timelineStartSeconds,
+    japaneseFontEnabled,
     editorRelease.documentVersion,
     adminSubtitleLayoutEnabled,
     adminSubtitleEditingEnabled,
@@ -5536,7 +5563,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   );
   const captionTemplatePreviewSnapshot = captionTemplateEditorSpec
     ? subtitleTemplateStyleSnapshot(
-        captionTemplateEditorSpec.templateId,
+        captionTemplateEditorSpec.templateId === "basic" ? "highlight" : captionTemplateEditorSpec.templateId,
         originalAspectRatio,
         (subtitleLayout.accentColor
           || captionTemplateEditorSpec.style.accentColor) as TemplatePresetColor,
@@ -9298,10 +9325,12 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     const nextCommentText = selectRandomFallbackCommentTexts(
       1,
       before.map((comment) => comment.text),
+      Math.random,
+      outputLanguage,
     )[0];
     let after: CommentOverlay[];
     if (before.length === 0) {
-      after = [randomComment(0, item.durationSeconds, nextCommentText)];
+      after = [randomComment(0, item.durationSeconds, outputLanguage, nextCommentText)];
     } else {
       const longest = before.reduce((selected, comment) => (
         comment.endSeconds - comment.startSeconds > selected.endSeconds - selected.startSeconds ? comment : selected
@@ -9312,7 +9341,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
         ...before.map((comment) => (
           comment.id === longest.id ? { ...comment, endSeconds: midpoint } : comment
         )),
-        randomComment(midpoint, longest.endSeconds, nextCommentText),
+        randomComment(midpoint, longest.endSeconds, outputLanguage, nextCommentText),
       ];
     }
     commentsRef.current = after;
@@ -10252,6 +10281,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             <div className="editor-header-title-row">
               <h1 data-i18n-skip={Boolean(projectLabel) || undefined}>{projectLabel || "제목 없는 영상"}</h1>
             </div>
+            <SubtitleTranslationNotice outcome={item.subtitleTranslation} locale={editorLocale} />
           </div>
           <div className="editor-header-actions">
             {overlayPreviewEnabled && <div
@@ -10822,6 +10852,8 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                         theme={editorCommentTheme}
                         size={activeCustomTemplate.config.comment.size}
                         comment={layoutPreviewComment}
+                        japaneseFontEnabled={japaneseFontEnabled}
+                        outputLanguage={commentOutputLanguage}
                       />
                     </div>
                   : null}
@@ -10884,6 +10916,8 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                           <CommentCaptureCard
                             comment={layoutPreviewComment}
                             theme={editorCommentTheme}
+                            japaneseFontEnabled={japaneseFontEnabled}
+                            outputLanguage={commentOutputLanguage}
                           />
                         </div>}
                         {renderOverlayLayout.visible.channel && usesLiftedCommentLayout && !usesFixedPresetChannel && <CommentCaptureChannel
@@ -11444,8 +11478,10 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             >
               <header className="editor-tool-panel-header">
                 <div className="flex items-center gap-2">
-                  <strong>{captionTemplateEditorSpec
-                    ? captionTemplateEditorSpec.templateId === "pop"
+                  <strong>{translationUnavailable ? "자막 번역 미완료" : captionTemplateEditorSpec
+                    ? captionTemplateEditorSpec.templateId === "basic"
+                      ? "기본형 번역 자막"
+                      : captionTemplateEditorSpec.templateId === "pop"
                       ? "팝형 자막"
                       : "강조형 자막"
                     : "강조형 자막"}</strong>
@@ -11458,10 +11494,10 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                   className="editor-visibility-toggle disabled:cursor-not-allowed disabled:opacity-40"
                   aria-label={subtitlesEnabled ? "자막 끄기" : "자막 켜기"}
                   aria-pressed={subtitlesEnabled}
-                  disabled={unifiedSubtitleLayoutEnabled
+                  disabled={translationUnavailable || (unifiedSubtitleLayoutEnabled
                     && !subtitlesEnabled
-                    && !editableCaptionSourceSpec}
-                  title={unifiedSubtitleLayoutEnabled
+                    && !editableCaptionSourceSpec)}
+                  title={translationUnavailable ? "번역이 완료되지 않아 자막을 켤 수 없습니다." : unifiedSubtitleLayoutEnabled
                     && !subtitlesEnabled
                     && !editableCaptionSourceSpec
                     ? "단어 타이밍이 없어 자막을 켤 수 없습니다."
@@ -11476,7 +11512,9 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                 ? editableCaptionSourceSpec
                   ? <>
               <p className="mb-5 text-xs leading-5 text-white/60">
-                {captionTextEditingEnabled
+                {editableCaptionSourceSpec.templateId === "basic"
+                  ? "번역 자막은 팝업·강조 효과 없이 기본형으로 표시됩니다. 위치·글꼴·크기·색상을 바꾸거나 자막을 더블클릭해 문구를 수정할 수 있습니다."
+                  : captionTextEditingEnabled
                   ? <>자막을 위아래로 드래그해 옮기거나 더블클릭해 문구를 수정할 수 있습니다. 음성보다 {editableCaptionSourceSpec.timingLeadFrames ?? SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES}프레임 먼저 표시되는 실제 렌더 타이밍도 그대로 유지됩니다.</>
                   : <>자막의 위치·글꼴·크기·색상을 조정할 수 있습니다. 정확한 자막 구간이 저장되지 않은 영상에서는 문구 편집을 지원하지 않습니다.</>}
               </p>
@@ -11519,7 +11557,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                   />)}
                 </div>
               </fieldset>}
-              <fieldset className="editor-text-color-setting mb-6">
+              {editableCaptionSourceSpec.templateId !== "basic" && <fieldset className="editor-text-color-setting mb-6">
                 <legend>포인트 색상</legend>
                 <div>
                   {templatePresetColorOptions.map((option) => <button
@@ -11542,7 +11580,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                     style={{ backgroundColor: option.color }}
                   />)}
                 </div>
-              </fieldset>
+              </fieldset>}
               <label className="block font-semibold">
                 <span className="flex items-center justify-between gap-3 text-white">
                   <span>세로 위치</span>
@@ -11980,7 +12018,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             {overlayPreviewEnabled && <EditorFontPicker
               value={titleFontId}
               onChange={(fontId) => updateEditorFont("title", fontId)}
-              options={availableEditorFontOptions}
+              options={availableEditorFontOptions.filter((font) => contentTitleFont(title, font.id, japaneseFontEnabled) === font.id)}
             />}
             <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3">
             <p className="text-xs leading-5 text-white/70">글자를 선택하면 선택한 부분만, 선택하지 않으면 제목 전체의 색상이 바뀝니다.</p>
@@ -12704,6 +12742,7 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
                       failed={item.status === "ready" && item.editorApplyFailed === true}
                       locale={locale}
                     />
+                    <SubtitleTranslationNotice outcome={item.subtitleTranslation} locale={locale} />
                     <div className="short-result-actions">
                       {job.isExample || itemIsRerendering || subtitleEditorUnavailable
                         ? <button disabled title={job.isExample ? "예시 작업은 편집할 수 없습니다." : item.subtitleTemplateId ? item.captionRenderSpec ? "현재 편집기에서는 이 자막 영상을 편집할 수 없습니다." : "이전 자막 형식은 새 편집기에서 지원하지 않습니다." : undefined} className="tool-button short-edit-button cursor-not-allowed opacity-40">{item.subtitleTemplateId ? "✎ 편집 준비 중" : "✎ 편집하기"}</button>
@@ -12783,7 +12822,7 @@ export function ShortEditorPage({ projectNumber, shortId, rangeEditingEnabled = 
   if (!project) return <main className="editor-page grid place-items-center text-sm text-neutral-400">편집기를 준비하고 있습니다…</main>;
   if (!item || project.isExample) return <main className="editor-page grid place-items-center p-6 text-center"><div><h1 className="text-lg font-bold">편집할 수 없는 쇼츠입니다.</h1><Link href={`/projects/${projectNumber}`} prefetch={false} className="mt-6 inline-flex rounded-xl bg-white px-5 py-3 text-sm font-bold text-black">프로젝트로 돌아가기</Link></div></main>;
 
-  return <Editor item={item} channelThumbnailUrl={project.channelThumbnailUrl} standalone projectLabel={item.hookTitle} projectNumber={project.projectNumber} onClose={closeEditor} onChanged={loadProject} rangeEditingEnabled={rangeEditingEnabled} overlayPreviewEnabled={overlayPreviewEnabled} editorSaveEnabled={editorSaveEnabled} editorRelease={editorRelease} unifiedTemplateSubtitleCanaryEnabled={unifiedTemplateSubtitleCanaryEnabled} customTemplateDesignEnabled={customTemplateDesignEnabled} wordTimedSubtitlesAvailable={item.wordTimedSubtitlesAvailable} paidAccessBlocked={!access?.canEdit} />;
+  return <Editor item={item} outputLanguage={project.outputLanguage} commentOutputLanguage={project.sourceLanguage ? project.outputLanguage : "ko"} channelThumbnailUrl={project.channelThumbnailUrl} standalone projectLabel={item.hookTitle} projectNumber={project.projectNumber} onClose={closeEditor} onChanged={loadProject} rangeEditingEnabled={rangeEditingEnabled} overlayPreviewEnabled={overlayPreviewEnabled} editorSaveEnabled={editorSaveEnabled} editorRelease={editorRelease} unifiedTemplateSubtitleCanaryEnabled={unifiedTemplateSubtitleCanaryEnabled} customTemplateDesignEnabled={customTemplateDesignEnabled} wordTimedSubtitlesAvailable={item.wordTimedSubtitlesAvailable} paidAccessBlocked={!access?.canEdit} />;
 }
 
 export function ProjectPage({ projectNumber, adminSubtitleLayoutEnabled = false, unifiedTemplateSubtitleCanaryEnabled = false }: { projectNumber: number; adminSubtitleLayoutEnabled?: boolean; unifiedTemplateSubtitleCanaryEnabled?: boolean }) {
@@ -13078,7 +13117,11 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const [sourceRangeEndSeconds, setSourceRangeEndSeconds] = useState(0);
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
   const [rightsConfirmationAttention, setRightsConfirmationAttention] = useState(false);
-  const outputLanguage: OutputLanguage = "ko";
+  const [languageTest, setLanguageTest] = useState(false);
+  const [selectedOutputLanguage, setOutputLanguage] = useState<OutputLanguage>("ko");
+  const [sourceLanguage, setSourceLanguage] = useState<SourceLanguage>("auto");
+  const languageTestActive = languageTest && sourceMode === "youtube" && state?.capabilities.languageTest === true;
+  const outputLanguage: OutputLanguage = languageTestActive ? selectedOutputLanguage : "ko";
   const [templateId, setTemplateId] = useState<TemplateId>("comment-capture");
   const [subtitleTemplateId, setSubtitleTemplateId] = useState<SubtitleTemplateSelectionId | null>(null);
   const [subtitleCaptionPlacement, setSubtitleCaptionPlacement] = useState<SubtitleCaptionPlacement>("lower");
@@ -13881,7 +13924,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
             customTemplateVersion: personalTemplates.find((template) => template.id === customTemplateId)?.version,
           } : {}),
           videoAspectRatio: effectiveVideoAspectRatio,
-          outputLanguage,
+          outputLanguage: "ko",
           rightsConfirmed,
           ...(subtitleTemplateSelectionEnabled && subtitleTemplateId
             ? { subtitleTemplateId, subtitleCaptionPlacement }
@@ -14139,6 +14182,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       } : {}),
       videoAspectRatio: effectiveVideoAspectRatio,
       outputLanguage,
+      ...(languageTestActive ? { languageTest: true, sourceLanguage } : {}),
       rightsConfirmed,
       ...(sourceRangeSelectionEnabled
         ? { rangeStartSeconds: sourceRangeStartSeconds, rangeEndSeconds: sourceRangeEndSeconds }
@@ -14627,7 +14671,34 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
               )}
             </>
           )}
+          {sourceMode === "youtube" && state?.capabilities.languageTest && (
+            <section className="rounded-xl border border-white/15 bg-white/[.025] p-4" data-language-test>
+              <label className="flex items-center justify-between gap-4 text-sm font-bold">
+                <span>언어 기능 테스트 <span className="text-xs font-normal text-neutral-400">관리자 전용</span></span>
+                <input type="checkbox" role="switch" aria-label="언어 기능 테스트" checked={languageTest}
+                  disabled={busy} onChange={(event) => setLanguageTest(event.target.checked)} className="h-5 w-5 accent-[#ff715e]" />
+              </label>
+              {languageTestActive && <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label id="content-source-language-label" htmlFor="content-source-language" className="text-sm font-semibold">영상 언어</label>
+                  <p id="content-source-language-description" className="mt-1 text-xs text-neutral-400">원본 영상에서 사용하는 음성 언어</p>
+                  <ContentLanguageSelect id="content-source-language" labelledBy="content-source-language-label" describedBy="content-source-language-description"
+                    value={sourceLanguage} onChange={setSourceLanguage} disabled={busy}
+                    options={sourceLanguages.map((code) => ({ value: code, label: code === "auto" ? "자동 감지" : outputLanguageName(code, locale) }))} />
+                </div>
+                <div>
+                  <label id="content-output-language-label" htmlFor="content-output-language" className="text-sm font-semibold">제목·댓글·자막 언어</label>
+                  <p id="content-output-language-description" className="mt-1 text-xs text-neutral-400">원본 음성과 영상에 들어간 글자는 유지됩니다.</p>
+                  <ContentLanguageSelect id="content-output-language" labelledBy="content-output-language-label" describedBy="content-output-language-description"
+                    value={selectedOutputLanguage} onChange={setOutputLanguage} disabled={busy}
+                    options={outputLanguageOptions.filter((o) => ["ko", "en", "ja"].includes(o.code)).map((o) => ({ value: o.code, label: outputLanguageName(o.code, locale) }))} />
+                </div>
+              </div>}
+            </section>
+          )}
           <TemplatePicker
+            translationNotice={languageTestActive && (sourceLanguage === "auto" || sourceLanguage !== outputLanguage)
+              ? "영상 언어와 출력 언어가 다르면 자막을 기본형으로 번역합니다. 원본 음성은 바뀌지 않습니다." : null}
             value={templateId}
             onChange={(nextTemplateId) => {
               setSubtitleTemplateId(null);

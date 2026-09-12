@@ -31,7 +31,7 @@ def test_probe_document_covers_all_supported_editor_fonts() -> None:
         font_id.value for font_id in EditorFontId
     }
     assert {overlay.font_id.value for overlay in document.overlays.text_overlays} == set(
-        editor_release_probe.FONT_IDS
+        editor_release_probe.TEXT_OVERLAY_FONT_IDS
     )
     assert len(document.video.clips) == 2
     assert document.comments[0].end_seconds < document.comments[1].start_seconds
@@ -44,7 +44,7 @@ def test_v4_font_manifest_is_complete_deterministic_and_exact() -> None:
     assert manifest["fallbackDetected"] is False
     assert len(str(manifest["sha256"])) == 64
     assert [entry["fontId"] for entry in entries] == sorted(editor_release_probe.FONT_IDS)
-    assert len(entries) == len(EditorFontId) == 20
+    assert len(entries) == len(EditorFontId) == 21
     paperlogy = next(entry for entry in entries if entry["fontId"] == "paperlogy")
     assert paperlogy["sha256"] == (
         "fe71049fe3d3a7dd3f2e0c12efd850acd1293658181af322348edde9b016e6ba"
@@ -179,7 +179,7 @@ def test_v4_fallback_probe_verifies_every_editor_font(
     assert result == editor_release_probe.FONT_IDS
     assert prepared == list(editor_release_probe.FONT_IDS)
     assert verified == list(editor_release_probe.FONT_IDS)
-    assert len(verified) == len(EditorFontId) == 20
+    assert len(verified) == len(EditorFontId) == 21
 
 
 @pytest.mark.render

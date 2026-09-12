@@ -36,8 +36,8 @@ const applyEditRoute = readFileSync(
 
 describe("editor fonts", () => {
   it("exposes the bundled commercially usable Korean font choices", () => {
-    expect(editorFontOptions).toHaveLength(20);
-    expect(new Set(editorFontOptions.map((font) => font.id)).size).toBe(20);
+    expect(editorFontOptions).toHaveLength(21);
+    expect(new Set(editorFontOptions.map((font) => font.id)).size).toBe(21);
   });
 
   it("keeps the promoted exact-face fonts in the stable renderer", () => {
@@ -50,6 +50,7 @@ describe("editor fonts", () => {
     expect(isStableEditorFontId("jua")).toBe(true);
     expect(isStableEditorFontId("ridi-batang")).toBe(true);
     expect(isStableEditorFontId(null)).toBe(false);
+    expect(isStableEditorFontId("noto-sans-jp")).toBe(false);
     expect(applyEditRoute).not.toContain("EDITOR_FONT_CANARY_ONLY");
     expect(applyEditRoute).not.toContain("관리자 테스트 편집기");
   });
@@ -64,6 +65,7 @@ describe("editor fonts", () => {
     expect(editorFontOptions.map((font) => font.id)).toEqual([
       "pretendard",
       "noto-sans-kr",
+      "noto-sans-jp",
       "do-hyeon",
       "jua",
       "jalnan-2",

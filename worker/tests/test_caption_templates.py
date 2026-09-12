@@ -413,7 +413,7 @@ def test_korean_sentence_punctuation_prevents_cross_sentence_merge() -> None:
     assert rendered_words == ["안녕!", "하세요"]
 
 
-@pytest.mark.parametrize("template_id", ["basic", "highlight", "pop"])
+@pytest.mark.parametrize("template_id", ["highlight", "pop"])
 def test_ascii_periods_are_removed_only_from_rendered_caption_text(
     template_id: str,
 ) -> None:

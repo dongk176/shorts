@@ -14,7 +14,7 @@ describe("admin editor subtitle layout", () => {
     );
     expect(editorSource).toContain('{ id: "subtitle", label: "자막" }');
     expect(editorSource).toContain(
-      "const adminSubtitleEditingEnabled = adminSubtitleLayoutEnabled\n    && (wordTimedSubtitlesAvailable || Boolean(captionTemplateEditorSpec))",
+      "const adminSubtitleEditingEnabled = adminSubtitleLayoutEnabled\n    && !translationUnavailable && (wordTimedSubtitlesAvailable || Boolean(captionTemplateEditorSpec))",
     );
     expect(editorSource).toContain(
       'tool.id !== "subtitle"\n              || subtitleToolVisible',
@@ -28,7 +28,7 @@ describe("admin editor subtitle layout", () => {
     );
     expect(editorSource).toContain('aria-label={subtitlesEnabled ? "자막 끄기" : "자막 켜기"}');
     expect(editorSource).toContain(
-      "disabled={unifiedSubtitleLayoutEnabled",
+      "disabled={translationUnavailable || (unifiedSubtitleLayoutEnabled",
     );
     expect(editorSource).toContain("subtitlesEnabledRef.current = enabled");
     expect(editorSource).toContain("subtitlesEnabled: subtitlesEnabledRef.current");

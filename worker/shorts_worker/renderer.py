@@ -456,6 +456,7 @@ class VideoRenderer:
         title_accent_color: str | None = None,
         metrics_callback: RenderMetricsCallback | None = None,
         uploaded_background_path: Path | None = None,
+        comment_output_language: str = "ko",
     ) -> Path:
         work_dir.mkdir(parents=True, exist_ok=True)
         probe_started_at = time.monotonic()
@@ -515,6 +516,7 @@ class VideoRenderer:
                 has_audio=has_audio,
                 metrics_callback=custom_metrics.update,
                 uploaded_background_path=uploaded_background_path,
+                comment_output_language=comment_output_language,
             )
             if metrics_callback:
                 metrics_callback({
@@ -658,7 +660,13 @@ class VideoRenderer:
                 comment,
                 work_dir / "overlays" / f"{prefix}_comment_{index}.png",
                 panel_height=comment_panel_height,
+                output_language=comment_output_language,
                 overlay_mode=layout.overlay_mode,
+                japanese_font_enabled=bool(
+                    initial_render_spec
+                    and initial_render_spec.get("title", {}).get("font", {}).get("fontId")
+                    == "noto-sans-jp"
+                ),
             )
             for index, (comment, _, _) in enumerate(comment_windows)
         ]
@@ -842,6 +850,7 @@ class VideoRenderer:
         has_audio: bool,
         metrics_callback: RenderMetricsCallback | None = None,
         uploaded_background_path: Path | None = None,
+        comment_output_language: str = "ko",
     ) -> Path:
         design_layers = bool(config.text_overlays) or config.layer_order is not None
         if design_layers:
@@ -892,6 +901,7 @@ class VideoRenderer:
                 comment_y=comment_y,
                 channel_thumbnail_path=channel_thumbnail_path,
                 include_channel=False,
+                output_language=comment_output_language,
             )
             for index, (comment, _, _) in enumerate(comment_windows)
         ]

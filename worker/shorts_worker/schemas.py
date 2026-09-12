@@ -15,6 +15,7 @@ from pydantic import (
     model_validator,
 )
 
+from .content_language import CONTENT_LANGUAGES, comment_age_label
 from .fallback_comments import select_fallback_comment_texts
 from .title_wrapping import manual_title_lines, wrap_korean_title
 
@@ -45,6 +46,7 @@ class EditorFontId(StrEnum):
     SUIT = "suit"
     SPOQA_HAN_SANS_NEO = "spoqa-han-sans-neo"
     NOTO_SANS_KR = "noto-sans-kr"
+    NOTO_SANS_JP = "noto-sans-jp"
     NANUM_SQUARE_NEO = "nanum-square-neo"
     SANDBOX_AGGRO = "sandbox-aggro"
     JUA = "jua"
@@ -463,6 +465,7 @@ EDITOR_FONT_FILE_IDS = {
     EditorFontId.SUIT: "SUIT-Bold.woff2",
     EditorFontId.SPOQA_HAN_SANS_NEO: "SpoqaHanSansNeo-Bold.woff2",
     EditorFontId.NOTO_SANS_KR: "NotoSansKR-Variable.ttf",
+    EditorFontId.NOTO_SANS_JP: "NotoSansCJKjp-Variable.ttf",
     EditorFontId.NANUM_SQUARE_NEO: "NanumSquareNeo-Bold.ttf",
     EditorFontId.SANDBOX_AGGRO: "SandboxAggro-Bold.ttf",
     EditorFontId.JUA: "Jua-Regular.ttf",
@@ -498,6 +501,7 @@ EDITOR_FONT_STATIC_WEIGHTS = {
 EDITOR_FONT_VARIABLE_IDS = {
     EditorFontId.NOTO_SERIF_KR,
     EditorFontId.NOTO_SANS_KR,
+    EditorFontId.NOTO_SANS_JP,
 }
 
 
@@ -1282,8 +1286,6 @@ class EditorDocument(BaseModel):
 
 
 _COMMENT_COLORS = ("#8B2CC4", "#D84572", "#2674C8", "#257A5A", "#C76624", "#6655C7")
-_COMMENT_NICKNAME_PREFIXES = ("하루", "모카", "여름", "초코", "구름", "새벽", "라온", "소담")
-_COMMENT_NICKNAME_SUFFIXES = ("기록", "한스푼", "로그", "이야기", "채널", "노트", "생활", "공간")
 COMMENT_LIKE_COUNT_MIN = 10
 COMMENT_LIKE_COUNT_MAX = 8_000
 COMMENT_DURATION_MIN_MILLISECONDS = 2_500
@@ -1353,11 +1355,13 @@ def build_comment_overlay(
     start_seconds: float,
     end_seconds: float,
     text: str,
+    output_language: OutputLanguage = OutputLanguage.KO,
 ) -> dict[str, object]:
     """Attach renderer metadata to validated AI or fallback comment content."""
+    profile = CONTENT_LANGUAGES[output_language]
     nickname = (
-        secrets.choice(_COMMENT_NICKNAME_PREFIXES)
-        + secrets.choice(_COMMENT_NICKNAME_SUFFIXES)
+        secrets.choice(profile["prefixes"])
+        + secrets.choice(profile["suffixes"])
         + str(secrets.randbelow(90) + 10)
     )
     comment = CommentOverlay(
@@ -1370,7 +1374,7 @@ def build_comment_overlay(
         nickname=nickname,
         likeCount=secrets.randbelow(COMMENT_LIKE_COUNT_MAX - COMMENT_LIKE_COUNT_MIN + 1)
         + COMMENT_LIKE_COUNT_MIN,
-        ageLabel=f"{secrets.randbelow(11) + 1}개월 전",
+        ageLabel=comment_age_label(secrets.randbelow(11) + 1, output_language),
     )
     return comment.model_dump(by_alias=True)
 
@@ -1380,12 +1384,14 @@ def fallback_comment_overlays(
     *,
     count: int,
     clip_index: int,
+    output_language: OutputLanguage = OutputLanguage.KO,
 ) -> list[dict[str, object]]:
     """Create stable, non-overlapping fallback comments for one numbered short."""
     duration = max(0.5, float(duration_seconds))
     fallback_texts = select_fallback_comment_texts(
         count,
         clip_index=clip_index,
+        output_language=output_language,
     )
     if not fallback_texts:
         return []
@@ -1401,6 +1407,7 @@ def fallback_comment_overlays(
                 start_seconds=start_seconds,
                 end_seconds=end_seconds,
                 text=text,
+                output_language=output_language,
             )
         )
     return comments
@@ -1463,3 +1470,21 @@ class SelectionResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     clips: list[HighlightCandidate]
+
+
+class LocalizedHighlightCandidate(HighlightCandidate):
+    """Enforce the existing generation limit without truncating rejected titles."""
+
+    hook_title_line1: str = Field(min_length=5, max_length=18)
+    hook_title_line2: str = Field(min_length=5, max_length=18)
+
+    @field_validator("hook_title_line1", "hook_title_line2", mode="before")
+    @classmethod
+    def bound_title_line(cls, value: object) -> str:
+        if not isinstance(value, str) or "\n" in value or "\r" in value:
+            raise ValueError("Title lines must be single-line strings.")
+        return " ".join(value.split())
+
+
+class LocalizedSelectionResponse(SelectionResponse):
+    clips: list[LocalizedHighlightCandidate]

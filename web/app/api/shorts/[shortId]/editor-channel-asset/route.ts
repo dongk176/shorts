@@ -49,7 +49,7 @@ export async function GET(
     `;
     if (rows[0]?.subtitleTemplateId) {
       const { editorRelease, subtitleAccess } =
-        await resolveUnifiedTemplateSubtitleEditorContext(db, session.userId);
+        await resolveUnifiedTemplateSubtitleEditorContext(db, session.userId, shortId);
       if (!subtitleEditingReleaseEnabled(editorRelease)) {
         throw new HttpError(
           409,

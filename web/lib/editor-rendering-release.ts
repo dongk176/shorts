@@ -7,6 +7,7 @@ export const EDITOR_SUBTITLE_EDITING_PUBLIC_FLAG_KEY =
 export type EditorReleaseChannel = "legacy" | "stable" | "canary";
 
 export type EditorReleaseAssignment = {
+  languageTest?: boolean;
   channel: EditorReleaseChannel;
   releaseId: string | null;
   uiVersion: number | null;

@@ -413,6 +413,7 @@ class AudioTranscriber:
         chunk: Path,
         duration: float,
         offset: float,
+        source_language: str | None = None,
     ) -> _ChunkTranscriptionResult:
         def request(audio_path: Path) -> Any:
             with audio_path.open("rb") as audio_file:
@@ -420,6 +421,7 @@ class AudioTranscriber:
                     model=self.settings.openai_transcribe_model,
                     file=audio_file,
                     response_format="json",
+                    **({"language": source_language} if source_language else {}),
                 )
 
         try:
@@ -448,6 +450,10 @@ class AudioTranscriber:
             output_tokens=output_tokens,
             provider="openai",
             model=self.settings.openai_transcribe_model,
+            language_code=(
+                str(language) if (language := data.get("language_code") or data.get("language"))
+                else None
+            ),
         )
 
     def _transcribe_chunk_openai_fallback(
@@ -459,6 +465,7 @@ class AudioTranscriber:
         duration: float,
         offset: float,
         fallback_reason: str,
+        source_language: str | None = None,
     ) -> _ChunkTranscriptionResult:
         def request(audio_path: Path) -> _ChunkTranscriptionResult:
             with audio_path.open("rb") as audio_file:
@@ -467,6 +474,7 @@ class AudioTranscriber:
                     file=audio_file,
                     response_format="verbose_json",
                     timestamp_granularities=["word", "segment"],
+                    **({"language": source_language} if source_language else {}),
                 )
             data = self._response_dict(response)
             segments, words = _timed_transcript(
@@ -539,6 +547,7 @@ class AudioTranscriber:
         chunk: Path,
         duration: float,
         offset: float,
+        source_language: str | None = None,
     ) -> _ChunkTranscriptionResult:
         if not self.settings.elevenlabs_api_key:
             raise TranscriptionError("ELEVENLABS_API_KEY가 설정되지 않았습니다.")
@@ -553,6 +562,7 @@ class AudioTranscriber:
                 headers={"xi-api-key": self.settings.elevenlabs_api_key},
                 data={
                     "model_id": self.settings.elevenlabs_transcribe_model,
+                    **({"language_code": source_language} if source_language else {}),
                     "timestamps_granularity": "word",
                     "tag_audio_events": "false",
                     "diarize": "false",
@@ -599,6 +609,7 @@ class AudioTranscriber:
         chunk: Path,
         duration: float,
         offset: float,
+        source_language: str | None = None,
     ) -> _ChunkTranscriptionResult:
         last_error: Exception | None = None
         for attempt in range(1, TRANSCRIBE_CHUNK_MAX_ATTEMPTS + 1):
@@ -608,6 +619,7 @@ class AudioTranscriber:
                     chunk=chunk,
                     duration=duration,
                     offset=offset,
+                    **({"source_language": source_language} if source_language else {}),
                 )
             except Exception as exc:
                 last_error = exc
@@ -694,7 +706,10 @@ class AudioTranscriber:
         start_seconds: float = 0.0,
         duration_seconds: float | None = None,
         policy: str = OPENAI_STABLE_POLICY,
+        source_language: str | None = None,
     ) -> TranscriptionResult:
+        if source_language is not None and source_language not in {"ko", "en", "ja"}:
+            raise TranscriptionError("지원하지 않는 원본 영상 언어입니다.")
         if policy not in SUPPORTED_TRANSCRIPTION_POLICIES:
             raise TranscriptionError("지원하지 않는 전사 정책입니다.")
         if not self.settings.openai_api_key:
@@ -796,6 +811,7 @@ class AudioTranscriber:
                             chunk=chunk,
                             duration=duration,
                             offset=offset,
+                            **({"source_language": source_language} if source_language else {}),
                         ): index
                         for index, chunk, duration, offset in transcribable_specs
                     }
@@ -866,6 +882,7 @@ class AudioTranscriber:
                                 chunk=chunk,
                                 duration=duration,
                                 offset=offset,
+                                **({"source_language": source_language} if source_language else {}),
                                 fallback_reason=fallback_reason,
                             )
                         ] = index
@@ -894,6 +911,7 @@ class AudioTranscriber:
                             chunk=chunk,
                             duration=duration,
                             offset=offset,
+                            **({"source_language": source_language} if source_language else {}),
                         ): index
                         for index, chunk, duration, offset in transcribable_specs
                     }

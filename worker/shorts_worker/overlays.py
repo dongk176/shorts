@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from io import BytesIO
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps, UnidentifiedImageError
 
+from .comment_emoji import comment_text_width, display_units, draw_comment_text
+from .content_language import comment_action_labels, japanese_comment_font
+from .font_manifest import normalized_editor_font_bytes
 from .schemas import (
     EDITOR_FONT_FILE_IDS,
     EDITOR_FONT_VARIABLE_IDS,
@@ -132,6 +136,18 @@ def load_font(size: int, kind: str = "bold") -> ImageFont.FreeTypeFont:
     return ImageFont.truetype(find_font(kind), size=size)
 
 
+def load_comment_font(
+    text: str, size: int, kind: str = "regular", *, japanese_enabled: bool = False,
+) -> ImageFont.FreeTypeFont:
+    if not japanese_enabled or not japanese_comment_font(text):
+        return load_font(size, kind)
+    font = ImageFont.truetype(
+        BytesIO(normalized_editor_font_bytes(EditorFontId.NOTO_SANS_JP)), size=size,
+    )
+    font.set_variation_by_axes([700 if kind == "bold" else 400])
+    return font
+
+
 def load_custom_template_font(
     font_id: EditorFontId | None,
     size: int,
@@ -139,7 +155,9 @@ def load_custom_template_font(
     path = EDITOR_FONT_DIRECTORY / EDITOR_FONT_FILE_IDS[font_id]
     if not path.is_file():
         raise RuntimeError("템플릿 폰트 파일을 찾지 못했습니다.")
-    font = ImageFont.truetype(str(path), size=max(1, round(size)))
+    font = ImageFont.truetype(
+        BytesIO(normalized_editor_font_bytes(font_id)), size=max(1, round(size))
+    )
     if font_id in EDITOR_FONT_VARIABLE_IDS:
         font.set_variation_by_axes([700])
     return font
@@ -538,13 +556,15 @@ def _wrap_comment_text(
     lines: list[str] = []
     remaining = clean
     while remaining and len(lines) < 2:
-        if _text_width(draw, remaining, font) <= max_width:
+        if comment_text_width(remaining, font) <= max_width:
             lines.append(remaining)
             remaining = ""
             break
-        split_at = 1
-        for index in range(1, len(remaining) + 1):
-            if _text_width(draw, remaining[:index], font) > max_width:
+        split_at = len(display_units(remaining)[0])
+        index = 0
+        for unit in display_units(remaining):
+            index += len(unit)
+            if comment_text_width(remaining[:index], font) > max_width:
                 break
             split_at = index
         preferred = remaining.rfind(" ", max(1, split_at // 2), split_at + 1)
@@ -553,8 +573,8 @@ def _wrap_comment_text(
         lines.append(remaining[:split_at].strip())
         remaining = remaining[split_at:].strip()
     if remaining and lines:
-        while lines[-1] and _text_width(draw, lines[-1] + "…", font) > max_width:
-            lines[-1] = lines[-1][:-1].rstrip()
+        while lines[-1] and comment_text_width(lines[-1] + "…", font) > max_width:
+            lines[-1] = "".join(display_units(lines[-1])[:-1]).rstrip()
         lines[-1] += "…"
     return lines
 
@@ -609,6 +629,8 @@ def _create_custom_comment_panel(
     theme: str,
     size: str,
     overlay_mode: bool,
+    japanese_font_enabled: bool = False,
+    output_language: str = "ko",
 ) -> Path:
     """Mirror the browser comment card's 1080px canvas measurements."""
     scale = COMMENT_SIZE_SCALES[size]
@@ -620,9 +642,19 @@ def _create_custom_comment_panel(
     bottom = round(36.72 * scale)
     avatar_size = round(101.52 * scale)
     content_x = left + avatar_size + round(27 * scale)
-    meta_font = load_font(max(20, round(34.02 * scale)), "bold")
-    body_font = load_font(max(22, round(39.10 * scale)), "regular")
-    action_font = load_font(max(18, round(33.48 * scale)), "regular")
+    meta_font = load_comment_font(
+        comment.nickname + comment.age_label, max(20, round(34.02 * scale)), "bold",
+        japanese_enabled=japanese_font_enabled,
+    )
+    body_font = load_comment_font(
+        comment.text, max(22, round(39.10 * scale)),
+        japanese_enabled=japanese_font_enabled,
+    )
+    likes, reply = comment_action_labels(comment.like_count, output_language)
+    action_font = load_comment_font(
+        likes + reply, max(18, round(33.48 * scale)),
+        japanese_enabled=output_language == "ja",
+    )
     scratch = Image.new("RGBA", (PANEL_WIDTH, 1), (0, 0, 0, 0))
     scratch_draw = ImageDraw.Draw(scratch)
     lines = _wrap_comment_text(
@@ -649,7 +681,10 @@ def _create_custom_comment_panel(
         (left, top, left + avatar_size, top + avatar_size),
         fill=comment.avatar_color,
     )
-    initial_font = load_font(max(20, round(38.88 * scale)), "bold")
+    initial_font = load_comment_font(
+        comment.initial, max(20, round(38.88 * scale)), "bold",
+        japanese_enabled=japanese_font_enabled,
+    )
     initial_box = identity_draw.textbbox((0, 0), comment.initial, font=initial_font)
     identity_draw.text(
         (
@@ -673,7 +708,8 @@ def _create_custom_comment_panel(
     draw = ImageDraw.Draw(base)
     text_top = top + meta_height + meta_gap
     for index, line in enumerate(lines):
-        draw.text(
+        draw_comment_text(
+            base,
             (content_x, text_top + index * line_height),
             line,
             font=body_font,
@@ -681,14 +717,6 @@ def _create_custom_comment_panel(
         )
     actions_y = text_top + len(lines) * line_height + actions_gap
     _draw_reaction_icon(draw, content_x, actions_y, icon_size, color=foreground)
-    if comment.like_count >= 10_000:
-        amount = (comment.like_count // 1_000) / 10
-        likes = f"{amount:g}만"
-    elif comment.like_count >= 1_000:
-        amount = (comment.like_count // 100) / 10
-        likes = f"{amount:g}천"
-    else:
-        likes = f"{comment.like_count:,}"
     likes_x = content_x + icon_size + round(14.58 * scale)
     likes_box = action_font.getbbox(likes)
     likes_y = (
@@ -700,13 +728,13 @@ def _create_custom_comment_panel(
     dislike_x = likes_x + _text_width(draw, likes, action_font) + round(45.36 * scale)
     _draw_reaction_icon(draw, dislike_x, actions_y, icon_size, down=True, color=foreground)
     reply_x = dislike_x + icon_size + round(45.36 * scale)
-    reply_box = action_font.getbbox("답글")
+    reply_box = action_font.getbbox(reply)
     reply_y = (
         actions_y
         + (icon_size - (reply_box[3] - reply_box[1])) / 2
         - reply_box[1]
     )
-    draw.text((reply_x, reply_y), "답글", font=action_font, fill=muted)
+    draw.text((reply_x, reply_y), reply, font=action_font, fill=muted)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output = base if overlay_mode else base.convert("RGB")
@@ -722,6 +750,8 @@ def create_comment_panel(
     overlay_mode: bool = False,
     theme: str | None = None,
     size: str | None = None,
+    japanese_font_enabled: bool = False,
+    output_language: str = "ko",
 ) -> Path:
     """Render a deliberately plain, screenshot-like comment strip."""
     if theme is not None and size is not None:
@@ -731,6 +761,8 @@ def create_comment_panel(
             theme=theme,
             size=size,
             overlay_mode=overlay_mode,
+            japanese_font_enabled=japanese_font_enabled,
+            output_language=output_language,
         )
     scale = max(0.58, min(1.0, panel_height / 285))
     base = Image.new(
@@ -742,9 +774,19 @@ def create_comment_panel(
     left = round(44 * scale)
     top = round(48 * scale)
     content_x = left + avatar_size + round(29 * scale)
-    meta_font = load_font(max(18, round(30 * scale)), "bold")
-    body_font = load_font(max(22, round(COMMENT_BODY_FONT_SIZE * scale)), "regular")
-    action_font = load_font(max(17, round(28 * scale)), "regular")
+    meta_font = load_comment_font(
+        comment.nickname + comment.age_label, max(18, round(30 * scale)), "bold",
+        japanese_enabled=japanese_font_enabled,
+    )
+    body_font = load_comment_font(
+        comment.text, max(22, round(COMMENT_BODY_FONT_SIZE * scale)),
+        japanese_enabled=japanese_font_enabled,
+    )
+    likes, reply = comment_action_labels(comment.like_count, output_language)
+    action_font = load_comment_font(
+        likes + reply, max(17, round(28 * scale)),
+        japanese_enabled=output_language == "ja",
+    )
 
     # Only the identity-like metadata is blurred; the comment and reactions remain crisp.
     metadata = Image.new("RGBA", base.size, (0, 0, 0, 0))
@@ -753,7 +795,10 @@ def create_comment_panel(
         (left, top, left + avatar_size, top + avatar_size),
         fill=comment.avatar_color,
     )
-    initial_font = load_font(max(20, round(34 * scale)), "bold")
+    initial_font = load_comment_font(
+        comment.initial, max(20, round(34 * scale)), "bold",
+        japanese_enabled=japanese_font_enabled,
+    )
     initial_box = metadata_draw.textbbox((0, 0), comment.initial, font=initial_font)
     metadata_draw.text(
         (
@@ -787,7 +832,8 @@ def create_comment_panel(
     )
     line_height = round(47 * scale)
     for index, line in enumerate(lines):
-        details_draw.text(
+        draw_comment_text(
+            details,
             (content_x, text_top + index * line_height),
             line,
             font=body_font,
@@ -797,14 +843,6 @@ def create_comment_panel(
     actions_y = text_top + len(lines) * line_height + round(17 * scale)
     icon_size = round(34 * scale)
     _draw_reaction_icon(details_draw, content_x, actions_y, icon_size)
-    if comment.like_count >= 10_000:
-        amount = (comment.like_count // 1_000) / 10
-        likes = f"{amount:g}만"
-    elif comment.like_count >= 1_000:
-        amount = (comment.like_count // 100) / 10
-        likes = f"{amount:g}천"
-    else:
-        likes = f"{comment.like_count:,}"
     details_draw.text(
         (content_x + icon_size + round(12 * scale), actions_y - round(2 * scale)),
         likes,
@@ -816,7 +854,7 @@ def create_comment_panel(
     _draw_reaction_icon(details_draw, dislike_x, actions_y, icon_size, down=True)
     details_draw.text(
         (dislike_x + icon_size + round(36 * scale), actions_y - round(2 * scale)),
-        "답글",
+        reply,
         font=action_font,
         fill="#C4C4C4",
     )
@@ -1044,6 +1082,7 @@ def create_custom_comment_overlay(
     comment_y: int | None = None,
     channel_thumbnail_path: Path | None = None,
     include_channel: bool = True,
+    output_language: str = "ko",
 ) -> Path:
     """Create one opaque full-width card with an optional channel row below it."""
     create_comment_panel(
@@ -1052,6 +1091,8 @@ def create_custom_comment_overlay(
         overlay_mode=True,
         theme=config.comment.theme,
         size=config.comment.size,
+        output_language=output_language,
+        japanese_font_enabled=output_language == "ja",
     )
     if not include_channel or not config.channel.visible:
         return output_path

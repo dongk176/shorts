@@ -1,3 +1,19 @@
+import japaneseFont from "./editor-japanese-font.json";
+
+export function editorSupportsJapaneseFont(fontManifestSha256: string | null | undefined) {
+  return fontManifestSha256 === japaneseFont.fontManifestSha256;
+}
+
+// Existing projects keep their original face even after the active language-test release changes.
+export function editorUsesJapaneseFont(
+  outputLanguage: string,
+  fontManifestSha256: string | null | undefined,
+  initialTitleFontId: string | undefined,
+) {
+  return outputLanguage === "ja" && initialTitleFontId === "noto-sans-jp"
+    && editorSupportsJapaneseFont(fontManifestSha256);
+}
+
 export const editorFontOptions = [
   // 익숙한 기본 글꼴은 항상 가장 먼저 보여줍니다.
   {
@@ -16,6 +32,15 @@ export const editorFontOptions = [
     renderFamily: '"Editor V3 Noto Sans KR", sans-serif',
     captionFamily: "Noto Sans KR",
     fileName: "NotoSansKR-Variable.ttf",
+    staticWeight: null,
+  },
+  {
+    id: "noto-sans-jp",
+    label: "Noto Sans JP",
+    family: '"Editor Noto Sans JP", sans-serif',
+    renderFamily: '"Editor V3 Noto Sans JP", sans-serif',
+    captionFamily: "Noto Sans CJK JP",
+    fileName: "NotoSansCJKjp-Variable.ttf",
     staticWeight: null,
   },
   // 쇼츠 제목에 어울리는 캐주얼·디스플레이 글꼴을 위쪽에 둡니다.
@@ -184,6 +209,8 @@ export const editorFontOptions = [
   },
 ] as const;
 
+export const regularEditorFontOptions = editorFontOptions.filter((font) => font.id !== "noto-sans-jp");
+
 export type EditorFontId = (typeof editorFontOptions)[number]["id"];
 export const editorFontIds = editorFontOptions.map((font) => font.id) as [
   EditorFontId,
@@ -253,6 +280,7 @@ export const EDITOR_FONT_METRICS_REVISION = "editor-font-metrics-v2" as const;
 export const editorFontSha256ById = {
   "pretendard": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
   "noto-sans-kr": "194018e6b2b293a7964f037b25c0249ce1418bc9ab3c971060a03aa57861e252",
+  "noto-sans-jp": "240c9b83bf7b386edbae39995ae7e068ed4583f484d92e4a74c34158b5f27b1a",
   "do-hyeon": "35644be7f28e0a68a447b1f7af351dcde5674b870f24f7b5f43e26d00b4ab653",
   "jua": "769677aef240bfc3b9965f2b50748075bff885e6c6992fc591a3fb268279f898",
   "jalnan-2": "e8dd022ed1c566d75b0ddf64e32bb36e93d9744b49a296c0f75242553bd3bfae",
@@ -276,6 +304,7 @@ export const editorFontSha256ById = {
 export const editorCaptionCssToAssScaleById = {
   "pretendard": 0.838314,
   "noto-sans-kr": 0.690608,
+  "noto-sans-jp": 0.690608,
   "do-hyeon": 1,
   "jua": 0.898473,
   "jalnan-2": 0.847458,
@@ -303,6 +332,7 @@ export const editorCaptionCssToAssScaleById = {
 export const editorCaptionCssToAssBaselineOffsetEmById = {
   "pretendard": -0.000205,
   "noto-sans-kr": 0.021739,
+  "noto-sans-jp": 0.024862,
   "do-hyeon": 0,
   "jua": 0.015723,
   "jalnan-2": 0,
@@ -329,6 +359,7 @@ export const editorCaptionCssToAssBaselineOffsetEmById = {
 export const editorTitleBaselineOffsetEmById = {
   "pretendard": 0.355469,
   "noto-sans-kr": 0.436,
+  "noto-sans-jp": 0.4,
   "do-hyeon": 0.3,
   "jua": 0.3,
   "jalnan-2": 0.29,
@@ -355,6 +386,7 @@ export const editorTitleBaselineOffsetEmById = {
 export const editorWordSpaceAdvanceEmById = {
   "pretendard": 0.230469,
   "noto-sans-kr": 0.22,
+  "noto-sans-jp": 0.22,
   "do-hyeon": 0.3,
   "jua": 0.3,
   "jalnan-2": 0.28,

@@ -1,8 +1,9 @@
 import type { CSSProperties, PointerEventHandler } from "react";
-import type { CommentOverlay } from "@/lib/contracts";
+import type { CommentOverlay, OutputLanguage } from "@/lib/contracts";
 import { formatLocale } from "@/lib/i18n/config";
 import { useI18n } from "@/lib/i18n/provider";
 import { COMMENT_BACKGROUND_COLOR } from "@/lib/template-config";
+import { commentActionLabels, commentFontFamily } from "@/lib/content-language";
 
 export type TemplateCommentTheme = "dark" | "light";
 export type TemplateCommentSize = "small" | "medium" | "large";
@@ -51,14 +52,17 @@ function TemplateCommentContents({
   muted,
   identityBlur,
   comment,
-}: ReturnType<typeof commentAppearance> & { comment?: CommentOverlay }) {
+  japaneseFontEnabled = false,
+  outputLanguage,
+}: ReturnType<typeof commentAppearance> & { comment?: CommentOverlay; japaneseFontEnabled?: boolean; outputLanguage?: OutputLanguage }) {
   const { locale } = useI18n();
   const initial = comment?.initial || "소";
   const nickname = comment?.nickname || "소담기록24";
   const ageLabel = comment?.ageLabel || (locale === "ko" ? "2시간 전" : locale === "en" ? "2 hours ago" : "2時間前");
   const text = comment?.text || "잠깐 보려고 눌렀는데 어느새 끝까지 다 봤네 ㅋㅋ";
   const likeCount = comment?.likeCount ?? 121;
-  const formattedLikeCount = new Intl.NumberFormat(formatLocale(locale), {
+  const actions = commentActionLabels(likeCount, outputLanguage || locale);
+  const formattedLikeCount = outputLanguage ? actions.likes : new Intl.NumberFormat(formatLocale(locale), {
     notation: "compact",
     maximumFractionDigits: 1,
   }).format(likeCount);
@@ -66,29 +70,29 @@ function TemplateCommentContents({
     <span
       aria-hidden="true"
       className="grid shrink-0 place-items-center rounded-full bg-[#d84572] font-bold text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,.18)]"
-      style={{ width: canvasWidth(9.4), height: canvasWidth(9.4), fontSize: canvasWidth(3.6), filter: identityBlur, backgroundColor: comment?.avatarColor || "#d84572" }}
+      style={{ width: canvasWidth(9.4), height: canvasWidth(9.4), fontSize: canvasWidth(3.6), filter: identityBlur, backgroundColor: comment?.avatarColor || "#d84572", fontFamily: commentFontFamily(initial, japaneseFontEnabled) }}
     >
       <span data-i18n-skip>{initial}</span>
     </span>
     <span className="min-w-0 flex-1">
-      <span className="flex items-center font-semibold" style={{ gap: canvasWidth(1.5), fontSize: canvasWidth(3.15), color: foreground, filter: identityBlur }}>
+      <span className="flex items-center font-semibold" style={{ gap: canvasWidth(1.5), fontSize: canvasWidth(3.15), color: foreground, filter: identityBlur, fontFamily: commentFontFamily(nickname + ageLabel, japaneseFontEnabled), fontWeight: japaneseFontEnabled ? 700 : undefined }}>
         <span data-i18n-skip>{nickname}</span>
         <span aria-hidden="true">·</span>
         <span data-i18n-skip={Boolean(comment)}>{ageLabel}</span>
       </span>
       <span
         className="block break-keep font-medium leading-[1.42] tracking-[-.02em]"
-        style={{ marginTop: canvasWidth(1.2), fontSize: canvasWidth(3.62), color: foreground }}
+        style={{ marginTop: canvasWidth(1.2), fontSize: canvasWidth(3.62), color: foreground, fontFamily: commentFontFamily(text, japaneseFontEnabled), fontWeight: japaneseFontEnabled ? 400 : undefined }}
       >
         <span data-i18n-skip>{text}</span>
       </span>
       <span className="flex items-center font-semibold" style={{ marginTop: canvasWidth(2.1), gap: canvasWidth(4.2), fontSize: canvasWidth(3.1), color: muted }}>
         <span className="flex items-center" style={{ gap: canvasWidth(1.35) }}>
           <span style={{ width: canvasWidth(4.1), height: canvasWidth(4.1) }}><ReactionIcon kind="like" color={foreground} /></span>
-          <span>{formattedLikeCount}</span>
+          <span data-i18n-skip>{formattedLikeCount}</span>
         </span>
         <span style={{ width: canvasWidth(4.1), height: canvasWidth(4.1) }}><ReactionIcon kind="dislike" color={foreground} /></span>
-        <span>답글</span>
+        <span data-i18n-skip style={{ fontFamily: commentFontFamily(actions.reply, outputLanguage === "ja") }}>{actions.reply}</span>
       </span>
     </span>
   </span>;
@@ -98,10 +102,14 @@ export function TemplateCommentPreview({
   theme,
   size,
   comment,
+  japaneseFontEnabled = false,
+  outputLanguage,
 }: {
   theme: TemplateCommentTheme;
   size: TemplateCommentSize;
   comment?: CommentOverlay | null;
+  japaneseFontEnabled?: boolean;
+  outputLanguage?: OutputLanguage;
 }) {
   if (comment === null) return null;
   const appearance = commentAppearance(theme, size);
@@ -111,7 +119,7 @@ export function TemplateCommentPreview({
       className="relative z-40 block w-full overflow-hidden rounded-none border-0 text-left shadow-none"
       style={appearance.style}
     >
-      <TemplateCommentContents {...appearance} comment={comment} />
+      <TemplateCommentContents {...appearance} comment={comment} japaneseFontEnabled={japaneseFontEnabled} outputLanguage={outputLanguage} />
     </div>
   );
 }

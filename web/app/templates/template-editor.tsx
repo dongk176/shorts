@@ -37,7 +37,7 @@ import { CENTER_SNAP_THRESHOLD_PX, snapAxisToCenter } from "@/lib/template-edito
 import { userFacingErrorMessage } from "@/lib/public-error";
 import { TemplateCommentPrototype } from "@/components/template-comment-prototype";
 import { TemplateSubtitlePreview } from "@/components/template-subtitle-preview";
-import { editorFontFamily, editorFontOptions, resolveEditorFontFace, type EditorFontId } from "@/lib/editor-fonts";
+import { editorFontFamily, regularEditorFontOptions as editorFontOptions, resolveEditorFontFace, type EditorFontId } from "@/lib/editor-fonts";
 import { isEditorRenderSpecV4Enabled } from "@/lib/editor-render-v4-feature";
 import { BackgroundAssetPicker } from "@/components/background-asset-picker";
 import { EditorTextOverlayPreview } from "@/components/editor-text-overlay-preview";

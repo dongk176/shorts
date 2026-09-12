@@ -715,6 +715,7 @@ function compileHighlightCaptionWords(
   fontSize = 72,
   strictV4 = false,
   cssToAssScale = 1,
+  highlighted = true,
 ) {
   const maxWidth = safeArea.width - 14;
   const measuredMaxWidth = maxWidth / cssToAssScale;
@@ -725,17 +726,19 @@ function compileHighlightCaptionWords(
     fontSize,
     maxWidth: measuredMaxWidth,
     maxDurationFrames: pythonRound(3.2 * fps),
-    requireWordFrames: true,
+    requireWordFrames: highlighted,
     wordSeparator,
-  }, measure).map(withoutDisplayPeriods).filter((group) => group.length > 0);
+  }, measure).map((group) => highlighted ? withoutDisplayPeriods(group) : group)
+    .filter((group) => group.length > 0);
   let previousEndFrame = 0;
   return groups.map((group, index): CaptionCue => {
     const startFrame = Math.max(group[0].startFrame || 0, previousEndFrame);
-    let endFrame = Math.max(group.at(-1)?.endFrame || 0, startFrame + group.length);
+    const minimumFrames = highlighted ? group.length : 1;
+    let endFrame = Math.max(group.at(-1)?.endFrame || 0, startFrame + minimumFrames);
     const nextStart = groups[index + 1]?.[0]?.startFrame;
     if (
       nextStart != null
-      && nextStart >= startFrame + group.length
+      && nextStart >= startFrame + minimumFrames
       && nextStart - (group.at(-1)?.endFrame || 0) < pythonRound(0.42 * fps)
     ) endFrame = nextStart;
     previousEndFrame = endFrame;
@@ -764,7 +767,9 @@ function compileHighlightCaptionWords(
       scaleX,
       centerX: Math.floor(safeArea.x + safeArea.width / 2),
       centerY: Math.floor(safeArea.y + safeArea.height / 2),
-      words: group,
+      words: highlighted ? group : group.map((word) => ({
+        ...word, startFrame, endFrame, speechStartFrame: startFrame, speechEndFrame: endFrame,
+      })),
       lines,
       wordSeparator,
       ...(strictV4
@@ -774,7 +779,8 @@ function compileHighlightCaptionWords(
             ),
           }
         : {}),
-      events: captionEventRanges(group, startFrame, endFrame),
+      events: highlighted ? captionEventRanges(group, startFrame, endFrame)
+        : [{ startFrame, endFrame }],
     };
   });
 }
@@ -802,6 +808,7 @@ function compileCaptionWords(
         spec.schemaVersion === 4 ? spec.style.fontSize : 72,
         spec.schemaVersion === 4,
         spec.schemaVersion === 4 ? spec.font.metrics.cssToAssScale : 1,
+        spec.templateId !== "basic",
       );
 }
 
