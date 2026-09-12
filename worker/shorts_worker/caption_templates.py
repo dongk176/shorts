@@ -7,7 +7,7 @@ import unicodedata
 from collections.abc import Iterable, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -1733,6 +1733,30 @@ def _reflow_caption_cues_for_clips(
             continue
 
         for retained in retained_groups:
+            if template_id == "basic":
+                # Plain captions store the whole phrase's display window on
+                # every word. Feeding those shared anchors back to the word
+                # partitioner makes a >3.2s phrase split into one-frame cues.
+                # Cuts have already retained the complete phrase above. Give
+                # layout (not speech) proportional anchors within that window;
+                # the compiler restores phrase timing on the resulting words.
+                start = min(word.start_frame for word in retained)
+                end = max(word.end_frame for word in retained)
+                total = sum(max(1, len(word.text)) for word in retained)
+                consumed = 0
+                distributed: list[_CaptionWord] = []
+                for word in retained:
+                    word_start = start + round((end - start) * consumed / total)
+                    consumed += max(1, len(word.text))
+                    word_end = start + round((end - start) * consumed / total)
+                    distributed.append(replace(
+                        word,
+                        start_frame=word_start,
+                        end_frame=word_end,
+                        speech_start_frame=word_start,
+                        speech_end_frame=word_end,
+                    ))
+                retained = distributed
             retained = _fit_display_words(
                 retained,
                 template_id=template_id,

@@ -1,3 +1,4 @@
+from copy import deepcopy
 from types import SimpleNamespace
 
 import pytest
@@ -198,6 +199,44 @@ def test_plain_cut_does_not_remove_translated_words_by_guessed_word_times():
         schema_version=4,
     )
     assert [w["text"] for c in edited for w in c["words"]] == ["We", "can", "do", "this."]
+
+
+@pytest.mark.parametrize("font_size", [48, 96])
+def test_plain_phrase_reflow_preserves_display_time_across_cuts(font_size):
+    # A rounded/extended phrase can be one frame longer than the partitioner's
+    # 3.2s target. Its words intentionally share the phrase's entire envelope.
+    spec = compile_caption_render_spec(
+        translated_words([
+            SubtitleSegment(start=0, end=2, text="무료로 모델을 직접 만들 수 있어요."),
+        ]),
+        template_id="basic", clip_start=0, clip_end=7,
+        video_aspect_ratio=VideoAspectRatio.LANDSCAPE,
+        font_size=48, schema_version=4,
+    )
+    cue = spec["cues"][0]
+    cue.update(startFrame=0, endFrame=97)
+    cue["events"] = [{"startFrame": 0, "endFrame": 97}]
+    for word in cue["words"]:
+        word.update(startFrame=0, endFrame=97, speechStartFrame=0, speechEndFrame=97)
+    second = deepcopy(cue)
+    second.update(startFrame=97, endFrame=194)
+    second["events"] = [{"startFrame": 97, "endFrame": 194}]
+    for word in second["words"]:
+        word.update(startFrame=97, endFrame=194, speechStartFrame=97, speechEndFrame=194)
+    result = reflow_caption_cues_for_clips(
+        [cue, second], template_id="basic", safe_area=spec["safeArea"],
+        clip_windows=[(1, 193, 0)], font_size=font_size, schema_version=4,
+    )
+    assert result[0]["startFrame"] == 0
+    assert result[-1]["endFrame"] == 192
+    assert all(
+        a["endFrame"] == b["startFrame"]
+        for a, b in zip(result, result[1:], strict=False)
+    )
+    assert min(c["endFrame"] - c["startFrame"] for c in result) > 1
+    assert [w["text"] for c in result for w in c["words"]] == [
+        w["text"] for c in [cue, second] for w in c["words"]
+    ]
 
 
 @pytest.mark.parametrize(
