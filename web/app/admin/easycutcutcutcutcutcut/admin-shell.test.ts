@@ -40,6 +40,33 @@ const memberRouteSource = readFileSync(
 );
 
 describe("administrator shell recovery", () => {
+  it("keeps every accepted administrator tab in exactly one menu group", () => {
+    const navigation = shellSource.split("const navigationGroups:")[1].split("const pageCopy:")[0];
+    const menuTabs = [...navigation.matchAll(/tab: "([^"]+)"/g)].map((match) => match[1]);
+    const accepted = pageSource.split("const validTabs: AdminTab[] = [")[1].split("];")[0];
+    const acceptedTabs = [...accepted.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+    expect(new Set(menuTabs).size).toBe(menuTabs.length);
+    expect([...menuTabs].sort()).toEqual([...acceptedTabs].sort());
+  });
+
+  it("preserves creator support as a separate working tab in the growth group", () => {
+    const growth = shellSource.split('id: "growth"')[1].split('id: "system"')[0];
+    expect(growth).toContain('tab: "creator-support", label: "크리에이터 지원"');
+    expect(growth).toContain('tab: "creator-projects"');
+    expect(pageSource).toContain('tab === "creator-support"');
+    expect(pageSource).toContain("<AdminCreatorSupport");
+  });
+
+  it("preserves all current production controls inside operational settings", () => {
+    const settings = pageSource.split(') : tab === "settings" ? (')[1];
+    for (const component of [
+      "AdminCustomTemplateDesign", "AdminFileUploadRelease", "AdminTossBillingSettings",
+      "AdminYoutubeDiscovery", "AdminLanguageTest", "AdminRuntimeSettings", "AdminShortsEventSetting",
+    ]) {
+      expect(settings).toContain(`<${component}`);
+    }
+  });
+
   it("restores the latest administrator navigation and overview", () => {
     expect(shellSource).toContain("Admin Console");
     expect(shellSource).toContain("비즈니스 현황을 한눈에.");

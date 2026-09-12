@@ -39,6 +39,7 @@ export function LanguageSelector() {
     return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
   }, [open, selectedLocale]);
 
+  if (/^\/admin(?:\/|$)/.test(pathname)) return null;
   if (pathname === "/creator-support") return null;
   if (/^\/creator-project(?:\/|$)/.test(pathname)) return null;
   if (/^\/templates(?:\/|$)/.test(pathname)) return null;

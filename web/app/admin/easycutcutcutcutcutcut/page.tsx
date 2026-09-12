@@ -745,7 +745,6 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
   return (
     <AdminShell
       activeTab={tab}
-      adminEmail={admin.email}
     >
       {tab === "billing" ? (
         <AdminBillingDashboard

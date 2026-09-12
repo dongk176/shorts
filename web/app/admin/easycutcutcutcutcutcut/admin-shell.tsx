@@ -44,7 +44,6 @@ type AdminOverviewData = {
 
 type AdminShellProps = {
   activeTab: AdminTab;
-  adminEmail: string;
   children: ReactNode;
 };
 
@@ -77,11 +76,15 @@ type IconName =
   | "installments";
 
 const navigationGroups: Array<{
+  id: string;
   label: string;
+  icon: IconName;
   items: Array<{ tab: AdminTab; label: string; icon: IconName }>;
 }> = [
   {
-    label: "Commerce",
+    id: "commerce",
+    label: "결제·재무",
+    icon: "billing",
     items: [
       { tab: "billing", label: "결제 관리", icon: "billing" },
       { tab: "refunds", label: "환불 운영", icon: "refunds" },
@@ -89,21 +92,39 @@ const navigationGroups: Array<{
     ],
   },
   {
-    label: "Customers",
+    id: "members",
+    label: "회원 관리",
+    icon: "members",
     items: [
       { tab: "members", label: "회원 관리", icon: "members" },
       { tab: "managed-accounts", label: "발급 계정", icon: "accounts" },
-      { tab: "referrals", label: "레퍼럴", icon: "referrals" },
-      { tab: "partner-applications", label: "파트너 신청", icon: "partner-applications" },
+      { tab: "onboarding", label: "온보딩 분석", icon: "onboarding" },
+    ],
+  },
+  {
+    id: "support",
+    label: "고객 지원",
+    icon: "inquiries",
+    items: [
       { tab: "inquiries", label: "고객 문의", icon: "inquiries" },
       { tab: "feedback", label: "제품 피드백", icon: "feedback" },
-      { tab: "onboarding", label: "온보딩 분석", icon: "onboarding" },
+    ],
+  },
+  {
+    id: "growth",
+    label: "마케팅·제휴",
+    icon: "referrals",
+    items: [
+      { tab: "referrals", label: "레퍼럴", icon: "referrals" },
+      { tab: "partner-applications", label: "파트너 신청", icon: "partner-applications" },
       { tab: "creator-support", label: "크리에이터 지원", icon: "creator-projects" },
       { tab: "creator-projects", label: "크리에이터 프로젝트", icon: "creator-projects" },
     ],
   },
   {
-    label: "System",
+    id: "system",
+    label: "시스템",
+    icon: "settings",
     items: [
       { tab: "editor-releases", label: "편집기 릴리스", icon: "editor-releases" },
       { tab: "settings", label: "운영 설정", icon: "settings" },
@@ -179,6 +200,55 @@ function AdminIcon({ name, className }: { name: IconName; className?: string }) 
   return <svg {...common}><rect x="3" y="5" width="18" height="14" rx="3" /><path d="M7 9h10M7 13h4M15 13h2" /></svg>;
 }
 
+function AdminNavigation({ activeTab }: Pick<AdminShellProps, "activeTab">) {
+  const activeGroup = navigationGroups.find((group) => group.items.some((item) => item.tab === activeTab));
+  const [openGroupId, setOpenGroupId] = useState<string | null>(activeGroup?.id ?? null);
+
+  return (
+    <nav className={styles.navigation} aria-label="관리자 메뉴">
+      {navigationGroups.map((group) => {
+        const expanded = openGroupId === group.id;
+        const selected = activeGroup?.id === group.id;
+        const panelId = `admin-nav-${group.id}`;
+        return (
+          <div className={styles.navGroup} key={group.id}>
+            <button
+              type="button"
+              aria-expanded={expanded}
+              aria-controls={panelId}
+              className={`${styles.navGroupToggle} ${selected ? styles.navGroupSelected : ""}`}
+              onClick={() => setOpenGroupId(expanded ? null : group.id)}
+            >
+              <AdminIcon name={group.icon} className={styles.navIcon} />
+              <span>{group.label}</span>
+              <svg className={styles.navChevron} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
+                <path d="m7 4 6 6-6 6" />
+              </svg>
+            </button>
+            <div id={panelId} className={styles.navGroupItems} hidden={!expanded}>
+              {group.items.map((item) => {
+                const active = activeTab === item.tab;
+                return (
+                  <Link
+                    key={item.tab}
+                    href={`/admin/easycutcutcutcutcutcut?tab=${item.tab}`}
+                    prefetch={false}
+                    aria-current={active ? "page" : undefined}
+                    className={`${styles.navLink} ${active ? styles.navLinkActive : ""}`}
+                  >
+                    <AdminIcon name={item.icon} className={styles.navIcon} />
+                    <span>{item.label}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </nav>
+  );
+}
+
 function money(value: number) {
   return `${value.toLocaleString("ko-KR")}원`;
 }
@@ -191,7 +261,6 @@ function compactMoney(value: number) {
 
 export function AdminShell({
   activeTab,
-  adminEmail,
   children,
 }: AdminShellProps) {
   const [overview, setOverview] = useState<AdminOverviewData | null>(null);
@@ -232,7 +301,6 @@ export function AdminShell({
     1,
   );
   const totalReviewCount = metrics.orderReviewCount + metrics.manualReviewSubscriptions;
-  const initials = adminEmail.slice(0, 2).toUpperCase();
   const statuses = [
     { label: "정상 활성", value: metrics.activeSubscriptions, color: "#55d6af" },
     { label: "연체", value: metrics.pastDueSubscriptions, color: "#f6b85e" },
@@ -287,38 +355,8 @@ export function AdminShell({
           </div>
         </div>
 
-        <nav className={styles.navigation} aria-label="관리자 메뉴">
-          {navigationGroups.map((group) => (
-            <div className={styles.navGroup} key={group.label}>
-              <p className={styles.navGroupLabel}>{group.label}</p>
-              {group.items.map((item) => {
-                const active = activeTab === item.tab;
-                return (
-                  <Link
-                    key={item.tab}
-                    href={`/admin/easycutcutcutcutcutcut?tab=${item.tab}`}
-                    prefetch={false}
-                    aria-current={active ? "page" : undefined}
-                    className={`${styles.navLink} ${active ? styles.navLinkActive : ""}`}
-                  >
-                    <AdminIcon name={item.icon} className={styles.navIcon} />
-                    <span>{item.label}</span>
-                  </Link>
-                );
-              })}
-            </div>
-          ))}
-        </nav>
+        <AdminNavigation key={activeTab} activeTab={activeTab} />
 
-        <div className={styles.sidebarFooter}>
-          <div className={styles.operator}>
-            <span className={styles.avatar}>{initials}</span>
-            <div className={styles.operatorMeta}>
-              <p className={styles.operatorRole}>Administrator</p>
-              <p className={styles.operatorEmail} title={adminEmail}>{adminEmail}</p>
-            </div>
-          </div>
-        </div>
       </aside>
 
       <div className={styles.main}>
