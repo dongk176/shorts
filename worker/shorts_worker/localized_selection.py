@@ -10,10 +10,8 @@ from typing import Any
 from pydantic import ValidationError
 
 from .content_language import text_matches_language
-from .language_context import has_unlabeled_amount, mentioned_currencies
-from .money_facts import ungrounded_money
 from .prompt_language import LOCALIZED_SELECTION_PROMPTS
-from .schemas import HighlightClip, LocalizedHighlightCandidate, LocalizedSelectionResponse
+from .schemas import HighlightCandidate, HighlightClip, SelectionResponse
 
 
 @dataclass
@@ -35,15 +33,14 @@ def validate_candidates(payload: object, *, language: str, source: str) -> Selec
     if not isinstance(payload["clips"], list) or not payload["clips"]:
         raise LocalizedSelectionError("empty_candidates")
     result = SelectionAttempt()
-    currencies = mentioned_currencies(source)
     for index, raw in enumerate(payload["clips"]):
         rejection: dict[str, object] = {"candidate_index": index + 1}
         try:
-            candidate = LocalizedHighlightCandidate.model_validate(raw)
+            candidate = HighlightCandidate.model_validate(raw)
         except ValidationError as error:
             rejection.update(code="schema", fields=[
                 {"field": str(e["loc"][0]) if e["loc"]
-                 and e["loc"][0] in LocalizedHighlightCandidate.model_fields else "$candidate",
+                 and e["loc"][0] in HighlightCandidate.model_fields else "$candidate",
                  "code": e["type"]}
                 for e in error.errors(include_input=False, include_context=False)[:10]
             ])
@@ -55,20 +52,10 @@ def validate_candidates(payload: object, *, language: str, source: str) -> Selec
             result.rejected.append({"candidate_index": index + 1, "code": "invalid_range"})
             continue
         title = candidate.hook_title_line1 + "\n" + candidate.hook_title_line2
-        # A proper name may occupy a title line. Check the complete title's script,
-        # while preserving the strict per-line length and no-foreign-script rules.
+        # A proper name may occupy a title line. Check the complete title's script.
         for name, text in (("title", title), ("reason", candidate.reason)):
-            code = None
             if not text_matches_language(text, language):
-                code = "language"
-            elif currencies and mentioned_currencies(text) - currencies:
-                code = "currency_changed"
-            elif has_unlabeled_amount(text, source):
-                code = "currency_label_missing"
-            elif ungrounded_money(text, source):
-                code = "money_not_grounded"
-            if code:
-                rejection.update(code=code, field=name)
+                rejection.update(code="language", field=name)
                 result.rejected.append(rejection)
                 break
         else:
@@ -86,13 +73,12 @@ def request_candidates(
     client: Any, model: str, messages: list[dict[str, str]], language: str,
     *, max_tokens: int | None = None,
 ) -> SelectionAttempt:
-    # Keep the same strict generation schema, but validate each returned item locally
-    # instead of letting SDK parsing discard all candidates for one invalid title.
+    # Use the regular title bounds and retain independently valid candidates.
     response = client.chat.completions.create(
         model=model, messages=messages,
         response_format={"type": "json_schema", "json_schema": {
             "name": "LocalizedSelectionResponse", "strict": True,
-            "schema": LocalizedSelectionResponse.model_json_schema(),
+            "schema": SelectionResponse.model_json_schema(),
         }},
         **({"max_tokens": max_tokens} if max_tokens is not None else {}),
     )
@@ -125,10 +111,6 @@ def repair_instruction(language: str, error: LocalizedSelectionError) -> str:
     templates = LOCALIZED_SELECTION_PROMPTS[language]
     scope = templates["repair_rejected" if error.attempt.rejected else "repair_format"]
     instruction = templates["repair"]
-    if any(item.get("code") in {
-        "money_not_grounded", "currency_changed", "currency_label_missing",
-    } for item in error.attempt.rejected):
-        instruction += templates["repair_money"]
     return scope + instruction + "\n" + json.dumps({
         "failure": error.code, "rejected": error.attempt.rejected,
         "accepted_ranges": accepted,

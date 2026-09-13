@@ -19,6 +19,7 @@ type GenerateCommentsInput = {
   targetCount: number;
   outputLanguage?: OutputLanguage;
   sourceLanguage?: string;
+  languageTest?: boolean;
   commentProfile?: CommentProfile;
 };
 
@@ -77,6 +78,7 @@ export async function generateCommentsWithGemini(
     const comments = parseCommentRegenerationResponse(
       await response.json(), input.targetCount, input.outputLanguage, rejectionCounts,
       input.sourceLanguage === undefined ? undefined : input.transcript.map((s) => s.text).join("\n"),
+      input.languageTest === true,
     );
     qualityStatus = "complete";
     return comments;

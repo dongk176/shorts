@@ -1945,7 +1945,7 @@ describe("subtitle template edit isolation", () => {
     expect(mocks.generateComments).not.toHaveBeenCalled();
   });
 
-  it("keeps ordinary comment regeneration unchanged", async () => {
+  it.each([false, true])("keeps ordinary regeneration unchanged with client test flag %s", async (clientTestFlag) => {
     process.env.EDITOR_OVERLAY_PREVIEW_ENABLED = "true";
     const db = dbWithRows(
       [],
@@ -1967,6 +1967,7 @@ describe("subtitle template edit isolation", () => {
       jsonRequest(`http://localhost/api/shorts/${shortId}/regenerate-comments`, {
         requestId: "bda42bad-ae7c-43bb-960f-2c5984285404",
         commentCount: 1,
+        languageTest: clientTestFlag,
       }),
       { params: Promise.resolve({ shortId }) },
     );
@@ -1976,6 +1977,10 @@ describe("subtitle template edit isolation", () => {
       comments: ["생성된 댓글"],
     });
     expect(mocks.generateComments).toHaveBeenCalledOnce();
+    expect(mocks.generateComments).toHaveBeenCalledWith(expect.objectContaining({
+      languageTest: false,
+      sourceLanguage: undefined,
+    }));
     const queriedSql = db.mock.calls.map(([strings]) =>
       Array.from(strings as TemplateStringsArray).join(""),
     ).join("\n");

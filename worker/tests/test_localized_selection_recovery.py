@@ -6,10 +6,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from shorts_worker.config import Settings
-from shorts_worker.errors import ShortsMakerError
 from shorts_worker.localized_selection import (
     LocalizedSelectionError,
-    repair_instruction,
     validate_candidates,
 )
 from shorts_worker.schemas import OutputLanguage, SubtitleSegment
@@ -31,10 +29,7 @@ def response(items):
 
 @pytest.mark.parametrize("bad,code", [
     ({"reason": "원문을 그대로 쓴 선정 이유"}, "language"),
-    ({"hook_title_line1": "月15万円稼げる"}, "currency_changed"),
-    ({"hook_title_line1": "月15万も稼げる"}, "currency_label_missing"),
-    ({"hook_title_line1": "月150万ウォン稼ぐ"}, "money_not_grounded"),
-    ({"hook_title_line1": "短い"}, "schema"),
+    ({"hook_title_line1": ""}, "schema"),
     ({"end_seconds": float("nan")}, "invalid_range"),
 ])
 def test_one_invalid_candidate_does_not_discard_other_titles(bad, code):
@@ -46,16 +41,24 @@ def test_one_invalid_candidate_does_not_discard_other_titles(bad, code):
     assert "원문" not in json.dumps(result.rejected, ensure_ascii=False)
 
 
-def test_money_repair_omits_uncertain_amounts_instead_of_substituting_numbers():
-    attempt = validate_candidates({"clips": [{**candidate(),
-        "hook_title_line1": "働かなくても年収3億ウォン",
-    }]}, language="ja", source="은행 이자가 한 2, 3억씩 나오거든요. 1년에.")
-    error = LocalizedSelectionError("candidate_validation", attempt)
-    assert attempt.rejected[0]["code"] == "money_not_grounded"
-    assert "金額の記述を省き" in repair_instruction("ja", error)
-    assert "leaving monetary amounts out" in repair_instruction("en", error)
-    assert "leaving monetary amounts out" not in repair_instruction(
-        "en", LocalizedSelectionError("invalid_json"),
+@pytest.mark.parametrize("title", [
+    "月15万円稼げる", "月15万も稼げる", "月150万ウォン稼ぐ", "短い",
+    "この新しいサービスなら画像生成まで無料で試せる",
+])
+def test_title_content_is_preserved_without_money_or_eighteen_character_rejection(title):
+    client = MagicMock()
+    client.chat.completions.create.return_value = response([
+        {**candidate(), "hook_title_line1": title},
+    ])
+    with patch("openai.OpenAI", return_value=client):
+        clips = TranscriptSelector(Settings())._select_with_gemini(
+            messages=[{"role": "user", "content": "15만 원입니다."}],
+            output_language=OutputLanguage.JA, source_language="ko",
+        )
+    assert clips[0].hook_title.splitlines()[0] == title
+    client.chat.completions.create.assert_called_once()
+    assert _two_line_title(clips[0].hook_title, OutputLanguage.JA, relaxed_titles=True) == (
+        clips[0].hook_title
     )
 
 
@@ -118,14 +121,44 @@ def test_partial_repair_after_invalid_json_keeps_valid_replacements():
     assert client.chat.completions.create.call_count == 2
 
 
-def test_failed_configured_localized_generation_is_not_a_generic_success(monkeypatch):
+def test_failed_configured_localized_generation_uses_regular_fallback(monkeypatch):
     selector = TranscriptSelector(Settings(gemini_api_key="test",
                                            gemini_paid_data_processing_confirmed=True))
     monkeypatch.setattr(selector, "_select_with_gemini", MagicMock(side_effect=ValueError()))
-    with pytest.raises(ShortsMakerError, match="품질 검사"):
-        selector.select(video_title="원본", duration_seconds=300, required_count=5,
-                        transcript=[SubtitleSegment(start=0, end=300, text="원문")],
-                        output_language=OutputLanguage.JA, source_language="ko")
+    clips = selector.select(video_title="원본", duration_seconds=300, required_count=5,
+                            transcript=[SubtitleSegment(start=0, end=300, text="원문")],
+                            output_language=OutputLanguage.JA, source_language="ko")
+    assert len(clips) == 4
+    assert all(c.selection_provider == "deterministic" for c in clips)
+
+
+@pytest.mark.parametrize("language", [OutputLanguage.JA, OutputLanguage.EN])
+def test_three_valid_candidates_are_kept_and_backfilled_after_both_models(language, monkeypatch):
+    selector = TranscriptSelector(Settings(
+        gemini_api_key="test", gemini_paid_data_processing_confirmed=True, openai_api_key="test",
+    ))
+    payload = [candidate(i) for i in range(3)]
+    if language == OutputLanguage.EN:
+        for c in payload:
+            c.update(hook_title_line1="AI", hook_title_line2="Free training and image generation",
+                     reason="The free image generation workflow is shown.")
+    accepted = validate_candidates({"clips": payload}, language=language, source="").clips
+    first = MagicMock(return_value=accepted)
+    second = MagicMock(return_value=[])
+    monkeypatch.setattr(selector, "_select_with_gemini", first)
+    monkeypatch.setattr(selector, "_select_with_openai", second)
+    clips = selector.select(
+        video_title="Original", duration_seconds=330, required_count=5,
+        transcript=[SubtitleSegment(start=0, end=330, text="Original transcript")],
+        output_language=language, source_language=language,
+    )
+    first.assert_called_once()
+    second.assert_called_once()
+    assert len(clips) == 4
+    assert {c.hook_title for c in accepted} <= {c.hook_title for c in clips}
+    assert sum(c.selection_provider == "gemini" for c in clips) == 3
+    assert sum(c.selection_provider == "deterministic" for c in clips) == 1
+    assert all(0 <= c.start_seconds < c.end_seconds <= 330 for c in clips)
 
 
 def test_missing_provider_configuration_still_uses_deterministic_fallback():

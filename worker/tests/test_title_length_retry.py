@@ -11,10 +11,10 @@ from shorts_worker.schemas import LocalizedSelectionResponse, OutputLanguage
 from shorts_worker.selector import TranscriptSelector
 
 
-def title_response(language, *, too_long=False):
+def title_response(language, *, too_long=False, empty_title=False):
     return {"clips": [{
         "start_seconds": 0, "end_seconds": 40,
-        "hook_title_line1": "x" * 19 if too_long else (
+        "hook_title_line1": "" if empty_title else "x" * 19 if too_long else (
             "A real title" if language == OutputLanguage.EN else "実際のタイトル"
         ),
         "hook_title_line2": (
@@ -34,14 +34,14 @@ def length_error(language):
 
 @pytest.mark.parametrize("language", [OutputLanguage.EN, OutputLanguage.JA])
 @pytest.mark.parametrize("output_limit", [None, 16384])
-def test_new_source_language_title_gets_one_bounded_length_retry(language, output_limit):
+def test_new_source_language_empty_title_gets_one_bounded_retry(language, output_limit):
     client = MagicMock()
     def response(payload):
         return SimpleNamespace(usage=None, choices=[SimpleNamespace(
             finish_reason="stop", message=SimpleNamespace(content=json.dumps(payload)),
         )])
     client.chat.completions.create.side_effect = [
-        response(title_response(language, too_long=True)), response(title_response(language)),
+        response(title_response(language, empty_title=True)), response(title_response(language)),
     ]
     messages = [{"role": "user", "content": "원본 전사문"}]
     selector = TranscriptSelector(Settings(gemini_max_output_tokens=output_limit))
@@ -75,11 +75,11 @@ def test_legacy_and_korean_do_not_get_an_extra_retry(language, source):
     assert client.beta.chat.completions.parse.call_count == 1
 
 
-def test_second_length_failure_is_propagated_without_a_loop():
+def test_second_empty_title_failure_is_propagated_without_a_loop():
     client = MagicMock()
     client.chat.completions.create.return_value = SimpleNamespace(usage=None, choices=[
         SimpleNamespace(finish_reason="stop", message=SimpleNamespace(
-            content=json.dumps(title_response(OutputLanguage.JA, too_long=True)),
+            content=json.dumps(title_response(OutputLanguage.JA, empty_title=True)),
         )),
     ])
     with patch("openai.OpenAI", return_value=client), pytest.raises(LocalizedSelectionError):

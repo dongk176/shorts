@@ -117,12 +117,15 @@ def _clean_title_line(value: str) -> str:
     return " ".join(clean.split()).strip(" -–—.,!?…\"'")
 
 
-def _two_line_title(value: str, output_language: OutputLanguage) -> str:
+def _two_line_title(
+    value: str, output_language: OutputLanguage, *, relaxed_titles: bool = False,
+) -> str:
     if not text_matches_language(value, output_language):
         return "\n".join(FALLBACK_TITLE_LINES[output_language])
     if output_language in SOURCE_VALUE_INSTRUCTIONS:
         lines = [" ".join(line.split()) for line in manual_title_lines(value)]
-        if len(lines) == 2 and all(5 <= len(line) <= 18 for line in lines):
+        minimum, maximum = (1, MAX_HOOK_TITLE_CHARS // 2) if relaxed_titles else (5, 18)
+        if len(lines) == 2 and all(minimum <= len(line) <= maximum for line in lines):
             return "\n".join(lines)
         return "\n".join(FALLBACK_TITLE_LINES[output_language])
     manual_lines = [_clean_title_line(line) for line in manual_title_lines(value)]
@@ -272,6 +275,7 @@ def normalize_clips(
     backfill: bool = True,
     selection_provider: str | None = None,
     selection_model: str | None = None,
+    relaxed_titles: bool = False,
 ) -> list[HighlightClip]:
     """Reject invalid AI times and enforce at most five seconds of pairwise overlap."""
     if duration_seconds <= 0 or required_count < 1:
@@ -344,7 +348,7 @@ def normalize_clips(
             rounded_raw_end = None
             rounded_raw_duration = None
         hook_title = (
-            _two_line_title(candidate.hook_title, output_language)
+            _two_line_title(candidate.hook_title, output_language, relaxed_titles=relaxed_titles)
             if record_raw_selection
             else _fallback_title(
                 transcript or [],
@@ -725,7 +729,6 @@ class TranscriptSelector:
         )
         localized = source_language is not None and output_language in SOURCE_VALUE_INSTRUCTIONS
         retained: list[HighlightClip] = []
-        attempted = False
         for provider, model, configured, select_provider in providers:
             if not transcript:
                 _log_selection_event(
@@ -753,7 +756,6 @@ class TranscriptSelector:
                 target_clip_count=required_count,
                 minimum_clip_count=minimum_count,
             )
-            attempted = True
             try:
                 try:
                     candidates = (
@@ -787,6 +789,7 @@ class TranscriptSelector:
                     backfill=False,
                     selection_provider=provider,
                     selection_model=model,
+                    relaxed_titles=localized,
                 )
             except Exception as exc:
                 _log_selection_event(
@@ -833,21 +836,14 @@ class TranscriptSelector:
             )
             return normalized
 
-        if localized and attempted:
-            _log_selection_event(
-                "highlight_selection_completed", source="quality_failed",
-                clip_count=len(retained), minimum_clip_count=minimum_count,
-            )
-            raise ShortsMakerError(
-                "선택한 언어의 제목 품질 검사를 통과하지 못했습니다. 다시 제작해 주세요."
-            )
         fallback = normalize_clips(
-            [],
+            retained if localized else [],
             video_title=video_title,
             duration_seconds=duration_seconds,
             required_count=required_count,
             transcript=transcript,
             output_language=output_language,
+            relaxed_titles=localized,
         )
         _log_selection_event(
             "highlight_selection_completed",

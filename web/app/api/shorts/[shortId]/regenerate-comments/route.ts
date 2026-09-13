@@ -210,6 +210,7 @@ export async function POST(
           : [],
         targetCount: input.commentCount,
         commentProfile,
+        languageTest: Boolean(generatedShort.languageTestReleaseId),
         outputLanguage: normalizeOutputLanguage(generatedShort.outputLanguage),
         sourceLanguage: resolveSourceLanguage(
           generatedShort.sourceLanguageHint, generatedShort.sourceLanguageCode,

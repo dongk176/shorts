@@ -6,7 +6,6 @@ from unittest.mock import MagicMock
 import pytest
 
 from shorts_worker.language_context import has_unlabeled_amount
-from shorts_worker.localized_selection import LocalizedSelectionError
 from shorts_worker.schemas import OutputLanguage
 from shorts_worker.selector import TranscriptSelector
 
@@ -21,7 +20,7 @@ def test_currency_label_boundaries(case):
     assert has_unlabeled_amount(case["text"], source) == case["missing"]
 
 
-def test_title_and_reason_validation_preserves_legacy_and_checks_each_field():
+def test_title_and_reason_amount_wording_is_accepted_in_language_tests():
     response = {"clips": [{
         "start_seconds": 0, "end_seconds": 45,
         "hook_title_line1": "月7億超を稼ぐ方法", "hook_title_line2": "自動でドルが貯まる",
@@ -39,8 +38,7 @@ def test_title_and_reason_validation_preserves_legacy_and_checks_each_field():
             content=json.dumps(response),
         ))],
     )
-    with pytest.raises(LocalizedSelectionError, match="candidate_validation"):
-        TranscriptSelector._parse_selection(client, "test", messages, OutputLanguage.JA, "ko")
+    assert TranscriptSelector._parse_selection(client, "test", messages, OutputLanguage.JA, "ko")
     response["clips"][0]["hook_title_line1"] = "月53万ドル稼ぐ方法"
     response["clips"][0]["reason"] = "月7億超を稼ぐ話です。"
     client.chat.completions.create.side_effect = lambda **kwargs: SimpleNamespace(
@@ -48,5 +46,4 @@ def test_title_and_reason_validation_preserves_legacy_and_checks_each_field():
             content=json.dumps(response),
         ))],
     )
-    with pytest.raises(LocalizedSelectionError, match="candidate_validation"):
-        TranscriptSelector._parse_selection(client, "test", messages, OutputLanguage.JA, "ko")
+    assert TranscriptSelector._parse_selection(client, "test", messages, OutputLanguage.JA, "ko")

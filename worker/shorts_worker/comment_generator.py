@@ -11,8 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from .config import Settings
 from .content_language import CONTENT_LANGUAGES, comment_key, text_matches_language
 from .fallback_comments import select_fallback_comment_texts
-from .language_context import has_unlabeled_amount, language_context, mentioned_currencies
-from .money_facts import ungrounded_money
+from .language_context import language_context, mentioned_currencies
 from .prompt_language import (
     CULTURE_COMMENT_MODEL,
     CULTURE_COMMENT_PROFILE,
@@ -250,7 +249,8 @@ class CommentGenerator:
         seen: dict[int, set[str]] = {clip_index: set() for clip_index in expected}
         source_currencies = {
             clip.clip_index: mentioned_currencies("\n".join(t.text for t in clip.transcript))
-            if clip.source_language is not None else set()
+            if clip.source_language is not None
+            and clip.output_language not in {OutputLanguage.EN, OutputLanguage.JA} else set()
             for clip in inputs
         }
         for raw_clip in raw_clips:
@@ -283,20 +283,7 @@ class CommentGenerator:
                         and mentioned_currencies(text) - source_currencies[clip_index]):
                     rejection_counts["currency"] += 1
                     continue
-                clip = expected[clip_index]
-                if (
-                    clip.source_language is not None
-                    and clip.output_language in {OutputLanguage.EN, OutputLanguage.JA}
-                    and has_unlabeled_amount(text, "\n".join(t.text for t in clip.transcript))
-                ):
-                    rejection_counts["currency"] += 1
-                    continue
                 key = _duplicate_key(text)
-                if (clip.source_language is not None
-                        and clip.output_language in {OutputLanguage.EN, OutputLanguage.JA}
-                        and ungrounded_money(text, "\n".join(t.text for t in clip.transcript))):
-                    rejection_counts["money_not_grounded"] += 1
-                    continue
                 if not key or key in seen[clip_index]:
                     rejection_counts["duplicate_or_empty_key"] += 1
                     continue

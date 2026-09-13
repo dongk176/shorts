@@ -135,6 +135,7 @@ export function parseCommentRegenerationResponse(
   outputLanguage: OutputLanguage = "ko",
   rejectionCounts: CommentRejectionCounts = {},
   sourceTranscript?: string,
+  languageTest = false,
 ) {
   if (!Number.isInteger(targetCount) || targetCount < 1 || targetCount > AI_COMMENT_MAX_COUNT) {
     throw new Error("invalid_target_count");
@@ -178,6 +179,7 @@ export function parseCommentRegenerationResponse(
     : null;
   if (!Array.isArray(rawComments)) throw new Error("invalid_response_shape");
   const sourceCurrencies = mentionedCurrencies(sourceTranscript || "");
+  const enforceMoney = !languageTest || (outputLanguage !== "en" && outputLanguage !== "ja");
   const seen = new Set<string>();
   const comments: string[] = [];
   const reject = (reason: keyof CommentRejectionCounts) => {
@@ -198,17 +200,17 @@ export function parseCommentRegenerationResponse(
       reject("language");
       continue;
     }
-    if (sourceCurrencies.size && [...mentionedCurrencies(comment)].some((c) => !sourceCurrencies.has(c))) {
+    if (enforceMoney && sourceCurrencies.size && [...mentionedCurrencies(comment)].some((c) => !sourceCurrencies.has(c))) {
       reject("currency");
       continue;
     }
-    if ((outputLanguage === "en" || outputLanguage === "ja") && sourceTranscript !== undefined
+    if (enforceMoney && (outputLanguage === "en" || outputLanguage === "ja") && sourceTranscript !== undefined
       && hasUnlabeledAmount(comment, sourceTranscript)) {
       reject("currency");
       continue;
     }
     const key = commentDuplicateKey(comment);
-    if ((outputLanguage === "en" || outputLanguage === "ja") && sourceTranscript !== undefined
+    if (enforceMoney && (outputLanguage === "en" || outputLanguage === "ja") && sourceTranscript !== undefined
       && ungroundedMoney(comment, sourceTranscript)) {
       reject("money_not_grounded");
       continue;
