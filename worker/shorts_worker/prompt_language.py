@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .content_language import CONTENT_LANGUAGES
+from .language_context import language_context, mentioned_currencies
 
 if TYPE_CHECKING:
     from .comment_generator import CommentClipInput
@@ -20,6 +21,36 @@ CULTURE_COMMENT_MODEL = "gemini-3.5-flash"
 CULTURE_COMMENT_PROMPTS = json.loads(
     Path(__file__).with_name("comment_culture_prompts.json").read_text(encoding="utf-8")
 )
+
+LOCALIZED_SELECTION_PROMPTS = json.loads(
+    Path(__file__).with_name("localized_selection_prompts.json").read_text(encoding="utf-8")
+)
+
+
+def translated_selection_messages(
+    *, video_title: str, duration_seconds: float, transcript: str, transcript_source: str,
+    minimum_count: int, required_count: int, min_seconds: float, max_seconds: float,
+    output_language: str, source_language: str | None,
+) -> list[dict[str, str]] | None:
+    # Only language-test projects carry a source language. Legacy requests keep
+    # their original instructions, including the Korean-output test path.
+    if source_language is None or output_language not in LOCALIZED_SELECTION_PROMPTS:
+        return None
+    templates = LOCALIZED_SELECTION_PROMPTS[output_language]
+    values = dict(
+        video_title=video_title, duration_seconds=f"{duration_seconds:.3f}",
+        transcript=transcript, minimum_count=minimum_count, required_count=required_count,
+        min_seconds=f"{min_seconds:.3f}", max_seconds=f"{max_seconds:.3f}",
+    )
+    user = templates["user"].format(**values)
+    currencies = mentioned_currencies(transcript_source)
+    if "KRW" in currencies:
+        user = templates["currency"].format(currencies=", ".join(sorted(currencies))) + user
+    return [
+        {"role": "system", "content": language_context(source_language, output_language)
+         + "\n\n" + templates["system"].format(**values)},
+        {"role": "user", "content": user},
+    ]
 
 
 def translated_comment_messages(

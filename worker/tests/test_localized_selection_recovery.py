@@ -52,9 +52,9 @@ def test_money_repair_omits_uncertain_amounts_instead_of_substituting_numbers():
     }]}, language="ja", source="은행 이자가 한 2, 3억씩 나오거든요. 1년에.")
     error = LocalizedSelectionError("candidate_validation", attempt)
     assert attempt.rejected[0]["code"] == "money_not_grounded"
-    assert "別の金額に置き換えない" in repair_instruction("ja", error)
-    assert "do not replace them with a different amount" in repair_instruction("en", error)
-    assert "monetary amounts" not in repair_instruction(
+    assert "金額の記述を省き" in repair_instruction("ja", error)
+    assert "leaving monetary amounts out" in repair_instruction("en", error)
+    assert "leaving monetary amounts out" not in repair_instruction(
         "en", LocalizedSelectionError("invalid_json"),
     )
 

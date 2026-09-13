@@ -1,0 +1,51 @@
+{
+  "ko": {
+    "selection": "f619bfec774e1e78f9c9eedbc1ed29b00d99b3c4ea11f0d325ab1d52142369fb",
+    "comments": "55863daef03d10d7f866823738644c458c1ab31873cd2e218ec2be4d92fc2fbf"
+  },
+  "en": {
+    "selection": "70384f82b1e44f9635f36ef49facb13e2b32c90a5810c91c115b6e9ee4c33330",
+    "comments": "b998587667a8422eb21eac77bb19e37f412849a5be1288404b19a906788eb5e1"
+  },
+  "ja": {
+    "selection": "12809c6d89625790dc89fd7997d02cccd0a5274c27ab09828095809d363016bc",
+    "comments": "30ccb0217614fb4808e6f07679aeaa8198ad0cf091247672dd5d4ee80c39b483"
+  },
+  "zh-CN": {
+    "selection": "803a9397449c36cbb539ecf2b0256194892e33e2b9c2ecaaab25c528ec8afc21",
+    "comments": "cd9081da354b1f67609103807a4a92e86f18941fdecbf9d43b603c14648e552f"
+  },
+  "es": {
+    "selection": "21d4a0233318fa6a24a5ccfef843c2b1f7b631dadf6ed1b80aeee42e310dd361",
+    "comments": "ead809e850de8bae4d4bbb44fe0bf02286a7d462f1f6e2af5560b181373c773c"
+  },
+  "fr": {
+    "selection": "01806ad1e45879f90ca7c6d1d4e2aea149d945bbfe685e49c140e9714300af8b",
+    "comments": "b8afb9924739dae28ea2e820babbc26574735540b061a29b61933211311b2ff0"
+  },
+  "de": {
+    "selection": "891a2590906c1b106d2838f915be1abfd51ea67cdbecf9c20a402e7131e0ff18",
+    "comments": "be89f73eb9a739ab83abf0fe60e48fdff3771b058e3d2f6536e27db02b4ddfde"
+  },
+  "pt-BR": {
+    "selection": "0ec7b0b48c3cb036008822249b2584767d247b90703c8677d2c33f404052059b",
+    "comments": "3301d12a4ea83e2668063110b1f308ffd2b61c90ea9617335847e4609ff531e7"
+  },
+  "ko:ko": {
+    "selection": "cd117f08a2b36fb2aa57f8d5d9a297ff543d72f4b0ad5ed506f9fc12f42226ac",
+    "comments": "876ee5d1130cc34aeaa39161a5b99e3296add30903e21b0115bb757ed533ab0b"
+  },
+  "ko:ja": {
+    "selection": "58d9f935172e783dd99d473212e3fe5809f3da5035f1ae4e1230a3aa540e7f74",
+    "comments": "0e508a98bc355382e9ef4532537b3f644558dae421f729bca433b0a8f933ebe9"
+  },
+  "ko:en": {
+    "selection": "6f3ae86d5c1e8d6f021c7d7a57274e60bd82ae55b1b4a9c64c6d2c6038825841",
+    "comments": "30f0278afeadf2b3ab7ae02d2f06d3d0efe21e3de2dd5761a29ac4dfdef3ed57"
+  },
+  "ko:und": {
+    "selection": "e157e63ee415930c7b91719190183246acee6f963089d80f294dda1fdf2f5408",
+    "comments": "c4d98acca6a0e4d1d0321cc090903e8b1518f6146c38fee624b030f5941b8e44"
+  },
+  "translation:ko": "d0158ec943cbfa1f0f773e295780499bf2d6004614c0c8b74eb44c353ca79fc2"
+}

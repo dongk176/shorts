@@ -12,6 +12,7 @@ from pydantic import ValidationError
 from .content_language import text_matches_language
 from .language_context import has_unlabeled_amount, mentioned_currencies
 from .money_facts import ungrounded_money
+from .prompt_language import LOCALIZED_SELECTION_PROMPTS
 from .schemas import HighlightClip, LocalizedHighlightCandidate, LocalizedSelectionResponse
 
 
@@ -121,34 +122,13 @@ def request_candidates(
 def repair_instruction(language: str, error: LocalizedSelectionError) -> str:
     accepted = [{"start_seconds": c.start_seconds, "end_seconds": c.end_seconds}
                 for c in error.attempt.clips]
-    scope = (
-        "Return only replacements for rejected candidates. " if error.attempt.rejected
-        else "Regenerate the requested candidates after correcting the response format. "
-    ) if language == "en" else (
-        "不合格の候補だけを修正して返す。" if error.attempt.rejected
-        else "応答形式を修正し、要求された候補を再生成する。"
-    )
-    instruction = (
-        "Keep accepted ranges unchanged and "
-        "do not overlap them by more than 5 seconds. Correct the listed validation failures; "
-        "hook_title_line1 and hook_title_line2 must each contain 5–18 characters. "
-        "Preserve source facts and all original "
-        "rules. Do not guess unclear amounts. Return the same JSON structure."
-        if language == "en" else
-        "合格済みの区間は変更せず、5秒を超えて重複させない。"
-        "記載された検証エラーを修正し、hook_title_line1 と hook_title_line2 を各5〜18文字にする。"
-        "原文の事実と元の全条件を守り、不明確な金額は推測しない。同じJSON形式で返す。"
-    )
+    templates = LOCALIZED_SELECTION_PROMPTS[language]
+    scope = templates["repair_rejected" if error.attempt.rejected else "repair_format"]
+    instruction = templates["repair"]
     if any(item.get("code") in {
         "money_not_grounded", "currency_changed", "currency_label_missing",
     } for item in error.attempt.rejected):
-        instruction += (
-            " For candidates rejected over money or currency, omit monetary amounts from "
-            "the title and reason; do not replace them with a different amount."
-            if language == "en" else
-            " 金額・通貨の検証に失敗した候補は、タイトルと選定理由から金額を省き、"
-            "別の金額に置き換えない。"
-        )
+        instruction += templates["repair_money"]
     return scope + instruction + "\n" + json.dumps({
         "failure": error.code, "rejected": error.attempt.rejected,
         "accepted_ranges": accepted,

@@ -18,6 +18,7 @@ from .localized_selection import (
     repair_instruction,
     request_candidates,
 )
+from .prompt_language import translated_selection_messages
 from .schemas import (
     AI_CLIP_FALLBACK_SECONDS,
     AI_CLIP_MAX_SECONDS,
@@ -432,6 +433,16 @@ class TranscriptSelector:
     ) -> list[dict[str, str]]:
         language_name = OUTPUT_LANGUAGE_NAMES[output_language]
         minimum_count = minimum_clip_count(required_count)
+        translated = translated_selection_messages(
+            video_title=video_title, duration_seconds=duration_seconds,
+            transcript=self._transcript_text(transcript),
+            transcript_source="\n".join(segment.text for segment in transcript),
+            minimum_count=minimum_count, required_count=required_count,
+            min_seconds=AI_CLIP_MIN_SECONDS, max_seconds=AI_CLIP_MAX_SECONDS,
+            output_language=output_language, source_language=source_language,
+        )
+        if translated is not None:
+            return translated
         system = (
             "너는 대한민국 상위 0.1% 조회수를 만들어내는 탑티어 숏폼 기획자이자 편집자야.\n\n"
             "아래 제공되는 유튜브 롱폼 대본을 분석해서, 대중의 시선을 사로잡을 쇼츠용 "

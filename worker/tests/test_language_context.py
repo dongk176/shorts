@@ -44,8 +44,14 @@ def test_language_context_preserves_existing_rules_and_real_source(language):
     before = selector._selection_messages(**inputs)
     after = selector._selection_messages(**inputs, source_language="ko")
     context = language_context("ko", language)
-    assert after[0]["content"] == context + "\n\n" + before[0]["content"]
-    assert after[1] == before[1]
+    if language == OutputLanguage.KO:
+        assert after[0]["content"] == context + "\n\n" + before[0]["content"]
+        assert after[1] == before[1]
+    else:
+        assert after[0]["content"].startswith(context + "\n\n")
+        assert "대한민국" not in after[0]["content"]
+        assert "15만 원으로 시작했습니다." in after[1]["content"]
+        assert "KRW" in after[1]["content"]
     clip = CommentClipInput(1, "원본 제목", "선정 이유", 45, transcript, language)
     comment_before = CommentGenerator._messages([clip])
     changed = CommentClipInput(1, clip.hook_title, clip.reason, 45, transcript, language, "ko")
