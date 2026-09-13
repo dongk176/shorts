@@ -35,20 +35,22 @@ describe.skipIf(!url)("referral calendar PostgreSQL integration", () => {
       end $$;
       create function shorts_mvp.set_updated_at() returns trigger language plpgsql as $$ begin new.updated_at=now(); return new; end $$;
       create table shorts_mvp.app_users(id uuid primary key default gen_random_uuid(),email text,created_at timestamptz default now());
+      create table shorts_mvp.admin_audit_logs(id uuid primary key default gen_random_uuid(),entity_id text,action text,metadata jsonb default '{}',created_at timestamptz default now());
+      create table shorts_mvp.billing_toss_checkout_intents(id uuid primary key default gen_random_uuid(),subscription_id uuid,target_plan_code text,purpose text,status text,created_at timestamptz default now());
       create table shorts_mvp.plans(code text primary key,prepaid_months integer);
-      insert into shorts_mvp.plans values('monthly',1),('package',3);
+      insert into shorts_mvp.plans values('monthly',1),('package',3),('toss_starter_1m',1),('toss_starter_3m',3),('toss_starter_6m',6),('toss_starter_12m',12),('toss_easycut_pro_1m',1);
       create table shorts_mvp.billing_orders(id uuid primary key default gen_random_uuid(),user_id uuid references shorts_mvp.app_users(id),
         amount_krw integer not null,refunded_amount_krw integer not null default 0,status text not null,
-        approved_at timestamptz,product_code text,billing_cycle text);`);
+        approved_at timestamptz,product_code text,billing_cycle text,provider text,kind text,subscription_id uuid,order_id text);`);
     const migrationConnection = await sql.reserve();
     try {
-    for (const name of ["202607280002_referral_partner_revenue.sql", "202608190001_referral_monthly_commissions.sql", "202609100002_referral_calendar_payouts.sql"]) {
+    for (const name of ["202607280002_referral_partner_revenue.sql", "202608190001_referral_monthly_commissions.sql", "202609100002_referral_calendar_payouts.sql", "202609130003_referral_contract_caps.sql"]) {
       await migrationConnection.unsafe(migration(name));
     }
     } finally { migrationConnection.release(); }
   });
   beforeEach(async () => {
-    await sql`truncate shorts_mvp.app_users,shorts_mvp.referral_partners cascade`;
+    await sql`truncate shorts_mvp.app_users,shorts_mvp.referral_partners,shorts_mvp.admin_audit_logs,shorts_mvp.billing_toss_checkout_intents cascade`;
     userId = randomUUID(); partnerId = randomUUID();
     await sql`insert into shorts_mvp.app_users(id,email) values(${userId},'test@example.invalid')`;
     await sql`insert into shorts_mvp.referral_partners(id,create_request_id,creator_name,slug,account_number_ciphertext,account_number_last4)
@@ -146,4 +148,136 @@ describe.skipIf(!url)("referral calendar PostgreSQL integration", () => {
     const invalid = await downloadCsv(new NextRequest("http://localhost/api/partner/commissions.csv?from=2026-08-02&to=2026-08-31"));
     expect(invalid.status).toBe(400);
   });
+  const prepaid = async (months = 6, amount = 119400, cycle = "monthly", approvedAt = "2026-08-01T12:00:00+09:00") => {
+    await sql`update shorts_mvp.referral_partners set commission_rate_bps=1000 where id=${partnerId}`;
+    const subscriptionId = randomUUID();
+    const [row] = await sql`insert into shorts_mvp.billing_orders(user_id,amount_krw,status,approved_at,product_code,billing_cycle,provider,kind,subscription_id)
+      values(${userId},${amount},'succeeded',${approvedAt},${`toss_starter_${months}m`},${cycle},'toss',${cycle === "yearly" ? "subscription_renewal" : "subscription_initial"},${subscriptionId}) returning id`;
+    return { id: String(row.id), subscriptionId };
+  };
+  const conversion = async (o: { id: string; subscriptionId: string }, refund: number, target = "toss_starter_1m", when = "2026-08-02T12:00:00+09:00") => {
+    await sql`insert into shorts_mvp.admin_audit_logs(entity_id,action,metadata,created_at)
+      values(${o.subscriptionId},'subscription.support_plan_conversion',${sql.json({newPlanCode: target, plannedRefundKrw: refund, orderId: o.id})},${when})`;
+  };
+  const installments = async (id: string) => sql`select i.id,i.installment_count,i.installment_number,i.commission_amount_krw,i.recognized_amount_krw
+    from shorts_mvp.referral_commission_installments i join shorts_mvp.referral_commissions c on c.id=i.commission_id where c.billing_order_id=${id} order by i.installment_number`;
+  it.each([[1,24900],[3,70965],[6,119400],[12,198000]])("recognizes Toss %i months independently of initial/renewal cycle", async (months, amount) => {
+    for (const cycle of ["monthly", "yearly"]) {
+      const o = await prepaid(months, amount, cycle);
+      const rows = await installments(o.id);
+      expect(rows).toHaveLength(months);
+      expect(rows.reduce((sum, r) => sum + Number(r.commissionAmountKrw), 0)).toBe(Math.floor(amount / 10));
+    }
+  });
+  it("preserves exactly two original months after a mid-contract refund and does not delete IDs", async () => {
+    const o=await prepaid(); const before=await installments(o.id);
+    await sql`update shorts_mvp.billing_orders set refunded_amount_krw=79600 where id=${o.id}`;
+    const after=await installments(o.id);
+    expect(after.map(r=>Number(r.commissionAmountKrw))).toEqual([1990,1990,0,0,0,0]);
+    expect(after.map(r=>r.id)).toEqual(before.map(r=>r.id));
+  });
+  it.each([[94500,"toss_starter_1m",1990,5000],[109500,"toss_easycut_pro_1m",990,0]])("caps converted entitlement after refund %i", async (refund,target,expected,excluded) => {
+    const o=await prepaid(); await conversion(o,refund,target);
+    await expect(prepare()).rejects.toMatchObject({code:"REFERRAL_CONTRACT_REVIEW_REQUIRED"});
+    await sql`update shorts_mvp.billing_orders set refunded_amount_krw=${refund} where id=${o.id}`;
+    expect((await installments(o.id)).map(r=>Number(r.commissionAmountKrw))).toEqual([expected,0,0,0,0,0]);
+    const [c]=await sql`select recognition_status,excluded_sales_krw from shorts_mvp.referral_commissions where billing_order_id=${o.id}`;
+    expect(c).toMatchObject({recognitionStatus:"verified",excludedSalesKrw:excluded});
+    expect((await prepare()).amountKrw).toBe(expected);
+  });
+  it("caps twelve-to-six conversion at the ORIGINAL twelve-month price", async () => {
+    const o=await prepaid(12,198000);await conversion(o,78600,"toss_starter_6m");
+    await sql`update shorts_mvp.billing_orders set refunded_amount_krw=78600,product_code='toss_starter_6m' where id=${o.id}`;
+    expect((await installments(o.id)).map(r=>Number(r.commissionAmountKrw))).toEqual([1650,1650,1650,1650,1650,1650,0,0,0,0,0,0]);
+  });
+  it("holds an unknown product without rolling back the customer's successful payment", async () => {
+    const [o]=await sql`insert into shorts_mvp.billing_orders(user_id,amount_krw,status,approved_at,product_code,billing_cycle)
+      values(${userId},10000,'succeeded','2026-08-01','unknown','monthly') returning id,status`;
+    expect(o.status).toBe("succeeded");
+    const [c]=await sql`select recognition_status from shorts_mvp.referral_commissions where billing_order_id=${o.id}`;
+    expect(c.recognitionStatus).toBe("review_required");
+    await expect(prepare()).rejects.toMatchObject({code:"REFERRAL_CONTRACT_REVIEW_REQUIRED"});
+  });
+  it("does not change the original contract when the catalog or order product changes", async () => {
+    const o=await prepaid();
+    await sql`update shorts_mvp.billing_orders set product_code='toss_starter_12m' where id=${o.id}`;
+    const [c]=await sql`select original_contract,recognition_status from shorts_mvp.referral_commissions where billing_order_id=${o.id}`;
+    expect(c.originalContract).toMatchObject({productCode:"toss_starter_6m",months:6,amountKrw:119400});
+    expect(c.recognitionStatus).toBe("review_required");
+  });
+  it("rechecks conversion evidence in the database guard even for an old client", async () => {
+    const o=await prepaid();await conversion(o,94500);
+    await expect(sql`insert into shorts_mvp.referral_payouts(request_id,partner_id,period_start,period_end,commission_cutoff_at,amount_krw)
+      values(${randomUUID()},${partnerId},'2026-08-01','2026-08-31',now(),11940)`).rejects.toThrow("REFERRAL_CONTRACT_REVIEW_REQUIRED");
+  });
+  it("keeps paid money immutable and accounts for a later full refund only once", async () => {
+    const o=await prepaid();const p=await prepare();await pay(String(p.payoutId),1990);
+    await sql`update shorts_mvp.billing_orders set refunded_amount_krw=119400,status='canceled' where id=${o.id}`;
+    expect((await ledger()).find(r=>r.month==='2026-08')).toMatchObject({status:'paid',payableKrw:1990});
+    expect((await installments(o.id)).every(r=>Number(r.commissionAmountKrw)===0)).toBe(true);
+  });
+
+  it("backfills an old one-row Toss ledger from its checkout, preserves IDs and is idempotent", async () => {
+    const o=await prepaid(); const originalRows=await installments(o.id);
+    await sql`insert into shorts_mvp.billing_toss_checkout_intents(subscription_id,target_plan_code,purpose,status,created_at)
+      values(${o.subscriptionId},'toss_starter_6m','subscription_start','succeeded','2026-08-01T11:00:00+09:00')`;
+    await sql`delete from shorts_mvp.referral_commission_installments where commission_id=(select id from shorts_mvp.referral_commissions where billing_order_id=${o.id}) and installment_number>1`;
+    await sql`update shorts_mvp.referral_commissions set original_contract='{}',recognition_months=1,eligible_installment_count=0,commission_amount_krw=11940 where billing_order_id=${o.id}`;
+    const [first]=await sql`select shorts_mvp.reconcile_referral_contracts() as n`;
+    expect(Number(first.n)).toBe(1);
+    const rows=await installments(o.id);
+    expect(rows).toHaveLength(6);expect(rows[0].id).toBe(originalRows[0].id);
+    expect(rows.map(r=>Number(r.commissionAmountKrw))).toEqual([1990,1990,1990,1990,1990,1990]);
+    const [second]=await sql`select shorts_mvp.reconcile_referral_contracts() as n`;
+    expect(Number(second.n)).toBe(0);
+  });
+  it("refuses historical backfill if cash has since been prepared", async () => {
+    await prepaid();await prepare();
+    await expect(sql`select shorts_mvp.reconcile_referral_contracts()`).rejects.toThrow("Reconcile existing cash");
+  });
+  it("serializes a refund with payout preparation and never prepares stale money", async () => {
+    const o=await prepaid();
+    let locked!:()=>void; let release!:()=>void;
+    const ready=new Promise<void>(resolve=>{locked=resolve;});
+    const gate=new Promise<void>(resolve=>{release=resolve;});
+    const refund=sql.begin(async tx=>{
+      await tx`update shorts_mvp.billing_orders set refunded_amount_krw=119400 where id=${o.id}`;
+      locked();await gate;
+    });
+    await ready;
+    const preparation=prepare().then(value=>({value,error:null}),error=>({value:null,error}));
+    release();await refund;
+    expect((await preparation).error).toMatchObject({code:"NO_PAYOUT_BALANCE"});
+  });
+  it.each([
+    {plannedRefundKrw:-1},
+    {plannedRefundKrw:94500,retainedAmountKrw:9900},
+    {plannedRefundKrw:94500,targetContractMonths:6},
+  ])("holds conflicting conversion evidence: %j", async (evidence) => {
+    const o=await prepaid();
+    await sql`insert into shorts_mvp.admin_audit_logs(entity_id,action,metadata,created_at)
+      values(${o.id},'subscription.support_plan_conversion',${sql.json({newPlanCode:'toss_starter_1m',...evidence})},'2026-08-02')`;
+    const [c]=await sql`select recognition_status,recognition_reason from shorts_mvp.referral_commissions where billing_order_id=${o.id}`;
+    expect(c).toMatchObject({recognitionStatus:'review_required',recognitionReason:'conversion_evidence_invalid'});
+  });
+  it("holds malformed conversion data without aborting financial confirmation", async () => {
+    const o=await prepaid();
+    await sql`insert into shorts_mvp.admin_audit_logs(entity_id,action,metadata,created_at)
+      values(${o.id},'subscription.support_plan_conversion',${sql.json({newPlanCode:'toss_starter_1m',newPeriodEnd:'not-a-date',plannedRefundKrw:94500})},'2026-08-02')`;
+    await sql`update shorts_mvp.billing_orders set refunded_amount_krw=94500 where id=${o.id}`;
+    const [c]=await sql`select recognition_status,recognition_reason from shorts_mvp.referral_commissions where billing_order_id=${o.id}`;
+    expect(c).toMatchObject({recognitionStatus:'review_required',recognitionReason:'conversion_evidence_invalid'});
+  });
+  it("includes contract caps and review explanations in CSV without changing the summary total", async () => {
+    const o=await prepaid();await conversion(o,94500);
+    await sql`update shorts_mvp.billing_orders set refunded_amount_krw=94500 where id=${o.id}`;
+    const response=await downloadCsv(new NextRequest('http://localhost/api/partner/commissions.csv?month=2026-08'));
+    const csv=await response.text();
+    expect(csv).toContain('"원계약개월","유지회차"');
+    expect(csv).toContain('"toss_starter_6m","6","1","19900","5000","verified"');
+    const row=(await ledger())[0];
+    expect(row).toBeDefined();
+    expect((await ledger()).find(r=>r.month==='2026-08')).toMatchObject({commissionKrw:1990,excludedSalesKrw:5000});
+  });
+
 });

@@ -24,12 +24,17 @@ export async function loadReferralSettlements(input: {
   // are serialized; bank secrets and partner credentials never leave SQL.
   const rows = await db`
     select p.id as partner_id,
+      coalesce((select jsonb_agg(jsonb_build_object('reason',coalesce(c.recognition_reason,state.value->>'reason','original_contract_unverified')))
+        from shorts_mvp.referral_commissions c
+        cross join lateral (select shorts_mvp.referral_contract_state(c.id) as value) state
+        where c.partner_id=p.id and (c.recognition_status<>'verified' or state.value->>'status'<>'verified')),'[]'::jsonb) as reviews,
       coalesce((select jsonb_agg(month_row) from (
         select to_char(i.earned_at at time zone 'Asia/Seoul','YYYY-MM') as month,
           coalesce(sum(i.recognized_amount_krw) filter(where i.available_at<=${now}),0)::bigint as "confirmedSalesKrw",
           coalesce(sum(i.recognized_amount_krw) filter(where i.earned_at<=${now} and i.available_at>${now}),0)::bigint as "waitingSalesKrw",
           coalesce(sum(i.recognized_amount_krw) filter(where i.earned_at>${now}),0)::bigint as "futureSalesKrw",
-          coalesce(sum(i.commission_amount_krw),0)::bigint as "commissionKrw"
+          coalesce(sum(i.commission_amount_krw),0)::bigint as "commissionKrw",
+          coalesce(sum(c.excluded_sales_krw) filter(where i.installment_number=1),0)::bigint as "excludedSalesKrw"
         from shorts_mvp.referral_commission_installments i
         join shorts_mvp.referral_commissions c on c.id=i.commission_id
         where c.partner_id=p.id group by 1
@@ -48,6 +53,11 @@ export async function loadReferralSettlements(input: {
     for (const month of input.includeMonths ?? []) {
       if (!months.some((m) => m.month === month)) months.push(emptyReferralMonth(month));
     }
+    const reviews = row.reviews as Array<{reason: string}>;
+    for (const month of months) {
+      month.reviewCount = reviews.length;
+      month.reviewReasons = [...new Set(reviews.map(r => r.reason))];
+    }
     return { partnerId: String(row.partnerId),
       months: buildReferralSettlements(months, row.payouts as ReferralSettlementPayout[], now) };
   });
@@ -59,6 +69,8 @@ export async function loadReferralSettlementTransactions(partnerId: string, mont
     select i.id,i.installment_number,i.installment_count,i.gross_amount_krw as installment_gross_amount_krw,
       i.recognized_amount_krw,i.commission_amount_krw,i.earned_at,i.available_at,
       c.gross_amount_krw,c.refunded_amount_krw,c.commission_rate_bps,o.product_code,o.approved_at,a.email,
+      c.original_contract,c.eligible_installment_count,c.commission_basis_krw,c.excluded_sales_krw,
+      c.recognition_status,c.recognition_reason,
       payout.status as payout_status,payout.settlement_snapshot,
       coalesce((select sum(item.amount_krw) from shorts_mvp.referral_payout_items item
         where item.payout_id=payout.id and item.installment_id=i.id),0)::bigint as allocated
@@ -88,8 +100,13 @@ export async function loadReferralSettlementTransactions(partnerId: string, mont
       commissionRateBps: item?.commissionRateBps ?? Number(row.commissionRateBps),
       draftAmountKrw: row.payoutStatus === "draft" ? Number(row.allocated) : 0,
       paidAmountKrw: row.payoutStatus === "paid" ? Number(row.allocated) : 0,
-      isAvailable: referralKstDate(now) >= period.scheduledPaymentDate && new Date(row.availableAt).getTime() <= now.getTime(),
+      isAvailable: row.recognitionStatus === "verified" && referralKstDate(now) >= period.scheduledPaymentDate && new Date(row.availableAt).getTime() <= now.getTime(),
       settlementMonth: month, scheduledPaymentDate: period.scheduledPaymentDate,
+      originalProductCode: row.originalContract?.productCode ?? "미확인",
+      originalContractMonths: row.originalContract?.months ?? 0,
+      eligibleInstallmentCount: Number(row.eligibleInstallmentCount),
+      commissionBasisKrw: Number(row.commissionBasisKrw), excludedSalesKrw: Number(row.excludedSalesKrw),
+      recognitionStatus: row.recognitionStatus, recognitionReason: row.recognitionReason,
     };
   });
 }

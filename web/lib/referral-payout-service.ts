@@ -21,6 +21,7 @@ export async function prepareReferralPayout(tx: TransactionSql, input: {
     return { payoutId: duplicate.id, amountKrw: Number(duplicate.amountKrw), alreadyProcessed: true };
   }
   if (!partner.accountNumberCiphertext) throw new HttpError(409, "파트너 정산 계좌가 등록되지 않았습니다.", "PAYOUT_PROFILE_REQUIRED");
+  await tx`select id from shorts_mvp.referral_commissions where partner_id=${input.partnerId} order by id for update`;
   // Partner-first locking serializes different months and state changes.
   // Lock all installments so a concurrent refund cannot split this quote.
   await tx`select i.id from shorts_mvp.referral_commission_installments i
@@ -28,6 +29,7 @@ export async function prepareReferralPayout(tx: TransactionSql, input: {
     where c.partner_id=${input.partnerId} order by i.id for update of i`;
   const [ledger] = await loadReferralSettlements({ partnerId: input.partnerId, includeMonths: [input.month], now, db: tx });
   const month = ledger.months.find((row) => row.month === input.month)!;
+  if (month.reviewCount) throw new HttpError(409, "계약 또는 환불 확인이 필요한 주문이 있어 정산을 보류합니다.", "REFERRAL_CONTRACT_REVIEW_REQUIRED");
   if (month.payoutId) throw new HttpError(409, "이미 준비되었거나 지급 완료된 실적 월입니다.", "PAYOUT_PERIOD_DUPLICATE");
   if (!month.payableNow) throw new HttpError(409, "환불 조정 후 이 실적 월에 지급할 금액이 없습니다.", "NO_PAYOUT_BALANCE");
   const items = await tx`select i.id,i.gross_amount_krw,i.recognized_amount_krw,

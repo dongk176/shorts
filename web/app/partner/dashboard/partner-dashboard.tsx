@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ReferralTransactionsTable } from "@/components/referral-transactions-table";
 import { ReferralSettlementTable } from "@/components/referral-settlement-table";
 import { ReferralSettlementRefresh } from "@/components/referral-settlement-refresh";
 import { referralMonthPeriod, type ReferralMonthlySettlement, type ReferralSettlementTransaction } from "@/lib/referral-settlement";
@@ -231,29 +232,8 @@ export function PartnerDashboard({
         <details className="mt-4 rounded-2xl border border-white/10 p-4"><summary className="cursor-pointer font-bold">전체 월별 내역 · 지급 상태</summary><div className="mt-4"><ReferralSettlementTable rows={visibleMonths.map((row) => ({ key: row.month, settlement: row }))} /></div></details>
 
         <section className="mt-7 overflow-hidden rounded-2xl border border-white/10 bg-[#151819]">
-          <div className="border-b border-white/10 p-5"><h2 className="text-lg font-black">월별 수익 거래</h2><p className="mt-1 text-xs text-neutral-500">선결제 상품은 매월 발생 회차로 계산하며 해당 실적 월의 다음 달 10일에 지급합니다.</p></div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1280px] text-left text-sm">
-              <thead className="bg-black/20 text-xs text-neutral-500"><tr><th className="px-5 py-3">수익 발생일</th><th className="px-4 py-3">원 결제일</th><th className="px-4 py-3">회원</th><th className="px-4 py-3">상품 / 회차</th><th className="px-4 py-3">총 결제 / 환불</th><th className="px-4 py-3">이번 회차 기준</th><th className="px-4 py-3">수익률</th><th className="px-5 py-3">월별 수익 상태</th></tr></thead>
-              <tbody className="divide-y divide-white/[.06]">
-                {transactions.map((item) => {
-                  return (
-                    <tr key={item.id}>
-                      <td className="px-5 py-4 text-xs text-neutral-300">{date(item.earnedAt)}</td>
-                      <td className="px-4 py-4 text-xs text-neutral-500">{date(item.approvedAt)}</td>
-                      <td className="px-4 py-4 font-bold">{item.memberEmail}</td>
-                      <td className="px-4 py-4"><p>{item.productCode}</p><p className="mt-1 text-xs font-black text-[#ffb4a8]">{item.installmentNumber}/{item.installmentCount}회차</p></td>
-                      <td className="px-4 py-4"><p>{money(item.grossAmountKrw)}</p><p className="mt-1 text-xs text-rose-300">환불 {money(item.refundedAmountKrw)}</p></td>
-                      <td className="px-4 py-4"><p>{money(item.installmentGrossAmountKrw)}</p>{item.recognizedAmountKrw !== item.installmentGrossAmountKrw && <p className="mt-1 text-xs text-rose-300">환불 반영 {money(item.recognizedAmountKrw)}</p>}</td>
-                      <td className="px-4 py-4">{(item.commissionRateBps / 100).toFixed(2)}%</td>
-                      <td className="px-5 py-4"><p className="font-black text-[#ffb4a8]">{money(item.commissionAmountKrw)}</p><p className="mt-1 text-xs text-neutral-500">{item.paidAmountKrw > 0 ? `지급 완료 반영 ${money(item.paidAmountKrw)}` : item.draftAmountKrw > 0 ? `정산 초안 포함 ${money(item.draftAmountKrw)}` : item.isAvailable ? "지급 대상" : `${item.scheduledPaymentDate} 지급 예정`}</p></td>
-                    </tr>
-                  );
-                })}
-                {!transactions.length && <tr><td colSpan={8} className="px-5 py-14 text-center text-neutral-500">선택한 기간의 월별 수익 거래가 없습니다.</td></tr>}
-              </tbody>
-            </table>
-          </div>
+          <div className="border-b border-white/10 p-5"><h2 className="text-lg font-black">월별 수익 거래</h2><p className="mt-1 text-xs text-neutral-500">원계약의 월별 금액을 상한으로 계산합니다. 전환 시 단가 인상분은 제외하고, 종료된 회차의 수익은 취소합니다.</p></div>
+          <ReferralTransactionsTable transactions={transactions} />
         </section>
 
         <div className="mt-7 grid gap-5 xl:grid-cols-2">

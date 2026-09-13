@@ -99,6 +99,7 @@ export function calculateReferralCommissionInstallments(input: {
   refundedAmountKrw: number;
   commissionRateBps: number;
   recognitionMonths: number;
+  eligibleInstallmentCount?: number;
   approvedAt: Date;
 }): ReferralCommissionInstallment[] {
   const amountKrw = Math.max(0, Math.trunc(input.amountKrw));
@@ -109,7 +110,10 @@ export function calculateReferralCommissionInstallments(input: {
   const commissionRateBps = Math.max(0, Math.trunc(input.commissionRateBps));
   const installmentCount = Math.min(12, Math.max(1, Math.trunc(input.recognitionMonths)));
   const baseGross = Math.floor(amountKrw / installmentCount);
-  const netTotal = amountKrw - refundedAmountKrw;
+  const eligibleCount = Math.min(installmentCount, Math.max(0,
+    Math.trunc(input.eligibleInstallmentCount ?? installmentCount)));
+  const contractCap = eligibleCount === installmentCount ? amountKrw : baseGross * eligibleCount;
+  const netTotal = Math.min(amountKrw - refundedAmountKrw, contractCap);
 
   return Array.from({ length: installmentCount }, (_, index) => {
     const installmentNumber = index + 1;

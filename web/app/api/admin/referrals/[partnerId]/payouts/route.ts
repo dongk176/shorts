@@ -5,6 +5,7 @@ import { getDb } from "@/lib/db";
 import { apiError, HttpError } from "@/lib/http";
 import { assertSameOriginJsonRequest } from "@/lib/same-origin";
 import { resolveSettlementMonth } from "@/lib/referral-settlement";
+import { loadReferralSettlementReport } from "@/lib/referral-settlement-server";
 import { prepareReferralPayout } from "@/lib/referral-payout-service";
 
 const schema = z.object({
@@ -31,4 +32,16 @@ export async function POST(request: NextRequest, context: { params: Promise<{ pa
     }
     return apiError(error, "정산을 준비하지 못했습니다.");
   }
+}
+
+export async function GET(request: NextRequest, context: { params: Promise<{ partnerId: string }> }) {
+  try {
+    await requireAdminUser();
+    const { partnerId } = await context.params;
+    z.string().uuid().parse(partnerId);
+    let month: string;
+    try { month = resolveSettlementMonth({ settlementMonth: request.nextUrl.searchParams.get("month") ?? "" }); }
+    catch { throw new HttpError(400, "실적 월이 올바르지 않습니다."); }
+    return NextResponse.json(await loadReferralSettlementReport(partnerId, month), { headers: { "Cache-Control": "private, no-store" } });
+  } catch (error) { return apiError(error, "정산 계산 내역을 조회하지 못했습니다."); }
 }

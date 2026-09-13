@@ -118,6 +118,12 @@ describe("referral policy", () => {
       .toBe("2028-03-31T03:30:00.000Z");
   });
 
+  it.each([[94500,1990],[109500,990],[119400,0]])("never carries a converted price increase into later months (refund %i)", (refund,expected) => {
+    const rows=calculateReferralCommissionInstallments({amountKrw:119400,refundedAmountKrw:refund,
+      commissionRateBps:1000,recognitionMonths:6,eligibleInstallmentCount:1,approvedAt:new Date('2026-08-01')});
+    expect(rows.map(r=>r.commissionAmountKrw)).toEqual([expected,0,0,0,0,0]);
+  });
+
   it("normalizes campaigns and masks member emails", () => {
     expect(normalizeReferralCampaign(" youtube-01 ")).toBe("youtube-01");
     expect(normalizeReferralCampaign("not valid")).toBeNull();

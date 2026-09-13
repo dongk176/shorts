@@ -1,8 +1,9 @@
 "use client";
 
+import { ReferralTransactionsTable } from "@/components/referral-transactions-table";
 import { ReferralSettlementTable } from "@/components/referral-settlement-table";
 import { ReferralSettlementRefresh } from "@/components/referral-settlement-refresh";
-import { referralMonthPeriod, type ReferralMonthlySettlement } from "@/lib/referral-settlement";
+import { referralMonthPeriod, type ReferralMonthlySettlement, type ReferralSettlementTransaction } from "@/lib/referral-settlement";
 import type { ReferralPartnerSettlementLedger } from "@/lib/referral-settlement-server";
 
 import { useRouter } from "next/navigation";
@@ -95,6 +96,19 @@ export function AdminReferralsDashboard({
     .filter((month) => month.month <= currentMonth).map((row) => ({ partner, row })));
   const forecast = settlementLedgers.reduce((sum, ledger) => sum + (ledger.months.find((row) => row.month === currentMonth)?.commissionKrw ?? 0), 0);
   const monthOptions = [...new Set([initialMonth, currentMonth, ...historyRows.map(({ row }) => row.month)])].sort().reverse();
+  const [calculation, setCalculation] = useState<{ name: string; month: string; transactions: ReferralSettlementTransaction[] } | null>(null);
+  const [loadingCalculation, setLoadingCalculation] = useState(false);
+  const showCalculation = async (partner: AdminReferralPartner, month: string) => {
+    if (loadingCalculation) return;
+    setLoadingCalculation(true);
+    try {
+      const response = await fetch(`/api/admin/referrals/${partner.id}/payouts?month=${month}`, { credentials: "same-origin", cache: "no-store" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || "계산 내역을 불러오지 못했습니다.");
+      setCalculation({ name: partner.creatorName, month, transactions: result.transactions });
+    } catch (error) { setMessage(error instanceof Error ? error.message : "조회 실패"); }
+    finally { setLoadingCalculation(false); }
+  };
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState<AdminReferralPartner | null>(null);
   const [createForm, setCreateForm] = useState<CreateForm>({
@@ -332,7 +346,7 @@ export function AdminReferralsDashboard({
       return <><button disabled={submitting} onClick={() => updatePayout(payout, "paid")} className="rounded-lg bg-emerald-300 px-3 py-2 text-xs font-black text-black disabled:opacity-40">지급 완료</button><button disabled={submitting} onClick={() => updatePayout(payout, "canceled")} className="rounded-lg border border-white/15 px-3 py-2 text-xs">준비 취소</button></>;
     }
     if (row.status === "paid" || row.status === "zero") return null;
-    const reason = !partner.accountNumberLast4 ? "정산 계좌 미등록" : !row.payableNow ? `${row.scheduledPaymentDate}부터 지급 가능` : null;
+    const reason = row.reviewCount ? "계약·환불 확인 후 지급 가능" : !partner.accountNumberLast4 ? "정산 계좌 미등록" : !row.payableNow ? `${row.scheduledPaymentDate}부터 지급 가능` : null;
     return <><button disabled={submitting || Boolean(reason)} onClick={() => {
       setPayoutPartner(partner); setRevealedAccount(null);
       setPayoutPeriod({ start: row.periodStart, end: row.periodEnd });
@@ -352,11 +366,15 @@ export function AdminReferralsDashboard({
           {[["확정 매출", selectedRows.reduce((sum, { row }) => sum + row.confirmedSalesKrw, 0)], ["레퍼럴 수익", selectedRows.reduce((sum, { row }) => sum + row.commissionKrw, 0)], ["미지급 · 송금 준비", selectedRows.reduce((sum, { row }) => sum + (row.status !== "paid" ? row.payableKrw : 0), 0)]].map(([label, value]) => <div key={String(label)} className="rounded-xl bg-black/20 p-4"><p className="text-xs text-neutral-400">{label}</p><p className="mt-2 text-xl font-black">{money(Number(value))}</p></div>)}
         </div>
         <p className="mt-4 text-sm text-neutral-400">{currentMonth} 예상 수익 <strong className="text-white">{money(forecast)}</strong> → {referralMonthPeriod(currentMonth).scheduledPaymentDate} 지급 예정 · 결제·환불에 따라 변동</p>
-        <p className="mt-2 text-xs text-neutral-500">확정 매출은 회차 발생 후 7일이 지난 환불 반영 매출입니다. 수익률은 각 결제 당시 기준으로 계산합니다.</p>
+        <p className="mt-2 text-xs text-neutral-500">확정 매출은 회차 발생 후 7일이 지난 환불 반영 매출입니다. 원계약의 월 단가와 결제 당시 수익률을 유지하며, 상품 전환으로 높아진 단가 차액은 레퍼럴에서 제외합니다.</p>
       </section>
-      <div className="mt-4"><ReferralSettlementTable showPartner rows={selectedRows.map(({ partner, row }) => ({ key: partner.id, partnerName: partner.creatorName, settlement: row, actions: settlementActions(partner, row) }))} /></div>
-      <details className="mt-4 rounded-2xl border border-white/10 p-4"><summary className="cursor-pointer font-bold">전체 월별 내역 · 지난 미지급 확인</summary><div className="mt-4"><ReferralSettlementTable showPartner rows={historyRows.map(({ partner, row }) => ({ key: `${partner.id}-${row.month}`, partnerName: partner.creatorName, settlement: row, actions: settlementActions(partner, row) }))} /></div></details>
+      <div className="mt-4"><ReferralSettlementTable showPartner rows={selectedRows.map(({ partner, row }) => ({ key: partner.id, partnerName: partner.creatorName, settlement: row, actions: <>{settlementActions(partner, row)}<button type="button" disabled={loadingCalculation} onClick={() => showCalculation(partner, row.month)} className="rounded-lg border border-white/15 px-3 py-2 text-xs disabled:opacity-40">세부 계산</button></> }))} /></div>
+      <details className="mt-4 rounded-2xl border border-white/10 p-4"><summary className="cursor-pointer font-bold">전체 월별 내역 · 지난 미지급 확인</summary><div className="mt-4"><ReferralSettlementTable showPartner rows={historyRows.map(({ partner, row }) => ({ key: `${partner.id}-${row.month}`, partnerName: partner.creatorName, settlement: row, actions: <>{settlementActions(partner, row)}<button type="button" disabled={loadingCalculation} onClick={() => showCalculation(partner, row.month)} className="rounded-lg border border-white/15 px-3 py-2 text-xs disabled:opacity-40">세부 계산</button></> }))} /></div></details>
 
+      {calculation && <section className="mt-5 rounded-2xl border border-white/10 bg-[#171a1b]" aria-label="정산 세부 계산">
+        <div className="flex items-center justify-between p-4"><h2 className="font-black">{calculation.name} · {calculation.month} 세부 계산</h2><button type="button" onClick={() => setCalculation(null)} className="rounded-lg border border-white/15 px-3 py-2 text-xs">닫기</button></div>
+        <ReferralTransactionsTable transactions={calculation.transactions} />
+      </section>}
       <div className="mt-5 flex justify-end">
         <button onClick={() => setShowCreate(true)} className="rounded-xl bg-[#ff8c7c] px-5 py-3 text-sm font-black text-black">레퍼럴 추가</button>
       </div>
