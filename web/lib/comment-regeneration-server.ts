@@ -1,5 +1,6 @@
 import "server-only";
 import type { OutputLanguage } from "./contracts";
+import { CULTURE_COMMENT_MODEL, usesCulturalComments, type CommentProfile } from "./comment-profile";
 import {
   buildCommentRegenerationMessages,
   commentRegenerationResponseSchema,
@@ -18,6 +19,7 @@ type GenerateCommentsInput = {
   targetCount: number;
   outputLanguage?: OutputLanguage;
   sourceLanguage?: string;
+  commentProfile?: CommentProfile;
 };
 
 export function paidGeminiCommentGenerationEnabled(
@@ -43,6 +45,9 @@ export async function generateCommentsWithGemini(
   const parsedLimit = Number(configuredLimit);
   const maxTokens = Number.isInteger(parsedLimit)
     ? Math.min(65_536, Math.max(1_024, parsedLimit)) : 16_384;
+  const model = usesCulturalComments(input.commentProfile, input.outputLanguage)
+    ? CULTURE_COMMENT_MODEL
+    : environment.GEMINI_COMMENT_MODEL || environment.GEMINI_TEXT_MODEL || DEFAULT_GEMINI_COMMENT_MODEL;
   const response = await fetch(endpoint, {
     method: "POST",
     headers: {
@@ -50,9 +55,7 @@ export async function generateCommentsWithGemini(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: environment.GEMINI_COMMENT_MODEL
-        || environment.GEMINI_TEXT_MODEL
-        || DEFAULT_GEMINI_COMMENT_MODEL,
+      model,
       messages: buildCommentRegenerationMessages(input),
       ...(configuredLimit ? { max_tokens: maxTokens } : {}),
       response_format: {
@@ -79,6 +82,7 @@ export async function generateCommentsWithGemini(
     return comments;
   } finally {
     console.info("comment_regeneration_validation", {
+      model,
       outputLanguage: input.outputLanguage || "ko",
       targetCount: input.targetCount,
       qualityStatus,

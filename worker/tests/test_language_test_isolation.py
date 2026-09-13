@@ -128,3 +128,18 @@ def test_worker_rejects_crossed_or_upload_jobs(monkeypatch):
     ]:
         with pytest.raises(RenderError):
             verify_language_test_job({**job, **change})
+
+
+def test_culture_release_uses_existing_submitter_registry_protocol():
+    module, _ = _load_lambda("batch_submitter")
+    record = registration()
+    for key, lane in record["registry"]["lanes"].items():
+        target = lane["current"]
+        target["releaseId"] = (
+            f"language-culture-flash-v1-{key.replace('_', '-')}-"
+            + target["workerSourceGitSha"][:12]
+        )
+    module.rest = MagicMock(return_value=[record])
+    assert module._language_test_release({
+        "language_test_release_id": ID, "initial_editor_release_id": ID,
+    }) == record

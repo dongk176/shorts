@@ -26,13 +26,15 @@ def resolve_source_language(hint: object, detected: object = None) -> str | None
     return normalize_source_language(detected if hint == "auto" else hint)
 
 
-def language_context(source_language: str | None, output_language: str) -> str:
+def language_context(
+    source_language: str | None, output_language: str, *, instruction: str | None = None,
+) -> str:
     if source_language is None:
         return ""
     source = normalize_source_language(source_language)
     locale = output_language if output_language in {"ko", "en", "ja"} else "en"
     names = CATALOG["names"][locale]
-    return CATALOG["instructions"][locale].format(
+    return (instruction or CATALOG["instructions"][locale]).format(
         source=names.get(source, source), source_code=source,
         target=names.get(output_language, output_language), target_code=output_language,
     )

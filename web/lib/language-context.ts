@@ -16,7 +16,7 @@ export function resolveSourceLanguage(hint: unknown, detected?: unknown): string
   return normalizeSourceLanguage(hint === "auto" ? detected : hint);
 }
 
-export function languageContext(sourceLanguage: string | undefined, outputLanguage: OutputLanguage) {
+export function languageContext(sourceLanguage: string | undefined, outputLanguage: OutputLanguage, instruction?: string) {
   if (sourceLanguage === undefined) return "";
   const source = normalizeSourceLanguage(sourceLanguage);
   const locale = outputLanguage === "ko" || outputLanguage === "ja" ? outputLanguage : "en";
@@ -25,7 +25,7 @@ export function languageContext(sourceLanguage: string | undefined, outputLangua
     source: names[source] || source, source_code: source,
     target: names[outputLanguage] || outputLanguage, target_code: outputLanguage,
   };
-  return catalog.instructions[locale].replace(/\{([a-z_]+)\}/g, (_, key: string) => values[key]);
+  return (instruction || catalog.instructions[locale]).replace(/\{([a-z_]+)\}/g, (_, key: string) => values[key]);
 }
 
 export function mentionedCurrencies(text: string) {

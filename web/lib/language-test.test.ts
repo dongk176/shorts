@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Sql, TransactionSql } from "postgres";
-import { languageTestEditorRelease, languageTestStatus, languageTestTarget, lockLanguageTestAdmission, resolveOwnedProjectEditorRelease } from "./language-test";
+import { languageTestCommentProfile, languageTestEditorRelease, languageTestStatus, languageTestTarget, lockLanguageTestAdmission, resolveOwnedProjectEditorRelease } from "./language-test";
 
 const id = "f083a5ef-400e-43f5-af27-ac9d417ca6a2";
 const sha = "a".repeat(40), digest = `sha256:${"b".repeat(64)}`, font = "c".repeat(64);
@@ -70,5 +70,38 @@ describe("independent administrator language release", () => {
   it("does not fall back to the public worker if a saved test release is unavailable", async () => {
     const db = database((sql) => sql.includes("select to_jsonb") ? [{ languageTestReleaseId: id }] : []);
     await expect(languageTestEditorRelease(db, "owner", "short")).rejects.toMatchObject({ status: 503 });
+  });
+});
+
+
+describe("immutable comment profile", () => {
+  const cultureRegistry = structuredClone(registry);
+  for (const [key, lane] of Object.entries(cultureRegistry.lanes)) {
+    lane.current.releaseId = `language-culture-flash-v1-${key.replaceAll("_", "-")}-${sha.slice(0, 12)}`;
+  }
+  it("reads no test data for normal projects or Korean comments", async () => {
+    const db = database(() => { throw new Error("unexpected test lookup"); });
+    expect(await languageTestCommentProfile(db, null, "ja")).toBeUndefined();
+    expect(await languageTestCommentProfile(db, id, "ko")).toBeUndefined();
+    expect(db).not.toHaveBeenCalled();
+  });
+  it("preserves old projects and uses the saved new release after admission OFF", async () => {
+    for (const [saved, expected] of [[registry, undefined], [cultureRegistry, "culture-flash-v1"]] as const) {
+      const db = database((sql) => {
+        expect(sql).not.toContain("language_test_settings");
+        expect(sql).toContain("r.verified_at is not null");
+        return [{ registryJson: JSON.stringify(saved) }];
+      });
+      expect(await languageTestCommentProfile(db, id, "ja")).toBe(expected);
+      expect(db).toHaveBeenCalledWith(expect.anything(), id);
+    }
+  });
+  it("rejects unavailable, unknown or partially registered test releases", async () => {
+    const partial = structuredClone(cultureRegistry);
+    partial.lanes.source_range.current.releaseId = "old-release";
+    for (const row of [undefined, { registryJson: "broken" }, { registryJson: JSON.stringify(partial) }]) {
+      await expect(languageTestCommentProfile(database(() => row ? [row] : []), id, "en"))
+        .rejects.toMatchObject({ status: 503 });
+    }
   });
 });

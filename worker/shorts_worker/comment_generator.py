@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from collections import Counter
 from dataclasses import dataclass
+from functools import partial
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -12,7 +13,12 @@ from .content_language import CONTENT_LANGUAGES, comment_key, text_matches_langu
 from .fallback_comments import select_fallback_comment_texts
 from .language_context import has_unlabeled_amount, language_context, mentioned_currencies
 from .money_facts import ungrounded_money
-from .prompt_language import translated_comment_messages
+from .prompt_language import (
+    CULTURE_COMMENT_MODEL,
+    CULTURE_COMMENT_PROFILE,
+    CULTURE_COMMENT_PROMPTS,
+    translated_comment_messages,
+)
 from .schemas import (
     OutputLanguage,
     SubtitleSegment,
@@ -83,11 +89,18 @@ class CommentGenerator:
         self.settings = settings
 
     @staticmethod
-    def _messages(clips: list[CommentClipInput]) -> list[dict[str, str]]:
-        messages = CommentGenerator._base_messages(clips)
+    def _messages(
+        clips: list[CommentClipInput], *, culture: bool = False,
+    ) -> list[dict[str, str]]:
+        messages = CommentGenerator._base_messages(clips, culture=culture)
         contexts = [
             f"clipIndex: {clip.clip_index}\n"
-            + language_context(clip.source_language, clip.output_language)
+            + language_context(
+                clip.source_language, clip.output_language,
+                instruction=CULTURE_COMMENT_PROMPTS.get(clip.output_language, {}).get(
+                    "comment_context",
+                ) if culture else None,
+            )
             for clip in clips if clip.source_language is not None
         ]
         if contexts:
@@ -98,9 +111,11 @@ class CommentGenerator:
         return messages
 
     @staticmethod
-    def _base_messages(clips: list[CommentClipInput]) -> list[dict[str, str]]:
+    def _base_messages(
+        clips: list[CommentClipInput], *, culture: bool = False,
+    ) -> list[dict[str, str]]:
         translated = translated_comment_messages(
-            clips, min_chars=MIN_COMMENT_CHARS, max_chars=MAX_COMMENT_CHARS,
+            clips, min_chars=MIN_COMMENT_CHARS, max_chars=MAX_COMMENT_CHARS, culture=culture,
         )
         if translated is not None:
             return translated
@@ -180,7 +195,9 @@ class CommentGenerator:
         except json.JSONDecodeError as exc:
             raise CommentProviderResponseError("invalid_json") from exc
 
-    def _generate_with_gemini(self, messages: list[dict[str, str]]) -> object:
+    def _generate_with_gemini(
+        self, messages: list[dict[str, str]], *, model: str | None = None,
+    ) -> object:
         from openai import OpenAI
 
         client = OpenAI(
@@ -193,7 +210,9 @@ class CommentGenerator:
             {"max_tokens": self.settings.gemini_max_output_tokens}
             if self.settings.gemini_max_output_tokens is not None else {}
         )
-        return self._parse_response(client, self.settings.gemini_comment_model, messages, **limits)
+        return self._parse_response(
+            client, model or self.settings.gemini_comment_model, messages, **limits,
+        )
 
     def _generate_with_openai(self, messages: list[dict[str, str]]) -> object:
         from openai import OpenAI
@@ -343,13 +362,18 @@ class CommentGenerator:
     def generate(self, clips: list[CommentClipInput]) -> dict[int, list[dict[str, object]]]:
         if not clips:
             return {}
-        messages = self._messages(clips)
+        languages = {clip.output_language for clip in clips}
+        culture = (self.settings.language_test_comment_profile == CULTURE_COMMENT_PROFILE
+                   and len(languages) == 1 and languages <= {OutputLanguage.EN, OutputLanguage.JA})
+        messages = self._messages(clips, culture=culture)
+        model = CULTURE_COMMENT_MODEL if culture else self.settings.gemini_comment_model
         providers = (
             (
                 "gemini",
-                self.settings.gemini_comment_model,
+                model,
                 self.settings.gemini_enabled,
-                self._generate_with_gemini,
+                partial(self._generate_with_gemini, model=model) if culture
+                else self._generate_with_gemini,
             ),
             (
                 "openai",

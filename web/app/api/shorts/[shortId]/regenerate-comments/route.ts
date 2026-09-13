@@ -1,4 +1,5 @@
 import { resolveSourceLanguage } from "@/lib/language-context";
+import { languageTestCommentProfile } from "@/lib/language-test";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getBillingSummary } from "@/lib/billing";
@@ -95,6 +96,7 @@ export async function POST(
           generated_short.subtitle_segments,
           case when to_jsonb(job)->>'language_test_release_id' is not null then job.output_language else 'ko' end as output_language,
           to_jsonb(job)->>'source_language_hint' as source_language_hint,
+          to_jsonb(job)->>'language_test_release_id' as language_test_release_id,
           coalesce(job.transcription_language_code,
             job.performance_metrics #>> '{transcription,languageCode}') as source_language_code,
           generated_short.status,
@@ -121,6 +123,7 @@ export async function POST(
       subtitleSegments: TranscriptSegment[];
       outputLanguage: string;
       sourceLanguageHint?: string | null;
+      languageTestReleaseId?: string | null;
       sourceLanguageCode?: string | null;
       status: string;
       subtitleTemplateId: string | null;
@@ -156,6 +159,9 @@ export async function POST(
       );
     }
 
+    const commentProfile = await languageTestCommentProfile(
+      db, generatedShort.languageTestReleaseId, generatedShort.outputLanguage,
+    );
     let reservationRows;
     try {
       reservationRows = await db`
@@ -203,6 +209,7 @@ export async function POST(
           ? generatedShort.subtitleSegments
           : [],
         targetCount: input.commentCount,
+        commentProfile,
         outputLanguage: normalizeOutputLanguage(generatedShort.outputLanguage),
         sourceLanguage: resolveSourceLanguage(
           generatedShort.sourceLanguageHint, generatedShort.sourceLanguageCode,

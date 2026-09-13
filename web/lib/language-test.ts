@@ -1,6 +1,7 @@
 import type { Sql, TransactionSql } from "postgres";
 import { z } from "zod";
 import { HttpError } from "./http";
+import { CULTURE_COMMENT_PROFILE, type CommentProfile } from "./comment-profile";
 import type { ProjectDispatchTarget } from "./job-dispatch";
 import { resolveRequestedEditorRelease, type RequestedEditorRelease, type EditorReleaseAssignment } from "./editor-rendering-release";
 
@@ -103,4 +104,31 @@ export async function resolveOwnedProjectEditorRelease(
     throw new HttpError(409, "이 프로젝트의 편집기를 다시 열어 주세요.", "EDITOR_RELEASE_CHANGED");
   }
   return pinned;
+}
+
+/** The release ID comes from an already-authorized owned project, never request input.
+ * Admission OFF does not change the immutable profile of existing projects. */
+export async function languageTestCommentProfile(
+  db: Db, releaseId: string | null | undefined, outputLanguage: string,
+): Promise<CommentProfile | undefined> {
+  if (!releaseId || (outputLanguage !== "en" && outputLanguage !== "ja")) return undefined;
+  try {
+    const [row] = await db`select r.registry::text as registry_json
+      from shorts_mvp.language_test_releases r join shorts_mvp.editor_releases e on e.id=r.id
+      where r.id=${releaseId} and r.verified_at is not null and e.staging_verified_at is not null
+        and e.status in ('canary_ready','canary_active','approved')`;
+    const registry = languageTestRegistrySchema.parse(JSON.parse(row?.registryJson ?? "null"));
+    // The existing immutable target release IDs encode the opt-in profile. This
+    // keeps the submission registry shape and ordinary submitter unchanged.
+    const targets = Object.entries(registry.lanes);
+    const prefix = `language-${CULTURE_COMMENT_PROFILE}-`;
+    if (!targets.some(([, lane]) => lane.current.releaseId.startsWith(prefix))) return undefined;
+    if (!targets.every(([key, { current: t }]) => t.releaseId
+      === `${prefix}${key.replaceAll("_", "-")}-${t.workerSourceGitSha.slice(0, 12)}`)) {
+      throw languageTestUnavailable();
+    }
+    return CULTURE_COMMENT_PROFILE;
+  } catch {
+    throw languageTestUnavailable();
+  }
 }

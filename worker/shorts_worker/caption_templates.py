@@ -1983,11 +1983,17 @@ def _line_text(
     text_color: str,
     accent_color: str,
     word_separator: str,
+    hide_separator_ink: bool = False,
 ) -> str:
     result = ""
     for line_position, word_index in enumerate(indexes):
         word = words[word_index]
         prefix = word_separator if line_position and word.get("spaceBefore") else ""
+        if hide_separator_ink and prefix == CAPTION_WORD_SEPARATOR:
+            # Some Linux fallback faces draw a visible label for U+2009.
+            # Keep its shaped advance (and the saved preview geometry), but
+            # suppress whitespace ink including outline, then restore words.
+            prefix = rf"{{\alpha&HFF&}}{prefix}{{\alpha&H00&}}"
         color = accent_color if word_index == active_index else text_color
         result += f"{{\\1c{_ass_color(color)}}}{prefix}{_ass_escape(str(word['text']))}"
     return result
@@ -2205,6 +2211,7 @@ def create_caption_ass(spec: dict[str, Any], output_path: Path) -> Path:
                     word_separator=str(
                         cue.get("wordSeparator") or CAPTION_WORD_SEPARATOR
                     ),
+                    hide_separator_ink=schema_version == 4 and template_id == "basic",
                 )
                 for line in cue.get("lines") or []
             ]

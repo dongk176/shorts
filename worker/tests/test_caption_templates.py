@@ -593,6 +593,9 @@ def test_highlight_word_spacing_matches_regular_space_while_pop_stays_six_pixels
         clip_end=0.5,
     )
     assert legacy_basic["cues"][0]["wordSeparator"] == CAPTION_WORD_SEPARATOR
+    assert r"\alpha&HFF&" not in create_caption_ass(
+        legacy_basic, tmp_path / "legacy-basic.ass"
+    ).read_text(encoding="utf-8")
 
     legacy_highlight = _compile(
         [
@@ -635,6 +638,54 @@ def test_highlight_word_spacing_matches_regular_space_while_pop_stays_six_pixels
             CAPTION_POP_SPACED_GAP_PX,
             abs=0.01,
         )
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is required")
+def test_v4_basic_separator_has_no_ink_and_preserves_both_words(tmp_path: Path) -> None:
+    # Paperlogy has no U+2009 glyph. Linux fallback fonts can display a boxed
+    # THIN SPACE label there, unlike the blank fallback used by macOS/Chrome.
+    spec = compile_caption_render_spec(
+        [_word("M", 0, 0.4), _word("M", 0.4, 0.8, space_before=True)],
+        template_id="basic",
+        clip_start=0,
+        clip_end=1,
+        video_aspect_ratio=VideoAspectRatio.LANDSCAPE,
+        font_id=EditorFontId.PAPERLOGY,
+        font_size=96,
+        schema_version=4,
+    )
+    spec["style"]["outlineWidth"] = 0
+    ass_path = create_caption_ass(spec, tmp_path / "basic.ass")
+    fonts = prepare_caption_fonts(tmp_path / "fonts", spec)
+    frame = tmp_path / "basic.png"
+    subprocess.run(
+        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i",
+         "color=black:size=1080x1920:rate=30:duration=0.1",
+         "-vf", f"subtitles=filename='{ass_path}':fontsdir='{fonts}'",
+         "-frames:v", "1", str(frame)],
+        check=True, capture_output=True, timeout=60,
+        env={**os.environ, "XDG_CACHE_HOME": str(tmp_path / "font-cache")},
+    )
+    with Image.open(frame).convert("RGB") as image:
+        bounds = image.getbbox()
+        assert bounds is not None
+        crop = image.crop(bounds)
+        visible = [
+            any(max(crop.getpixel((x, y))) > 50 for y in range(crop.height))
+            for x in range(crop.width)
+        ]
+    runs = []
+    start = None
+    for index, ink in enumerate([*visible, False]):
+        if ink and start is None:
+            start = index
+        elif not ink and start is not None:
+            runs.append((start, index))
+            start = None
+    assert len(runs) == 2, "Only the two words may have ink; the separator must be blank"
+    assert abs((runs[0][1] - runs[0][0]) - (runs[1][1] - runs[1][0])) <= 1
+    assert runs[0][1] - runs[0][0] > 40, "Restoring alpha must keep both words visible"
+    assert runs[1][0] - runs[0][1] >= 4
 
 
 def test_project_3259_pop_spacing_uses_six_pixels_and_zero_for_joined_tokens() -> None:

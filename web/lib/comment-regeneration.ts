@@ -2,6 +2,8 @@ import { hasUnlabeledAmount, languageContext, mentionedCurrencies } from "./lang
 import { commentDuplicateKey, contentLanguages, textMatchesLanguage } from "./content-language";
 import type { OutputLanguage } from "./contracts";
 import promptTranslations from "./prompt-translations.json";
+import culturePrompts from "./comment-culture-prompts.json";
+import { usesCulturalComments, type CommentProfile } from "./comment-profile";
 import { ungroundedMoney } from "./money-facts";
 
 export const AI_COMMENT_MIN_CHARS = 4;
@@ -19,6 +21,7 @@ type CommentRegenerationInput = {
   targetCount: number;
   outputLanguage?: OutputLanguage;
   sourceLanguage?: string;
+  commentProfile?: CommentProfile;
 };
 
 function normalizedComment(value: string) {
@@ -34,7 +37,10 @@ function formatPrompt(template: string, values: Record<string, string | number>)
 
 export function buildCommentRegenerationMessages(input: CommentRegenerationInput) {
   const messages = baseCommentRegenerationMessages(input);
-  const context = languageContext(input.sourceLanguage, input.outputLanguage || "ko");
+  const outputLanguage = input.outputLanguage || "ko";
+  const instruction = usesCulturalComments(input.commentProfile, outputLanguage)
+    ? culturePrompts[outputLanguage as "en" | "ja"].comment_context : undefined;
+  const context = languageContext(input.sourceLanguage, outputLanguage, instruction);
   if (context) messages[0] = { ...messages[0], content: `${context}\n\n${messages[0].content}` };
   return messages;
 }
@@ -45,6 +51,7 @@ function baseCommentRegenerationMessages({
   transcript,
   targetCount,
   outputLanguage = "ko",
+  commentProfile,
 }: CommentRegenerationInput) {
   const language = contentLanguages[outputLanguage];
   const transcriptText = transcript
@@ -53,7 +60,8 @@ function baseCommentRegenerationMessages({
     .join("\n")
     .slice(0, 12_000) || "(사용 가능한 전사 없음)";
   if (outputLanguage === "en" || outputLanguage === "ja") {
-    const templates = promptTranslations[outputLanguage];
+    const templates = (usesCulturalComments(commentProfile, outputLanguage)
+      ? culturePrompts : promptTranslations)[outputLanguage];
     const values = {
       intro: language.intro, style: language.style,
       output_language: outputLanguage, language_name: language.name,

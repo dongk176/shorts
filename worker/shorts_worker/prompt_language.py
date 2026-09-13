@@ -15,16 +15,22 @@ PROMPT_TRANSLATIONS = json.loads(
     Path(__file__).with_name("prompt_translations.json").read_text(encoding="utf-8")
 )
 
+CULTURE_COMMENT_PROFILE = "culture-flash-v1"
+CULTURE_COMMENT_MODEL = "gemini-3.5-flash"
+CULTURE_COMMENT_PROMPTS = json.loads(
+    Path(__file__).with_name("comment_culture_prompts.json").read_text(encoding="utf-8")
+)
+
 
 def translated_comment_messages(
-    clips: list[CommentClipInput], *, min_chars: int, max_chars: int,
+    clips: list[CommentClipInput], *, min_chars: int, max_chars: int, culture: bool = False,
 ) -> list[dict[str, str]] | None:
     languages = {clip.output_language for clip in clips}
-    # The Japanese batch translation regressed in the controlled comparison.
-    if languages != {"en"}:
+    if not (len(languages) == 1 and languages <= {"en", "ja"} if culture
+            else languages == {"en"}):
         return None
     language = next(iter(languages))
-    templates = PROMPT_TRANSLATIONS[language]
+    templates = (CULTURE_COMMENT_PROMPTS if culture else PROMPT_TRANSLATIONS)[language]
     profile = CONTENT_LANGUAGES[language]
     language_rules = "\n".join(templates["comment_language_rule"].format(
         clip_index=clip.clip_index, output_language=language.value,
