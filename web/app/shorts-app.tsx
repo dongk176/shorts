@@ -92,6 +92,7 @@ import {
   type EditorCaptionTextDraft,
 } from "@/lib/editor-caption-preview";
 import { SHOW_MONETIZATION_CONTENT } from "@/lib/content-visibility";
+import { jobNeedsPolling, startHomeJobPolling } from "@/lib/home-job-polling";
 import { SIMULATED_PROGRESS_START } from "@/lib/creation-progress";
 import { isConversionMaintenanceActive } from "@/lib/conversion-maintenance";
 import { isPlaybackAvailable, shortPlaybackVersionKey } from "@/lib/project-playback";
@@ -12906,15 +12907,6 @@ export function ProjectPage({ projectNumber, adminSubtitleLayoutEnabled = false,
   />;
 }
 
-function initialActiveJob(state: MvpState | null) {
-  if (!state) return null;
-  const running = state.recentJobs.find((job) => !terminalStatuses.has(job.status));
-  const rerendering = state.recentJobs.find((job) => (
-    job.shorts.some((item) => item.status === "rerendering")
-  ));
-  return running || rerendering || state.recentJobs[0] || null;
-}
-
 function recentJobsWithPendingProject(recentJobs: VideoJob[], pendingJob: VideoJob) {
   const withoutPending = recentJobs.filter((job) => job.id !== pendingJob.id);
   const firstActualIndex = withoutPending.findIndex((job) => !job.isExample);
@@ -13146,7 +13138,6 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   }, [templateUserId]);
   const [favoriteTemplateKeys, setFavoriteTemplateKeys] = useState<TemplateFavoriteKey[]>([...DEFAULT_FAVORITE_TEMPLATE_KEYS]);
   const [videoAspectRatio, setVideoAspectRatio] = useState<VideoAspectRatio>("16:9");
-  const [activeJob, setActiveJob] = useState<VideoJob | null>(() => initialActiveJob(initialState));
   const [loginOpen, setLoginOpen] = useState(false);
   const [loginNext, setLoginNext] = useState("/");
   const [loginPromptPending, setLoginPromptPending] = useState(false);
@@ -13163,7 +13154,6 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [conversionMaintenanceOpen, setConversionMaintenanceOpen] = useState(false);
-  const pollStarted = useRef(0);
   const loginOpenTimer = useRef<number | null>(null);
   const stateLoadInFlight = useRef<Promise<void> | null>(null);
   const analysisSectionRef = useRef<HTMLElement>(null);
@@ -13173,10 +13163,9 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const initializedSourceRangeAnalysisId = useRef<string | null>(null);
   const uploadFileInputRef = useRef<HTMLInputElement>(null);
   const requestedSubtitleTemplateRef = useRef<SubtitleTemplateSelectionId | null>(null);
-  const activeJobId = activeJob?.id;
-  const activeJobStatus = activeJob?.status;
-  const activeJobHasRerendering = Boolean(activeJob?.shorts.some((item) => item.status === "rerendering"));
-  const hasBackgroundWork = Boolean(state?.recentJobs.some((job) => !terminalStatuses.has(job.status) || job.shorts.some((item) => item.status === "rerendering")));
+  const pollingJobIds = JSON.stringify(
+    state?.recentJobs.filter(jobNeedsPolling).map((job) => job.id).sort() || [],
+  );
   const uploadModeEnabled = state?.capabilities.fileUpload === true;
   const uploadModeVisible = !state?.user || uploadModeEnabled;
   const uploadSourceActive = sourceMode === "upload" && uploadModeEnabled && uploadVideo !== null;
@@ -13470,7 +13459,6 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       publishUsageSnapshot(value.usage);
       setStateLoadStatus("ready");
       setStateLoadError(null);
-      setActiveJob(initialActiveJob(value));
     })();
     stateLoadInFlight.current = task;
     try {
@@ -13646,45 +13634,22 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     return () => window.cancelAnimationFrame(frame);
   }, [scrollToProjects, state?.recentJobs.length]);
 
-  useEffect(() => {
-    if (!activeJobId || !activeJobStatus || (terminalStatuses.has(activeJobStatus) && !activeJobHasRerendering)) return;
-    pollStarted.current ||= Date.now();
-    let stopped = false;
-    let timer: number | undefined;
-    let controller: AbortController | null = null;
-    const poll = async () => {
-      try {
-        controller = new AbortController();
-        const value = await requestJson<{ job: VideoJob; usage: UsageSnapshot }>(
-          `/api/jobs/${activeJobId}`,
-          { signal: controller.signal },
-          12_000,
-        );
-        if (stopped) return;
-        setActiveJob(value.job);
-        setState((current) => current ? { ...current, usage: value.usage, recentJobs: current.recentJobs.map((job) => job.id === value.job.id ? value.job : job) } : current);
-        publishUsageSnapshot(value.usage);
-        const hasRerendering = value.job.shorts.some((item) => item.status === "rerendering");
-        if (terminalStatuses.has(value.job.status) && !hasRerendering) { pollStarted.current = 0; await loadState(); return; }
-      } catch (cause) { if (!stopped) setError(userFacingErrorMessage(cause, "작업 상태를 확인하지 못했습니다.")); }
-      const elapsed = Date.now() - pollStarted.current;
-      if (!stopped) timer = window.setTimeout(poll, elapsed < 30_000 ? 3_000 : elapsed < 300_000 ? 6_000 : 10_000);
-    };
-    timer = window.setTimeout(poll, 3_000);
-    return () => {
-      stopped = true;
-      controller?.abort();
-      if (timer !== undefined) window.clearTimeout(timer);
-    };
-  }, [activeJobHasRerendering, activeJobId, activeJobStatus, loadState]);
-
-  useEffect(() => {
-    if (!hasBackgroundWork) return;
-    const timer = window.setInterval(() => {
-      void loadState().catch((cause) => setError(userFacingErrorMessage(cause, "작업 상태를 확인하지 못했습니다.")));
-    }, 5_000);
-    return () => window.clearInterval(timer);
-  }, [hasBackgroundWork, loadState]);
+  useEffect(() => startHomeJobPolling({
+    jobIds: JSON.parse(pollingJobIds) as string[],
+    read: (id, signal) => requestJson<{ job: VideoJob; usage: UsageSnapshot }>(
+      `/api/jobs/${id}`, { signal }, 12_000,
+    ),
+    apply: (value) => {
+      setState((current) => current ? {
+        ...current,
+        usage: value.usage,
+        recentJobs: current.recentJobs.map((job) => job.id === value.job.id ? value.job : job),
+      } : current);
+      publishUsageSnapshot(value.usage);
+    },
+    settled: loadState,
+    failed: (cause) => setError(userFacingErrorMessage(cause, "작업 상태를 확인하지 못했습니다.")),
+  }), [pollingJobIds, loadState]);
 
   const pasteYoutubeUrl = async () => {
     try {
@@ -13966,8 +13931,6 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         recentJobs: recentJobsWithPendingProject(current.recentJobs, pendingJob),
       } : current);
       publishUsageSnapshot(value.usage);
-      setActiveJob(pendingJob);
-      pollStarted.current = Date.now();
 
       setUploadPreparationActive(true);
       await uploadFileWhenReceiverReady({
@@ -14227,9 +14190,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       const pendingJob: VideoJob = { id: value.jobId, projectNumber: value.projectNumber, isExample: false, videoTitle: analysis.title, channelName: analysis.channelName, channelThumbnailUrl: analysis.channelThumbnailUrl, thumbnailUrl: analysis.thumbnailUrl, sourceDurationSeconds: analysis.durationSeconds, outputLanguage, expectedShortCount: selectedPlannedShortCount, plannedShortCount: selectedPlannedShortCount, readyShortCount: 0, failedShortCount: 0, renderSuccessPercent: null, wordTimedSubtitlesAvailable: false, status: "queued", stage: "queued", progress: SIMULATED_PROGRESS_START, stageCompletedCount: 0, stageTotalCount: 0, errorMessage: null, createdAt: new Date().toISOString(), expiresAt: null, shorts: [] };
       setState((current) => current ? { ...current, usage: value.usage, recentJobs: recentJobsWithPendingProject(current.recentJobs, pendingJob) } : current);
       publishUsageSnapshot(value.usage);
-      setActiveJob(pendingJob);
       setScrollToProjects(true);
-      pollStarted.current = Date.now();
       setYoutubeUrl("");
       setAnalysis(null);
       setSubtitleTemplateId(null);
