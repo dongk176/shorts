@@ -7,6 +7,6 @@ import type { ReactNode } from "react";
 // This also prevents claim/seen requests from consuming a postponed notice.
 export function ApplicationOverlays({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  if (pathname === "/creator-support") return null;
+  if (pathname === "/creator-support" || pathname === "/blog" || pathname.startsWith("/blog/")) return null;
   return children;
 }
