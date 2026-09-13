@@ -3,22 +3,15 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import postgres from '../web/node_modules/postgres/src/index.js';
 import { requireProductionDatabaseUrl } from './production-database-identity.mjs';
+import { referralAnonymizer } from './referral-reconciliation-anonymizer.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const hash = value => crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
-const uuid = value => { const h=hash(value); return `${h.slice(0,8)}-${h.slice(8,12)}-4${h.slice(13,16)}-a${h.slice(17,20)}-${h.slice(20,32)}`; };
-const scrub = value => {
-  if (Array.isArray(value)) return value.map(scrub);
-  if (value && typeof value==='object') return Object.fromEntries(Object.entries(value).map(([k,v])=>[k,scrub(v)]));
-  if (typeof value==='string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(value)) return uuid(value);
-  if (typeof value==='string' && /^EC-/.test(value)) return `order_${hash(value).slice(0,24)}`;
-  return value;
-};
 const save=(path,value)=>fs.writeFileSync(path,JSON.stringify(value,null,2)+'\n',{mode:0o600});
 const modes=new Set(['snapshot','preview','apply']);
 const [mode,snapshotFile,reportFile] = process.argv.slice(2);
 if (!modes.has(mode) || !snapshotFile) throw new Error('Usage: snapshot|preview|apply snapshot.json [report.json]');
-const implementationHash=hash(['supabase/migrations/202609130003_referral_contract_caps.sql','scripts/referral-contract-reconciliation.mjs','web/lib/referral-policy.ts','web/lib/referral-settlement.ts','web/lib/referral-settlement-server.ts','web/lib/referral-payout-service.ts'].map(p=>fs.readFileSync(root+p,'utf8')));
+const implementationHash=hash(['supabase/migrations/202609130003_referral_contract_caps.sql','scripts/referral-contract-reconciliation.mjs','scripts/referral-reconciliation-anonymizer.mjs','web/lib/referral-policy.ts','web/lib/referral-settlement.ts','web/lib/referral-settlement-server.ts','web/lib/referral-payout-service.ts'].map(p=>fs.readFileSync(root+p,'utf8')));
 const preview=mode==='preview';
 const connection=preview ? process.env.REFERRAL_PREVIEW_DATABASE_URL : requireProductionDatabaseUrl();
 if (preview) {
@@ -90,7 +83,7 @@ async function result(tx,before) {
 try {
   if(mode==='snapshot') {
     const data=await sql.begin('isolation level repeatable read read only',collect);
-    const anonymous=scrub(data);
+    const anonymous=referralAnonymizer(data)(data);
     save(snapshotFile,{version:1,capturedAt:new Date().toISOString(),sourceHash:hash(data),anonymousHash:hash(anonymous),data:anonymous});
     console.log(JSON.stringify({mode,orders:data.commissions.length,payouts:data.payouts.length,snapshotFile}));
   } else if(mode==='preview') {
@@ -136,7 +129,7 @@ try {
       if(hash(before)!==snapshot.sourceHash) throw new Error('Production changed: take a new snapshot and preview');
       await tx`select shorts_mvp.reconcile_referral_contracts()`;
       const after=await result(tx,before);
-      const anon=scrub(JSON.parse(JSON.stringify(after)));
+      const anon=referralAnonymizer(before)(JSON.parse(JSON.stringify(after)));
       anon.contracts.sort((a,b)=>a.id.localeCompare(b.id));
       anon.months.sort((a,b)=>a.partner_id.localeCompare(b.partner_id)||a.month.localeCompare(b.month));
       if(hash(anon.contracts)!==hash(previewReport.contracts)||hash(anon.months)!==hash(previewReport.months)) throw new Error('Production differs from tested preview');
