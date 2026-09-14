@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .content_language import CONTENT_LANGUAGES
-from .language_context import language_context, mentioned_currencies
+from .language_context import language_context
 
 if TYPE_CHECKING:
     from .comment_generator import CommentClipInput
@@ -43,9 +43,6 @@ def translated_selection_messages(
         min_seconds=f"{min_seconds:.3f}", max_seconds=f"{max_seconds:.3f}",
     )
     user = templates["user"].format(**values)
-    currencies = mentioned_currencies(transcript_source)
-    if "KRW" in currencies:
-        user = templates["currency"].format(currencies=", ".join(sorted(currencies))) + user
     return [
         {"role": "system", "content": language_context(source_language, output_language)
          + "\n\n" + templates["system"].format(**values)},

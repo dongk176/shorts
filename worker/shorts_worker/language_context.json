@@ -42,8 +42,8 @@
   },
   "instructions": {
     "ko": "원본 영상의 언어: {source} ({source_code})\n제목·댓글의 출력 언어: {target} ({target_code})\n제목·댓글은 출력 언어로 작성한다. 원문의 의미·수치·통화를 유지하며, 통화를 변경하거나 환산하지 않는다.",
-    "en": "Source video language: {source} ({source_code})\nOutput language for titles and comments: {target} ({target_code})\nWrite titles and comments in the output language. Preserve original meaning, quantities, and currencies. Include the original currency name or code beside every monetary amount, including repeated mentions. Preserve numeric ranges and bounds. Use monetary amounts clearly supported by the transcript, leaving unclear amounts out. Base factual claims on the transcript. Retain qualifiers when shortening a claim, and include claims that fit accurately with their conditions. Preserve actors, relationships, and certainty. Retain the figurative meaning of metaphors and the demonstrated nature of demonstrations.",
-    "ja": "元動画の言語: {source} ({source_code})\nタイトル・コメントの出力言語: {target} ({target_code})\nタイトル・コメントは出力言語で書きます。原文の意味、数量、通貨を保ちます。金額には繰り返しの記述も含め、毎回元の通貨名か通貨コードを添えます。数値の範囲と上限・下限を保ち、文字起こしで明確に確認できる金額を使い、不明確な金額は省きます。事実の主張は文字起こしを根拠とします。短縮時も限定条件を保ち、条件を含めて正確に収まる主張を採用します。人物、組織、その関係、確実性を保ち、比喩は比喩として、実演は実演として表現します。"
+    "en": "Source video language: {source} ({source_code})\nOutput language for titles and comments: {target} ({target_code})\nWrite titles and comments in the output language based on the supplied transcript.",
+    "ja": "元動画の言語: {source} ({source_code})\nタイトル・コメントの出力言語: {target} ({target_code})\n提供された文字起こしをもとに、指定された出力言語でタイトルとコメントを書きます。"
   },
   "currencyPatterns": {
     "KRW": "₩|(?<![A-Za-z])KRW(?![A-Za-z])|\\bKorean won\\b|ウォン|\\d[\\d,.\\s천만억조]*원|\\d[\\d,.\\s]*(?:(?:[kmb]|thousand|million|billion|trillion)\\s*)?won\\b",

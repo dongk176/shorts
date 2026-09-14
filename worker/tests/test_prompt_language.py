@@ -59,11 +59,13 @@ def test_only_localized_titles_add_one_source_value_rule_without_examples():
         assert messages(language)["selection"][0]["content"].count(instruction) == 1
 
 
-def test_length_feedback_only_repeats_existing_constraints_without_examples():
+def test_feedback_keeps_error_context_without_examples_or_unrelated_money_rules():
     for language in [OutputLanguage.EN, OutputLanguage.JA]:
         feedback = repair_instruction(language, LocalizedSelectionError("candidate_validation"))
         assert not re.search(r"example|for instance|例えば|例文|예시|모범", feedback, re.I)
-        assert "hook_title_line1" in feedback and "hook_title_line2" in feedback
+        assert '"failure": "candidate_validation"' in feedback
+        assert '"accepted_ranges"' in feedback
+        assert not re.search(r"monetary|currenc|金額|通貨", feedback, re.I)
 
 
 def test_english_comments_preserve_numeric_rules_fields_and_raw_source():

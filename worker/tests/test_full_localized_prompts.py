@@ -59,7 +59,7 @@ def test_full_test_instruction_language_keeps_raw_source_and_structural_fields(l
     assert not re.search("[가-힣]", system)
     assert "원본의 15만 원 {source}" in user
     assert "원본 제목 {title}" in user
-    assert "KRW" in user
+    assert "KRW" not in user
     assert not re.search("[가-힣]", user.replace(
         "원본의 15만 원 {source}", "",
     ).replace("원본 제목 {title}", ""))
