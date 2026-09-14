@@ -1,7 +1,9 @@
 import type { MetadataRoute } from "next";
 import { absoluteUrl } from "@/lib/seo";
 import { TEAM_PAGE_VISIBLE } from "@/lib/site-visibility";
-import { blogPosts } from "@/lib/blog";
+import { publishedBlogPosts } from "@/lib/blog";
+
+export const dynamic = "force-dynamic";
 
 const publicRoutes = [
   { path: "/", changeFrequency: "weekly", priority: 1 },
@@ -32,7 +34,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency,
       priority,
     }));
-  return [...pages, ...blogPosts.map((post) => ({
+  return [...pages, ...publishedBlogPosts().map((post) => ({
     url: absoluteUrl(`/blog/${post.slug}`),
     lastModified: post.updatedAt,
     changeFrequency: "monthly" as const,

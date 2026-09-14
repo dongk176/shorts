@@ -2,14 +2,16 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { StructuredData } from "@/components/structured-data";
-import { BLOG_CATEGORIES, BLOG_DESCRIPTION, BLOG_TITLE, blogBreadcrumbData, blogPosts, blogPost } from "@/lib/blog";
+import { BLOG_CATEGORIES, BLOG_DESCRIPTION, BLOG_TITLE, blogBreadcrumbData, publishedBlogPosts, blogPost } from "@/lib/blog";
 import { createPageMetadata, SITE_URL } from "@/lib/seo";
 import { BlogCatalog } from "./blog-catalog";
 import styles from "./blog.module.css";
 
 export const metadata: Metadata = createPageMetadata({ title: "이지컷 블로그 | AI 쇼츠 사용법과 크리에이터 제작 노트", description: BLOG_DESCRIPTION, path: "/blog" });
+export const dynamic = "force-dynamic";
 
 export default function BlogPage() {
+  const blogPosts = publishedBlogPosts();
   const featured = blogPost("vlog-to-shorts")!;
   return (
     <main id="blog-main" className={styles.main}>

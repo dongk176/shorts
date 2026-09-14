@@ -3,13 +3,12 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { StructuredData } from "@/components/structured-data";
-import { blogArticleData, blogBreadcrumbData, blogDate, blogPath, blogPost, blogPosts } from "@/lib/blog";
+import { blogArticleData, blogBreadcrumbData, blogDate, blogPath, blogPost, publishedBlogPosts } from "@/lib/blog";
 import { absoluteUrl, createPageMetadata } from "@/lib/seo";
 import styles from "../blog.module.css";
 
 type Props = { params: Promise<{ slug: string }> };
-export const dynamicParams = false;
-export function generateStaticParams() { return blogPosts.map(({ slug }) => ({ slug })); }
+export const dynamic = "force-dynamic";
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const post = blogPost((await params).slug);
@@ -24,7 +23,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function BlogArticlePage({ params }: Props) {
   const post = blogPost((await params).slug);
   if (!post) notFound();
-  const related = blogPosts.filter((item) => item.slug !== post.slug).sort((a,b) => Number(b.category === post.category) - Number(a.category === post.category)).slice(0,3);
+  const related = publishedBlogPosts().filter((item) => item.slug !== post.slug).sort((a,b) => Number(b.category === post.category) - Number(a.category === post.category)).slice(0,3);
   return (
     <main id="blog-main" className={styles.articleMain}>
       <StructuredData data={blogArticleData(post)} /><StructuredData data={blogBreadcrumbData(post)} />

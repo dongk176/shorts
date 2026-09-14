@@ -1,5 +1,7 @@
+import "server-only";
 import postsData from "@/content/blog/posts.json";
 import { absoluteUrl, SITE_URL } from "@/lib/seo";
+import { publishedPosts } from "@/lib/blog-publication";
 
 export type BlogImage = { type: "image"; src: string; alt: string; caption: string; width: number; height: number };
 export type BlogPost = {
@@ -23,8 +25,9 @@ export type BlogPost = {
 export const BLOG_TITLE = "이지컷 블로그";
 export const BLOG_DESCRIPTION = "쇼츠를 시작하는 방법부터 브이로그·인터뷰 활용법, AI 자막과 댓글 템플릿, 요금 비교까지. 이지컷 운영팀이 직접 확인한 화면과 제작 기록으로 알려드려요.";
 export const BLOG_CATEGORIES = ["전체", "시작하기", "활용 가이드", "사용 가이드", "비교·요금", "제작 노트"];
-export const blogPosts: BlogPost[] = (postsData as BlogPost[]).slice().reverse();
-export const blogPost = (slug: string) => blogPosts.find((post) => post.slug === slug);
+const allBlogPosts: BlogPost[] = (postsData as BlogPost[]).slice().reverse();
+export const publishedBlogPosts = (now = Date.now()) => publishedPosts(allBlogPosts, now);
+export const blogPost = (slug: string, now = Date.now()) => publishedBlogPosts(now).find((post) => post.slug === slug);
 export const blogPath = (slug: string) => `/blog/${slug}`;
 export function blogDate(date: string) {
   return new Intl.DateTimeFormat("ko-KR", { year: "numeric", month: "long", day: "numeric", timeZone: "Asia/Seoul" }).format(new Date(date));
