@@ -13644,7 +13644,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       })
       .catch((cause: unknown) => setError(userFacingErrorMessage(cause, "인기 영상 정보를 불러오지 못했습니다.")))
       .finally(() => setBusy(false));
-  }, []);
+  }, [resumedDraft?.analysis?.analysisId]);
 
   useEffect(() => {
     if (!scrollToAnalysis || !selectedSource) return;
