@@ -25,7 +25,9 @@ export async function POST(request: Request) {
     assertSameOriginJsonRequest(request);
     const input = z.object({ userId: z.uuid(), status: z.enum(["dismissed", "completed"]) }).strict().parse(await request.json());
     const session = await requireAuthenticatedMvpSession();
-    if (input.userId !== session.userId) throw new HttpError(409, "계정이 변경되었습니다. 페이지를 새로고침해 주세요.");
+    // The browser receives the authentication profile ID; userId is the
+    // separate app_users ID used by the database below.
+    if (input.userId !== session.user?.id) throw new HttpError(409, "계정이 변경되었습니다. 페이지를 새로고침해 주세요.");
     const saved = await getDb().begin(async (tx) => {
       await tx`select pg_advisory_xact_lock_shared(hashtextextended('language_test_admission',0))`;
       await tx`select singleton from shorts_mvp.language_test_settings where singleton for share`;

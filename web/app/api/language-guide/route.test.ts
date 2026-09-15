@@ -5,6 +5,7 @@ vi.mock("@/lib/session", () => ({ requireAuthenticatedMvpSession: mocks.session 
 vi.mock("@/lib/language-test", async (original) => ({ ...await original<object>(), languageTestStatus: mocks.status }));
 import { GET, POST } from "./route";
 const userId = "6f856acc-5b6a-4f62-9971-d7feb1f2a624";
+const appUserId = "a4404015-a66b-4efa-9cd3-14eddf4ad3ef";
 const request = (body: unknown) => new Request("https://www.easycut.co.kr/api/language-guide", {
   method: "POST", headers: { "Content-Type": "application/json", Origin: "https://www.easycut.co.kr" }, body: JSON.stringify(body),
 });
@@ -13,7 +14,7 @@ let isAdmin = false;
 const writes: unknown[][] = [];
 beforeEach(() => {
   vi.clearAllMocks(); stored = null; isAdmin = false; writes.length = 0;
-  mocks.session.mockResolvedValue({ userId, isAdmin: false });
+  mocks.session.mockResolvedValue({ userId: appUserId, user: { id: userId }, isAdmin: false });
   mocks.status.mockResolvedValue({ enabled: true, publicEnabled: true, ready: true });
   const sql = Object.assign(vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
     const q = strings.join("?");
@@ -29,7 +30,7 @@ describe("account language tutorial", () => {
     expect(await (await GET()).json()).toEqual({ available: true, seen: false, status: null });
     expect(await (await POST(request({ userId, status }))).json()).toEqual({ saved: true });
     expect(await (await GET()).json()).toEqual({ available: true, seen: true, status });
-    expect(writes).toEqual([[userId, status]]);
+    expect(writes).toEqual([[appUserId, status]]);
   });
   it("does not consume an ordinary user's tutorial while public is OFF", async () => {
     mocks.status.mockResolvedValue({ enabled: true, publicEnabled: false, ready: true });
@@ -39,7 +40,7 @@ describe("account language tutorial", () => {
   });
   it("lets admins complete the same tutorial while public is OFF", async () => {
     isAdmin = true;
-    mocks.session.mockResolvedValue({ userId, isAdmin });
+    mocks.session.mockResolvedValue({ userId: appUserId, user: { id: userId }, isAdmin });
     mocks.status.mockResolvedValue({ enabled: true, publicEnabled: false, ready: true });
     expect((await POST(request({ userId, status: "completed" }))).status).toBe(200);
     expect(writes).toHaveLength(1);
