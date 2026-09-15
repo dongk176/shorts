@@ -49,6 +49,7 @@ import {
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { LanguageGuide } from "@/components/language-guide";
+import { BEFORE_LOCALE_REFRESH, clearCreationDraft, preserveCreationDraft, readCreationDraft } from "@/lib/creation-locale-draft";
 import { languageCopy } from "@/lib/language-guide";
 import { SourceRangeGuide } from "@/components/source-range-guide";
 import { SubtitleTemplateDiscoveryOverlay } from "@/components/subtitle-template-discovery-overlay";
@@ -13079,16 +13080,27 @@ function SourceTimestampInput({
   );
 }
 
+type LocaleCreationDraft = {
+  analysis: YoutubeAnalysis | null; youtubeUrl: string;
+  sourceLanguage: SourceLanguage; outputLanguage: OutputLanguage; outputLanguageChosen: boolean;
+  languageDraftEnabled: boolean; rangeStart: number; rangeEnd: number; rightsConfirmed: boolean;
+  templateId: TemplateId; subtitleTemplateId: SubtitleTemplateSelectionId | null;
+  subtitleCaptionPlacement: SubtitleCaptionPlacement; brandColor: TemplatePresetColor;
+  customTemplateId: string | null; videoAspectRatio: VideoAspectRatio;
+};
+
 export function ShortsApp({ initialState = null }: { initialState?: MvpState | null }) {
   const { locale, t } = useI18n();
+  const [resumedDraft] = useState(() => readCreationDraft<LocaleCreationDraft>(initialState?.user?.id ?? null, locale));
+  useEffect(() => { clearCreationDraft(); }, []);
   const [state, setState] = useState<MvpState | null>(initialState);
   const [stateLoadStatus, setStateLoadStatus] = useState<"loading" | "ready" | "error">(
     initialState ? "ready" : "loading",
   );
   const [stateLoadError, setStateLoadError] = useState<string | null>(null);
   const [sourceMode, setSourceMode] = useState<"youtube" | "upload">("youtube");
-  const [youtubeUrl, setYoutubeUrl] = useState("");
-  const [analysis, setAnalysis] = useState<YoutubeAnalysis | null>(null);
+  const [youtubeUrl, setYoutubeUrl] = useState(resumedDraft?.youtubeUrl ?? "");
+  const [analysis, setAnalysis] = useState<YoutubeAnalysis | null>(resumedDraft?.analysis ?? null);
   const [uploadVideo, setUploadVideo] = useState<InspectedUploadVideo | null>(null);
   const [uploadInspectionBusy, setUploadInspectionBusy] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
@@ -13105,19 +13117,19 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const uploadRequestIntentKey = useRef<string | null>(null);
   const jobRequestId = useRef<string | null>(null);
   const jobRequestIntentKey = useRef<string | null>(null);
-  const [sourceRangeStartSeconds, setSourceRangeStartSeconds] = useState(0);
-  const [sourceRangeEndSeconds, setSourceRangeEndSeconds] = useState(0);
-  const [rightsConfirmed, setRightsConfirmed] = useState(false);
+  const [sourceRangeStartSeconds, setSourceRangeStartSeconds] = useState(resumedDraft?.rangeStart ?? 0);
+  const [sourceRangeEndSeconds, setSourceRangeEndSeconds] = useState(resumedDraft?.rangeEnd ?? 0);
+  const [rightsConfirmed, setRightsConfirmed] = useState(resumedDraft?.rightsConfirmed ?? false);
   const [rightsConfirmationAttention, setRightsConfirmationAttention] = useState(false);
-  const [languageDraftEnabled, setLanguageDraftEnabled] = useState(false);
-  const outputLanguageChosen = useRef(false);
-  const languageDraftVideoId = useRef<string | null>(null);
+  const [languageDraftEnabled, setLanguageDraftEnabled] = useState(resumedDraft?.languageDraftEnabled ?? false);
+  const outputLanguageChosen = useRef(resumedDraft?.outputLanguageChosen ?? false);
+  const languageDraftVideoId = useRef<string | null>(resumedDraft?.analysis?.videoId ?? null);
   const languageText = languageCopy[locale];
   const [languageGuideComplete, setLanguageGuideComplete] = useState(false);
   const [languageGuideReplay, setLanguageGuideReplay] = useState(0);
   const completeLanguageGuide = useCallback(() => setLanguageGuideComplete(true), []);
-  const [selectedOutputLanguage, setOutputLanguage] = useState<OutputLanguage>(locale);
-  const [sourceLanguage, setSourceLanguage] = useState<SourceLanguage>("auto");
+  const [selectedOutputLanguage, setOutputLanguage] = useState<OutputLanguage>(resumedDraft?.outputLanguageChosen ? resumedDraft.outputLanguage : locale);
+  const [sourceLanguage, setSourceLanguage] = useState<SourceLanguage>(resumedDraft?.sourceLanguage ?? "auto");
   const languageAvailable = sourceMode === "youtube" && state?.capabilities.languageTest === true;
   // A draft that exposed language selection stays a language request if public access changes.
   const languageTestActive = sourceMode === "youtube" && (languageAvailable || languageDraftEnabled);
@@ -13138,11 +13150,11 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     setLanguageGuideReplay(0);
   }, [state?.user?.id]);
   const outputLanguage: OutputLanguage = languageTestActive ? selectedOutputLanguage : "ko";
-  const [templateId, setTemplateId] = useState<TemplateId>("comment-capture");
-  const [subtitleTemplateId, setSubtitleTemplateId] = useState<SubtitleTemplateSelectionId | null>(null);
-  const [subtitleCaptionPlacement, setSubtitleCaptionPlacement] = useState<SubtitleCaptionPlacement>("lower");
-  const [brandColor, setBrandColor] = useState<TemplatePresetColor>(SUBTITLE_TEMPLATE_BRAND_COLOR);
-  const [customTemplateId, setCustomTemplateId] = useState<string | null>(null);
+  const [templateId, setTemplateId] = useState<TemplateId>(resumedDraft?.templateId ?? "comment-capture");
+  const [subtitleTemplateId, setSubtitleTemplateId] = useState<SubtitleTemplateSelectionId | null>(resumedDraft?.subtitleTemplateId ?? null);
+  const [subtitleCaptionPlacement, setSubtitleCaptionPlacement] = useState<SubtitleCaptionPlacement>(resumedDraft?.subtitleCaptionPlacement ?? "lower");
+  const [brandColor, setBrandColor] = useState<TemplatePresetColor>(resumedDraft?.brandColor ?? SUBTITLE_TEMPLATE_BRAND_COLOR);
+  const [customTemplateId, setCustomTemplateId] = useState<string | null>(resumedDraft?.customTemplateId ?? null);
   const [personalTemplates, setPersonalTemplates] = useState<CustomTemplate[]>([]);
   const templateRefreshController = useRef<AbortController | null>(null);
   const templateUserId = state?.user?.id ?? null;
@@ -13161,7 +13173,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     }
   }, [templateUserId]);
   const [favoriteTemplateKeys, setFavoriteTemplateKeys] = useState<TemplateFavoriteKey[]>([...DEFAULT_FAVORITE_TEMPLATE_KEYS]);
-  const [videoAspectRatio, setVideoAspectRatio] = useState<VideoAspectRatio>("16:9");
+  const [videoAspectRatio, setVideoAspectRatio] = useState<VideoAspectRatio>(resumedDraft?.videoAspectRatio ?? "16:9");
   const [loginOpen, setLoginOpen] = useState(false);
   const [loginNext, setLoginNext] = useState("/");
   const [loginPromptPending, setLoginPromptPending] = useState(false);
@@ -13184,12 +13196,28 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const rightsConfirmationRef = useRef<HTMLLabelElement>(null);
   const rightsCheckboxRef = useRef<HTMLInputElement>(null);
   const projectsSectionRef = useRef<HTMLElement>(null);
-  const initializedSourceRangeAnalysisId = useRef<string | null>(null);
+  const initializedSourceRangeAnalysisId = useRef<string | null>(resumedDraft?.analysis ? `youtube:${resumedDraft.analysis.analysisId}` : null);
   const uploadFileInputRef = useRef<HTMLInputElement>(null);
   const requestedSubtitleTemplateRef = useRef<SubtitleTemplateSelectionId | null>(null);
   const pollingJobIds = JSON.stringify(
     state?.recentJobs.filter(jobNeedsPolling).map((job) => job.id).sort() || [],
   );
+  useEffect(() => {
+    const preserve = (event: Event) => {
+      const nextLocale = (event as CustomEvent<{ locale: "ko" | "en" | "ja" }>).detail.locale;
+      if (!state?.user || sourceMode !== "youtube" || busy) return;
+      preserveCreationDraft<LocaleCreationDraft>(state.user.id, nextLocale, {
+        analysis, youtubeUrl, sourceLanguage, outputLanguage: selectedOutputLanguage,
+        outputLanguageChosen: outputLanguageChosen.current, languageDraftEnabled: languageTestActive,
+        rangeStart: sourceRangeStartSeconds, rangeEnd: sourceRangeEndSeconds, rightsConfirmed,
+        templateId, subtitleTemplateId, subtitleCaptionPlacement, brandColor, customTemplateId, videoAspectRatio,
+      });
+    };
+    window.addEventListener(BEFORE_LOCALE_REFRESH, preserve);
+    return () => window.removeEventListener(BEFORE_LOCALE_REFRESH, preserve);
+  }, [state?.user, sourceMode, busy, analysis, youtubeUrl, sourceLanguage, selectedOutputLanguage,
+    languageTestActive, sourceRangeStartSeconds, sourceRangeEndSeconds, rightsConfirmed,
+    templateId, subtitleTemplateId, subtitleCaptionPlacement, brandColor, customTemplateId, videoAspectRatio]);
   const uploadModeEnabled = state?.capabilities.fileUpload === true;
   const uploadModeVisible = !state?.user || uploadModeEnabled;
   const uploadSourceActive = sourceMode === "upload" && uploadModeEnabled && uploadVideo !== null;
@@ -13416,13 +13444,14 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   useEffect(() => {
     if (
       customTemplateId
+      && personalTemplates.length > 0
       && !sourceCompatiblePersonalTemplates.some(
         (template) => template.id === customTemplateId,
       )
     ) {
       setCustomTemplateId(null);
     }
-  }, [customTemplateId, sourceCompatiblePersonalTemplates]);
+  }, [customTemplateId, sourceCompatiblePersonalTemplates, personalTemplates.length]);
 
   useEffect(() => {
     setSourceRangeGuideComplete(Boolean(
@@ -13581,7 +13610,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   useEffect(() => {
     const currentUrl = new URL(window.location.href);
     const analysisId = currentUrl.searchParams.get("analysisId");
-    if (!analysisId) return;
+    if (!analysisId || resumedDraft?.analysis?.analysisId === analysisId) return;
     if (currentUrl.hash === "#shorts-settings") {
       currentUrl.hash = "";
       window.history.replaceState(

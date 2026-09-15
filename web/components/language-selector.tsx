@@ -3,6 +3,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { siteLocales, type SiteLocale } from "@/lib/i18n/config";
+import { BEFORE_LOCALE_REFRESH } from "@/lib/creation-locale-draft";
 import { useI18n } from "@/lib/i18n/provider";
 import { userFacingErrorMessage } from "@/lib/public-error";
 
@@ -55,6 +56,7 @@ export function LanguageSelector() {
         body: JSON.stringify({ locale: nextLocale }),
       });
       if (!response.ok) throw new Error(t("common.languageError"));
+      window.dispatchEvent(new CustomEvent(BEFORE_LOCALE_REFRESH, { detail: { locale: nextLocale } }));
       document.documentElement.lang = nextLocale;
       router.refresh();
     } catch (cause) {
