@@ -245,7 +245,7 @@ export async function POST(request: Request) {
       if (input.brandColor && executionBackend !== "aws_batch") {
         throw new HttpError(
           503,
-          "브랜드 컬러 테스트 작업을 안전한 전용 워커에 연결하지 못했습니다.",
+          "브랜드 컬러 작업을 안전한 전용 워커에 연결하지 못했습니다.",
         );
       }
       const usesLegacySubtitleSuiteCandidate = Boolean(

@@ -11488,9 +11488,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                       ? "팝형 자막"
                       : "강조형 자막"
                     : "강조형 자막"}</strong>
-                  {editorRelease.channel === "canary" && <span className="rounded-full border border-[#ff715e]/35 bg-[#ff715e]/10 px-2 py-1 text-[10px] font-black text-[#ff9b8d]">
-                    테스트
-                  </span>}
+
                 </div>
                 <button
                   type="button"
