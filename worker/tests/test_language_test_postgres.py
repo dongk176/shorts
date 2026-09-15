@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from uuid import uuid4
@@ -98,12 +97,20 @@ def test_additive_migration_and_isolated_admission():
         sql(f"select to_jsonb(j) from shorts_mvp.video_jobs j where id='{old_id}';")
     )
     sql(MIGRATION.read_text())
+    # Simulate the already-deployed percentage column before the additive migration.
+    sql("alter table shorts_mvp.language_test_settings add column "
+        "public_rollout_percent integer default 0 not null;")
+    sql((MIGRATION.parent / "202609150001_language_public_and_guide.sql").read_text())
+    assert sql("select public_rollout_percent from shorts_mvp.language_test_settings;") == "0"
+    base.assert_rejected("update shorts_mvp.language_test_settings set public_rollout_percent=50;",
+                         "language_test_settings_public_rollout_percent_check")
     after = json.loads(sql(f"select to_jsonb(j) from shorts_mvp.video_jobs j where id='{old_id}';"))
     assert {k: v for k, v in after.items() if k in old_job} == old_job
     assert after["source_language_hint"] is None and after["language_test_release_id"] is None
     assert sql("select enabled from shorts_mvp.language_test_settings;") == "f"
     sql(insert(user=base.USER))
     sql(insert(user=base.ADMIN))
+    base.assert_rejected(insert(user=base.USER, output_language="ja"), "LANGUAGE_RELEASE_REQUIRED")
     assert base.flags() == before_flags
 
     record = registration()
@@ -125,7 +132,7 @@ def test_additive_migration_and_isolated_admission():
     )
     base.assert_rejected(insert(test=True), "LANGUAGE_TEST_UNAVAILABLE")
     sql("update shorts_mvp.language_test_settings set enabled=true;")
-    base.assert_rejected(insert(test=True, user=base.USER), "LANGUAGE_TEST_ADMIN_REQUIRED")
+    base.assert_rejected(insert(test=True, user=base.USER), "LANGUAGE_PUBLIC_DISABLED")
     base.assert_rejected(
         insert(test=True, batch_job_queue="wrong"), "LANGUAGE_TEST_TARGET_MISMATCH"
     )
@@ -139,18 +146,26 @@ def test_additive_migration_and_isolated_admission():
         insert(test=True, source_language_hint=None), "video_jobs_language_test_context"
     )
 
-    # Two simultaneous submissions may never create two active test projects.
-    def submit(_):
-        try:
-            return sql(insert(test=True))
-        except subprocess.CalledProcessError as error:
-            assert "LANGUAGE_TEST_BUSY" in error.stderr
-            return None
-
+    # Different accounts can enter the FIFO queue concurrently. The API keeps
+    # its existing per-account quota/idempotency transaction around this guard.
+    sql("update shorts_mvp.language_test_settings set public_rollout_percent=100;")
     with ThreadPoolExecutor(max_workers=2) as executor:
-        jobs = list(executor.map(submit, [1, 2]))
-    assert sum(job is not None for job in jobs) == 1
-    job = next(job for job in jobs if job)
+        jobs = list(executor.map(
+            lambda user: sql(insert(test=True, user=user)), [base.ADMIN, base.USER]))
+    assert len(set(jobs)) == 2
+    job = jobs[0]
+    sql("update shorts_mvp.language_test_settings set public_rollout_percent=0;")
+    base.assert_rejected(insert(test=True, user=base.USER), "LANGUAGE_PUBLIC_DISABLED")
+    sql(insert(test=True))  # Admin stays enabled when public is OFF.
+    sql(f"update shorts_mvp.video_jobs set status='completed' where id='{jobs[1]}';")
+    sql("insert into shorts_mvp.language_guide_views(user_id,status) "
+        f"values('{base.USER}','dismissed');")
+    assert sql("select status from shorts_mvp.language_guide_views "
+               f"where user_id='{base.USER}';") == "dismissed"
+    base.assert_rejected(
+        "set role authenticated; select * from shorts_mvp.language_guide_views;",
+        "permission denied",
+    )
     sql(insert(user=base.USER))
     for field, value in [
         ("language_test_release_id", "null"),

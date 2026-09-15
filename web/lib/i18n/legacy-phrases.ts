@@ -5,6 +5,11 @@ type Phrase = readonly [ko: string, en: string, ja: string];
 // Legacy page copy is kept here while the product moves to semantic message keys.
 // User-provided and generated content is intentionally excluded from this table.
 const phrases: readonly Phrase[] = [
+  ["언어 기능 공개가 중단되었습니다. 페이지를 새로고침해 주세요.", "Language creation is currently unavailable. Please refresh the page.", "言語機能の公開が停止されました。ページを更新してください。"],
+  ["언어 기능을 잠시 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.", "Language creation is temporarily unavailable. Please try again shortly.", "言語機能を一時的に利用できません。しばらくしてからもう一度お試しください。"],
+  ["언어 설정을 확인해 주세요.", "Please check your language settings.", "言語設定を確認してください。"],
+  ["기본형 번역 자막", "Basic translated captions", "基本スタイルの翻訳字幕"],
+  ["번역 자막은 팝업·강조 효과 없이 기본형으로 표시됩니다. 위치·글꼴·크기·색상을 바꾸거나 자막을 더블클릭해 문구를 수정할 수 있습니다.", "Translated captions use a basic style. Adjust the position, font, size or color, or double-click a caption to edit its text.", "翻訳字幕は基本スタイルで表示されます。位置・フォント・サイズ・色を変更したり、字幕をダブルクリックして文章を編集できます。"],
   ["AI 쇼츠 자동 제작 | 유튜브 링크로 숏폼 만들기 - 이지컷", "AI Shorts Maker | Turn YouTube Links into Short Videos - Easy Cut", "AIショート動画自動作成 | YouTubeリンクからショート動画へ - Easy Cut"],
   ["AI 쇼츠 제작 요금제·가격 | 이지컷", "AI Shorts Pricing & Plans | Easy Cut", "AIショート動画の料金・プラン | Easy Cut"],
   ["AI 쇼츠 템플릿 라이브러리 | 이지컷", "AI Shorts Template Library | Easy Cut", "AIショート動画テンプレートライブラリ | Easy Cut"],

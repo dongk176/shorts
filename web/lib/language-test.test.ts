@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Sql, TransactionSql } from "postgres";
-import { languageTestCommentProfile, languageTestEditorRelease, languageTestStatus, languageTestTarget, lockLanguageTestAdmission, resolveOwnedProjectEditorRelease } from "./language-test";
+import { languageFeatureAllowed, languageTestCommentProfile, languageTestEditorRelease, languageTestStatus, languageTestTarget, lockLanguageTestAdmission, resolveOwnedProjectEditorRelease } from "./language-test";
 
 const id = "f083a5ef-400e-43f5-af27-ac9d417ca6a2";
 const sha = "a".repeat(40), digest = `sha256:${"b".repeat(64)}`, font = "c".repeat(64);
@@ -13,7 +13,7 @@ const registry = { version: 1, environment: "production", lanes: Object.fromEntr
   jobQueueArn: "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-language-test-production",
   renderSpecVersion: 4, captionRenderSpecVersion: 4, fontManifestSha256: font,
 } }])) };
-const ready = { enabled: true, verifiedAt: new Date(), stagingVerifiedAt: new Date(), registryJson: JSON.stringify(registry), releaseId: id,
+const ready = { enabled: true, publicRolloutPercent: 0, verifiedAt: new Date(), stagingVerifiedAt: new Date(), registryJson: JSON.stringify(registry), releaseId: id,
   gitSha: sha, workerImageDigest: digest, fontManifestSha256: font, status: "canary_ready",
   uiVersion: 3, documentVersion: 3, renderSpecVersion: 4, captionRenderSpecVersion: 4 };
 function database(run: (sql: string) => unknown[]) {
@@ -30,16 +30,16 @@ describe("independent administrator language release", () => {
       if (state.registry) expect(languageTestTarget({ registry: state.registry }, "legacy_project").workerImageDigest).toBe(digest);
     }
   });
-  it("rejects non-administrators before reading settings or reserving usage", async () => {
+  it("rejects missing accounts before reading settings or reserving usage", async () => {
     const db = database((sql) => { expect(sql).toContain("app_users"); return []; });
-    await expect(lockLanguageTestAdmission(db as unknown as TransactionSql, "user", "request"))
-      .rejects.toMatchObject({ status: 403 });
+    await expect(lockLanguageTestAdmission(db as unknown as TransactionSql, "user"))
+      .rejects.toMatchObject({ status: 401 });
     expect(db).toHaveBeenCalledTimes(1);
   });
-  it.each(["off", "busy", "unavailable"])("stops %s admission before usage writes", async (mode) => {
+  it.each(["off", "unavailable"])("stops %s admission before usage writes", async (mode) => {
     const db = database((sql) => {
       expect(sql).not.toMatch(/insert|usage_reservations/);
-      if (sql.includes("app_users")) return [{ id: "admin" }];
+      if (sql.includes("app_users")) return [{ id: "admin", isAdmin: true }];
       if (sql.includes("left join")) {
         if (mode === "unavailable") throw new Error("unavailable");
         return [{ ...ready, enabled: mode !== "off" }];
@@ -47,8 +47,23 @@ describe("independent administrator language release", () => {
       if (sql.includes("video_jobs")) return [{ id: "busy" }];
       return [];
     });
-    await expect(lockLanguageTestAdmission(db as unknown as TransactionSql, "admin", "request"))
-      .rejects.toMatchObject({ status: mode === "busy" ? 409 : 503 });
+    await expect(lockLanguageTestAdmission(db as unknown as TransactionSql, "admin"))
+      .rejects.toMatchObject({ status: 503 });
+  });
+  it.each([
+    [true, 0, true], [true, 100, true], [false, 0, false], [false, 100, true], [false, 50, false],
+  ])("uses one permission policy for admin=%s public=%s", async (isAdmin, percent, allowed) => {
+    const db = database((sql) => {
+      expect(sql).not.toContain("video_jobs");
+      if (sql.includes("app_users")) return [{ id: "user", isAdmin }];
+      if (sql.includes("left join")) return [{ ...ready, publicRolloutPercent: percent }];
+      return [];
+    });
+    const state = await languageTestStatus(db);
+    expect(languageFeatureAllowed(state, isAdmin)).toBe(allowed);
+    const submit = lockLanguageTestAdmission(db as unknown as TransactionSql, "user");
+    if (allowed) await expect(submit).resolves.toMatchObject({ releaseId: id });
+    else await expect(submit).rejects.toMatchObject({ status: 403, code: "LANGUAGE_PUBLIC_DISABLED" });
   });
   it("never reads experiment settings or releases for an ordinary owned short", async () => {
     const db = database((sql) => { expect(sql).not.toContain("language_test_settings"); expect(sql).not.toContain("join shorts_mvp.language_test_releases"); return [{ languageTestReleaseId: null }]; });

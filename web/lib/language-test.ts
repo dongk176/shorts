@@ -5,7 +5,7 @@ import { CULTURE_COMMENT_PROFILE, type CommentProfile } from "./comment-profile"
 import type { ProjectDispatchTarget } from "./job-dispatch";
 import { resolveRequestedEditorRelease, type RequestedEditorRelease, type EditorReleaseAssignment } from "./editor-rendering-release";
 
-export const LANGUAGE_TEST_UNAVAILABLE = "언어 기능 테스트를 잠시 사용할 수 없습니다. 일반 제작은 이용할 수 있습니다.";
+export const LANGUAGE_TEST_UNAVAILABLE = "언어 기능을 잠시 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.";
 const digest = z.string().regex(/^sha256:[a-f0-9]{64}$/);
 const targetSchema = z.object({
   releaseId: z.string().regex(/^[a-z0-9][a-z0-9._-]{2,127}$/),
@@ -27,7 +27,7 @@ export function languageTestUnavailable() { return new HttpError(503, LANGUAGE_T
 
 export async function languageTestStatus(db: Db) {
   const rows = await db`
-    select s.enabled,s.release_id,r.verified_at,r.registry::text as registry_json,
+    select s.enabled,s.public_rollout_percent,s.release_id,r.verified_at,r.registry::text as registry_json,
       e.git_sha,e.worker_image_digest,e.font_manifest_sha256,e.status,e.ui_version,e.document_version,e.staging_verified_at,e.render_spec_version,e.caption_render_spec_version
     from shorts_mvp.language_test_settings s
     left join shorts_mvp.language_test_releases r on r.id=s.release_id
@@ -44,20 +44,29 @@ export async function languageTestStatus(db: Db) {
     && row.renderSpecVersion === 4 && row.captionRenderSpecVersion === 4
     && Object.values(parsed.data!.lanes).every(({ current: t }) => t.workerSourceGitSha === row.gitSha
       && t.imageUri.endsWith(`@${row.workerImageDigest}`) && t.fontManifestSha256 === row.fontManifestSha256));
-  return { enabled: row?.enabled === true, ready, releaseId: row?.releaseId as string | null, registry: ready && parsed.success ? parsed.data : null };
+  return { enabled: row?.enabled === true, publicEnabled: row?.publicRolloutPercent === 100, ready, releaseId: row?.releaseId as string | null, registry: ready && parsed.success ? parsed.data : null };
 }
 
-export async function lockLanguageTestAdmission(db: TransactionSql, userId: string | null, requestId: string) {
-  const users = await db`select id from shorts_mvp.app_users where id=${userId} and is_admin=true`;
-  if (!users[0]) throw new HttpError(403, "관리자 전용 테스트입니다.", "LANGUAGE_TEST_ADMIN_REQUIRED");
+export function languageFeatureAllowed(
+  state: { enabled: boolean; publicEnabled: boolean; ready: boolean },
+  isAdmin: boolean,
+) {
+  return state.enabled && state.ready && (isAdmin || state.publicEnabled);
+}
+
+export async function lockLanguageTestAdmission(db: TransactionSql, userId: string | null) {
+  const users = await db`select id,is_admin from shorts_mvp.app_users where id=${userId}`;
+  if (!users[0]) throw new HttpError(401, "로그인 후 이용해 주세요.", "AUTH_REQUIRED");
   try {
-    await db`select pg_advisory_xact_lock(hashtextextended('language_test_admission',0))`;
+    // Readers share the gate lock; only a settings change serializes admissions.
+    // The jobs route retains the existing account lock, quota and request ID checks.
+    await db`select pg_advisory_xact_lock_shared(hashtextextended('language_test_admission',0))`;
     await db`select singleton from shorts_mvp.language_test_settings where singleton for share`;
     const state = await languageTestStatus(db);
     if (!state.enabled || !state.ready || !state.registry || !state.releaseId) throw languageTestUnavailable();
-    const busy = await db`select id from shorts_mvp.video_jobs where language_test_release_id is not null
-      and status not in ('completed','failed','expired','deleted') and request_id<>${requestId} limit 1`;
-    if (busy[0]) throw new HttpError(409, "다른 언어 테스트가 진행 중입니다. 완료 후 다시 시도해 주세요.", "LANGUAGE_TEST_BUSY");
+    if (!languageFeatureAllowed(state, users[0].isAdmin === true)) {
+      throw new HttpError(403, "언어 기능 공개가 중단되었습니다. 페이지를 새로고침해 주세요.", "LANGUAGE_PUBLIC_DISABLED");
+    }
     return state as typeof state & { registry: NonNullable<typeof state.registry>; releaseId: string };
   } catch (error) {
     if (error instanceof HttpError) throw error;

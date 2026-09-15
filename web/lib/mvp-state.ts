@@ -1,4 +1,4 @@
-import { languageTestStatus } from "./language-test";
+import { languageFeatureAllowed, languageTestStatus } from "./language-test";
 import type { User } from "@supabase/supabase-js";
 import { getBillingSummary } from "@/lib/billing";
 import { getPaymentMethodAction } from "@/lib/billing-payment-method-remediation";
@@ -133,8 +133,8 @@ async function readMvpState(
     paymentMethodAction,
     usage,
     capabilities: {
-      languageTest: session.isAdmin === true
-        ? await languageTestStatus(db).then((s) => s.enabled && s.ready).catch(() => false)
+      languageTest: session.userId !== null
+        ? await languageTestStatus(db).then((s) => languageFeatureAllowed(s, session.isAdmin === true)).catch(() => false)
         : false,
       fileUpload: fileUploadAccess.enabled,
       customTemplateDesign: customTemplateDesignAccess.enabled,

@@ -28,6 +28,7 @@ from .caption_templates import (
 from .channel_thumbnail import download_channel_thumbnail
 from .comment_generator import CommentClipInput, CommentGenerator
 from .config import Settings
+from .currency_localization import localize_project_money
 from .editor_renderer import (
     EditorDocumentRenderer,
     editor_highlight_subtitles_enabled,
@@ -271,7 +272,9 @@ def _project_caption_options(
         "caption_placement": str(snapshot.get("captionPlacement") or "lower"),
         "accent_color": subtitle.accent_color
         if subtitle is not None else _preset_brand_color(job) or CAPTION_ACCENT,
-        "font_id": "noto-sans-jp" if translated and job["output_language"] == "ja"
+        "font_id": "noto-sans-jp"
+        if job.get("output_language") == "ja"
+        and (translated or job.get("language_test_release_id"))
         else subtitle.font_id if subtitle is not None else font.get("id"),
         "timing_lead_frames": CAPTION_STABLE_TIMING_LEAD_FRAMES if translated
         else _subtitle_template_timing_lead_frames(snapshot),
@@ -1556,12 +1559,15 @@ class BatchWorker:
                 source_language = resolve_source_language(
                     job.get("source_language_hint"), transcription_observation.get("languageCode"),
                 )
+                selection_transcript, selection_title, currency_snapshot = localize_project_money(
+                    job, selection_transcript, self.repository,
+                )
                 target_count = int(job["planned_short_count"])
                 required_minimum_count = minimum_clip_count(target_count)
                 selection_started_at = time.monotonic()
                 with PhaseResourceMonitor(self.settings.task_vcpus) as selection_resources:
                     clips = self.selector.select(
-                        video_title=str(job["video_title"]),
+                        video_title=selection_title,
                         duration_seconds=selected_duration_seconds,
                         transcript=selection_transcript,
                         required_count=target_count,
@@ -1570,6 +1576,7 @@ class BatchWorker:
                             {"source_language": source_language}
                             if source_language is not None else {}
                         ),
+                        **({"ground_money": True} if currency_snapshot else {}),
                     )[:target_count]
                 for clip in clips:
                     _validate_clip_in_source_window(
@@ -1593,7 +1600,8 @@ class BatchWorker:
                 display_transcript = selection_transcript
                 subtitle_translation = None
                 translation_outcomes: dict[int, dict[str, object]] = {}
-                if translation_required(source_language, str(job["output_language"])):
+                if (translation_required(source_language, str(job["output_language"]))
+                        or currency_snapshot is not None):
                     assert source_language is not None
                     windows = [
                         edit_timeline_clip(clip, selected_duration_seconds)
@@ -1606,7 +1614,11 @@ class BatchWorker:
                         [(clip.start_seconds, clip.end_seconds) for clip in windows],
                         priority_windows=priority_windows,
                     )
-                    translator = SubtitleTranslator(self.settings)
+                    translator = SubtitleTranslator(
+                        self.settings,
+                        **({"currency_snapshot": currency_snapshot.to_dict()}
+                           if currency_snapshot else {}),
+                    )
                     self.repository.stage(job_id, "selecting", 45, "자막을 번역하고 있습니다.")
                     try:
                         translation_result = translator.translate_partial(

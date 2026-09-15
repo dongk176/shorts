@@ -21,7 +21,7 @@ from shorts_worker.errors import (
 )
 from shorts_worker.ingestion import DownloadedAssetBundle, VideoMetadata
 from shorts_worker.render_spec_v4 import compile_initial_editor_render_spec_v4
-from shorts_worker.schemas import HighlightClip, SubtitleSegment, TemplateId
+from shorts_worker.schemas import HighlightClip, SubtitleSegment, TemplateId, TemplateSubtitleLayer
 from shorts_worker.subtitles import TranscriptWord
 from shorts_worker.worker_pipeline import (
     BatchWorker,
@@ -1594,6 +1594,23 @@ def test_subtitle_template_timing_lead_defaults_stable_and_accepts_admin() -> No
     assert _subtitle_template_timing_lead_frames({}) == 4
     assert _subtitle_template_timing_lead_frames({"timingLeadFrames": 4}) == 4
     assert _subtitle_template_timing_lead_frames({"timingLeadFrames": 7}) == 7
+
+
+@pytest.mark.parametrize("language", ["ja", "ko", "en"])
+@pytest.mark.parametrize("custom", [False, True])
+def test_language_project_caption_font_supports_japanese_without_translation(language, custom):
+    subtitle = TemplateSubtitleLayer(
+        visible=True, y=1400, max_width=900, color="#FFFFFF",
+        font_id="paperlogy", font_size=48,
+    ) if custom else None
+    options = _project_caption_options(
+        {"language_test_release_id": "pinned-release", "output_language": language,
+         "subtitle_template_snapshot": {"font": {"id": "paperlogy"}}},
+        subtitle, template_id="pop", translated=False, initial_render_v4=True,
+    )
+    assert options["font_id"] == ("noto-sans-jp" if language == "ja" else "paperlogy")
+    assert options["template_id"] == "pop"
+    assert options["timing_lead_frames"] == 4
 
 
 @pytest.mark.parametrize("value", [-1, 31, True, "7"])

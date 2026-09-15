@@ -48,6 +48,8 @@ import {
 } from "@/components/shorts-creation-event-overlay";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
+import { LanguageGuide } from "@/components/language-guide";
+import { languageCopy } from "@/lib/language-guide";
 import { SourceRangeGuide } from "@/components/source-range-guide";
 import { SubtitleTemplateDiscoveryOverlay } from "@/components/subtitle-template-discovery-overlay";
 import { SubtitlePositionGuide } from "@/components/subtitle-position-guide";
@@ -13109,10 +13111,34 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const [sourceRangeEndSeconds, setSourceRangeEndSeconds] = useState(0);
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
   const [rightsConfirmationAttention, setRightsConfirmationAttention] = useState(false);
-  const [languageTest, setLanguageTest] = useState(false);
-  const [selectedOutputLanguage, setOutputLanguage] = useState<OutputLanguage>("ko");
+  const [languageDraftEnabled, setLanguageDraftEnabled] = useState(false);
+  const outputLanguageChosen = useRef(false);
+  const languageDraftVideoId = useRef<string | null>(null);
+  const languageText = languageCopy[locale];
+  const [languageGuideComplete, setLanguageGuideComplete] = useState(false);
+  const [languageGuideReplay, setLanguageGuideReplay] = useState(0);
+  const completeLanguageGuide = useCallback(() => setLanguageGuideComplete(true), []);
+  const [selectedOutputLanguage, setOutputLanguage] = useState<OutputLanguage>(locale);
   const [sourceLanguage, setSourceLanguage] = useState<SourceLanguage>("auto");
-  const languageTestActive = languageTest && sourceMode === "youtube" && state?.capabilities.languageTest === true;
+  const languageAvailable = sourceMode === "youtube" && state?.capabilities.languageTest === true;
+  // A draft that exposed language selection stays a language request if public access changes.
+  const languageTestActive = sourceMode === "youtube" && (languageAvailable || languageDraftEnabled);
+  useEffect(() => {
+    const nextVideoId = sourceMode === "youtube" ? analysis?.videoId ?? null : null;
+    if (languageDraftVideoId.current !== nextVideoId) {
+      languageDraftVideoId.current = nextVideoId;
+      outputLanguageChosen.current = false;
+      setSourceLanguage("auto");
+      setLanguageDraftEnabled(Boolean(nextVideoId && languageAvailable));
+    } else if (nextVideoId && languageAvailable) {
+      setLanguageDraftEnabled(true);
+    }
+    if (!outputLanguageChosen.current) setOutputLanguage(locale);
+  }, [analysis?.videoId, sourceMode, languageAvailable, locale]);
+  useEffect(() => {
+    setLanguageGuideComplete(false);
+    setLanguageGuideReplay(0);
+  }, [state?.user?.id]);
   const outputLanguage: OutputLanguage = languageTestActive ? selectedOutputLanguage : "ko";
   const [templateId, setTemplateId] = useState<TemplateId>("comment-capture");
   const [subtitleTemplateId, setSubtitleTemplateId] = useState<SubtitleTemplateSelectionId | null>(null);
@@ -13750,7 +13776,10 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     }
     setBusy(true);
     try {
-      const value = await requestJson<YoutubeAnalysis>("/api/youtube/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ youtubeUrl }) });
+      const [value] = await Promise.all([
+        requestJson<YoutubeAnalysis>("/api/youtube/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ youtubeUrl }) }),
+        loadState().catch(() => undefined),
+      ]);
       setAnalysis(value);
       setCreationRestrictionReason(
         value.creationAllowed ? null : value.creationBlockReason || "이 영상은 이용 제한이 확인된 영상입니다.",
@@ -14388,7 +14417,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         confirmLabel="확인하고 계속"
         onClose={closeLongSourceNotice}
       />
-      <SourceRangeGuide
+      <SourceRangeGuide key={selectedSource?.key ?? "no-source"}
         enabled={Boolean(
           sourceRangeSelectionEnabled
           && selectedSource?.creationAllowed === true
@@ -14397,9 +14426,14 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         )}
         onComplete={completeSourceRangeGuide}
       />
+      <LanguageGuide key={state?.user?.id ?? "anonymous"}
+        userId={state?.user?.id ?? null} available={languageAvailable}
+        enabled={Boolean(sourceRangeGuideComplete && selectedSource?.creationAllowed && !longSourceNoticeOpen && !creationRestrictionOpen)}
+        replay={languageGuideReplay} locale={locale} onComplete={completeLanguageGuide} />
       <SubtitleTemplateDiscoveryOverlay
         enabled={Boolean(
           sourceRangeGuideComplete
+          && (!languageAvailable || languageGuideComplete)
           && subtitleTemplateSelectionEnabled
           && selectedSource?.creationAllowed === true
           && stateLoadStatus === "ready"
@@ -14632,34 +14666,36 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
               )}
             </>
           )}
-          {sourceMode === "youtube" && state?.capabilities.languageTest && (
-            <section className="rounded-xl border border-white/15 bg-white/[.025] p-4" data-language-test>
-              <label className="flex items-center justify-between gap-4 text-sm font-bold">
-                <span>언어 기능 테스트 <span className="text-xs font-normal text-neutral-400">관리자 전용</span></span>
-                <input type="checkbox" role="switch" aria-label="언어 기능 테스트" checked={languageTest}
-                  disabled={busy} onChange={(event) => setLanguageTest(event.target.checked)} className="h-5 w-5 accent-[#ff715e]" />
-              </label>
-              {languageTestActive && <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label id="content-source-language-label" htmlFor="content-source-language" className="text-sm font-semibold">영상 언어</label>
-                  <p id="content-source-language-description" className="mt-1 text-xs text-neutral-400">원본 영상에서 사용하는 음성 언어</p>
+          {languageTestActive && (
+            <section className="rounded-xl border border-white/15 bg-white/[.025] p-4" data-language-selection>
+              <div className="flex items-center justify-between gap-4 text-sm font-bold">
+                <h3>{languageText.heading}</h3>
+                <button type="button" onClick={() => { setLanguageGuideComplete(false); setLanguageGuideReplay((v) => v + 1); }}
+                  disabled={busy || !languageAvailable}
+                  className="rounded-lg px-2 py-1 text-xs font-semibold text-neutral-300 underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#ff715e]">{languageText.help}</button>
+              </div>
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <div data-language-source>
+                  <label id="content-source-language-label" htmlFor="content-source-language" className="text-sm font-semibold">{languageText.source}</label>
+                  <p id="content-source-language-description" className="mt-1 text-xs text-neutral-400">{languageText.sourceHint}</p>
                   <ContentLanguageSelect id="content-source-language" labelledBy="content-source-language-label" describedBy="content-source-language-description"
                     value={sourceLanguage} onChange={setSourceLanguage} disabled={busy}
-                    options={sourceLanguages.map((code) => ({ value: code, label: code === "auto" ? "자동 감지" : outputLanguageName(code, locale) }))} />
+                    options={sourceLanguages.map((code) => ({ value: code, label: code === "auto" ? languageText.auto : outputLanguageName(code, locale) }))} />
                 </div>
-                <div>
-                  <label id="content-output-language-label" htmlFor="content-output-language" className="text-sm font-semibold">제목·댓글·자막 언어</label>
-                  <p id="content-output-language-description" className="mt-1 text-xs text-neutral-400">원본 음성과 영상에 들어간 글자는 유지됩니다.</p>
+                <div data-language-output>
+                  <label id="content-output-language-label" htmlFor="content-output-language" className="text-sm font-semibold">{languageText.output}</label>
+                  <p id="content-output-language-description" className="mt-1 text-xs text-neutral-400">{languageText.outputHint}</p>
                   <ContentLanguageSelect id="content-output-language" labelledBy="content-output-language-label" describedBy="content-output-language-description"
-                    value={selectedOutputLanguage} onChange={setOutputLanguage} disabled={busy}
+                    value={selectedOutputLanguage} onChange={(value) => { outputLanguageChosen.current = true; setOutputLanguage(value); }} disabled={busy}
                     options={outputLanguageOptions.filter((o) => ["ko", "en", "ja"].includes(o.code)).map((o) => ({ value: o.code, label: outputLanguageName(o.code, locale) }))} />
                 </div>
-              </div>}
+              </div>
+              <p className="mt-3 text-xs text-neutral-400">{languageText.preserved}</p>
             </section>
           )}
           <TemplatePicker
             translationNotice={languageTestActive && (sourceLanguage === "auto" || sourceLanguage !== outputLanguage)
-              ? "영상 언어와 출력 언어가 다르면 자막을 기본형으로 번역합니다. 원본 음성은 바뀌지 않습니다." : null}
+              ? languageText.translation : null}
             value={templateId}
             onChange={(nextTemplateId) => {
               setSubtitleTemplateId(null);

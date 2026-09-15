@@ -18,6 +18,7 @@ from .localized_selection import (
     repair_instruction,
     request_candidates,
 )
+from .money_facts import ungrounded_money
 from .prompt_language import translated_selection_messages
 from .schemas import (
     AI_CLIP_FALLBACK_SECONDS,
@@ -702,8 +703,17 @@ class TranscriptSelector:
         required_count: int,
         output_language: OutputLanguage = OutputLanguage.KO,
         source_language: str | None = None,
+        ground_money: bool = False,
     ) -> list[HighlightClip]:
         minimum_count = minimum_clip_count(required_count)
+
+        def grounded(clip: HighlightClip) -> bool:
+            source = " ".join(s.text for s in transcript
+                              if s.end > clip.start_seconds and s.start < clip.end_seconds)
+            return all(not ungrounded_money(text, source)
+                       and not has_unlabeled_amount(text, source)
+                       for text in (clip.hook_title, clip.reason or ""))
+
         messages = self._selection_messages(
             video_title=video_title,
             duration_seconds=duration_seconds,
@@ -791,6 +801,8 @@ class TranscriptSelector:
                     selection_model=model,
                     relaxed_titles=localized,
                 )
+                if ground_money:
+                    normalized = [clip for clip in normalized if grounded(clip)]
             except Exception as exc:
                 _log_selection_event(
                     "highlight_selection_provider",
@@ -845,6 +857,8 @@ class TranscriptSelector:
             output_language=output_language,
             relaxed_titles=localized,
         )
+        if ground_money and not all(grounded(clip) for clip in fallback):
+            raise ShortsMakerError("제목의 환산 금액을 확인하지 못했습니다.")
         _log_selection_event(
             "highlight_selection_completed",
             source="deterministic",

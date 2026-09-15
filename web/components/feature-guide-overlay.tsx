@@ -94,15 +94,21 @@ export function FeatureGuideOverlay({
   lastStepSecondaryLabel = "확인",
   lastStepPrimaryLabel = "다시 보지 않기",
   onLastStepPrimaryAction,
+  previousLabel = "이전",
+  nextLabel = "다음",
+  lastStepBack = false,
 }: {
   enabled: boolean;
   steps: readonly FeatureGuideStep[];
-  storageKey: string;
+  storageKey?: string;
   mediaQuery?: string;
   closeAriaLabel: string;
   tone?: FeatureGuideTone;
   smoothTransitions?: boolean;
-  onClose?: () => void;
+  onClose?: (outcome: "dismissed" | "completed") => void;
+  previousLabel?: string;
+  nextLabel?: string;
+  lastStepBack?: boolean;
   lastStepSecondaryLabel?: string;
   lastStepPrimaryLabel?: string;
   onLastStepPrimaryAction?: () => void;
@@ -128,7 +134,7 @@ export function FeatureGuideOverlay({
     const syncVisibility = () => {
       let dismissedValue: string | null = null;
       try {
-        dismissedValue = window.localStorage.getItem(storageKey);
+        dismissedValue = storageKey ? window.localStorage.getItem(storageKey) : null;
       } catch {
         // Local storage is optional. The guide still works for the current visit.
       }
@@ -148,19 +154,19 @@ export function FeatureGuideOverlay({
     };
   }, [enabled, mediaQuery, mounted, steps.length, storageKey]);
 
-  const closeForSession = useCallback(() => {
+  const closeForSession = useCallback((outcome: "dismissed" | "completed" = "dismissed") => {
     sessionClosedRef.current = true;
     setOpen(false);
-    onClose?.();
+    onClose?.(outcome);
   }, [onClose]);
 
   const dismissPermanently = useCallback(() => {
     try {
-      window.localStorage.setItem(storageKey, "1");
+      if (storageKey) window.localStorage.setItem(storageKey, "1");
     } catch {
       // Closing the current guide still works if storage is unavailable.
     }
-    closeForSession();
+    closeForSession("completed");
     onLastStepPrimaryAction?.();
   }, [closeForSession, onLastStepPrimaryAction, storageKey]);
 
@@ -358,7 +364,16 @@ export function FeatureGuideOverlay({
       aria-describedby="feature-guide-description"
       data-feature-guide-tone={tone}
       onKeyDown={(event) => {
-        if (event.key === "Escape") closeForSession();
+        if (event.key === "Escape") { event.preventDefault(); closeForSession(); }
+        if (event.key === "Tab") {
+          const buttons = Array.from(cardRef.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? []);
+          const first = buttons[0], last = buttons[buttons.length - 1];
+          if (event.shiftKey && (document.activeElement === first || document.activeElement === cardRef.current)) {
+            event.preventDefault(); last?.focus();
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault(); first?.focus();
+          }
+        }
       }}
     >
       {spotlightStyle
@@ -375,7 +390,7 @@ export function FeatureGuideOverlay({
       <section
         ref={cardRef}
         tabIndex={-1}
-        className={`fixed overflow-hidden rounded-2xl border border-white/15 bg-[#171719] text-white shadow-2xl outline-none ${smoothTransitions ? "transition-[left,top,width,transform] duration-200 ease-out" : ""} ${
+        className={`fixed max-h-[calc(100dvh-32px)] overflow-y-auto rounded-2xl border border-white/15 bg-[#171719] text-white shadow-2xl outline-none ${smoothTransitions ? "transition-[left,top,width,transform] duration-200 ease-out" : ""} ${
           isLastStep
             ? "w-[min(340px,calc(100vw-32px))]"
             : "w-[min(400px,calc(100vw-32px))]"
@@ -397,7 +412,7 @@ export function FeatureGuideOverlay({
               type="button"
               className={`-mr-2 -mt-2 grid h-9 w-9 place-items-center rounded-full text-neutral-400 transition hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 ${toneStyles.closeFocusClassName}`}
               aria-label={closeAriaLabel}
-              onClick={closeForSession}
+              onClick={() => closeForSession()}
             >
               <svg viewBox="0 0 20 20" className="h-5 w-5" fill="none" aria-hidden="true">
                 <path d="m5 5 10 10M15 5 5 15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
@@ -417,9 +432,9 @@ export function FeatureGuideOverlay({
                 <button
                   type="button"
                   className="h-11 rounded-xl border border-white/15 bg-white/5 px-3 text-sm font-bold transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-                  onClick={closeForSession}
+                  onClick={() => lastStepBack ? setStepIndex(Math.max(0, activeStepIndex - 1)) : closeForSession()}
                 >
-                  {lastStepSecondaryLabel}
+                  {lastStepBack ? previousLabel : lastStepSecondaryLabel}
                 </button>
                 <button
                   type="button"
@@ -436,7 +451,7 @@ export function FeatureGuideOverlay({
                   disabled={activeStepIndex === 0}
                   onClick={() => setStepIndex(Math.max(0, activeStepIndex - 1))}
                 >
-                  이전
+                  {previousLabel}
                 </button>
                 <button
                   type="button"
@@ -446,7 +461,7 @@ export function FeatureGuideOverlay({
                     activeStepIndex + 1,
                   ))}
                 >
-                  다음
+                  {nextLabel}
                 </button>
               </div>}
         </div>

@@ -981,6 +981,24 @@ class WorkerRepository:
             }, separators=(",", ":")), flush=True)
             return False
 
+    def pin_currency_snapshot(self, job_id: str, snapshot: dict[str, object]) -> dict:
+        """Pin once under the job row lock; persistence is required before conversion."""
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                update shorts_mvp.video_jobs
+                set performance_metrics = coalesce(performance_metrics, '{}'::jsonb)
+                  || jsonb_build_object('currencyLocalization',
+                    coalesce(performance_metrics->'currencyLocalization', %s::jsonb))
+                where id=%s and language_test_release_id is not null
+                returning performance_metrics->'currencyLocalization' as snapshot
+                """,
+                (Jsonb(snapshot), job_id),
+            ).fetchone()
+            if not row or not isinstance(row["snapshot"], dict):
+                raise ValueError("currency_snapshot_not_persisted")
+            return row["snapshot"]
+
     def save_job_transcript(
         self,
         job_id: str,

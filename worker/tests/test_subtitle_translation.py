@@ -406,7 +406,10 @@ def test_partial_translation_keeps_valid_fragments_and_retries_only_failures(mon
 
     def request(texts, *_):
         calls.append(dict(texts))
-        return {"segments": [{"id": i, "text": "한국어" if i == 3 else "Hello."} for i in texts]}
+        return {"segments": [
+            {"id": i, "text": "한국어로 그대로 남은 문장입니다." if i == 3 else "Hello."}
+            for i in texts
+        ]}
 
     monkeypatch.setattr(translator, "_request", request)
     source = [SubtitleSegment(start=i, end=i + 1, text="안녕") for i in range(20)]
@@ -530,7 +533,7 @@ def test_translation_diagnostics_distinguish_invalid_currency_amount_and_languag
     from shorts_worker.subtitle_translation import inspect_translation
 
     for text, reason in [
-        ("3000원", "wrong_language"),
+        ("가격은 3000원입니다.", "wrong_language"),
         ("3000 yen", "currency_changed"),
         ("300 KRW", "amount_changed"),
     ]:

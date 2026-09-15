@@ -96,14 +96,14 @@ export async function POST(request: Request) {
     ) {
       throw new HttpError(400, "기본 댓글 템플릿에서는 세로형과 세로 꽉참 비율을 사용할 수 없습니다.");
     }
-    if (input.languageTest ? !["ko", "en", "ja"].includes(input.outputLanguage) : input.sourceLanguage !== undefined) {
-      throw new HttpError(400, "언어 테스트 설정을 확인해 주세요.", "LANGUAGE_TEST_INVALID_INPUT");
+    // Legacy clients may send outputLanguage without the internal feature marker.
+    // Treat that as language intent so omitting the marker cannot bypass public OFF.
+    const usesLanguageFeature = input.languageTest || input.outputLanguage !== "ko" || input.sourceLanguage !== undefined;
+    if (usesLanguageFeature && !["ko", "en", "ja"].includes(input.outputLanguage)) {
+      throw new HttpError(400, "언어 설정을 확인해 주세요.", "LANGUAGE_TEST_INVALID_INPUT");
     }
     const rightsConfirmed = input.rightsConfirmed === true;
     const session = await requireAuthenticatedMvpSession();
-    if (input.languageTest && session.isAdmin !== true) {
-      throw new HttpError(403, "관리자 전용 테스트입니다.", "LANGUAGE_TEST_ADMIN_REQUIRED");
-    }
     const db = getDb();
     const enterpriseAccess = await assertEnterpriseSessionServiceAccess(db, session);
     const enterpriseUsage = enterpriseAccess.accountType === "enterprise";
@@ -293,8 +293,8 @@ export async function POST(request: Request) {
           status: concurrentExisting[0].status,
         };
       }
-      const languageTest = input.languageTest
-        ? await lockLanguageTestAdmission(tx, session.userId, input.requestId) : null;
+      const languageTest = usesLanguageFeature
+        ? await lockLanguageTestAdmission(tx, session.userId) : null;
       if (languageTest && executionBackend !== "aws_batch") throw languageTestUnavailable();
       shortsThankYouEventReward =
         await issueShortsThankYouEventGrantIfEligible(tx, session.userId);

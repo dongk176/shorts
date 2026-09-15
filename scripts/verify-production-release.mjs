@@ -46,6 +46,7 @@ export const ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE = [
   "/blog/[slug]/page",
   "/api/site-metrics/route",
   "/api/admin/language-test/route",
+  "/api/language-guide/route",
   "/api/creator-support/application/route",
   "/api/admin/creator-support/applications/route",
   "/api/projects/[projectNumber]/download/route",

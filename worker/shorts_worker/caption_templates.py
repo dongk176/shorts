@@ -113,6 +113,7 @@ _NO_SPACE_BEFORE = frozenset(",.!?:;)]}%。！？、，．：；）」』】》�
 _NO_SPACE_AFTER = frozenset("([{（「『【《〈")
 _SENTENCE_END_RE = re.compile(r"[.!?。！？]+[\"'”’」』】）)]*$")
 _CJK_RE = re.compile(r"[\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af]")
+_KANA_RE = re.compile(r"[\u3041-\u3096\u30a1-\u30fa\uff66-\uff9d]")
 _HANGUL_TOKEN_RE = re.compile(r"[\uac00-\ud7af]+")
 _EXPRESSIVE_REPEAT_RE = re.compile(r"(.)\1{5,}")
 
@@ -939,27 +940,46 @@ def _partition_words(
     max_lines: int = 2,
     require_word_frames: bool = False,
     word_separator: str = CAPTION_WORD_SEPARATOR,
+    preferred_breaks: set[int] | None = None,
 ) -> list[list[_CaptionWord]]:
     groups: list[list[_CaptionWord]] = []
     current: list[_CaptionWord] = []
-    for word in words:
-        should_break = bool(current) and (
-            word.start_frame - current[-1].end_frame >= gap_frames
-            or bool(_SENTENCE_END_RE.search(current[-1].text))
-            or (max_words is not None and len(current) >= max_words)
-            or word.end_frame - current[0].start_frame > max_duration_frames
-            or (require_word_frames and word.end_frame - current[0].start_frame < len(current) + 1)
-            or not _would_fit_phrase(
+    for word_index, word in enumerate(words):
+        while current:
+            separated = (
+                word.start_frame - current[-1].end_frame >= gap_frames
+                or bool(_SENTENCE_END_RE.search(current[-1].text))
+            )
+            too_many = max_words is not None and len(current) >= max_words
+            too_long = word.end_frame - current[0].start_frame > max_duration_frames
+            too_fast = (
+                require_word_frames
+                and word.end_frame - current[0].start_frame < len(current) + 1
+            )
+            too_wide = not _would_fit_phrase(
                 [*current, word],
                 font_size=font_size,
                 max_width=max_width,
                 max_lines=max_lines,
                 word_separator=word_separator,
             )
-        )
-        if should_break:
-            groups.append(current)
-            current = []
+            if not (separated or too_many or too_long or too_fast or too_wide):
+                break
+            split_at = len(current)
+            if preferred_breaks is not None and not separated and not too_many:
+                group_start = word_index - len(current)
+                boundary = next((
+                    index for index in range(word_index, group_start, -1)
+                    if index in preferred_breaks
+                ), None)
+                if boundary is not None:
+                    split_at = boundary - group_start
+                elif not too_wide and not too_fast:
+                    # Two seconds is a target: finish one intact phrase when
+                    # there is room. Width and frame limits remain mandatory.
+                    break
+            groups.append(current[:split_at])
+            current = current[split_at:]
         current.append(word)
         if _SENTENCE_END_RE.search(word.text):
             groups.append(current)
@@ -1329,6 +1349,31 @@ def _pop_event_positions(
     return positions
 
 
+@lru_cache(maxsize=1)
+def _japanese_phrase_parser():
+    import budoux
+
+    return budoux.load_default_japanese_parser()
+
+
+def _japanese_phrase_breaks(words: Sequence[_CaptionWord]) -> set[int]:
+    # Only select existing provider boundaries. The parser never rewrites
+    # caption text or changes the individual word/speech timestamps.
+    phrases = _japanese_phrase_parser().parse("".join(word.text for word in words))
+    offsets: set[int] = set()
+    offset = 0
+    for phrase in phrases:
+        offset += len(phrase)
+        offsets.add(offset)
+    boundaries: set[int] = set()
+    offset = 0
+    for index, word in enumerate(words):
+        if offset in offsets:
+            boundaries.add(index)
+        offset += len(word.text)
+    return boundaries
+
+
 def _pop_cues(
     words: list[_CaptionWord],
     *,
@@ -1339,17 +1384,21 @@ def _pop_cues(
 ) -> list[dict[str, object]]:
     outline = 8
     max_width = safe_area["width"] - outline * 2
+    # Japanese speech providers can return one character per timed word.
+    # Prefer readable phrase boundaries within the existing display limits.
+    japanese = any(_KANA_RE.search(word.text) for word in words)
     groups = [
         cleaned
         for group in _partition_words(
             words,
             gap_frames=round(0.25 * fps),
-            max_words=3,
+            max_words=None if japanese else 3,
             font_size=font_size,
             max_width=round(max_width / 1.12),
             max_duration_frames=round(2.0 * fps),
             max_lines=1,
             require_word_frames=True,
+            preferred_breaks=_japanese_phrase_breaks(words) if japanese else None,
         )
         if (cleaned := _without_display_periods(group))
     ]
@@ -1650,12 +1699,18 @@ def _reflow_caption_cues_for_clips(
             for window_index, (clip_start, clip_end, _output_start) in enumerate(
                 merged_windows
             ):
-                spoken_visible_start = max(speech_start, cue_start, clip_start)
-                spoken_visible_end = min(speech_end, cue_end, clip_end)
+                # Cue handoffs include the display lead and may end before a
+                # retained word is spoken. Only actual video cuts remove it.
+                spoken_visible_start = max(speech_start, clip_start)
+                spoken_visible_end = min(speech_end, clip_end)
                 if spoken_visible_end <= spoken_visible_start:
                     continue
-                visible_start = max(word_start, cue_start, clip_start)
-                visible_end = min(word_end, cue_end, clip_end)
+                visible_start = max(word_start, clip_start)
+                visible_end = min(word_end, clip_end)
+                if edited_text is not None:
+                    # A user's replacement text keeps its chosen cue envelope.
+                    visible_start = max(visible_start, cue_start)
+                    visible_end = min(visible_end, cue_end)
                 if visible_end <= visible_start:
                     continue
                 score = (

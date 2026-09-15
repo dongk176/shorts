@@ -45,6 +45,8 @@ def test_normal_and_korean_test_prompts_match_the_production_baseline():
     for source in ("ko", "ja", "en", "und"):
         actual = preserved_messages(OutputLanguage.KO, source)
         assert {stage: digest(value) for stage, value in actual.items()} == baseline[f"ko:{source}"]
+    # Translation is language-test-only; this hash includes the approved currency
+    # localization prompt. Ordinary selection/comment hashes above remain pinned.
     assert digest(INSTRUCTIONS["ko"]) == baseline["translation:ko"]
 
 
