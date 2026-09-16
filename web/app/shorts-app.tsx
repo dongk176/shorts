@@ -57,6 +57,8 @@ import { SubtitleTemplateDiscoveryOverlay } from "@/components/subtitle-template
 import { SubtitlePositionGuide } from "@/components/subtitle-position-guide";
 import { SupportInquiryWidget } from "@/components/support-inquiry-widget";
 import { TemplateCommentPreview } from "@/components/template-comment-prototype";
+import { CaptionCommentPreview } from "@/components/caption-comment-preview";
+import { fitCaptionChannel } from "@/lib/caption-comment-preview";
 import { TitleOverlayPreview } from "@/components/title-overlay-preview";
 import { TransformationShowcase } from "@/components/transformation-showcase";
 import { VideoAspectRatioPicker } from "@/components/video-aspect-ratio-picker";
@@ -1175,6 +1177,7 @@ function CaptionTemplateEditorChannel({
   selected = false,
   movementStyle,
   onPointerDown,
+  fitSavedCommentChannel = false,
 }: {
   rect: { x: number; y: number; width: number; height: number };
   fontSize: number;
@@ -1187,25 +1190,45 @@ function CaptionTemplateEditorChannel({
   selected?: boolean;
   movementStyle?: CSSProperties;
   onPointerDown?: PointerEventHandler<HTMLButtonElement>;
+  fitSavedCommentChannel?: boolean;
 }) {
+  const [fitted, setFitted] = useState<ReturnType<typeof fitCaptionChannel> | null>(null);
+  useEffect(() => {
+    if (!fitSavedCommentChannel) return;
+    let cancelled = false;
+    const measure = () => {
+      const context = document.createElement("canvas").getContext("2d");
+      if (!context) return;
+      const result = fitCaptionChannel(channelName, fontSize, (text, size) => {
+        context.font = `${fontWeight || 700} ${size}px ${fontFamily || "sans-serif"}`;
+        return context.measureText(text).width;
+      });
+      if (!cancelled) setFitted(result);
+    };
+    measure();
+    void document.fonts.load(`${fontWeight || 700} ${fontSize}px ${fontFamily || "sans-serif"}`, channelName)
+      .then(measure).catch(() => {});
+    return () => { cancelled = true; };
+  }, [channelName, fitSavedCommentChannel, fontFamily, fontSize, fontWeight]);
+  const channelFit = fitSavedCommentChannel ? fitted : null;
   const content = <>
     <ChannelAvatar
       url={channelThumbnailUrl}
       className="shrink-0"
       style={{
-        width: `${iconSize / 10.8}cqw`,
-        height: `${iconSize / 10.8}cqw`,
+        width: `${(channelFit?.iconSize ?? iconSize) / 10.8}cqw`,
+        height: `${(channelFit?.iconSize ?? iconSize) / 10.8}cqw`,
       }}
       fallbackForeground="#FFFFFF"
       fallbackBackground="#000000"
       sizes="20px"
     />
-    <span className="max-w-[75%] truncate">{channelName}</span>
+    <span className={fitSavedCommentChannel ? "whitespace-nowrap" : "max-w-[75%] truncate"}>{channelFit?.text ?? channelName}</span>
   </>;
   const contentStyle: CSSProperties = {
-    gap: `${gap / 10.8}cqw`,
+    gap: `${(channelFit?.gap ?? gap) / 10.8}cqw`,
     fontFamily,
-    fontSize: `${fontSize / 10.8}cqw`,
+    fontSize: `${(channelFit?.fontSize ?? fontSize) / 10.8}cqw`,
     fontWeight,
     ...movementStyle,
   };
@@ -10936,12 +10959,16 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                             ? "더블클릭해서 댓글 수정"
                             : undefined}
                         >
-                          <CommentCaptureCard
+                          {savedCaptionCommentRect ? <CaptionCommentPreview
+                            comment={layoutPreviewComment}
+                            theme={editorCommentTheme}
+                            outputLanguage={commentOutputLanguage}
+                          /> : <CommentCaptureCard
                             comment={layoutPreviewComment}
                             theme={editorCommentTheme}
                             japaneseFontEnabled={japaneseFontEnabled}
                             outputLanguage={commentOutputLanguage}
-                          />
+                          />}
                         </div>}
                         {renderOverlayLayout.visible.channel && usesLiftedCommentLayout && !usesFixedPresetChannel && <CommentCaptureChannel
                           channelName={renderChannel}
@@ -10975,6 +11002,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                 {renderOverlayLayout.visible.channel
                   && captionTemplatePreviewSnapshot
                   && <CaptionTemplateEditorChannel
+                    fitSavedCommentChannel={Boolean(savedCaptionChannelRect)}
                     rect={savedCaptionChannelRect ?? captionTemplatePreviewSnapshot.layout.channel}
                     fontSize={savedCaptionChannelRect ? 42 : captionTemplatePreviewSnapshot.channel.fontSizePx}
                     iconSize={savedCaptionChannelRect ? 52 : captionTemplatePreviewSnapshot.channel.iconSizePx}

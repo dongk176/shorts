@@ -675,12 +675,14 @@ class VideoRenderer:
                 work_dir / "overlays" / f"{prefix}_comment_{index}.png",
                 panel_height=comment_panel_height,
                 output_language=comment_output_language,
+                bundled_font=saved_comment_rect is not None,
                 overlay_mode=layout.overlay_mode,
-                japanese_font_enabled=bool(
+                japanese_font_enabled=(comment_output_language == "ja"
+                                       if saved_comment_rect is not None else bool(
                     initial_render_spec
                     and initial_render_spec.get("title", {}).get("font", {}).get("fontId")
                     == "noto-sans-jp"
-                ),
+                )),
             )
             for index, (comment, _, _) in enumerate(comment_windows)
         ]

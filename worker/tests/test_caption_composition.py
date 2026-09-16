@@ -8,7 +8,20 @@ from PIL import Image, ImageChops
 from shorts_worker.caption_composition import with_caption_comment_layout
 from shorts_worker.caption_templates import caption_layout
 from shorts_worker.editor_renderer import create_editor_channel_layer, create_editor_comment_layers
-from shorts_worker.schemas import EditorDocument, VideoAspectRatio
+from shorts_worker.overlays import create_comment_panel
+from shorts_worker.schemas import CommentOverlay, EditorDocument, VideoAspectRatio
+
+
+def test_custom_template_comment_height_matches_browser_metadata_line(tmp_path):
+    comment = CommentOverlay.model_validate({
+        "id": "c", "text": "아 진짜 ㅋㅋㅋㅋㅋㅋㅋㅋ", "nickname": "소담기록24", "initial": "소",
+        "ageLabel": "5개월 전", "likeCount": 1312, "avatarColor": "#8B2CC4",
+        "startSeconds": 0, "endSeconds": 1,
+    })
+    path = create_comment_panel(comment, tmp_path / "custom.png", theme="light", size="large")
+    with Image.open(path) as image:
+        # Chrome measured 101.92px at a 360px canvas (305.77px at 1080).
+        assert abs(image.height - 305.77) <= 2
 
 
 @pytest.mark.parametrize("template,ratio,custom,schema", [

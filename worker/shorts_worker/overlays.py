@@ -138,7 +138,13 @@ def load_font(size: int, kind: str = "bold") -> ImageFont.FreeTypeFont:
 
 def load_comment_font(
     text: str, size: int, kind: str = "regular", *, japanese_enabled: bool = False,
+    bundled: bool = False,
 ) -> ImageFont.FreeTypeFont:
+    if bundled:
+        font_id = EditorFontId.NOTO_SANS_JP if japanese_enabled else EditorFontId.NOTO_SANS_KR
+        font = ImageFont.truetype(BytesIO(normalized_editor_font_bytes(font_id)), size=size)
+        font.set_variation_by_axes([700 if kind == "bold" else 400])
+        return font
     if not japanese_enabled or not japanese_comment_font(text):
         return load_font(size, kind)
     font = ImageFont.truetype(
@@ -666,12 +672,17 @@ def _create_custom_comment_panel(
     meta_box = scratch_draw.textbbox(
         (0, 0), f"{comment.nickname} · {comment.age_label}", font=meta_font
     )
-    meta_height = meta_box[3] - meta_box[1]
+    # The preview reserves a 1.5em metadata line, including its leading.
+    # Using only glyph ink made the rendered card shorter than the template.
+    meta_height = round(51.03 * scale)
+    meta_ink_height = meta_box[3] - meta_box[1]
     meta_gap = round(12.96 * scale)
     line_height = round(55.50 * scale)
     actions_gap = round(22.68 * scale)
     icon_size = round(44.28 * scale)
-    content_height = meta_height + meta_gap + len(lines) * line_height + actions_gap + icon_size
+    action_row_height = round(50.22 * scale)
+    content_height = (meta_height + meta_gap + len(lines) * line_height
+                      + actions_gap + action_row_height)
     panel_height = top + max(avatar_size, content_height) + bottom
     base = Image.new("RGBA", (PANEL_WIDTH, panel_height), background)
 
@@ -696,7 +707,7 @@ def _create_custom_comment_panel(
         fill="#FFFFFF",
     )
     identity_draw.text(
-        (content_x, top - meta_box[1]),
+        (content_x, top + (meta_height - meta_ink_height) / 2 - meta_box[1]),
         f"{comment.nickname} · {comment.age_label}",
         font=meta_font,
         fill=foreground,
@@ -715,7 +726,8 @@ def _create_custom_comment_panel(
             font=body_font,
             fill=foreground,
         )
-    actions_y = text_top + len(lines) * line_height + actions_gap
+    actions_y = (text_top + len(lines) * line_height + actions_gap
+                 + (action_row_height - icon_size) / 2)
     _draw_reaction_icon(draw, content_x, actions_y, icon_size, color=foreground)
     likes_x = content_x + icon_size + round(14.58 * scale)
     likes_box = action_font.getbbox(likes)
@@ -752,6 +764,7 @@ def create_comment_panel(
     size: str | None = None,
     japanese_font_enabled: bool = False,
     output_language: str = "ko",
+    bundled_font: bool = False,
 ) -> Path:
     """Render a deliberately plain, screenshot-like comment strip."""
     if theme is not None and size is not None:
@@ -784,15 +797,18 @@ def create_comment_panel(
     meta_font = load_comment_font(
         comment.nickname + comment.age_label, max(18, round(30 * scale)), "bold",
         japanese_enabled=japanese_font_enabled,
+        bundled=bundled_font,
     )
     body_font = load_comment_font(
         comment.text, max(22, round(COMMENT_BODY_FONT_SIZE * scale)),
         japanese_enabled=japanese_font_enabled,
+        bundled=bundled_font,
     )
     likes, reply = comment_action_labels(comment.like_count, output_language)
     action_font = load_comment_font(
         likes + reply, max(17, round(28 * scale)),
         japanese_enabled=output_language == "ja",
+        bundled=bundled_font,
     )
 
     # Only the identity-like metadata is blurred; the comment and reactions remain crisp.
@@ -805,6 +821,7 @@ def create_comment_panel(
     initial_font = load_comment_font(
         comment.initial, max(20, round(34 * scale)), "bold",
         japanese_enabled=japanese_font_enabled,
+        bundled=bundled_font,
     )
     initial_box = metadata_draw.textbbox((0, 0), comment.initial, font=initial_font)
     metadata_draw.text(

@@ -75,14 +75,14 @@ function TemplateCommentContents({
       <span data-i18n-skip>{initial}</span>
     </span>
     <span className="min-w-0 flex-1">
-      <span className="flex items-center font-semibold" style={{ gap: canvasWidth(1.5), fontSize: canvasWidth(3.15), color: foreground, filter: identityBlur, fontFamily: commentFontFamily(nickname + ageLabel, japaneseFontEnabled), fontWeight: japaneseFontEnabled ? 700 : undefined }}>
+      <span className="flex items-center font-semibold leading-normal" style={{ gap: canvasWidth(1.5), fontSize: canvasWidth(3.15), color: foreground, filter: identityBlur, fontFamily: commentFontFamily(nickname + ageLabel, japaneseFontEnabled), fontWeight: japaneseFontEnabled ? 700 : undefined }}>
         <span data-i18n-skip>{nickname}</span>
         <span aria-hidden="true">·</span>
         <span data-i18n-skip={Boolean(comment)}>{ageLabel}</span>
       </span>
       <span
-        className="block break-keep font-medium leading-[1.42] tracking-[-.02em]"
-        style={{ marginTop: canvasWidth(1.2), fontSize: canvasWidth(3.62), color: foreground, fontFamily: commentFontFamily(text, japaneseFontEnabled), fontWeight: japaneseFontEnabled ? 400 : undefined }}
+        className="line-clamp-2 break-keep font-medium leading-[1.42] tracking-[-.02em]"
+        style={{ marginTop: canvasWidth(1.2), fontSize: canvasWidth(3.62), color: foreground, overflowWrap: "anywhere", wordBreak: japaneseFontEnabled ? "normal" : undefined, fontFamily: commentFontFamily(text, japaneseFontEnabled), fontWeight: japaneseFontEnabled ? 400 : undefined }}
       >
         <span data-i18n-skip>{text}</span>
       </span>

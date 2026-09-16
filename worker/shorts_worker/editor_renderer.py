@@ -1750,9 +1750,12 @@ def create_editor_comment_layers(
             size=(None if config is None and saved_comment_rect is not None
                   else size if caption_layout is None or document.overlays.comment_theme else None),
             output_language=output_language,
-            japanese_font_enabled=bool(
-                document.render_spec
-                and document.render_spec.title.font.font_id == EditorFontId.NOTO_SANS_JP
+            bundled_font=config is None and saved_comment_rect is not None,
+            japanese_font_enabled=(
+                output_language == "ja" if saved_comment_rect is not None else bool(
+                    document.render_spec
+                    and document.render_spec.title.font.font_id == EditorFontId.NOTO_SANS_JP
+                )
             ),
         )
         with Image.open(panel_path) as source:
