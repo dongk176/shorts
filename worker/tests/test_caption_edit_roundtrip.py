@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from PIL import Image, ImageChops, ImageStat
 
+from shorts_worker.caption_composition import with_caption_comment_layout
 from shorts_worker.caption_templates import compile_caption_render_spec
 from shorts_worker.config import Settings
 from shorts_worker.editor_renderer import EditorDocumentRenderer, retime_editor_caption_spec
@@ -36,7 +37,10 @@ def run(*args):
     ("en", "Hello, everyone.", "Hello, everybody."),
     ("ja", "こんにちは。", "皆さん、こんにちは。"),
 ])
-def test_basic_caption_edit_preserves_comment_position(tmp_path, language, before, after):
+@pytest.mark.parametrize("saved_composition", [False, True])
+def test_basic_caption_edit_preserves_comment_position(
+    tmp_path, language, before, after, saved_composition,
+):
     clean = tmp_path / "clean.mp4"
     run("ffmpeg", "-v", "error", "-f", "lavfi", "-i",
         "color=c=0x204060:s=640x360:r=30:d=1", "-c:v", "libx264",
@@ -47,13 +51,18 @@ def test_basic_caption_edit_preserves_comment_position(tmp_path, language, befor
         video_aspect_ratio=VideoAspectRatio.LANDSCAPE, schema_version=4,
         font_id="noto-sans-jp" if language == "ja" else "pretendard",
     )
+    if saved_composition:
+        caption = with_caption_comment_layout(
+            caption, template_id="comment-capture", video_aspect_ratio="16:9",
+        )
+    title = "Math legend\nHyun Woo-jin!" if language != "ja" else "数学の伝説\nヒョン・ウジン！"
     comment = CommentOverlay.model_validate({
         "id": "comment-1", "text": "A comment stays here", "nickname": "Viewer",
         "initial": "V", "ageLabel": "1 day ago", "likeCount": 20,
         "avatarColor": "#2674C8", "startSeconds": 0, "endSeconds": 1,
     })
     initial = compile_initial_editor_render_spec_v4(
-        title="Same position", template_id=TemplateId.COMMENT_CAPTURE,
+        title=title, template_id=TemplateId.COMMENT_CAPTURE,
         video_aspect_ratio=VideoAspectRatio.LANDSCAPE, font_scale=1,
         comments=[comment], caption_render_spec=caption, output_language=language,
     )
@@ -61,7 +70,8 @@ def test_basic_caption_edit_preserves_comment_position(tmp_path, language, befor
     value = json.loads(fixture.read_text())
     value["template"] = {"id": "comment-capture", "customTemplateId": None,
                          "presetVersion": 3, "snapshot": {"presetVersion": 3}}
-    value["title"]["text"] = "Same position"
+    value["title"]["text"] = title
+    value["channel"]["displayName"] = "Channel"
     value["comments"] = [comment.model_dump(by_alias=True, mode="json")]
     value["subtitles"]["segments"] = [s.model_dump() for s in segments]
     value["overlays"].update(
@@ -81,7 +91,7 @@ def test_basic_caption_edit_preserves_comment_position(tmp_path, language, befor
     settings = Settings(ffmpeg_threads=2, ffmpeg_timeout_seconds=120,
                         clean_clip_preset="ultrafast", clean_clip_crf=18)
     first = VideoRenderer(settings).render_clean_clip(
-        clean_path=clean, output_path=tmp_path / "first.mp4", title="Same position",
+        clean_path=clean, output_path=tmp_path / "first.mp4", title=title,
         channel_name="Channel", template_id=TemplateId.COMMENT_CAPTURE,
         transcript=segments, subtitles_enabled=True, work_dir=tmp_path / "first-work",
         prefix="first", video_aspect_ratio=VideoAspectRatio.LANDSCAPE,
@@ -104,7 +114,7 @@ def test_basic_caption_edit_preserves_comment_position(tmp_path, language, befor
         run("ffmpeg", "-v", "error", "-ss", "0.2", "-i", str(video), "-frames:v", "1", str(path))
         frames.append(Image.open(path).convert("RGB"))
     # A caption edit changes subtitle pixels but leaves the comment in its old band.
-    top = caption["layout"]["channel"]["y"]
+    top = caption["layout"].get("comment", caption["layout"]["channel"])["y"]
     bottom_diff = ImageChops.difference(*(frame.crop((0, top, 1080, 1920)) for frame in frames))
     assert max(ImageStat.Stat(bottom_diff).mean) < 5
     comment_masks = [
@@ -118,3 +128,38 @@ def test_basic_caption_edit_preserves_comment_position(tmp_path, language, befor
     area = caption["safeArea"]
     box = (area["x"], area["y"], area["x"] + area["width"], area["y"] + area["height"])
     assert ImageChops.difference(*(frame.crop(box) for frame in frames)).getbbox() is not None
+    title_bottom = max(line["centerY"] + line["height"] / 2
+                       for line in initial["title"]["lineBoxes"])
+    assert title_bottom <= caption["layout"]["video"]["y"] - 24
+    if saved_composition:
+        card = caption["layout"]["comment"]
+        channel = caption["layout"]["channel"]
+        assert card["y"] + card["height"] <= channel["y"] + 40 - 24
+        assert channel["y"] + channel["height"] <= 1920
+        # The channel stays white and visible after subtitle editing, with the
+        # same actual pixels (old code changed its font, color, and position).
+        channel_box = (0, channel["y"], 1080, 1920)
+        channel_frames = [frame.crop(channel_box) for frame in frames]
+        assert min(sum(frame.convert("L").histogram()[200:])
+                   for frame in channel_frames) > 500
+        assert max(ImageStat.Stat(ImageChops.difference(*channel_frames)).mean) < 1
+        # Switching subtitles off keeps the video, title, comment and channel.
+        value["subtitles"]["enabled"] = False
+        value["renderSpec"].pop("subtitles", None)
+        without = EditorDocumentRenderer(settings).render(
+            clean_path=clean, output_path=tmp_path / "without-captions.mp4",
+            document=EditorDocument.model_validate(value), work_dir=tmp_path / "off-work",
+            channel_thumbnail_path=None,
+            caption_render_spec=None, caption_composition_spec=caption,
+            comment_output_language=language,
+        )
+        off_path = tmp_path / "off.png"
+        run("ffmpeg", "-v", "error", "-ss", "0.2", "-i", str(without),
+            "-frames:v", "1", str(off_path))
+        with Image.open(off_path) as image:
+            off_frame = image.convert("RGB")
+        for unchanged_box in ((0, 0, 1080, 1040), (0, top, 1080, 1920)):
+            diff = ImageChops.difference(
+                frames[1].crop(unchanged_box), off_frame.crop(unchanged_box),
+            )
+            assert max(ImageStat.Stat(diff).mean) < 1

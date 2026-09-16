@@ -7,6 +7,7 @@ from pathlib import Path
 
 from PIL import Image
 
+from .caption_composition import caption_composition_rect
 from .caption_templates import (
     CAPTION_FPS,
     CAPTION_TIMING_LEAD_FRAMES,
@@ -25,6 +26,7 @@ from .media import media_duration, probe_media, run_command, video_fps
 from .overlays import (
     TEMPLATE_STYLES,
     add_comment_channel_to_panel,
+    caption_comment_channel_image,
     create_ass_subtitles,
     create_channel_panel,
     create_comment_panel,
@@ -36,6 +38,7 @@ from .render_spec_v4 import draw_editor_title_spec_v4
 from .schemas import (
     CommentOverlay,
     CustomTemplateConfig,
+    EditorFontId,
     EditorRenderSpec,
     HighlightClip,
     SubtitleSegment,
@@ -599,6 +602,7 @@ class VideoRenderer:
             rendered_title.save(top, format="PNG", compress_level=1)
             title_overlay_y = 0
         channel_overlay_y = layout.bottom_y
+        saved_comment_rect = caption_composition_rect(caption_render_spec, "comment")
         if (
             caption_render_spec is None
             and channel_visible
@@ -616,7 +620,17 @@ class VideoRenderer:
             channel_overlay_y = (
                 PRESET_SQUARE_CHANNEL_CENTER_Y - PRESET_CHANNEL_OVERLAY_HEIGHT // 2
             )
-        if template_id is TemplateId.COMMENT_CAPTURE:
+        if saved_comment_rect is not None and template_id is TemplateId.COMMENT_CAPTURE:
+            channel_image = caption_comment_channel_image(
+                channel_name, panel_height=layout.bottom_height,
+                font_id=(authoritative_render_spec.channel.font.font_id
+                         if authoritative_render_spec else EditorFontId.PRETENDARD),
+                thumbnail_path=channel_thumbnail_path,
+            ) if channel_visible else Image.new(
+                "RGBA", (CANVAS_WIDTH, layout.bottom_height), (0, 0, 0, 0),
+            )
+            channel_image.save(bottom, format="PNG", compress_level=1)
+        elif template_id is TemplateId.COMMENT_CAPTURE:
             comment_channel_center_y = None
             if not channel_visible:
                 comment_channel_center_y = None
@@ -651,9 +665,9 @@ class VideoRenderer:
             )
         )
         comment_panel_height = (
-            min(330, max(285, layout.bottom_height - 128))
-            if compact_comment_panel
-            else layout.bottom_height
+            int(saved_comment_rect["height"]) if saved_comment_rect is not None
+            else (min(330, max(285, layout.bottom_height - 128))
+                  if compact_comment_panel else layout.bottom_height)
         )
         comment_panels = [
             create_comment_panel(
@@ -708,9 +722,11 @@ class VideoRenderer:
         ]
         video_label = "composed"
         if comment_manifest:
+            comment_y = (saved_comment_rect["y"]
+                         if saved_comment_rect is not None else layout.bottom_y)
             filters.append("[3:v]setpts=PTS-STARTPTS,format=rgba[comment_track]")
             filters.append(
-                f"[{video_label}][comment_track]overlay=x=0:y={layout.bottom_y}:"
+                f"[{video_label}][comment_track]overlay=x=0:y={comment_y}:"
                 "eof_action=repeat:repeatlast=1[with_comments]"
             )
             video_label = "with_comments"

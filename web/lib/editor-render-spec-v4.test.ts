@@ -54,6 +54,24 @@ function documentFixture() {
 }
 
 describe("editor render specification v4 title compiler", () => {
+  it("uses the caption video boundary while retaining manual title movement", () => {
+    const document = documentFixture();
+    document.template.snapshot = { presetVersion: 3 };
+    document.title.text = "Math legend\nHyun Woo-jin!";
+    const measure = (text: string, size: number) => ({
+      width: text.length * size * 0.5,
+      actualBoundingBoxAscent: size * 0.8,
+      actualBoundingBoxDescent: size * 0.2,
+    });
+    const legacy = compileEditorRenderTitleSpecV4(document, measure);
+    const caption = compileEditorRenderTitleSpecV4(document, measure, { y: 0, height: 432 });
+    expect(caption.centerY).toBe(legacy.centerY - 64);
+    expect(Math.max(...caption.lineBoxes.map((line) => line.centerY + line.height / 2))).toBe(388);
+    document.overlays.offsets.title.y = 25;
+    const moved = compileEditorRenderTitleSpecV4(document, measure, { y: 0, height: 432 });
+    expect(moved.centerY).toBe(caption.centerY + 25);
+  });
+
   it("uses deterministic em boxes, padding, absolute clamp, and 0.001px coordinates", () => {
     const title = compileEditorRenderTitleSpecV4(
       documentFixture(),

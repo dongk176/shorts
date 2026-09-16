@@ -115,6 +115,19 @@ def test_comment_capture_full_vertical_uses_default_size_and_portrait_panel() ->
     assert all(box["centerY"] < 285 for box in value["lineBoxes"])
 
 
+def test_caption_title_uses_actual_panel_and_preserves_manual_offset() -> None:
+    args = dict(title="Math legend\nHyun Woo-jin!", template_id="comment-capture",
+                video_aspect_ratio="16:9", font_id="pretendard", font_scale=1)
+    legacy = compile_editor_title_spec_v4(**args)
+    caption = compile_editor_title_spec_v4(**args, title_panel={"y": 0, "height": 432})
+    moved = compile_editor_title_spec_v4(
+        **args, title_panel={"y": 0, "height": 432}, offset_y=25,
+    )
+    assert caption["centerY"] == legacy["centerY"] - 64
+    assert moved["centerY"] == caption["centerY"] + 25
+    assert max(box["centerY"] + box["height"] / 2 for box in caption["lineBoxes"]) == 388
+
+
 def test_title_line_boxes_use_the_deterministic_configured_em_box() -> None:
     value = compile_editor_title_spec_v4(
         title="아주 긴 한글 후킹 제목도\n미리보기와 똑같이 줄어듭니다",

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
+from .caption_composition import caption_composition_rect
 from .caption_templates import (
     CAPTION_ACCENT,
     CAPTION_FPS,
@@ -31,6 +32,7 @@ from .overlays import (
     TEMPLATE_STYLES,
     _title_line_character_indices,
     _title_style_runs,
+    caption_comment_channel_image,
     create_ass_subtitles,
     create_comment_panel,
     ensure_title_text_background,
@@ -1388,6 +1390,22 @@ def create_editor_channel_layer(
         custom_template_config=config,
     )
     font_id = document.overlays.fonts["channel"]
+    saved_comment_rect = caption_composition_rect(caption_render_spec, "comment")
+    if config is None and caption_layout is not None and saved_comment_rect is not None:
+        row = caption_comment_channel_image(
+            document.channel.display_name, panel_height=caption_layout.bottom_height,
+            font_id=font_id, thumbnail_path=thumbnail_path,
+        )
+        bounds = row.getbbox()
+        if bounds:
+            content = _scale_layer(row.crop(bounds), document.overlays.scales["channel"])
+            offset = document.overlays.offsets["channel"]
+            _paste_center_clamped(
+                canvas, content, (bounds[0] + bounds[2]) / 2 + offset.x,
+                caption_layout.bottom_y + (bounds[1] + bounds[3]) / 2 + offset.y,
+            )
+        canvas.save(output_path, format="PNG", compress_level=1)
+        return output_path
     if caption_layout is not None:
         base_font_size = 48
         center_x = CANVAS_WIDTH / 2
@@ -1650,6 +1668,9 @@ def _base_comment_y(
     caption_render_spec: dict[str, object] | None = None,
 ) -> int:
     config = _custom_template_config(document)
+    saved_comment_rect = caption_composition_rect(caption_render_spec, "comment")
+    if config is None and saved_comment_rect is not None:
+        return int(saved_comment_rect["y"])
     caption_layout = _editor_caption_layout(
         caption_render_spec,
         custom_template_config=config,
@@ -1702,10 +1723,12 @@ def create_editor_comment_layers(
         or (document.template.preset_version == 2
             and document.video.aspect_ratio is VideoAspectRatio.LANDSCAPE)
     )
+    saved_comment_rect = caption_composition_rect(caption_render_spec, "comment")
     caption_panel_height = (
-        min(330, max(285, caption_layout.bottom_height - 128))
-        if compact_caption_comment else caption_layout.bottom_height
-        if caption_layout is not None else PANEL_HEIGHT
+        int(saved_comment_rect["height"]) if config is None and saved_comment_rect is not None
+        else (min(330, max(285, caption_layout.bottom_height - 128))
+              if compact_caption_comment else caption_layout.bottom_height
+              if caption_layout is not None else PANEL_HEIGHT)
     )
     assets: list[EditorLayerAsset] = []
     comments = sorted(document.comments, key=lambda item: item.start_seconds)
@@ -1737,7 +1760,8 @@ def create_editor_comment_layers(
             document.overlays.offsets["comment"],
         )
         y = min(
-            max(base_y if caption_layout is not None else 0, CANVAS_HEIGHT - panel.height),
+            max(base_y if caption_layout is not None and saved_comment_rect is None else 0,
+                CANVAS_HEIGHT - panel.height),
             max(0, round(base_y + offset.y)),
         )
         layer.paste(panel, (0, y), panel)

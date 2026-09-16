@@ -453,6 +453,7 @@ function lineBackgroundRuns(
 export function compileEditorRenderTitleSpecV4(
   document: EditorRenderDocumentInput,
   measure: EditorTitleTextMeasurerV4,
+  titlePanel?: { y: number; height: number },
 ): EditorRenderTitleSpecV4 {
   const lines = wrapPreviewTitle(document.title.text);
   const snapshotTitle = titleSnapshotConfig(document);
@@ -538,7 +539,7 @@ export function compileEditorRenderTitleSpecV4(
     heights.reduce((total, height) => total + height, 0)
       + lineGap * Math.max(0, lines.length - 1),
   );
-  const panel = titlePanelBounds(document);
+  const panel = titlePanel ?? titlePanelBounds(document);
   const bottomMargin = panel.height === 285
     ? 12
     : Math.min(44, Math.max(24, Math.round(panel.height * 0.105)));
@@ -631,6 +632,7 @@ export function compileEditorRenderTitleSpecV4(
 
 export async function createEditorRenderTitleSpecV4(
   document: EditorRenderDocumentInput,
+  titlePanel?: { y: number; height: number },
 ) {
   if (!isEditorRenderSpecV4Enabled()) {
     throw new Error("Editor render specification v4 is disabled.");
@@ -646,7 +648,7 @@ export async function createEditorRenderTitleSpecV4(
       actualBoundingBoxAscent: measured.actualBoundingBoxAscent,
       actualBoundingBoxDescent: measured.actualBoundingBoxDescent,
     };
-  });
+  }, titlePanel);
 }
 
 function documentGlobalCanvasContext() {
@@ -808,6 +810,7 @@ export function createEditorRenderSpec(
 export async function createEditorRenderSpecV4(
   document: EditorRenderDocumentInput,
   requestedSubtitleLayout?: EditorSubtitleLayout,
+  titlePanel?: { y: number; height: number },
 ): Promise<EditorRenderSpecV4> {
   if (!isEditorRenderSpecV4Enabled()) {
     throw new Error("Editor render specification v4 is disabled.");
@@ -821,7 +824,7 @@ export async function createEditorRenderSpecV4(
       ? EDITOR_RENDER_SPEC_VERSION
       : EDITOR_RENDER_SPEC_LEGACY_VERSION,
   );
-  const title = await createEditorRenderTitleSpecV4(document);
+  const title = await createEditorRenderTitleSpecV4(document, titlePanel);
   const channelFont = resolveEditorFontFaceV4(
     document.overlays.fonts.channel,
     "channel",

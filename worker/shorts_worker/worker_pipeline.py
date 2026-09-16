@@ -20,6 +20,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from .background_assets import download_owned_background
+from .caption_composition import with_caption_comment_layout
 from .caption_templates import (
     CAPTION_ACCENT,
     CAPTION_STABLE_TIMING_LEAD_FRAMES,
@@ -1733,6 +1734,11 @@ class BatchWorker:
                             continue
                         if subtitle_translation:
                             caption_spec["translation"] = subtitle_translation
+                        caption_spec = with_caption_comment_layout(
+                            caption_spec, template_id=job["template_id"],
+                            video_aspect_ratio=job.get("video_aspect_ratio"),
+                            custom_template=_custom_template_config(job),
+                        )
                         compiled_clips.append((clip, caption_spec))
                     if not subtitle_translation and len(compiled_clips) < required_minimum_count:
                         raise TranscriptionError(
@@ -1790,6 +1796,11 @@ class BatchWorker:
                             )
                             if subtitle_translation:
                                 timeline_spec["translation"] = subtitle_translation
+                            timeline_spec = with_caption_comment_layout(
+                                timeline_spec, template_id=job["template_id"],
+                                video_aspect_ratio=job.get("video_aspect_ratio"),
+                                custom_template=_custom_template_config(job),
+                            )
                             if initial_render_v4:
                                 selected_clip = _offset_highlight_clip(
                                     clips[index - 1],

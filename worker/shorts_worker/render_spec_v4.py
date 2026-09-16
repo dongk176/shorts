@@ -7,6 +7,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
+from .caption_composition import caption_composition_rect
 from .content_language import content_title_font
 from .editor_text_layout import (
     normalize_composition_layer_order,
@@ -166,6 +167,7 @@ def compile_editor_title_spec_v4(
     visible: bool = True,
     offset_x: float = 0,
     offset_y: float = 0,
+    title_panel: dict[str, float] | None = None,
 ) -> dict[str, object]:
     """Compile the one authoritative title layout used by both render paths.
 
@@ -280,6 +282,9 @@ def compile_editor_title_spec_v4(
             ):
                 panel_height -= 160
             panel_top = 0
+        if title_panel is not None:
+            panel_top = title_panel["y"]
+            panel_height = title_panel["height"]
         bottom_margin = (
             12
             if panel_height == 285
@@ -432,6 +437,7 @@ def compile_initial_editor_render_spec_v4(
         title_text_styles=title_text_styles,
         custom_template_config=config,
         visible=True,
+        title_panel=caption_composition_rect(caption_render_spec, "title"),
     )
     parsed_comments = [
         value

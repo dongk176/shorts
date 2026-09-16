@@ -979,14 +979,17 @@ def _draw_custom_channel(
     center_y: float,
     channel_thumbnail_path: Path | None,
     center_x: float | None = None,
+    font_id: EditorFontId | None = None,
 ) -> int:
     draw = ImageDraw.Draw(image)
     font_size = layer.font_size
-    font = load_font(font_size, "bold")
+    font = (load_custom_template_font(font_id, font_size)
+            if font_id else load_font(font_size, "bold"))
     name = " ".join(channel_name.split())[:50] or "YouTube 채널"
     while font_size > 20 and _text_width(draw, name, font) > layer.max_width - 84:
         font_size -= 2
-        font = load_font(font_size, "bold")
+        font = (load_custom_template_font(font_id, font_size)
+                if font_id else load_font(font_size, "bold"))
     text_box = draw.textbbox((0, 0), name, font=font)
     text_width = text_box[2] - text_box[0]
     text_height = text_box[3] - text_box[1]
@@ -1036,6 +1039,28 @@ def _draw_custom_channel(
         fill=layer.color,
     )
     return group_height + pad * 2
+
+
+def caption_comment_channel_image(
+    channel_name: str,
+    *,
+    panel_height: int,
+    font_id: EditorFontId = EditorFontId.PRETENDARD,
+    thumbnail_path: Path | None = None,
+) -> Image.Image:
+    """One white, bundled-font channel row for initial and edited captions."""
+    panel = Image.new("RGBA", (PANEL_WIDTH, panel_height), (0, 0, 0, 0))
+    layer = TemplateTextLayer.model_validate({
+        "visible": True, "x": 540, "y": panel_height / 2,
+        "maxWidth": 800, "fontSize": 42, "color": "#FFFFFF",
+        "backgroundColor": None,
+    })
+    _draw_custom_channel(
+        panel, channel_name=channel_name, layer=layer,
+        center_y=panel_height / 2, channel_thumbnail_path=thumbnail_path,
+        font_id=font_id,
+    )
+    return panel
 
 
 def add_comment_channel_to_panel(

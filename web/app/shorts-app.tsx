@@ -96,6 +96,7 @@ import {
   type EditorCaptionTextDraft,
 } from "@/lib/editor-caption-preview";
 import { SHOW_MONETIZATION_CONTENT } from "@/lib/content-visibility";
+import { captionCompositionRect } from "@/lib/caption-composition";
 import { jobNeedsPolling, startHomeJobPolling } from "@/lib/home-job-polling";
 import { SIMULATED_PROGRESS_START } from "@/lib/creation-progress";
 import { isConversionMaintenanceActive } from "@/lib/conversion-maintenance";
@@ -5147,6 +5148,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
       adminSubtitleEditingEnabled
         ? editorDocumentSubtitleLayout
         : undefined,
+      captionCompositionRect(captionTemplateEditorSpec, "title"),
     ).then((compiledRenderSpec) => {
       if (cancelled) return;
       const renderSpec = preserveUnchangedInitialRenderSpecLayers(
@@ -5168,6 +5170,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
     };
   }, [
     adminSubtitleEditingEnabled,
+    captionTemplateEditorSpec,
     editorDocumentSubtitleLayout,
     editorDraftCandidate,
     editorDraftDecisionComplete,
@@ -5583,9 +5586,13 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
         captionTemplateEditorSpec.timingLeadFrames,
       )
     : null;
+  const savedCaptionCommentRect = !activeCustomTemplate
+    ? captionCompositionRect(captionTemplateEditorSpec, "comment") : undefined;
+  const savedCaptionChannelRect = savedCaptionCommentRect
+    ? captionCompositionRect(captionTemplateEditorSpec, "channel") : undefined;
   const translatedPresetCommentRect = templateId === "comment-capture"
     && !activeCustomTemplate && captionTemplateEditorSpec?.templateId === "basic"
-    ? captionTemplatePreviewSnapshot?.layout.channel : null;
+    ? savedCaptionCommentRect ?? captionTemplatePreviewSnapshot?.layout.channel : null;
   const selectionDuration = Math.round((selectionEnd - selectionStart) * 1_000) / 1_000;
   const videoCuttingEnabled = overlayPreviewEnabled
     && Boolean(editTimeline)
@@ -9918,6 +9925,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                 adminSubtitleEditingEnabled
                   ? editorDocumentSubtitleLayout
                   : undefined,
+                captionCompositionRect(captionTemplateEditorSpec, "title"),
               );
               document.renderSpec = preserveUnchangedInitialRenderSpecLayers(
                 compiledRenderSpec,
@@ -10967,10 +10975,10 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                 {renderOverlayLayout.visible.channel
                   && captionTemplatePreviewSnapshot
                   && <CaptionTemplateEditorChannel
-                    rect={captionTemplatePreviewSnapshot.layout.channel}
-                    fontSize={captionTemplatePreviewSnapshot.channel.fontSizePx}
-                    iconSize={captionTemplatePreviewSnapshot.channel.iconSizePx}
-                    gap={captionTemplatePreviewSnapshot.channel.gapPx}
+                    rect={savedCaptionChannelRect ?? captionTemplatePreviewSnapshot.layout.channel}
+                    fontSize={savedCaptionChannelRect ? 42 : captionTemplatePreviewSnapshot.channel.fontSizePx}
+                    iconSize={savedCaptionChannelRect ? 52 : captionTemplatePreviewSnapshot.channel.iconSizePx}
+                    gap={savedCaptionChannelRect ? 15 : captionTemplatePreviewSnapshot.channel.gapPx}
                     channelName={renderChannel}
                     channelThumbnailUrl={renderChannelThumbnailUrl}
                     fontFamily={channelFontFamily}
