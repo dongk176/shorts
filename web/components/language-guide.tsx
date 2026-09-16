@@ -40,8 +40,11 @@ export function LanguageGuide({ userId, available, enabled, replay, locale, onCo
     return () => { disposed = true; window.clearTimeout(timer); controller.abort(); };
   }, [available, userId, onComplete]);
 
-  const close = useCallback((status: "dismissed" | "completed") => {
+  const close = useCallback(() => {
     setPhase("done"); setClosedReplay(replay); onComplete();
+  }, [replay, onComplete]);
+
+  const hidePermanently = useCallback(() => {
     if (!userId) return;
     // Persist immediately, with one bounded retry for a transient network error.
     const save = async () => {
@@ -49,16 +52,17 @@ export function LanguageGuide({ userId, available, enabled, replay, locale, onCo
         try {
           const response = await fetch("/api/language-guide", {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ userId, status }), keepalive: true, signal: AbortSignal.timeout(8_000),
+            body: JSON.stringify({ userId, status: "completed", dontShowAgain: true }), keepalive: true, signal: AbortSignal.timeout(8_000),
           });
           if (response.ok || response.status < 500) return;
         } catch { /* The guide is already closed locally. */ }
       }
     };
     void save();
-  }, [userId, replay, onComplete]);
+  }, [userId]);
 
   return <FeatureGuideOverlay key={replay} enabled={available && enabled && (phase === "new" || replay > closedReplay)}
     steps={steps} closeAriaLabel={copy.close} smoothTransitions onClose={close}
-    previousLabel={copy.previous} nextLabel={copy.next} lastStepPrimaryLabel={copy.complete} lastStepBack />;
+    previousLabel={copy.previous} nextLabel={copy.next} lastStepSecondaryLabel={copy.confirm}
+    lastStepPrimaryLabel={copy.dontShowAgain} onLastStepPrimaryAction={hidePermanently} />;
 }

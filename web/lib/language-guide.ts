@@ -12,7 +12,7 @@ export const languageCopy = {
     sourceGuide: "영상 언어는 자동으로 감지해요. 필요하면 한국어·영어·일본어 중 직접 선택할 수 있어요.",
     outputTitle: "어떤 언어로 만들지 선택해요",
     outputGuide: "선택한 언어로 제목·댓글·스크립트·생성 자막을 만들어요. 원본 음성과 영상 속 글자는 유지돼요.",
-    close: "언어 안내 닫기", previous: "이전", next: "다음", complete: "완료",
+    close: "언어 안내 닫기", previous: "이전", next: "다음", confirm: "확인", dontShowAgain: "다시 보지 않기",
   },
   en: {
     heading: "Language", help: "How to use", source: "Video language", output: "Creation language", auto: "Detect automatically",
@@ -24,7 +24,7 @@ export const languageCopy = {
     sourceGuide: "We detect the video language automatically. You can also choose Korean, English or Japanese.",
     outputTitle: "Choose the language to create in",
     outputGuide: "Titles, comments, scripts and generated captions use this language. The original audio and text in the video stay the same.",
-    close: "Close language guide", previous: "Back", next: "Next", complete: "Done",
+    close: "Close language guide", previous: "Back", next: "Next", confirm: "Confirm", dontShowAgain: "Don't show again",
   },
   ja: {
     heading: "言語選択", help: "使い方", source: "動画の言語", output: "制作言語", auto: "自動検出",
@@ -36,7 +36,7 @@ export const languageCopy = {
     sourceGuide: "動画の言語は自動で検出します。必要に応じて韓国語・英語・日本語を選べます。",
     outputTitle: "制作する言語を選びましょう",
     outputGuide: "選んだ言語でタイトル・コメント・スクリプト・生成字幕を作ります。元の音声と動画内の文字はそのままです。",
-    close: "言語ガイドを閉じる", previous: "戻る", next: "次へ", complete: "完了",
+    close: "言語ガイドを閉じる", previous: "戻る", next: "次へ", confirm: "確認", dontShowAgain: "今後表示しない",
   },
 } as const;
 

@@ -10,32 +10,44 @@ const request = (body: unknown) => new Request("https://www.easycut.co.kr/api/la
   method: "POST", headers: { "Content-Type": "application/json", Origin: "https://www.easycut.co.kr" }, body: JSON.stringify(body),
 });
 let stored: string | null = null;
+let dontShowAgain = false;
 let isAdmin = false;
 const writes: unknown[][] = [];
 beforeEach(() => {
-  vi.clearAllMocks(); stored = null; isAdmin = false; writes.length = 0;
+  vi.clearAllMocks(); stored = null; dontShowAgain = false; isAdmin = false; writes.length = 0;
   mocks.session.mockResolvedValue({ userId: appUserId, user: { id: userId }, isAdmin: false });
   mocks.status.mockResolvedValue({ enabled: true, publicEnabled: true, ready: true });
   const sql = Object.assign(vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
     const q = strings.join("?");
     if (q.includes("app_users")) return [{ isAdmin }];
-    if (q.includes("insert into")) { writes.push(values); stored = values[1] as string; return []; }
-    if (q.includes("select status")) return stored ? [{ status: stored }] : [];
+    if (q.includes("insert into")) { writes.push(values); stored = values[1] as string; dontShowAgain ||= values[2] === true; return []; }
+    if (q.includes("select status")) return stored ? [{ status: stored, dontShowAgain }] : [];
     return [];
   }), { begin: async (fn: (tx: unknown) => unknown) => fn(sql) });
   mocks.db.mockReturnValue(sql);
 });
 describe("account language tutorial", () => {
-  it.each(["dismissed", "completed"])("persists %s and reads it on another request/device", async (status) => {
+  it.each(["dismissed", "completed"])("keeps showing after a legacy %s without an explicit opt-out", async (status) => {
     expect(await (await GET()).json()).toEqual({ available: true, seen: false, status: null });
     expect(await (await POST(request({ userId, status }))).json()).toEqual({ saved: true });
-    expect(await (await GET()).json()).toEqual({ available: true, seen: true, status });
-    expect(writes).toEqual([[appUserId, status]]);
+    expect(await (await GET()).json()).toEqual({ available: true, seen: false, status });
+    expect(writes).toEqual([[appUserId, status, false]]);
+  });
+  it("shows again for an existing completed record", async () => {
+    stored = "completed";
+    expect(await (await GET()).json()).toEqual({ available: true, seen: false, status: "completed" });
+  });
+  it("hides across requests/devices only after an explicit opt-out", async () => {
+    expect(await (await POST(request({ userId, status: "completed", dontShowAgain: true }))).json()).toEqual({ saved: true });
+    expect(await (await GET()).json()).toEqual({ available: true, seen: true, status: "completed" });
+    expect(writes).toEqual([[appUserId, "completed", true]]);
+    await POST(request({ userId, status: "completed" }));
+    expect((await (await GET()).json()).seen).toBe(true);
   });
   it("does not consume an ordinary user's tutorial while public is OFF", async () => {
     mocks.status.mockResolvedValue({ enabled: true, publicEnabled: false, ready: true });
     expect(await (await GET()).json()).toEqual({ available: false, seen: false });
-    expect(await (await POST(request({ userId, status: "dismissed" }))).json()).toEqual({ saved: false });
+    expect(await (await POST(request({ userId, status: "completed", dontShowAgain: true }))).json()).toEqual({ saved: false });
     expect(writes).toEqual([]);
   });
   it("lets admins complete the same tutorial while public is OFF", async () => {

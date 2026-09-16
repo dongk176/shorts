@@ -15,15 +15,15 @@ export async function GET() {
     const db = getDb();
     const allowed = languageFeatureAllowed(await languageTestStatus(db), session.isAdmin === true);
     if (!allowed) return json({ available: false, seen: false });
-    const [row] = await db`select status from shorts_mvp.language_guide_views where user_id=${session.userId}`;
-    return json({ available: true, seen: Boolean(row), status: row?.status ?? null });
+    const [row] = await db`select status, dont_show_again from shorts_mvp.language_guide_views where user_id=${session.userId}`;
+    return json({ available: true, seen: row?.dontShowAgain === true, status: row?.status ?? null });
   } catch (error) { return apiError(error); }
 }
 
 export async function POST(request: Request) {
   try {
     assertSameOriginJsonRequest(request);
-    const input = z.object({ userId: z.uuid(), status: z.enum(["dismissed", "completed"]) }).strict().parse(await request.json());
+    const input = z.object({ userId: z.uuid(), status: z.enum(["dismissed", "completed"]), dontShowAgain: z.boolean().default(false) }).strict().parse(await request.json());
     const session = await requireAuthenticatedMvpSession();
     // The browser receives the authentication profile ID; userId is the
     // separate app_users ID used by the database below.
@@ -33,9 +33,10 @@ export async function POST(request: Request) {
       await tx`select singleton from shorts_mvp.language_test_settings where singleton for share`;
       const [user] = await tx`select is_admin from shorts_mvp.app_users where id=${session.userId}`;
       if (!user || !languageFeatureAllowed(await languageTestStatus(tx), user.isAdmin === true)) return false;
-      await tx`insert into shorts_mvp.language_guide_views(user_id,status) values(${session.userId},${input.status})
+      await tx`insert into shorts_mvp.language_guide_views(user_id,status,dont_show_again) values(${session.userId},${input.status},${input.dontShowAgain})
         on conflict (user_id) do update set status=case
-          when language_guide_views.status='completed' then 'completed' else excluded.status end,updated_at=now()`;
+          when language_guide_views.status='completed' then 'completed' else excluded.status end,
+          dont_show_again=language_guide_views.dont_show_again or excluded.dont_show_again,updated_at=now()`;
       return true;
     });
     return json({ saved });

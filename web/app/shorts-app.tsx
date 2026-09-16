@@ -13148,7 +13148,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   useEffect(() => {
     setLanguageGuideComplete(false);
     setLanguageGuideReplay(0);
-  }, [state?.user?.id]);
+  }, [state?.user?.id, analysis?.videoId, sourceMode]);
   const outputLanguage: OutputLanguage = languageTestActive ? selectedOutputLanguage : "ko";
   const [templateId, setTemplateId] = useState<TemplateId>(resumedDraft?.templateId ?? "comment-capture");
   const [subtitleTemplateId, setSubtitleTemplateId] = useState<SubtitleTemplateSelectionId | null>(resumedDraft?.subtitleTemplateId ?? null);
@@ -14453,7 +14453,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         )}
         onComplete={completeSourceRangeGuide}
       />
-      <LanguageGuide key={state?.user?.id ?? "anonymous"}
+      <LanguageGuide key={`${state?.user?.id ?? "anonymous"}:${selectedSource?.key ?? "no-source"}`}
         userId={state?.user?.id ?? null} available={languageAvailable}
         enabled={Boolean(sourceRangeGuideComplete && selectedSource?.creationAllowed && !longSourceNoticeOpen && !creationRestrictionOpen)}
         replay={languageGuideReplay} locale={locale} onComplete={completeLanguageGuide} />
