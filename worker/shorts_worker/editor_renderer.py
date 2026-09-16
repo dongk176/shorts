@@ -27,6 +27,7 @@ from .font_manifest import normalized_editor_font_bytes
 from .media import media_duration, probe_media, run_command, video_fps
 from .overlays import (
     CUSTOM_BACKGROUND_ASSETS,
+    PANEL_HEIGHT,
     TEMPLATE_STYLES,
     _title_line_character_indices,
     _title_style_runs,
@@ -1654,7 +1655,9 @@ def _base_comment_y(
         custom_template_config=config,
     )
     if caption_layout is not None:
-        return caption_layout.video_y + caption_layout.video_height
+        return (caption_layout.bottom_y
+                if config is None and caption_render_spec.get("templateId") == "basic"
+                else caption_layout.video_y + caption_layout.video_height)
     if config is not None:
         video_bottom = config.video.y + config.video.height
         if config.comment.docked_to_video and 720 <= video_bottom <= 1480:
@@ -1690,6 +1693,20 @@ def create_editor_comment_layers(
     )
     size = config.comment.size if config is not None else "medium"
     base_y = _base_comment_y(document, caption_render_spec)
+    caption_layout = _editor_caption_layout(
+        caption_render_spec, custom_template_config=config,
+    ) if (config is None and caption_render_spec is not None
+          and caption_render_spec.get("templateId") == "basic") else None
+    compact_caption_comment = caption_layout is not None and (
+        document.template.preset_version >= 3
+        or (document.template.preset_version == 2
+            and document.video.aspect_ratio is VideoAspectRatio.LANDSCAPE)
+    )
+    caption_panel_height = (
+        min(330, max(285, caption_layout.bottom_height - 128))
+        if compact_caption_comment else caption_layout.bottom_height
+        if caption_layout is not None else PANEL_HEIGHT
+    )
     assets: list[EditorLayerAsset] = []
     comments = sorted(document.comments, key=lambda item: item.start_seconds)
     output_duration = document.video.output_duration_seconds
@@ -1702,9 +1719,10 @@ def create_editor_comment_layers(
         create_comment_panel(
             comment,
             panel_path,
+            panel_height=caption_panel_height,
             overlay_mode=True,
-            theme=theme,
-            size=size,
+            theme=theme if caption_layout is None or document.overlays.comment_theme else None,
+            size=size if caption_layout is None or document.overlays.comment_theme else None,
             output_language=output_language,
             japanese_font_enabled=bool(
                 document.render_spec
@@ -1719,7 +1737,7 @@ def create_editor_comment_layers(
             document.overlays.offsets["comment"],
         )
         y = min(
-            max(0, CANVAS_HEIGHT - panel.height),
+            max(base_y if caption_layout is not None else 0, CANVAS_HEIGHT - panel.height),
             max(0, round(base_y + offset.y)),
         )
         layer.paste(panel, (0, y), panel)
@@ -2153,6 +2171,13 @@ class EditorDocumentRenderer:
             **text_assets,
         }
         layer_order = editor_layer_order(document)
+        if (resolved_caption_composition_spec is not None
+                and resolved_caption_composition_spec.get("templateId") == "basic"
+                and _custom_template_config(document) is None
+                and document.template.id is TemplateId.COMMENT_CAPTURE
+                and layer_order == ["video", "title", "comment", "channel"]):
+            # Preset generation paints the channel panel before its comments.
+            layer_order = ["video", "title", "channel", "comment"]
 
         image_inputs: list[Path] = [background_path]
         ordered_assets: list[tuple[str, EditorLayerAsset]] = []

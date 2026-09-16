@@ -14,7 +14,7 @@ import {
 } from "./editor-initial-render-spec";
 import { resolveEditorFontFaceV4 } from "./editor-fonts";
 import { createInitialEditorOverlayLayout } from "./editor-overlay-preview";
-import type { EditorRenderSpecV4 } from "./editor-render-spec";
+import { editorSubtitleLayoutFromRenderSpec, type EditorRenderSpecV4 } from "./editor-render-spec";
 
 function input() {
   return {
@@ -142,6 +142,29 @@ describe("initial editor render specification", () => {
       legacy,
       legacy.renderSpec,
       editorDocumentSemanticFingerprint(legacy),
+    )).toBe(false);
+  });
+
+  it.each(["ko", "en", "ja"])("retains %s caption-only edits when compiling the saved document", (language) => {
+    const source = createEditorDocumentSnapshotV3(input());
+    source.renderSpec = v4Spec(source);
+    source.renderSpec.subtitles = {
+      centerX: 540, visible: true, captionSpecVersion: 4,
+      offsetY: 0, scale: 1, fontSize: 72, color: "#FFFFFF", fontId: "pretendard", cueEdits: [],
+    };
+    const baseline = editorDocumentSemanticFingerprint(source);
+    const edited = structuredClone(source);
+    if (edited.renderSpec.version !== 4) throw new Error("expected v4");
+    edited.renderSpec.subtitles!.cueEdits = [{
+      cueIndex: 0,
+      text: { ko: "안녕하세요 여러분", en: "Hello, everybody.", ja: "皆さん、こんにちは。" }[language]!,
+    }];
+    expect(editorDocumentSemanticFingerprint(edited)).not.toBe(baseline);
+    expect(shouldPreserveInitialEditorRenderSpec(edited, source.renderSpec, baseline)).toBe(false);
+    // Saving immediately must also use the draft while its preview is still compiling.
+    expect(shouldPreserveInitialEditorRenderSpec(
+      source, source.renderSpec, baseline,
+      editorSubtitleLayoutFromRenderSpec(edited.renderSpec),
     )).toBe(false);
   });
 

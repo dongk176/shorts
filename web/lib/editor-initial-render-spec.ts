@@ -5,10 +5,13 @@ import type {
 } from "@/lib/editor-overlay-preview";
 import {
   EDITOR_RENDER_SPEC_V4_VERSION,
+  editorSubtitleLayoutFromRenderSpec,
+  normalizeEditorSubtitleLayout,
   quantizeEditorRenderPx,
   type EditorRenderSpec,
   type EditorRenderTitleSpecV4,
   type EditorRenderSpecV4,
+  type EditorSubtitleLayout,
 } from "@/lib/editor-render-spec";
 
 export type EditorInitialRenderSpecLayerFingerprints = {
@@ -75,8 +78,10 @@ export function editorDocumentSemanticFingerprint(
 ) {
   if (document.version !== 3) return JSON.stringify(document);
   const { renderSpec, ...semanticDocument } = document;
-  void renderSpec;
-  return JSON.stringify(semanticDocument);
+  return JSON.stringify({
+    ...semanticDocument,
+    subtitleLayout: editorSubtitleLayoutFromRenderSpec(renderSpec),
+  });
 }
 
 export function editorInitialRenderSpecLayerFingerprints(
@@ -249,11 +254,15 @@ export function shouldPreserveInitialEditorRenderSpec(
   document: EditorDocumentSnapshot,
   initialRenderSpec: EditorRenderSpec | null | undefined,
   baselineFingerprint: string | null,
+  subtitleLayout?: EditorSubtitleLayout,
 ) {
   return Boolean(
     initialRenderSpec?.version === EDITOR_RENDER_SPEC_V4_VERSION
     && document.version === 3
     && document.renderSpec.version === EDITOR_RENDER_SPEC_V4_VERSION
+    && (subtitleLayout === undefined
+      || JSON.stringify(normalizeEditorSubtitleLayout(subtitleLayout))
+        === JSON.stringify(editorSubtitleLayoutFromRenderSpec(document.renderSpec)))
     && initialRenderTitleMatchesDocument(document, initialRenderSpec)
     && JSON.stringify(document.renderSpec) === JSON.stringify(initialRenderSpec)
     && baselineFingerprint !== null

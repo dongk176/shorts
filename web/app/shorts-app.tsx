@@ -4377,6 +4377,12 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
           ),
           initialRenderSpec,
         );
+    if (captionTemplateEditorSpec?.templateId === "basic"
+      && initialTemplateId === "comment-capture"
+      && !availableCustomTemplate
+      && initialLayout.layerOrder.join(",") === "video,title,comment,channel") {
+      initialLayout.layerOrder = ["video", "title", "channel", "comment"];
+    }
     return adminSubtitleLayoutEnabled
       ? initialLayout
       : sanitizeEditorOverlayFontsForStable(initialLayout);
@@ -5577,6 +5583,9 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
         captionTemplateEditorSpec.timingLeadFrames,
       )
     : null;
+  const translatedPresetCommentRect = templateId === "comment-capture"
+    && !activeCustomTemplate && captionTemplateEditorSpec?.templateId === "basic"
+    ? captionTemplatePreviewSnapshot?.layout.channel : null;
   const selectionDuration = Math.round((selectionEnd - selectionStart) * 1_000) / 1_000;
   const videoCuttingEnabled = overlayPreviewEnabled
     && Boolean(editTimeline)
@@ -9879,6 +9888,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
             document,
             initialRenderSpec,
             initialRenderSemanticBaselineRef.current,
+            adminSubtitleEditingEnabled ? editorDocumentSubtitleLayout : undefined,
           );
         if (document.version === 3) {
           if (editorRenderSpecVersion === EDITOR_RENDER_SPEC_V4_VERSION) {
@@ -10877,7 +10887,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                   />}
               </>
             : <>
-                <div className={`absolute inset-x-0 ${overlayPreviewEnabled ? "overflow-visible" : "z-10 overflow-hidden"} text-sm font-bold ${templateId === "comment-capture" ? "" : editorLayout.fullVertical ? "pt-5" : "pt-[4.4%]"}`} style={{ top: editorLayout.fullVertical ? "84.375%" : `${editorLayout.videoTop + editorLayout.videoHeight}%`, height: editorLayout.fullVertical ? "9.375%" : `${editorLayout.bottomHeight}%`, background: editorLayout.fullVertical && templateId !== "comment-capture" ? "transparent" : editorTemplateSurfaceBackground, color: template.channel }}>
+                <div className={`absolute inset-x-0 ${overlayPreviewEnabled ? "overflow-visible" : "z-10 overflow-hidden"} text-sm font-bold ${templateId === "comment-capture" ? "" : editorLayout.fullVertical ? "pt-5" : "pt-[4.4%]"}`} style={{ top: translatedPresetCommentRect ? `${translatedPresetCommentRect.y / 19.2}%` : editorLayout.fullVertical ? "84.375%" : `${editorLayout.videoTop + editorLayout.videoHeight}%`, height: translatedPresetCommentRect ? `${translatedPresetCommentRect.height / 19.2}%` : editorLayout.fullVertical ? "9.375%" : `${editorLayout.bottomHeight}%`, background: editorLayout.fullVertical && templateId !== "comment-capture" ? "transparent" : editorTemplateSurfaceBackground, color: template.channel }}>
                   {templateId === "comment-capture"
                     ? <div
                         data-editor-comment-capture-surface=""
