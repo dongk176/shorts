@@ -1,3 +1,5 @@
+import emojiCodepoints from "./comment-emoji-codepoints.json";
+
 function commentDisplayUnits(value: string): string[] {
   if (typeof Intl.Segmenter === "function") {
     return Array.from(
@@ -21,6 +23,41 @@ function commentDisplayUnits(value: string): string[] {
     else units.push(character);
   }
   return units;
+}
+
+function isCommentEmoji(unit: string) {
+  return Array.from(unit).some((character) => {
+    const code = character.codePointAt(0)!;
+    return (code >= 0x2300 || unit.includes("\ufe0f") || unit.includes("\u20e3"))
+      && emojiCodepoints.ranges.some(([start, end]) => code >= start && code <= end);
+  });
+}
+
+// Same font coverage and 1.15em emoji advance as worker/comment_emoji.py.
+export function captionCommentRuns(text: string) {
+  const runs: Array<{ text: string; emoji: boolean }> = [];
+  for (const unit of commentDisplayUnits(text)) {
+    const emoji = isCommentEmoji(unit);
+    const previous = runs.at(-1);
+    if (!emoji && previous && !previous.emoji) previous.text += unit;
+    else runs.push({ text: unit, emoji });
+  }
+  return runs;
+}
+
+export function layoutCaptionCommentLine(text: string, measure: (text: string) => number, fontSize = 35) {
+  let x = 0;
+  return captionCommentRuns(text).map((run) => {
+    const width = run.emoji ? fontSize * 1.15 : measure(run.text);
+    const positioned = { ...run, x, width };
+    x += width;
+    return positioned;
+  });
+}
+
+export function measureCaptionComment(text: string, measure: (text: string) => number, fontSize = 35) {
+  return layoutCaptionCommentLine(text, measure, fontSize)
+    .reduce((width, run) => width + run.width, 0);
 }
 
 // Matches the fixed 1080 x 285 card used by saved caption compositions.
@@ -56,12 +93,17 @@ export function wrapCaptionComment(text: string, measure: (text: string) => numb
 
 export function fitCaptionChannel(
   name: string, fontSize: number, measure: (text: string, size: number) => number,
+  wordSpaceEm?: number,
 ) {
   const text = Array.from(name.replace(/\s+/gu, " ").trim()).slice(0, 50).join("") || "YouTube 채널";
   let size = fontSize;
-  while (size > 20 && measure(text, size) > 716) size -= 2;
+  const widthAt = (size: number) => wordSpaceEm === undefined ? measure(text, size)
+    : text.split(" ").reduce((sum, word, index) => (
+        sum + measure(word, size) + (index ? size * wordSpaceEm : 0)
+      ), 0);
+  while (size > 20 && widthAt(size) > 716) size -= 2;
   const icon = size * 1.25;
   // Pillow/Python rounds half pixels to the nearest even integer.
   const roundedIcon = icon % 1 === 0.5 ? Math.round(icon / 2) * 2 : Math.round(icon);
-  return { text, fontSize: size, iconSize: Math.max(36, roundedIcon), gap: Math.max(12, Math.round(size * 0.36)) };
+  return { text, fontSize: size, iconSize: Math.max(36, roundedIcon), gap: Math.max(12, Math.round(size * 0.36)), wordSpacePx: wordSpaceEm === undefined ? undefined : size * wordSpaceEm };
 }

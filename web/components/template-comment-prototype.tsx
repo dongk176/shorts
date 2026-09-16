@@ -116,6 +116,7 @@ export function TemplateCommentPreview({
   return (
     <div
       aria-label="댓글 미리보기"
+      data-i18n-content={comment ? "" : undefined}
       className="relative z-40 block w-full overflow-hidden rounded-none border-0 text-left shadow-none"
       style={appearance.style}
     >

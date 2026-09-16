@@ -236,6 +236,7 @@ import {
   DEFAULT_EDITOR_FONT_ID,
   editorFontFamily,
   editorFontOptions,
+  editorWordSpaceAdvanceEmById,
   editorUsesJapaneseFont,
   ensureEditorFontFaceV4Loaded,
   resolveEditorFontFace,
@@ -1174,6 +1175,7 @@ function CaptionTemplateEditorChannel({
   channelThumbnailUrl,
   fontFamily,
   fontWeight,
+  fontId,
   selected = false,
   movementStyle,
   onPointerDown,
@@ -1187,6 +1189,7 @@ function CaptionTemplateEditorChannel({
   channelThumbnailUrl: string | null;
   fontFamily?: string;
   fontWeight?: number;
+  fontId?: EditorFontId;
   selected?: boolean;
   movementStyle?: CSSProperties;
   onPointerDown?: PointerEventHandler<HTMLButtonElement>;
@@ -1202,14 +1205,14 @@ function CaptionTemplateEditorChannel({
       const result = fitCaptionChannel(channelName, fontSize, (text, size) => {
         context.font = `${fontWeight || 700} ${size}px ${fontFamily || "sans-serif"}`;
         return context.measureText(text).width;
-      });
+      }, fontId === "ridi-batang" ? editorWordSpaceAdvanceEmById[fontId] : undefined);
       if (!cancelled) setFitted(result);
     };
     measure();
     void document.fonts.load(`${fontWeight || 700} ${fontSize}px ${fontFamily || "sans-serif"}`, channelName)
       .then(measure).catch(() => {});
     return () => { cancelled = true; };
-  }, [channelName, fitSavedCommentChannel, fontFamily, fontSize, fontWeight]);
+  }, [channelName, fitSavedCommentChannel, fontFamily, fontSize, fontWeight, fontId]);
   const channelFit = fitSavedCommentChannel ? fitted : null;
   const content = <>
     <ChannelAvatar
@@ -1223,7 +1226,11 @@ function CaptionTemplateEditorChannel({
       fallbackBackground="#000000"
       sizes="20px"
     />
-    <span className={fitSavedCommentChannel ? "whitespace-nowrap" : "max-w-[75%] truncate"}>{channelFit?.text ?? channelName}</span>
+    <span data-i18n-skip className={fitSavedCommentChannel ? "whitespace-nowrap" : "max-w-[75%] truncate"}>{channelFit?.wordSpacePx !== undefined
+      ? channelFit.text.split(" ").map((word, index) => <span key={index}>{index > 0 && <span
+          style={{ display: "inline-block", width: `${channelFit.wordSpacePx! / 10.8}cqw`, fontSize: 0 }}
+        > </span>}{word}</span>)
+      : channelFit?.text ?? channelName}</span>
   </>;
   const contentStyle: CSSProperties = {
     gap: `${(channelFit?.gap ?? gap) / 10.8}cqw`,
@@ -3944,7 +3951,7 @@ function CommentTimelineEditor({
               }
             }}
           >
-            <span>{visibleLabel}</span>
+            <span data-i18n-content={showCommentText && comment.text.trim() ? "" : undefined}>{visibleLabel}</span>
           </button>
           {selected && <>
             <button
@@ -10489,6 +10496,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
         <div
           ref={editorCanvasRef}
           data-editor-preview-canvas=""
+          data-i18n-content=""
           data-editor-overlay-canvas={overlayPreviewEnabled ? "" : undefined}
           data-editor-guide={overlayPreviewEnabled ? "preview-canvas" : undefined}
           className={standalone ? "editor-video-frame" : "aspect-[9/16] w-full overflow-hidden"}
@@ -10725,6 +10733,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
               }
             }}
           /> : <div
+            data-i18n-ui=""
             data-editor-overlay-layer={overlayPreviewEnabled ? "video" : undefined}
             className={`${activeCustomTemplate || captionTemplatePreviewSnapshot
               ? "absolute flex items-center justify-center bg-black/50 text-sm text-neutral-400"
@@ -10762,6 +10771,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
             </button>)}
           </div>}
           {overlayPreviewEnabled && videoConnectionState === "reconnecting" && <div
+            data-i18n-ui=""
             className="pointer-events-none absolute inset-x-3 top-3 z-[70] flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-[#202024]/95 px-3 py-2.5 text-center text-xs font-bold text-white/80 shadow-lg backdrop-blur"
             role="status"
             aria-live="polite"
@@ -10771,6 +10781,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
           </div>}
           {videoLoadError && (overlayPreviewEnabled
             ? <div
+                data-i18n-ui=""
                 className="pointer-events-auto absolute inset-x-3 top-3 z-[70] flex items-center justify-between gap-3 rounded-xl border border-red-300/20 bg-[#2a2022]/95 px-3 py-2.5 text-xs font-semibold text-red-50 shadow-lg backdrop-blur"
                 role="alert"
                 onPointerDown={(event) => event.stopPropagation()}
@@ -10787,7 +10798,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                   다시 시도
                 </button>
               </div>
-            : <div className="pointer-events-none absolute inset-x-3 top-3 z-50 rounded bg-red-950/90 px-3 py-2 text-center text-xs font-semibold text-red-100">편집용 영상을 재생하지 못했습니다. 잠시 후 다시 열어 주세요.</div>)}
+            : <div data-i18n-ui="" className="pointer-events-none absolute inset-x-3 top-3 z-50 rounded bg-red-950/90 px-3 py-2 text-center text-xs font-semibold text-red-100">편집용 영상을 재생하지 못했습니다. 잠시 후 다시 열어 주세요.</div>)}
           {subtitlesEnabled && captionTemplatePreviewSpec && <CaptionTemplateEditorPreview
             spec={captionTemplatePreviewSpec}
             currentTimeSeconds={displayedPreviewTime}
@@ -11002,6 +11013,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                 {renderOverlayLayout.visible.channel
                   && captionTemplatePreviewSnapshot
                   && <CaptionTemplateEditorChannel
+                    fontId={renderSpec?.channel.font.fontId ?? channelFontId}
                     fitSavedCommentChannel={Boolean(savedCaptionChannelRect)}
                     rect={savedCaptionChannelRect ?? captionTemplatePreviewSnapshot.layout.channel}
                     fontSize={savedCaptionChannelRect ? 42 : captionTemplatePreviewSnapshot.channel.fontSizePx}
@@ -11074,6 +11086,8 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                 theme={editorCommentTheme}
                 size="medium"
                 comment={layoutPreviewComment}
+                japaneseFontEnabled={japaneseFontEnabled}
+                outputLanguage={commentOutputLanguage}
               />
             </div>}
           {overlayPreviewEnabled && activeTextOverlays.map((textOverlay) => (
@@ -11497,7 +11511,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                     >
                       <span className="editor-v2-text-list-icon" aria-hidden="true">T</span>
                       <span className="editor-v2-text-list-copy">
-                        <strong>{textLabel}</strong>
+                        <strong data-i18n-content={textOverlay.text.trim() ? "" : undefined}>{textLabel}</strong>
                         <small>{formatPreciseTimestamp(textOverlay.startSeconds)} – {formatPreciseTimestamp(textOverlay.endSeconds)}</small>
                       </span>
                       <span className="editor-v2-text-list-chevron" aria-hidden="true">

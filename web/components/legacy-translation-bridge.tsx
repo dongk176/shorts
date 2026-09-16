@@ -13,6 +13,15 @@ function shouldSkip(node: Node) {
   return Boolean(element?.closest("[data-i18n-skip], [translate='no'], script, style, code, pre"));
 }
 
+function shouldSkipText(node: Node) {
+  if (shouldSkip(node)) return true;
+  // Video content stays as authored. Tool labels within the canvas can opt
+  // back into the site language; accessible attributes remain UI text.
+  return Boolean(node.parentElement
+    ?.closest("[data-i18n-content], [data-i18n-ui]")
+    ?.hasAttribute("data-i18n-content"));
+}
+
 function translateElement(element: Element, locale: "en" | "ja") {
   if (shouldSkip(element)) return;
   for (const attribute of translatedAttributes) {
@@ -26,6 +35,7 @@ function translateElement(element: Element, locale: "en" | "ja") {
 function translateTree(root: Node, locale: "en" | "ja") {
   if (shouldSkip(root)) return;
   if (root.nodeType === Node.TEXT_NODE) {
+    if (shouldSkipText(root)) return;
     const value = root.nodeValue || "";
     const translated = translateLegacyText(value, locale);
     if (translated !== value) root.nodeValue = translated;
@@ -36,11 +46,11 @@ function translateTree(root: Node, locale: "en" | "ja") {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
   let current = walker.nextNode();
   while (current) {
-    if (current.nodeType === Node.TEXT_NODE) {
+    if (current.nodeType === Node.TEXT_NODE && !shouldSkipText(current)) {
       const value = current.nodeValue || "";
       const translated = translateLegacyText(value, locale);
       if (translated !== value) current.nodeValue = translated;
-    } else {
+    } else if (current.nodeType === Node.ELEMENT_NODE) {
       translateElement(current as Element, locale);
     }
     current = walker.nextNode();

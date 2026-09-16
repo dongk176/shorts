@@ -78,6 +78,7 @@ export function CustomTemplateCanvasPreview({
   const hasDesignOrder = hasTemplateDesignLayerOrder(config);
   return (
     <div
+      data-i18n-content=""
       className="relative mx-auto aspect-[9/16] w-full max-w-[164px] overflow-hidden rounded-lg"
       style={{ ...templateBackgroundStyle(config.background), containerType: "inline-size" }}
       aria-label={`${template.name} 쇼츠 미리보기`}

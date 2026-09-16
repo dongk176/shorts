@@ -1,7 +1,9 @@
+import hashlib
 import json
 from pathlib import Path
 
 import pytest
+from fontTools.ttLib import TTFont
 from PIL import Image, ImageDraw
 
 from shorts_worker.comment_emoji import comment_text_width, display_units, draw_comment_text
@@ -13,6 +15,16 @@ from shorts_worker.schemas import (
     OutputLanguage,
     build_comment_overlay,
 )
+
+
+def test_browser_preview_emoji_coverage_matches_bundled_font():
+    root = Path(__file__).resolve().parents[2]
+    data = json.loads((root / "web/lib/comment-emoji-codepoints.json").read_text())
+    font_path = root / "worker/shorts_worker/assets/emoji/NotoColorEmoji.ttf"
+    assert data["sha256"] == hashlib.sha256(font_path.read_bytes()).hexdigest()
+    preview_codes = {code for start, end in data["ranges"] for code in range(start, end + 1)}
+    with TTFont(str(font_path)) as font:
+        assert preview_codes == set(font.getBestCmap())
 
 
 @pytest.mark.parametrize("emoji", ["😂", "👍🏽", "👨‍👩‍👧", "🇯🇵", "❤️", "1️⃣"])

@@ -2,7 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CaptionCommentPreview } from "../components/caption-comment-preview";
-import { fitCaptionChannel, wrapCaptionComment } from "./caption-comment-preview";
+import { captionCommentRuns, fitCaptionChannel, layoutCaptionCommentLine, measureCaptionComment, wrapCaptionComment } from "./caption-comment-preview";
 
 describe("saved caption previews", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -55,5 +55,37 @@ describe("saved caption previews", () => {
     expect(result.iconSize).toBe(38);
     expect(result.gap).toBe(12);
     expect(fitCaptionChannel("Easy Cut", 42, (text, size) => text.length * size / 2)).toMatchObject({ fontSize: 42, iconSize: 52 });
+  });
+  it.each([false, true])("uses the renderer's emoji widths regardless of system emoji font (fallback=%s)", (fallback) => {
+    if (fallback) withoutSegmenter();
+    const text = "🎉".repeat(35);
+    for (const nativeWidth of [25, 35, 50]) {
+      const measure = (value: string) => measureCaptionComment(value, (run) => Array.from(run).length * nativeWidth);
+      expect(wrapCaptionComment(text, measure)).toEqual(["🎉".repeat(22), "🎉".repeat(13)]);
+    }
+    expect(captionCommentRuns("123 © ❤️ 👍🏽 🇰🇷 👨‍👩‍👧‍👦 1️⃣"))
+      .toEqual([
+        { text: "123 © ", emoji: false },
+        ...["❤️", "👍🏽", "🇰🇷", "👨‍👩‍👧‍👦", "1️⃣"].flatMap((text, index) => [
+          ...(index ? [{ text: " ", emoji: false }] : []), { text, emoji: true },
+        ]),
+      ]);
+  });
+  it("retains plain text shaping while positioning emoji at the renderer advance", () => {
+    const measure = vi.fn((value: string) => value === "AV" ? 38 : 10);
+    expect(layoutCaptionCommentLine("AV🎉 ", measure)).toEqual([
+      { text: "AV", emoji: false, x: 0, width: 38 },
+      { text: "🎉", emoji: true, x: 38, width: 40.25 },
+      { text: " ", emoji: false, x: 78.25, width: 10 },
+    ]);
+    expect(measure.mock.calls).toEqual([["AV"], [" "]]);
+  });
+  it("uses explicit word spaces for fonts whose browser space differs from the renderer", () => {
+    const name = "International Mathematics and Science Academy";
+    const measure = (text: string, size: number) => text.replaceAll(" ", "").length * size * 0.54;
+    expect(fitCaptionChannel(name, 42, measure).fontSize).toBe(32);
+    expect(fitCaptionChannel(name, 42, measure, 0.29)).toMatchObject({
+      text: name, fontSize: 30, wordSpacePx: 8.7,
+    });
   });
 });
