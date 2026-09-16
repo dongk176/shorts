@@ -72,10 +72,10 @@ describe("administrator trend caches", () => {
     expect(mocks.query.mock.calls[2].at(-1)).toBe("2026-09-05T00:00:00+09:00");
   });
 
-  it("keeps sales and member aggregates separate and uses existing business filters", async () => {
+  it("keeps sales and member aggregates separate and retains refunded approvals in gross trends", async () => {
     await loadAdminTrend("sales", "7d", "2026-09-05");
     const sql = mocks.query.mock.calls[0][0].join("?");
-    expect(sql).toContain("status='succeeded' and amount_krw>0");
+    expect(sql).toContain("approved_at is not null and amount_krw>0");
     expect(sql).toContain("approved_at at time zone 'Asia/Seoul'");
     mocks.query.mockResolvedValueOnce([{ date: "2026-09-02", memberCount: 7 }]);
     const members = await loadAdminTrend("members", "all", "2026-09-05");
@@ -98,5 +98,26 @@ describe("administrator trend caches", () => {
     expect(mocks.query).toHaveBeenCalledTimes(5);
     await loadAdminOverview();
     expect(mocks.query).toHaveBeenCalledTimes(5);
+  });
+
+  it("keeps cumulative and daily refunds separate from their gross approval amounts", async () => {
+    mocks.query.mockResolvedValueOnce([{
+      grossSales: "1000000", refundedSales: "340000", todaySales: "500000",
+      todayRefundedSales: "40000", paidOrders: 8,
+    }]);
+    const { metrics } = await loadAdminOverview();
+    expect(metrics.grossSales).toBe(1_000_000);
+    expect(metrics.refundedSales).toBe(340_000);
+    expect(metrics.todaySales).toBe(500_000);
+    expect(metrics.todayRefundedSales).toBe(40_000);
+    expect(metrics.grossSales - metrics.refundedSales).toBe(660_000);
+    expect(metrics.todaySales - metrics.todayRefundedSales).toBe(460_000);
+    const sql = mocks.query.mock.calls[0][0].join("?");
+    expect(sql).not.toContain("status='succeeded'");
+    expect(sql).not.toContain("provider=");
+    const dates = mocks.query.mock.calls[0].slice(1);
+    expect(dates).toHaveLength(4);
+    expect(dates[0]).toBe(dates[2]);
+    expect(dates[1]).toBe(dates[3]);
   });
 });

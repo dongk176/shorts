@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import styles from "./admin-shell.module.css";
 import { AdminTrendCard } from "./admin-trend-card";
+import { AdminSalesCard } from "./admin-sales-card";
 import type { AdminTrendData } from "@/lib/admin-trends";
 
 export type AdminTab =
@@ -27,6 +28,7 @@ type AdminMetrics = {
     grossSales: number;
     refundedSales: number;
     todaySales: number;
+    todayRefundedSales: number;
     paidOrders: number;
     orderReviewCount: number;
     activeSubscriptions: number;
@@ -51,6 +53,7 @@ const emptyMetrics: AdminMetrics = {
   grossSales: 0,
   refundedSales: 0,
   todaySales: 0,
+  todayRefundedSales: 0,
   paidOrders: 0,
   orderReviewCount: 0,
   activeSubscriptions: 0,
@@ -308,20 +311,6 @@ export function AdminShell({
   ];
   const summaryCards = [
     {
-      label: "누적 매출",
-      value: money(metrics.grossSales),
-      hint: `승인 ${metrics.paidOrders.toLocaleString("ko-KR")}건`,
-      icon: "billing" as const,
-      color: "#a991ff",
-    },
-    {
-      label: "오늘 매출",
-      value: money(metrics.todaySales),
-      hint: "KST 자정 이후 승인 기준",
-      icon: "onboarding" as const,
-      color: "#56d6b0",
-    },
-    {
       label: "활성 구독",
       value: `${metrics.activeSubscriptions.toLocaleString("ko-KR")}건`,
       hint: `연체 ${metrics.pastDueSubscriptions.toLocaleString("ko-KR")}건`,
@@ -409,6 +398,8 @@ export function AdminShell({
             ) : null}
 
             <div className={styles.metricGrid} aria-label="운영 요약">
+              <AdminSalesCard period="all" grossSales={metrics.grossSales} refundedSales={metrics.refundedSales} icon={<AdminIcon name="billing" />} />
+              <AdminSalesCard period="today" grossSales={metrics.todaySales} refundedSales={metrics.todayRefundedSales} icon={<AdminIcon name="onboarding" />} />
               {summaryCards.map((card) => (
                 <article
                   className={styles.metricCard}

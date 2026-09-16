@@ -12,6 +12,7 @@ export type AdminOverviewData = {
     grossSales: number;
     refundedSales: number;
     todaySales: number;
+    todayRefundedSales: number;
     paidOrders: number;
     orderReviewCount: number;
     activeSubscriptions: number;
@@ -29,16 +30,27 @@ const loadAdminMetrics = unstable_cache(async (today: string): Promise<AdminOver
   const rows = await db`
     with metrics as (
       select
-        coalesce(sum(amount_krw) filter (where status='succeeded'),0)::bigint as gross_sales,
-        coalesce(sum(refunded_amount_krw),0)::bigint as refunded_sales,
+        -- Approval is historical: a later cancellation or review must not
+        -- remove the original payment from gross sales. Refunds stay separate.
         coalesce(sum(amount_krw) filter (
-          where status='succeeded' and amount_krw>0
-            and approved_at >= (
-              ${today}::timestamp
-              at time zone 'Asia/Seoul'
-            )
+          where approved_at is not null and amount_krw>0
+        ),0)::bigint as gross_sales,
+        coalesce(sum(refunded_amount_krw) filter (
+          where approved_at is not null and amount_krw>0
+        ),0)::bigint as refunded_sales,
+        coalesce(sum(amount_krw) filter (
+          where amount_krw>0
+            and approved_at >= (${today}::timestamp at time zone 'Asia/Seoul')
+            and approved_at < (${shiftTrendDate(today, 1)}::timestamp at time zone 'Asia/Seoul')
         ),0)::bigint as today_sales,
-        count(*) filter (where status='succeeded' and amount_krw>0)::integer as paid_orders,
+        -- Use the same approval-day cohort for both daily amounts, including
+        -- refunds recorded later against those orders (not today's cash flow).
+        coalesce(sum(refunded_amount_krw) filter (
+          where amount_krw>0
+            and approved_at >= (${today}::timestamp at time zone 'Asia/Seoul')
+            and approved_at < (${shiftTrendDate(today, 1)}::timestamp at time zone 'Asia/Seoul')
+        ),0)::bigint as today_refunded_sales,
+        count(*) filter (where approved_at is not null and amount_krw>0)::integer as paid_orders,
         count(*) filter (where status in ('unknown','manual_review'))::integer as review_orders
       from shorts_mvp.billing_orders
     ),
@@ -64,6 +76,7 @@ const loadAdminMetrics = unstable_cache(async (today: string): Promise<AdminOver
     grossSales: Number(row.grossSales || 0),
     refundedSales: Number(row.refundedSales || 0),
     todaySales: Number(row.todaySales || 0),
+    todayRefundedSales: Number(row.todayRefundedSales || 0),
     paidOrders: Number(row.paidOrders || 0),
     orderReviewCount: Number(row.reviewOrders || 0),
     activeSubscriptions: Number(row.active || 0),
@@ -72,7 +85,7 @@ const loadAdminMetrics = unstable_cache(async (today: string): Promise<AdminOver
     activeProSubscriptions: Number(row.activePro || 0),
     activeSubscriptionBillingKrw: Number(row.activeBillingKrw || 0),
   };
-}, ["admin-overview-metrics-v3"], { revalidate: 60 });
+}, ["admin-overview-metrics-v4-gross-net"], { revalidate: 60 });
 
 async function readTrendRows(
   metric: AdminTrendMetric, from: string | null, until: string,
@@ -87,7 +100,7 @@ async function readTrendRows(
         coalesce(sum(amount_krw),0)::bigint as sales,
         count(*)::integer as order_count
       from shorts_mvp.billing_orders
-      where status='succeeded' and amount_krw>0
+      where approved_at is not null and amount_krw>0
         and (${lower}::timestamptz is null or approved_at >= ${lower}::timestamptz)
         and approved_at < ${upper}::timestamptz
       group by 1 order by 1
@@ -112,11 +125,11 @@ async function readTrendRows(
 // is part of the key, so a new day cannot reuse yesterday's partition boundary.
 const loadHistoricalTrend = unstable_cache(
   (metric: AdminTrendMetric, until: string) => readTrendRows(metric, null, until),
-  ["admin-trend-history-v1"], { revalidate: 86_400 },
+  ["admin-trend-history-v2-gross"], { revalidate: 86_400 },
 );
 const loadRecentTrend = unstable_cache(
   (metric: AdminTrendMetric, from: string, until: string) => readTrendRows(metric, from, until),
-  ["admin-trend-recent-v1"], { revalidate: 30 },
+  ["admin-trend-recent-v2-gross"], { revalidate: 30 },
 );
 
 export async function loadAdminTrend(
