@@ -20,16 +20,18 @@ def with_caption_comment_layout(
 ) -> dict[str, object]:
     """Reserve a complete comment card above the persistent channel row.
 
-    Store the extra rectangle only on newly compiled translated landscape
-    presets. Old projects keep their saved layout and pinned renderer.
+    Store the extra rectangle only on newly compiled translated presets with
+    room below the video. Old projects keep their saved layout and renderer.
     """
-    if (template_id != "comment-capture" or video_aspect_ratio != "16:9"
+    if (template_id != "comment-capture" or video_aspect_ratio not in {"16:9", "5:4", "1:1"}
             or custom_template is not None or spec.get("templateId") != "basic"
             or spec.get("schemaVersion") != 4):
         return spec
     result = deepcopy(spec)
     layout = result["layout"]
     layout["channel"] = {"x": 0, "y": 1760, "width": 1080, "height": 160}
-    # 285px card, 24px gap, then the 80px channel row centered at 1840.
-    layout["comment"] = {"x": 0, "y": 1491, "width": 1080, "height": 285}
+    # The square video ends at 1500. Keep its complete card below the video;
+    # the channel's visible 53px row at 1840 still has a 29px gap below it.
+    video_bottom = layout["video"]["y"] + layout["video"]["height"]
+    layout["comment"] = {"x": 0, "y": max(1491, video_bottom), "width": 1080, "height": 285}
     return result

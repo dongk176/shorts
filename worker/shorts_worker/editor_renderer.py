@@ -1745,7 +1745,10 @@ def create_editor_comment_layers(
             panel_height=caption_panel_height,
             overlay_mode=True,
             theme=theme if caption_layout is None or document.overlays.comment_theme else None,
-            size=size if caption_layout is None or document.overlays.comment_theme else None,
+            # Saved caption cards use their fixed geometry for every color.
+            # Passing a size selects the differently sized custom-template card.
+            size=(None if config is None and saved_comment_rect is not None
+                  else size if caption_layout is None or document.overlays.comment_theme else None),
             output_language=output_language,
             japanese_font_enabled=bool(
                 document.render_spec

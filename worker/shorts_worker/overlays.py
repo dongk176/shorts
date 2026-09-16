@@ -765,10 +765,17 @@ def create_comment_panel(
             output_language=output_language,
         )
     scale = max(0.58, min(1.0, panel_height / 285))
+    light = theme == "light"
+    background_rgb = (255, 255, 255) if light else (4, 4, 4)
+    metadata_color = "#18181B" if light else "#F0F0F0"
+    body_color = "#18181B" if light else "#E8E8E8"
+    action_color = "#6B6B73" if light else "#BEBEBE"
+    reply_color = "#6B6B73" if light else "#C4C4C4"
+    icon_color = "#18181B" if light else "#F1F1F1"
     base = Image.new(
         "RGBA",
         (PANEL_WIDTH, panel_height),
-        (4, 4, 4, 244) if overlay_mode else (4, 4, 4, 255),
+        (*background_rgb, 244 if overlay_mode and not light else 255),
     )
     avatar_size = round(72 * scale)
     left = round(44 * scale)
@@ -813,7 +820,7 @@ def create_comment_panel(
         (content_x, top),
         f"@{comment.nickname}  {comment.age_label}",
         font=meta_font,
-        fill="#F0F0F0",
+        fill=metadata_color,
     )
     base.alpha_composite(
         metadata.filter(ImageFilter.GaussianBlur(radius=max(2, round(4.5 * scale))))
@@ -837,26 +844,26 @@ def create_comment_panel(
             (content_x, text_top + index * line_height),
             line,
             font=body_font,
-            fill="#E8E8E8",
+            fill=body_color,
         )
 
     actions_y = text_top + len(lines) * line_height + round(17 * scale)
     icon_size = round(34 * scale)
-    _draw_reaction_icon(details_draw, content_x, actions_y, icon_size)
+    _draw_reaction_icon(details_draw, content_x, actions_y, icon_size, color=icon_color)
     details_draw.text(
         (content_x + icon_size + round(12 * scale), actions_y - round(2 * scale)),
         likes,
         font=action_font,
-        fill="#BEBEBE",
+        fill=action_color,
     )
     likes_width = _text_width(details_draw, likes, action_font)
     dislike_x = content_x + icon_size + round(30 * scale) + likes_width
-    _draw_reaction_icon(details_draw, dislike_x, actions_y, icon_size, down=True)
+    _draw_reaction_icon(details_draw, dislike_x, actions_y, icon_size, down=True, color=icon_color)
     details_draw.text(
         (dislike_x + icon_size + round(36 * scale), actions_y - round(2 * scale)),
         reply,
         font=action_font,
-        fill="#C4C4C4",
+        fill=reply_color,
     )
     base.alpha_composite(details.filter(ImageFilter.GaussianBlur(radius=max(0.25, 0.4 * scale))))
 

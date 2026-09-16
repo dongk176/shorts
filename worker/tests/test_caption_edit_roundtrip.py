@@ -37,9 +37,11 @@ def run(*args):
     ("en", "Hello, everyone.", "Hello, everybody."),
     ("ja", "こんにちは。", "皆さん、こんにちは。"),
 ])
-@pytest.mark.parametrize("saved_composition", [False, True])
+@pytest.mark.parametrize("saved_composition,ratio", [
+    (False, "16:9"), (True, "16:9"), (True, "5:4"), (True, "1:1"),
+])
 def test_basic_caption_edit_preserves_comment_position(
-    tmp_path, language, before, after, saved_composition,
+    tmp_path, language, before, after, saved_composition, ratio,
 ):
     clean = tmp_path / "clean.mp4"
     run("ffmpeg", "-v", "error", "-f", "lavfi", "-i",
@@ -48,12 +50,12 @@ def test_basic_caption_edit_preserves_comment_position(
     segments = [SubtitleSegment(start=0, end=1, text=before)]
     caption = compile_caption_render_spec(
         translated_words(segments), template_id="basic", clip_start=0, clip_end=1,
-        video_aspect_ratio=VideoAspectRatio.LANDSCAPE, schema_version=4,
+        video_aspect_ratio=VideoAspectRatio(ratio), schema_version=4,
         font_id="noto-sans-jp" if language == "ja" else "pretendard",
     )
     if saved_composition:
         caption = with_caption_comment_layout(
-            caption, template_id="comment-capture", video_aspect_ratio="16:9",
+            caption, template_id="comment-capture", video_aspect_ratio=ratio,
         )
     title = "Math legend\nHyun Woo-jin!" if language != "ja" else "数学の伝説\nヒョン・ウジン！"
     comment = CommentOverlay.model_validate({
@@ -63,7 +65,7 @@ def test_basic_caption_edit_preserves_comment_position(
     })
     initial = compile_initial_editor_render_spec_v4(
         title=title, template_id=TemplateId.COMMENT_CAPTURE,
-        video_aspect_ratio=VideoAspectRatio.LANDSCAPE, font_scale=1,
+        video_aspect_ratio=VideoAspectRatio(ratio), font_scale=1,
         comments=[comment], caption_render_spec=caption, output_language=language,
     )
     fixture = Path(__file__).parents[2] / "test-fixtures/editor-document-v3.json"
@@ -76,10 +78,12 @@ def test_basic_caption_edit_preserves_comment_position(
     value["subtitles"]["segments"] = [s.model_dump() for s in segments]
     value["overlays"].update(
         textOverlays=[], layerOrder=["video", "title", "comment", "channel"], background=None,
+        commentTheme="dark" if saved_composition else None,
     )
     value["overlays"]["visible"]["comment"] = True
     value["overlays"]["fonts"]["title"] = initial["title"]["font"]["fontId"]
     value["video"].update(clips=[{"id": "clip-1", "sourceStartSeconds": 0, "sourceEndSeconds": 1}],
+                          aspectRatio=ratio,
                           timelineStartSeconds=0, timelineEndSeconds=1,
                           selectionStartSeconds=0, selectionEndSeconds=1)
     value["renderSpec"] = deepcopy(initial)
@@ -94,7 +98,7 @@ def test_basic_caption_edit_preserves_comment_position(
         clean_path=clean, output_path=tmp_path / "first.mp4", title=title,
         channel_name="Channel", template_id=TemplateId.COMMENT_CAPTURE,
         transcript=segments, subtitles_enabled=True, work_dir=tmp_path / "first-work",
-        prefix="first", video_aspect_ratio=VideoAspectRatio.LANDSCAPE,
+        prefix="first", video_aspect_ratio=VideoAspectRatio(ratio),
         comment_overlays=[comment], comment_channel_fixed=True,
         caption_render_spec=caption, initial_render_spec=initial,
         comment_output_language=language,
@@ -134,7 +138,9 @@ def test_basic_caption_edit_preserves_comment_position(
     if saved_composition:
         card = caption["layout"]["comment"]
         channel = caption["layout"]["channel"]
-        assert card["y"] + card["height"] <= channel["y"] + 40 - 24
+        video_bottom = caption["layout"]["video"]["y"] + caption["layout"]["video"]["height"]
+        assert card["y"] >= video_bottom
+        assert card["y"] + card["height"] <= channel["y"] + channel["height"] / 2 - 27 - 24
         assert channel["y"] + channel["height"] <= 1920
         # The channel stays white and visible after subtitle editing, with the
         # same actual pixels (old code changed its font, color, and position).
@@ -158,7 +164,7 @@ def test_basic_caption_edit_preserves_comment_position(
             "-frames:v", "1", str(off_path))
         with Image.open(off_path) as image:
             off_frame = image.convert("RGB")
-        for unchanged_box in ((0, 0, 1080, 1040), (0, top, 1080, 1920)):
+        for unchanged_box in ((0, 0, 1080, min(video_bottom, area["y"])), (0, top, 1080, 1920)):
             diff = ImageChops.difference(
                 frames[1].crop(unchanged_box), off_frame.crop(unchanged_box),
             )
