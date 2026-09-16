@@ -33,6 +33,7 @@ import {
   TEMPLATE_CANVAS,
 } from "@/lib/template-config";
 import { wrapPreviewTitle } from "@/lib/title-preview";
+import { EDITOR_TIMELINE_METADATA_TOLERANCE_SECONDS } from "@/lib/editor-timeline-sync";
 
 export const EDITOR_DOCUMENT_MAX_TEXT_OVERLAYS = 20;
 export const EDITOR_DOCUMENT_MAX_COMMENTS = 20;
@@ -570,6 +571,20 @@ function validateEditorDocumentSnapshot(
   }
   const firstClip = document.video.clips[0];
   const lastClip = document.video.clips.at(-1);
+  if (firstClip && lastClip) {
+    const start = document.video.timelineStartSeconds + firstClip.sourceStartSeconds;
+    const end = document.video.timelineStartSeconds + lastClip.sourceEndSeconds;
+    // Clip positions drive extraction. Repair only the redundant selection
+    // metadata, leaving the requested frames and subtitle clock unchanged.
+    if (Math.abs(document.video.selectionStartSeconds - start)
+      <= EDITOR_TIMELINE_METADATA_TOLERANCE_SECONDS) {
+      document.video.selectionStartSeconds = start;
+    }
+    if (Math.abs(document.video.selectionEndSeconds - end)
+      <= EDITOR_TIMELINE_METADATA_TOLERANCE_SECONDS) {
+      document.video.selectionEndSeconds = end;
+    }
+  }
   if (
     document.video.selectionEndSeconds
       <= document.video.selectionStartSeconds
@@ -598,6 +613,17 @@ function validateEditorDocumentSnapshot(
       code: "custom",
       path: ["video", "selectionStartSeconds"],
       message: "영상 선택 범위가 영상 조각과 일치하지 않습니다.",
+    });
+  }
+  if (timelineDuration > 0) {
+    document.subtitles.segments = document.subtitles.segments.flatMap((segment) => {
+      if (segment.end > timelineDuration
+        && segment.end <= timelineDuration + EDITOR_TIMELINE_METADATA_TOLERANCE_SECONDS) {
+        return segment.start < timelineDuration
+          ? [{ ...segment, end: timelineDuration }]
+          : [];
+      }
+      return [segment];
     });
   }
   if (document.subtitles.segments.some(

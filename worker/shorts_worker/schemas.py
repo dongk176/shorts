@@ -1106,6 +1106,16 @@ class EditorDocumentVideo(BaseModel):
                 raise ValueError("editor clips cannot overlap")
         first_clip = self.clips[0]
         last_clip = self.clips[-1]
+        expected_start = self.timeline_start_seconds + first_clip.source_start_seconds
+        expected_end = self.timeline_start_seconds + last_clip.source_end_seconds
+        if abs(self.selection_start_seconds - expected_start) <= (
+            EDITOR_TIMELINE_METADATA_TOLERANCE_SECONDS
+        ):
+            self.selection_start_seconds = expected_start
+        if abs(self.selection_end_seconds - expected_end) <= (
+            EDITOR_TIMELINE_METADATA_TOLERANCE_SECONDS
+        ):
+            self.selection_end_seconds = expected_end
         if (
             self.selection_end_seconds <= self.selection_start_seconds
             or self.selection_start_seconds < self.timeline_start_seconds - 0.001
@@ -1187,6 +1197,19 @@ class EditorDocument(BaseModel):
             for overlay in self.overlays.text_overlays
         ):
             raise ValueError("text overlay exceeds editor output")
+        timeline_duration = (
+            self.video.timeline_end_seconds - self.video.timeline_start_seconds
+        )
+        repaired_segments = []
+        for segment in self.subtitles.segments:
+            if timeline_duration < segment.end <= (
+                timeline_duration + EDITOR_TIMELINE_METADATA_TOLERANCE_SECONDS
+            ):
+                if segment.start >= timeline_duration:
+                    continue
+                segment = segment.model_copy(update={"end": timeline_duration})
+            repaired_segments.append(segment)
+        self.subtitles.segments = repaired_segments
         if any(
             segment.end
             > (

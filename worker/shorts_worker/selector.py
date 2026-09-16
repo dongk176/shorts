@@ -707,12 +707,25 @@ class TranscriptSelector:
     ) -> list[HighlightClip]:
         minimum_count = minimum_clip_count(required_count)
 
-        def grounded(clip: HighlightClip) -> bool:
+        def repair_money_metadata(clip: HighlightClip) -> HighlightClip:
             source = " ".join(s.text for s in transcript
                               if s.end > clip.start_seconds and s.start < clip.end_seconds)
-            return all(not ungrounded_money(text, source)
-                       and not has_unlabeled_amount(text, source)
-                       for text in (clip.hook_title, clip.reason or ""))
+            repaired = {}
+            for field, text in (("hook_title", clip.hook_title), ("reason", clip.reason or "")):
+                if ungrounded_money(text, source) or has_unlabeled_amount(text, source):
+                    repaired[field] = (
+                        "\n".join(FALLBACK_TITLE_LINES[output_language])
+                        if field == "hook_title" else CONTENT_LANGUAGES[output_language]["reason"]
+                    )
+            if repaired:
+                _log_selection_event(
+                    "highlight_metadata_repaired",
+                    fields=list(repaired),
+                    reason="money_not_grounded",
+                    start_seconds=clip.start_seconds,
+                    end_seconds=clip.end_seconds,
+                )
+            return clip.model_copy(update=repaired) if repaired else clip
 
         messages = self._selection_messages(
             video_title=video_title,
@@ -802,7 +815,7 @@ class TranscriptSelector:
                     relaxed_titles=localized,
                 )
                 if ground_money:
-                    normalized = [clip for clip in normalized if grounded(clip)]
+                    normalized = [repair_money_metadata(clip) for clip in normalized]
             except Exception as exc:
                 _log_selection_event(
                     "highlight_selection_provider",
@@ -857,8 +870,8 @@ class TranscriptSelector:
             output_language=output_language,
             relaxed_titles=localized,
         )
-        if ground_money and not all(grounded(clip) for clip in fallback):
-            raise ShortsMakerError("제목의 환산 금액을 확인하지 못했습니다.")
+        if ground_money:
+            fallback = [repair_money_metadata(clip) for clip in fallback]
         _log_selection_event(
             "highlight_selection_completed",
             source="deterministic",

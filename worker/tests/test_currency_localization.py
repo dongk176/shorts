@@ -182,3 +182,34 @@ def test_titles_use_clip_local_calculated_money(monkeypatch):
         output_language=OutputLanguage.JA, source_language="ko", ground_money=True,
     )
     assert len(clips) == 1 and clips[0].start_seconds == 0
+
+
+@pytest.mark.parametrize("bad_field", ["hook_title", "reason"])
+def test_money_metadata_error_repairs_only_text_without_losing_clips(monkeypatch, bad_field):
+    selector = TranscriptSelector(Settings(
+        gemini_api_key="test", gemini_paid_data_processing_confirmed=True,
+        openai_api_key=None,
+    ))
+    candidates = [HighlightClip(
+        start_seconds=start, end_seconds=start + 30,
+        hook_title="価格は千円\n価値を確かめる", reason="価格は千円です。",
+    ).model_copy(update={bad_field: "価格は999万円\n価値を確かめる"})
+        for start in (0, 40, 80)]
+    monkeypatch.setattr(selector, "_select_with_gemini", lambda **_: candidates)
+
+    clips = selector.select(
+        video_title="価格を比較", duration_seconds=120, required_count=3,
+        transcript=[SubtitleSegment(start=0, end=120, text="価格は1,000円です。")],
+        output_language=OutputLanguage.JA, source_language="ko", ground_money=True,
+    )
+
+    assert [(clip.start_seconds, clip.end_seconds) for clip in clips] == [
+        (0, 30), (40, 70), (80, 110),
+    ]
+    for clip in clips:
+        assert "999" not in clip.hook_title + clip.reason
+        assert clip.selection_provider == "gemini"
+        if bad_field == "hook_title":
+            assert clip.reason == "価格は千円です。"
+        else:
+            assert clip.hook_title == "価格は千円\n価値を確かめる"

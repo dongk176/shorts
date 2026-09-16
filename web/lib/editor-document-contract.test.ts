@@ -132,6 +132,31 @@ function validV4Document(titleOffsetY = 0) {
 }
 
 describe("editor document v2 contract", () => {
+  it.each([0.08, 0.5])("repairs %s second selection metadata drift without moving clips", (drift) => {
+    const value = validDocument();
+    const clips = structuredClone(value.video.clips);
+    value.video.selectionStartSeconds += drift;
+    value.video.selectionEndSeconds -= drift;
+    const parsed = editorDocumentSnapshotSchema.parse(value);
+    expect(parsed.video.selectionStartSeconds).toBe(11);
+    expect(parsed.video.selectionEndSeconds).toBe(16);
+    expect(parsed.video.clips).toEqual(clips);
+    expect(editorDocumentOutputDuration(parsed)).toBe(3.5);
+  });
+
+  it.each([validDocument, validV4Document])("clips a small subtitle tail overrun", (fixture) => {
+    const value = fixture();
+    value.subtitles.segments = [
+      { start: 9, end: 10.4, text: "마지막 문장" },
+      { start: 10.1, end: 10.5, text: "영상 밖" },
+    ];
+    const parsed = editorDocumentSnapshotSchema.parse(value);
+    expect(parsed.subtitles.segments).toEqual([
+      { start: 9, end: 10, text: "마지막 문장" },
+    ]);
+    expect(parsed.video.clips).toEqual(value.video.clips);
+  });
+
   it("accepts the repository-wide worker contract fixture", () => {
     const fixture = JSON.parse(readFileSync(
       path.resolve(process.cwd(), "../test-fixtures/editor-document-v2.json"),
