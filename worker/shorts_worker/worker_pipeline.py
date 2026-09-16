@@ -3677,6 +3677,38 @@ class BatchWorker:
             if document.base_render_version != int(item["render_version"]):
                 raise ValueError("편집 문서의 기준 렌더 버전이 일치하지 않습니다.")
             captured_timeline_key = item.get("edit_timeline_s3_key")
+
+            def matches_document_timeline(start: float, end: float) -> bool:
+                return (
+                    abs(document.video.timeline_start_seconds - start)
+                    <= EDITOR_TIMELINE_METADATA_TOLERANCE_SECONDS
+                    and abs(document.video.timeline_end_seconds - end)
+                    <= EDITOR_TIMELINE_METADATA_TOLERANCE_SECONDS
+                )
+
+            # A background capture may publish a wider timeline after this edit
+            # was accepted. Its document still addresses the original clean
+            # clip. That clip is immutable for base_render_version and remains
+            # available until this render commits, so keep using it (including
+            # its caption source) instead of switching clocks mid-request.
+            if (
+                captured_timeline_key
+                and not matches_document_timeline(
+                    float(item["edit_timeline_start_seconds"]),
+                    float(item["edit_timeline_end_seconds"]),
+                )
+                and item.get("clean_clip_s3_key")
+                and matches_document_timeline(
+                    float(item["start_seconds"]),
+                    float(item["end_seconds"]),
+                )
+            ):
+                captured_timeline_key = None
+                _log_event(
+                    "editor_retained_requested_clean_source",
+                    short_id=short_id,
+                    base_render_version=document.base_render_version,
+                )
             edit_source_key = (
                 str(captured_timeline_key)
                 if captured_timeline_key
@@ -3692,12 +3724,7 @@ class BatchWorker:
                 if captured_timeline_key
                 else float(item["end_seconds"])
             )
-            if (
-                abs(document.video.timeline_start_seconds - timeline_start)
-                > EDITOR_TIMELINE_METADATA_TOLERANCE_SECONDS
-                or abs(document.video.timeline_end_seconds - timeline_end)
-                > EDITOR_TIMELINE_METADATA_TOLERANCE_SECONDS
-            ):
+            if not matches_document_timeline(timeline_start, timeline_end):
                 _log_event(
                     "editor_timeline_range_mismatch",
                     short_id=short_id,

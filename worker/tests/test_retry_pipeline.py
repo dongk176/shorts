@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import inspect
 import json
+import shutil
+import subprocess
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -11,6 +13,8 @@ from unittest.mock import MagicMock
 import pytest
 
 from shorts_worker.caption_templates import compile_caption_render_spec
+from shorts_worker.config import Settings
+from shorts_worker.editor_renderer import EditorDocumentRenderer
 from shorts_worker.errors import (
     BotCheckError,
     CaptionCompileError,
@@ -1807,6 +1811,116 @@ def test_editor_document_rerender_still_rejects_replaced_source_range(tmp_path) 
 
     worker.storage.download.assert_not_called()
     worker.repository.complete_editor_document_rerender.assert_not_called()
+
+
+@pytest.mark.parametrize("expanded_ready", [False, True])
+@pytest.mark.parametrize("source_start,source_end,expanded_end", [
+    (10, 20, 50),
+    (2.32, 66.89, 96.89),  # Project 13307's original and expanded bounds.
+])
+def test_editor_document_keeps_requested_source_when_background_capture_finishes(
+    tmp_path, expanded_ready: bool,
+    source_start: float, source_end: float, expanded_end: float,
+) -> None:
+    worker = _editor_document_rerender_worker(tmp_path, {})
+    item = worker.repository.get_short.return_value
+    # The accepted document uses the clean clip's 10..20 clock. The background
+    # capture expands it to 0..50 while the edit is queued.
+    item["start_seconds"] = source_start
+    item["end_seconds"] = source_end
+    item["pending_edit_snapshot"]["video"].update({
+        "timelineStartSeconds": source_start,
+        "timelineEndSeconds": source_end,
+        "selectionStartSeconds": source_start + 1,
+        "selectionEndSeconds": source_start + 6,
+    })
+    item["edit_timeline_s3_key"] = (
+        "edit-sources/expanded-timeline.mp4" if expanded_ready else None
+    )
+    item["edit_timeline_start_seconds"] = 0 if expanded_ready else None
+    item["edit_timeline_end_seconds"] = expanded_end if expanded_ready else None
+    original_document = json.loads(json.dumps(item["pending_edit_snapshot"]))
+    clean_caption_spec = {"schemaVersion": 3, "templateId": "pop", "cues": []}
+    expanded_caption_spec = {
+        "schemaVersion": 3, "templateId": "pop", "cues": [],
+        "expandedSource": True,
+    }
+    item["subtitle_template_id"] = "pop"
+    item["caption_render_spec"] = {
+        **clean_caption_spec,
+        "editorSource": {"spec": expanded_caption_spec},
+    }
+
+    worker.rerender(EDITOR_DOCUMENT_SHORT_ID)
+
+    assert worker.storage.download.call_args_list[0].args[0] == "edit-sources/clean.mp4"
+    document = worker.editor_renderer.extract_sequence.call_args.kwargs["document"]
+    assert document.video.timeline_start_seconds == source_start
+    assert document.video.timeline_end_seconds == source_end
+    assert document.video.clips[0].source_start_seconds == 1
+    assert item["pending_edit_snapshot"] == original_document
+    assert worker.editor_renderer.render.call_args.kwargs["caption_render_spec"] is (
+        item["caption_render_spec"]
+    )
+    completion = worker.repository.complete_editor_document_rerender.call_args.kwargs
+    assert completion["start_seconds"] == pytest.approx(source_start + 1)
+    assert completion["duration_seconds"] == 3.5
+
+
+@pytest.mark.render
+@pytest.mark.skipif(
+    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
+    reason="ffmpeg and ffprobe are required",
+)
+def test_editor_source_race_extracts_original_frames_and_preserves_output_length(
+    tmp_path,
+) -> None:
+    worker = _editor_document_rerender_worker(tmp_path, {})
+    item = worker.repository.get_short.return_value
+    item.update({
+        "start_seconds": 10,
+        "end_seconds": 20,
+        "edit_timeline_start_seconds": 0,
+        "edit_timeline_end_seconds": 50,
+    })
+    clean_source = tmp_path / "original-clean.mp4"
+    subprocess.run([
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-f", "lavfi", "-i", "color=c=blue:s=160x90:r=30:d=10",
+        "-c:v", "libx264", "-preset", "ultrafast", str(clean_source),
+    ], check=True, capture_output=True, timeout=30)
+
+    def download_requested_source(key, destination):
+        if str(destination).endswith("timeline.mp4"):
+            assert key == "edit-sources/clean.mp4"
+            return clean_source
+        return tmp_path / "channel.png"
+
+    worker.storage.download.side_effect = download_requested_source
+    renderer = EditorDocumentRenderer(Settings(
+        temp_dir=tmp_path,
+        ffmpeg_timeout_seconds=60,
+        ffmpeg_threads=2,
+        clean_clip_preset="ultrafast",
+    ))
+    worker.editor_renderer.extract_sequence.side_effect = renderer.extract_sequence
+
+    def check_extracted_frames(**kwargs):
+        clean = kwargs["clean_path"]
+        probe = json.loads(subprocess.check_output([
+            "ffprobe", "-v", "error", "-show_format", "-of", "json", str(clean),
+        ], timeout=30))
+        assert float(probe["format"]["duration"]) == pytest.approx(3.5, abs=0.04)
+        pixel = subprocess.check_output([
+            "ffmpeg", "-v", "error", "-i", str(clean), "-frames:v", "1",
+            "-vf", "scale=1:1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-",
+        ], timeout=30)
+        assert pixel[2] > 200 and pixel[0] < 20 and pixel[1] < 20
+        return clean
+
+    worker.editor_renderer.render.side_effect = check_extracted_frames
+    worker.rerender(EDITOR_DOCUMENT_SHORT_ID)
+    worker.repository.complete_editor_document_rerender.assert_called_once()
 
 
 def test_editor_document_rerender_promotes_one_atomic_snapshot(tmp_path) -> None:
