@@ -1752,15 +1752,17 @@ def test_one_pixel_text_layout_wraps_without_clipping_the_glyphs(
     shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
     reason="ffmpeg and ffprobe are required",
 )
+@pytest.mark.parametrize("source_duration", [9.8, 9.6, 9.2])
 def test_editor_sequence_pads_small_source_tail_drift_to_document_duration(
     tmp_path: Path,
+    source_duration: float,
 ) -> None:
     timeline = tmp_path / "short-tail-timeline.mp4"
     _run([
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
         "-f", "lavfi", "-i", "testsrc2=size=160x90:rate=30",
         "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=16000",
-        "-t", "9.8", "-c:v", "libx264", "-preset", "ultrafast",
+        "-t", str(source_duration), "-c:v", "libx264", "-preset", "ultrafast",
         "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", str(timeline),
     ])
     value = json.loads(FIXTURE.read_text())

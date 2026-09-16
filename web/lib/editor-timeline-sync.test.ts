@@ -59,6 +59,18 @@ function documentFixture(): EditorDocumentSnapshot {
 }
 
 describe("editor timeline synchronization", () => {
+  it.each([0.08, 0.2, 0.5])("preserves edit timing across %s second metadata drift", (drift) => {
+    const document = documentFixture();
+    const timeline = {
+      timelineStartSeconds: 310 + drift,
+      timelineEndSeconds: 320 - drift,
+      version: 1,
+    };
+
+    expect(editorDocumentMatchesTimeline(document, timeline)).toBe(true);
+    expect(synchronizeEditorDocumentTimeline(document, timeline)).toEqual(document);
+  });
+
   it("keeps an already matching document unchanged", () => {
     const document = documentFixture();
     const synchronized = synchronizeEditorDocumentTimeline(document, {

@@ -19,6 +19,8 @@ from .content_language import CONTENT_LANGUAGES, comment_age_label
 from .fallback_comments import select_fallback_comment_texts
 from .title_wrapping import manual_title_lines, wrap_korean_title
 
+EDITOR_TIMELINE_METADATA_TOLERANCE_SECONDS = 0.5
+
 
 class TemplateId(StrEnum):
     DARK_RED = "dark-red"

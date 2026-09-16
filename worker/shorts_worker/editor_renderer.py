@@ -45,6 +45,7 @@ from .render_spec_v4 import (
 )
 from .renderer import VideoLayout, caption_video_layout
 from .schemas import (
+    EDITOR_TIMELINE_METADATA_TOLERANCE_SECONDS,
     CustomTemplateConfig,
     EditorDocument,
     EditorFontId,
@@ -1946,7 +1947,11 @@ class EditorDocumentRenderer:
             document.video.timeline_end_seconds
             - document.video.timeline_start_seconds
         )
-        timeline_drift_tolerance = max(0.2, expected_duration * 0.01)
+        timeline_drift_tolerance = max(
+            # Both endpoints can drift in opposite directions.
+            2 * EDITOR_TIMELINE_METADATA_TOLERANCE_SECONDS,
+            expected_duration * 0.01,
+        )
         if abs(timeline_duration - expected_duration) > timeline_drift_tolerance:
             raise RenderError("편집 타임라인 길이가 저장된 문서와 일치하지 않습니다.")
         has_audio = any(

@@ -1778,6 +1778,37 @@ def _editor_document_rerender_worker(tmp_path, completion_result) -> BatchWorker
     return worker
 
 
+@pytest.mark.parametrize("drift", [0.08, 0.2, 0.5])
+def test_editor_document_rerender_accepts_small_timeline_metadata_drift(
+    tmp_path, drift: float,
+) -> None:
+    worker = _editor_document_rerender_worker(tmp_path, {})
+    item = worker.repository.get_short.return_value
+    item["edit_timeline_start_seconds"] += drift
+    item["edit_timeline_end_seconds"] -= drift
+
+    worker.rerender(EDITOR_DOCUMENT_SHORT_ID)
+
+    worker.repository.complete_editor_document_rerender.assert_called_once()
+    document = worker.editor_renderer.extract_sequence.call_args.kwargs["document"]
+    assert document.video.timeline_start_seconds == 10
+    assert document.video.timeline_end_seconds == 20
+    assert document.video.selection_start_seconds == 11
+
+
+def test_editor_document_rerender_still_rejects_replaced_source_range(tmp_path) -> None:
+    worker = _editor_document_rerender_worker(tmp_path, {})
+    item = worker.repository.get_short.return_value
+    item["edit_timeline_start_seconds"] += 10
+    item["edit_timeline_end_seconds"] += 10
+
+    with pytest.raises(ValueError, match="타임라인 범위"):
+        worker.rerender(EDITOR_DOCUMENT_SHORT_ID)
+
+    worker.storage.download.assert_not_called()
+    worker.repository.complete_editor_document_rerender.assert_not_called()
+
+
 def test_editor_document_rerender_promotes_one_atomic_snapshot(tmp_path) -> None:
     worker = _editor_document_rerender_worker(tmp_path, {
         "output_s3_key": "outputs/session-a/job-a/short-a/v1.mp4",

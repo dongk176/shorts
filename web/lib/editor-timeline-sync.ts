@@ -4,6 +4,10 @@ import {
 } from "@/lib/editor-document-snapshot";
 import { RANGE_EDIT_BOUNDARY_TOLERANCE_SECONDS } from "@/lib/range-editing";
 
+// Container timestamps may differ by a few frames from the editor metadata.
+// Keep this aligned with the worker's editor timeline tolerance.
+export const EDITOR_TIMELINE_METADATA_TOLERANCE_SECONDS = 0.5;
+
 export type EditorTimelineIdentity = {
   timelineStartSeconds: number;
   timelineEndSeconds: number;
@@ -11,7 +15,7 @@ export type EditorTimelineIdentity = {
 };
 
 function sameTimelineSecond(left: number, right: number) {
-  return Math.abs(left - right) <= RANGE_EDIT_BOUNDARY_TOLERANCE_SECONDS;
+  return Math.abs(left - right) <= EDITOR_TIMELINE_METADATA_TOLERANCE_SECONDS;
 }
 
 function roundedTimelineSecond(value: number) {
@@ -38,8 +42,8 @@ export function synchronizeEditorDocumentTimeline(
 ): EditorDocumentSnapshot {
   const synchronized = cloneEditorDocumentSnapshot(document, true);
   if (editorDocumentMatchesTimeline(synchronized, timeline)) {
-    synchronized.video.timelineStartSeconds = timeline.timelineStartSeconds;
-    synchronized.video.timelineEndSeconds = timeline.timelineEndSeconds;
+    // Preserve the document clock, including clip/selection/subtitle timing.
+    // Snapping just the bounds can make an otherwise valid edit inconsistent.
     return synchronized;
   }
 

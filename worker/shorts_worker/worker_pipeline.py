@@ -64,6 +64,7 @@ from .render_spec_v4 import compile_initial_editor_render_spec_v4
 from .renderer import VideoRenderer
 from .repository import WorkerRepository
 from .schemas import (
+    EDITOR_TIMELINE_METADATA_TOLERANCE_SECONDS,
     CommentOverlay,
     CustomTemplateConfig,
     EditorDocument,
@@ -3692,9 +3693,19 @@ class BatchWorker:
                 else float(item["end_seconds"])
             )
             if (
-                abs(document.video.timeline_start_seconds - timeline_start) > 0.051
-                or abs(document.video.timeline_end_seconds - timeline_end) > 0.051
+                abs(document.video.timeline_start_seconds - timeline_start)
+                > EDITOR_TIMELINE_METADATA_TOLERANCE_SECONDS
+                or abs(document.video.timeline_end_seconds - timeline_end)
+                > EDITOR_TIMELINE_METADATA_TOLERANCE_SECONDS
             ):
+                _log_event(
+                    "editor_timeline_range_mismatch",
+                    short_id=short_id,
+                    document_start=document.video.timeline_start_seconds,
+                    document_end=document.video.timeline_end_seconds,
+                    source_start=timeline_start,
+                    source_end=timeline_end,
+                )
                 raise ValueError("편집 문서의 타임라인 범위가 일치하지 않습니다.")
 
             self.repository.mark_editor_render_request_rendering(short_id)

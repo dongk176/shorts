@@ -26,6 +26,7 @@ import {
 } from "@/lib/editor-document-contract";
 import { resolveBuiltInSubtitleTemplateSnapshot } from "@/lib/editor-built-in-subtitle-template";
 import type { EditorDocumentJsonObject } from "@/lib/editor-document-snapshot";
+import { EDITOR_TIMELINE_METADATA_TOLERANCE_SECONDS } from "@/lib/editor-timeline-sync";
 import {
   createEditorRenderSpec,
   EDITOR_RENDER_SPEC_LEGACY_VERSION,
@@ -174,7 +175,7 @@ function editorSnapshotHash(document: ValidatedEditorDocumentSnapshot) {
 }
 
 function sameTimelineSecond(left: number, right: number) {
-  return Math.abs(left - right) <= RANGE_EDIT_BOUNDARY_TOLERANCE_SECONDS;
+  return Math.abs(left - right) <= EDITOR_TIMELINE_METADATA_TOLERANCE_SECONDS;
 }
 
 function editorDocumentFontIds(
