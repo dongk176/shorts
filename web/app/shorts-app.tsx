@@ -49,6 +49,7 @@ import {
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { LanguageGuide } from "@/components/language-guide";
+import { useSourceRangeGuideCompletion } from "@/components/use-source-range-guide-completion";
 import { BEFORE_LOCALE_REFRESH, clearCreationDraft, preserveCreationDraft, readCreationDraft } from "@/lib/creation-locale-draft";
 import { languageCopy } from "@/lib/language-guide";
 import { SourceRangeGuide } from "@/components/source-range-guide";
@@ -13148,7 +13149,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   useEffect(() => {
     setLanguageGuideComplete(false);
     setLanguageGuideReplay(0);
-  }, [state?.user?.id, analysis?.videoId, sourceMode]);
+  }, [state?.user?.id, analysis?.analysisId, sourceMode]);
   const outputLanguage: OutputLanguage = languageTestActive ? selectedOutputLanguage : "ko";
   const [templateId, setTemplateId] = useState<TemplateId>(resumedDraft?.templateId ?? "comment-capture");
   const [subtitleTemplateId, setSubtitleTemplateId] = useState<SubtitleTemplateSelectionId | null>(resumedDraft?.subtitleTemplateId ?? null);
@@ -13186,7 +13187,6 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const [shortsEventGrantedSeconds, setShortsEventGrantedSeconds] = useState(0);
   const [scrollToAnalysis, setScrollToAnalysis] = useState(false);
   const [scrollToProjects, setScrollToProjects] = useState(false);
-  const [sourceRangeGuideComplete, setSourceRangeGuideComplete] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [conversionMaintenanceOpen, setConversionMaintenanceOpen] = useState(false);
@@ -13247,6 +13247,8 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const sourceRangeSelectionEnabled = uploadSourceActive
     ? uploadVideo.durationSeconds >= MIN_SELECTED_SOURCE_SECONDS
     : analysis?.sourceRangeSelectionEnabled === true;
+  const { completed: sourceRangeGuideComplete, complete: completeSourceRangeGuide, reset: resetSourceRangeGuide } =
+    useSourceRangeGuideCompletion(selectedSource?.creationAllowed ? selectedSource.key : null, sourceRangeSelectionEnabled);
   const unifiedTemplateSubtitleCanaryEnabled = Boolean(uploadSourceActive
     ? state?.capabilities.unifiedTemplateSubtitles
     : state?.capabilities.unifiedTemplateSubtitles
@@ -13452,18 +13454,6 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       setCustomTemplateId(null);
     }
   }, [customTemplateId, sourceCompatiblePersonalTemplates, personalTemplates.length]);
-
-  useEffect(() => {
-    setSourceRangeGuideComplete(Boolean(
-      selectedSource
-      && selectedSource.creationAllowed === true
-      && !sourceRangeSelectionEnabled
-    ));
-  }, [selectedSource, sourceRangeSelectionEnabled]);
-
-  const completeSourceRangeGuide = useCallback(() => {
-    setSourceRangeGuideComplete(true);
-  }, []);
 
   const trySubtitleTemplate = useCallback(() => {
     markSubtitleTemplateUsed();
@@ -13741,7 +13731,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     setCreationRestrictionOpen(false);
     setCreationRestrictionReason(null);
     setLongSourceNoticeOpen(false);
-    setSourceRangeGuideComplete(false);
+    resetSourceRangeGuide();
     setScrollToAnalysis(false);
     setError(null);
   };
@@ -13763,7 +13753,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     try {
       const inspected = await inspectUploadVideo(file);
       setUploadVideo(inspected);
-      setSourceRangeGuideComplete(inspected.durationSeconds < MIN_SELECTED_SOURCE_SECONDS);
+      resetSourceRangeGuide();
       setScrollToAnalysis(true);
       if (inspected.durationSeconds > 60 * 60) {
         setLongSourceNoticeOpen(true);
@@ -13795,7 +13785,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     setCreationRestrictionOpen(false);
     setCreationRestrictionReason(null);
     setLongSourceNoticeOpen(false);
-    setSourceRangeGuideComplete(false);
+    resetSourceRangeGuide();
     if (!state?.user) {
       setLoginNext("/");
       setLoginOpen(true);
@@ -14455,7 +14445,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       />
       <LanguageGuide key={`${state?.user?.id ?? "anonymous"}:${selectedSource?.key ?? "no-source"}`}
         userId={state?.user?.id ?? null} available={languageAvailable}
-        enabled={Boolean(sourceRangeGuideComplete && selectedSource?.creationAllowed && !longSourceNoticeOpen && !creationRestrictionOpen)}
+        enabled={Boolean((sourceRangeGuideComplete || languageGuideReplay > 0) && selectedSource?.creationAllowed && !longSourceNoticeOpen && !creationRestrictionOpen)}
         replay={languageGuideReplay} locale={locale} onComplete={completeLanguageGuide} />
       <SubtitleTemplateDiscoveryOverlay
         enabled={Boolean(
