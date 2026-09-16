@@ -371,7 +371,6 @@ export function EditorTextTimeline({
               type="button"
               className="editor-text-range-body"
               aria-label="텍스트 노출 구간 이동"
-              title={textOverlay.text}
               onPointerDown={(event) => startDrag("move", event)}
               onKeyDown={(event) => {
                 if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
@@ -380,7 +379,9 @@ export function EditorTextTimeline({
                 event.stopPropagation();
               }}
             >
-              {textOverlay.text || "텍스트"}
+              <span data-i18n-skip={textOverlay.text ? true : undefined} title={textOverlay.text}>
+                {textOverlay.text || "텍스트"}
+              </span>
             </button>
             <button
               type="button"

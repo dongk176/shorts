@@ -3,7 +3,7 @@
 import { useEffect, useId, useState } from "react";
 import type { CommentOverlay, OutputLanguage } from "@/lib/contracts";
 import { commentActionLabels } from "@/lib/content-language";
-import { layoutCaptionCommentLine, measureCaptionComment, wrapCaptionComment } from "@/lib/caption-comment-preview";
+import { CAPTION_COMMENT_WORD_SPACE_EM, layoutCaptionCommentLine, measureCaptionComment, measureCaptionCommentText, wrapCaptionComment } from "@/lib/caption-comment-preview";
 
 export function CaptionCommentPreview({ comment, theme, outputLanguage }: {
   comment: CommentOverlay | null;
@@ -13,7 +13,7 @@ export function CaptionCommentPreview({ comment, theme, outputLanguage }: {
   const id = useId();
   const family = outputLanguage === "ja" ? '"Editor Noto Sans JP"' : '"Editor Noto Sans KR"';
   const actions = commentActionLabels(comment?.likeCount || 0, outputLanguage);
-  const [metrics, setMetrics] = useState<{ key: string; lines: string[]; lineRuns: ReturnType<typeof layoutCaptionCommentLine>[]; ascent: number; actionAscent: number; metaAscent: number; likesWidth: number } | null>(null);
+  const [metrics, setMetrics] = useState<{ key: string; lines: string[]; lineRuns: ReturnType<typeof layoutCaptionCommentLine>[]; wordSpacing: number; ascent: number; actionAscent: number; metaAscent: number; likesWidth: number } | null>(null);
   const text = comment?.text || "";
   const key = `${family}:${text}:${actions.likes}`;
   useEffect(() => {
@@ -22,7 +22,8 @@ export function CaptionCommentPreview({ comment, theme, outputLanguage }: {
       const context = document.createElement("canvas").getContext("2d");
       if (!context) return;
       context.font = `400 35px ${family}`;
-      const measureText = (value: string) => context.measureText(value).width;
+      const measureText = (value: string) => measureCaptionCommentText(value, (word) => context.measureText(word).width);
+      const wordSpacing = 35 * CAPTION_COMMENT_WORD_SPACE_EM - context.measureText(" ").width;
       const lines = wrapCaptionComment(text, (value) => measureCaptionComment(value, measureText));
       const lineRuns = lines.map((line) => layoutCaptionCommentLine(line, measureText));
       const ascent = Math.ceil(context.measureText("Ag").fontBoundingBoxAscent || 41);
@@ -31,7 +32,7 @@ export function CaptionCommentPreview({ comment, theme, outputLanguage }: {
       const actionAscent = Math.ceil(context.measureText(actions.likes).fontBoundingBoxAscent || 33);
       context.font = `700 30px ${family}`;
       const metaAscent = Math.ceil(context.measureText("Ag").fontBoundingBoxAscent || 35);
-      if (!cancelled) setMetrics({ key, lines, lineRuns, ascent, actionAscent, metaAscent, likesWidth });
+      if (!cancelled) setMetrics({ key, lines, lineRuns, wordSpacing, ascent, actionAscent, metaAscent, likesWidth });
     };
     measure();
     // Font loading affects preview only; it never blocks editing or creation.
@@ -59,7 +60,7 @@ export function CaptionCommentPreview({ comment, theme, outputLanguage }: {
       <text x="145" y={48 + (measured?.metaAscent ?? 35)} fontSize="30" fontWeight="700" fill={dark ? "#F0F0F0" : "#18181B"}>@{comment.nickname}  {comment.ageLabel}</text>
     </g>
     <g fontWeight="400">
-      {lineRuns.map((runs, index) => <text key={index} x="145" y={101 + index * 47 + (measured?.ascent ?? 41)} fontSize="35" xmlSpace="preserve" fill={dark ? "#E8E8E8" : "#18181B"}>{runs.map((run, runIndex) => <tspan
+      {lineRuns.map((runs, index) => <text key={index} x="145" y={101 + index * 47 + (measured?.ascent ?? 41)} fontSize="35" xmlSpace="preserve" style={{ wordSpacing: measured?.wordSpacing ?? 0 }} fill={dark ? "#E8E8E8" : "#18181B"}>{runs.map((run, runIndex) => <tspan
         key={runIndex}
         x={145 + run.x}
         fontSize={run.emoji ? 35 * 1.15 : undefined}

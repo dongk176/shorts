@@ -5,6 +5,51 @@ type Phrase = readonly [ko: string, en: string, ja: string];
 // Legacy page copy is kept here while the product moves to semantic message keys.
 // User-provided and generated content is intentionally excluded from this table.
 const phrases: readonly Phrase[] = [
+  ["+ 텍스트 추가", "+ Add text", "+ テキストを追加"],
+  ["복구하기", "Redo", "やり直す"],
+  ["템플릿 편집 도구", "Template editing tools", "テンプレート編集ツール"],
+  ["제목 오버레이 선택 및 이동", "Select and move title overlay", "タイトルオーバーレイを選択して移動"],
+  ["템플릿 미리보기. 레이아웃을 끌어 이동하고 두 번 탭하면 설정이 열립니다.", "Template preview. Drag to move a layer; double-tap to open its settings.", "テンプレートプレビュー。ドラッグで移動し、ダブルタップで設定を開きます。"],
+  ["오른쪽 미리보기에서 변경 내용을 실시간으로 확인하세요.", "See your changes live in the preview on the right.", "右側のプレビューで変更をすぐに確認できます。"],
+  ["템플릿 추가 텍스트", "Template text overlays", "テンプレートの追加テキスト"],
+  ["템플릿 추가 텍스트 목록", "Template text overlay list", "テンプレートの追加テキスト一覧"],
+  ["추가 텍스트", "Additional text", "追加テキスト"],
+  ["텍스트 추가", "Add text", "テキストを追加"],
+  ["완성 영상 전체에 표시됩니다. 생성 후 편집기에서 표시 시간을 바꿀 수 있습니다.", "Shown throughout the finished video. Change its timing in the editor after creation.", "完成動画全体に表示されます。作成後、編集画面で表示時間を変更できます。"],
+  ["색상", "Color", "色"],
+  ["효과", "Effect", "効果"],
+  ["테두리", "Outline", "縁取り"],
+  ["그림자", "Shadow", "影"],
+  ["텍스트 폭", "Text width", "テキストの幅"],
+  ["앞뒤 순서", "Layer order", "重なり順"],
+  ["앞으로", "Bring forward", "前面へ"],
+  ["뒤로", "Send backward", "背面へ"],
+  ["선택한 텍스트 삭제", "Delete selected text", "選択したテキストを削除"],
+  ["추가한 텍스트 글자 크기", "Added text size", "追加テキストの文字サイズ"],
+  ["추가한 텍스트 폭", "Added text width", "追加テキストの幅"],
+  ["추가한 텍스트 레이어 순서", "Added text layer order", "追加テキストの重なり順"],
+  ["미리보기에서 끌어 이동하고 양쪽 손잡이로 폭을 조절하세요. 채널명은 맨앞에 유지됩니다.", "Drag in the preview to move it, and use the side handles to resize. The channel name stays in front.", "プレビュー内でドラッグして移動し、両端のハンドルで幅を調整します。チャンネル名は最前面に表示されます。"],
+  ["댓글 배경", "Comment background", "コメント背景"],
+  ["블랙", "Black", "ブラック"],
+  ["딥 차콜", "Deep charcoal", "ダークチャコール"],
+  ["차콜", "Charcoal", "チャコール"],
+  ["웜 그레이", "Warm gray", "ウォームグレー"],
+  ["슬레이트", "Slate", "スレート"],
+  ["아이보리", "Ivory", "アイボリー"],
+  ["딥 레드", "Deep red", "ダークレッド"],
+  ["레드", "Red", "レッド"],
+  ["코랄", "Coral", "コーラル"],
+  ["소프트 코랄", "Soft coral", "ソフトコーラル"],
+  ["오렌지", "Orange", "オレンジ"],
+  ["옐로", "Yellow", "イエロー"],
+  ["라임", "Lime", "ライム"],
+  ["그린", "Green", "グリーン"],
+  ["아쿠아", "Aqua", "アクア"],
+  ["블루", "Blue", "ブルー"],
+  ["딥 블루", "Deep blue", "ダークブルー"],
+  ["퍼플", "Purple", "パープル"],
+  ["핑크", "Pink", "ピンク"],
+
   ["언어 기능 공개가 중단되었습니다. 페이지를 새로고침해 주세요.", "Language creation is currently unavailable. Please refresh the page.", "言語機能の公開が停止されました。ページを更新してください。"],
   ["언어 기능을 잠시 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.", "Language creation is temporarily unavailable. Please try again shortly.", "言語機能を一時的に利用できません。しばらくしてからもう一度お試しください。"],
   ["언어 설정을 확인해 주세요.", "Please check your language settings.", "言語設定を確認してください。"],
@@ -1022,6 +1067,14 @@ function withOriginalWhitespace(original: string, translated: string) {
 function translateDynamicText(value: string, locale: Exclude<SiteLocale, "ko">) {
   const trimmed = value.trim();
   const translateKnown = (source: string) => phraseMaps[locale].get(source) || source;
+  const colorMatch = /^(텍스트 )?색상 (.+)$/.exec(trimmed);
+  if (colorMatch) return withOriginalWhitespace(value, locale === "en"
+    ? `${colorMatch[1] ? "Text color" : "Color"}: ${translateKnown(colorMatch[2])}`
+    : `${colorMatch[1] ? "テキストの色" : "色"}：${translateKnown(colorMatch[2])}`);
+  const textRangeMatch = /^(.+) 노출 구간 편집$/.exec(trimmed);
+  if (textRangeMatch) return withOriginalWhitespace(value, locale === "en"
+    ? `Edit display timing: ${textRangeMatch[1]}`
+    : `表示時間を編集：${textRangeMatch[1]}`);
   const projectNumberMatch = /^프로젝트 #(\d+)$/.exec(trimmed);
   if (projectNumberMatch) {
     return withOriginalWhitespace(value, locale === "en"

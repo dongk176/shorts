@@ -2,7 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CaptionCommentPreview } from "../components/caption-comment-preview";
-import { captionCommentRuns, fitCaptionChannel, layoutCaptionCommentLine, measureCaptionComment, wrapCaptionComment } from "./caption-comment-preview";
+import { captionCommentRuns, fitCaptionChannel, layoutCaptionCommentLine, measureCaptionComment, measureCaptionCommentText, wrapCaptionComment } from "./caption-comment-preview";
 
 describe("saved caption previews", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -21,6 +21,11 @@ describe("saved caption previews", () => {
     const emoji = "👨‍👩‍👧‍👦";
     expect(wrapCaptionComment(emoji.repeat(6), (text) => [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(text)].length * 40, 100))
       .toEqual([emoji.repeat(2), `${emoji}…`]);
+  });
+  it("counts emoji as Unicode characters when choosing a word boundary", () => {
+    const prefix = "🎉".repeat(9);
+    expect(wrapCaptionComment(`${prefix} ${"가".repeat(60)}`, (text) => Array.from(text).length * 10, 250))
+      .toEqual([`${prefix} ${"가".repeat(15)}`, `${"가".repeat(24)}…`]);
   });
   it.each([
     ["ko", "긴 댓글도 편집 화면에서 정상적으로 표시되어야 합니다. ".repeat(4)],
@@ -79,6 +84,11 @@ describe("saved caption previews", () => {
       { text: " ", emoji: false, x: 78.25, width: 10 },
     ]);
     expect(measure.mock.calls).toEqual([["AV"], [" "]]);
+  });
+  it("uses the pinned font's space advance when the browser substitutes a wider space", () => {
+    const browserMeasure = (text: string) => text === "Great" ? 88.2 : text.length * 9.8;
+    expect(measureCaptionCommentText(" Great", browserMeasure)).toBeCloseTo(96.04);
+    expect(measureCaptionCommentText("Great Great", browserMeasure)).toBeCloseTo(184.24);
   });
   it("uses explicit word spaces for fonts whose browser space differs from the renderer", () => {
     const name = "International Mathematics and Science Academy";

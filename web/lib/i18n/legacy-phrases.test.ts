@@ -2,6 +2,13 @@ import { describe, expect, it } from "vitest";
 import { translateLegacyDocumentTitle, translateLegacyText } from "./legacy-phrases";
 
 describe("legacy UI translations", () => {
+  it("localizes template text controls and keeps authored text in timing labels", () => {
+    expect(translateLegacyText("템플릿 추가 텍스트 목록", "en")).toBe("Template text overlay list");
+    expect(translateLegacyText("복구하기", "ja")).toBe("やり直す");
+    expect(translateLegacyText("텍스트 색상 아쿠아", "en")).toBe("Text color: Aqua");
+    expect(translateLegacyText("색상 딥 차콜", "ja")).toBe("色：ダークチャコール");
+    expect(translateLegacyText("다운로드 노출 구간 편집", "en")).toBe("Edit display timing: 다운로드");
+  });
   it("translates representative customer-facing controls in English and Japanese", () => {
     expect(translateLegacyText("빈 화면에서 직접 디자인하기", "en")).toBe("Design from scratch");
     expect(translateLegacyText("채팅방 입장", "ja")).toBe("チャットに参加");

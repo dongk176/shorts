@@ -1,5 +1,14 @@
 import emojiCodepoints from "./comment-emoji-codepoints.json";
 
+// U+0020 advance at weight 400 in both pinned Noto Sans KR/JP faces.
+export const CAPTION_COMMENT_WORD_SPACE_EM = 0.224;
+
+export function measureCaptionCommentText(text: string, measure: (text: string) => number, fontSize = 35) {
+  return text.split(" ").reduce((width, word, index) => (
+    width + measure(word) + (index ? fontSize * CAPTION_COMMENT_WORD_SPACE_EM : 0)
+  ), 0);
+}
+
 function commentDisplayUnits(value: string): string[] {
   if (typeof Intl.Segmenter === "function") {
     return Array.from(
@@ -71,17 +80,20 @@ export function wrapCaptionComment(text: string, measure: (text: string) => numb
       remaining = "";
       break;
     }
-    let split = units(remaining)[0].length;
+    // The renderer counts Unicode code points, not UTF-16 code units. An emoji
+    // before a space must not move the preferred word boundary on the web.
+    const characters = Array.from(remaining);
+    let split = Array.from(units(remaining)[0]).length;
     let index = 0;
     for (const unit of units(remaining)) {
-      index += unit.length;
-      if (measure(remaining.slice(0, index)) > width) break;
+      index += Array.from(unit).length;
+      if (measure(characters.slice(0, index).join("")) > width) break;
       split = index;
     }
-    const space = remaining.lastIndexOf(" ", split);
+    const space = characters.lastIndexOf(" ", split);
     if (space >= Math.max(1, Math.floor(split / 2))) split = space;
-    lines.push(remaining.slice(0, split).trim());
-    remaining = remaining.slice(split).trim();
+    lines.push(characters.slice(0, split).join("").trim());
+    remaining = characters.slice(split).join("").trim();
   }
   if (remaining && lines.length) {
     let last = lines.at(-1)!;
