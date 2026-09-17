@@ -349,7 +349,7 @@ import { editorScriptForComments } from "@/lib/editor-script";
 import { currentClientLocale, localizeApiError, localizeAuthError } from "@/lib/i18n/errors";
 import { messagesByLocale } from "@/lib/i18n/messages";
 import { useI18n } from "@/lib/i18n/provider";
-import { localizedValue, type SiteLocale } from "@/lib/i18n/config";
+import { formatLocale, localizedValue, type SiteLocale } from "@/lib/i18n/config";
 import { translateLegacyText } from "@/lib/i18n/legacy-phrases";
 import { homeAnalysisHeaderOffset } from "@/lib/home-analysis-scroll";
 import {
@@ -2461,6 +2461,7 @@ function EditorDraftEntryDialog({
   onStartNew: () => void;
   onClose: () => void;
 }) {
+  const { locale } = useI18n();
   useEffect(() => {
     if (!draft) return;
     const previousOverflow = document.body.style.overflow;
@@ -2476,7 +2477,7 @@ function EditorDraftEntryDialog({
   }, [draft, onClose]);
 
   if (!draft || typeof document === "undefined") return null;
-  const updatedAt = new Intl.DateTimeFormat("ko-KR", {
+  const updatedAt = new Intl.DateTimeFormat(formatLocale(locale), {
     month: "long",
     day: "numeric",
     hour: "numeric",
@@ -2505,10 +2506,18 @@ function EditorDraftEntryDialog({
         </button>
         <div className="relative text-center">
           <h2 id="editor-draft-entry-title" className="text-[25px] font-extrabold tracking-[-0.04em]">
-            이어서 <span className="text-[#ff715e]">편집</span>할까요?
+            {localizedValue(locale, {
+              ko: <>이어서 <span className="text-[#ff715e]">편집</span>할까요?</>,
+              en: <>Continue <span className="text-[#ff715e]">editing</span>?</>,
+              ja: <><span className="text-[#ff715e]">編集</span>を再開しますか？</>,
+            })}
           </h2>
           <p id="editor-draft-entry-description" className="mt-2 text-[13px] font-medium leading-6 text-white/45">
-            <strong className="font-bold text-white/70">{updatedAt}</strong>에 마지막으로 저장했어요.
+            {localizedValue(locale, {
+              ko: <><strong className="font-bold text-white/70">{updatedAt}</strong>에 마지막으로 저장했어요.</>,
+              en: <>Last saved <strong className="font-bold text-white/70">{updatedAt}</strong>.</>,
+              ja: <>最終保存：<strong className="font-bold text-white/70">{updatedAt}</strong></>,
+            })}
           </p>
         </div>
 
@@ -2934,6 +2943,7 @@ function CommentRegenerationComparisonDialog({
   onCancel: () => void;
   onApply: () => void;
 }) {
+  const { locale } = useI18n();
   const [editingTarget, setEditingTarget] = useState<{
     index: number;
     choice: CommentRegenerationChoice;
@@ -2997,7 +3007,11 @@ function CommentRegenerationComparisonDialog({
 
         <div className="flex flex-none flex-wrap items-center justify-between gap-3 border-b border-white/[.08] bg-white/[.025] px-6 py-3.5 sm:px-8">
           <p className="text-sm font-bold text-white/60">
-            {comparison.before.length}개 중 <strong className="text-white">{generatedChoiceCount}개</strong> 새 댓글 선택
+            {localizedValue(locale, {
+              ko: <>{comparison.before.length}개 중 <strong className="text-white">{generatedChoiceCount}개</strong> 새 댓글 선택</>,
+              en: <><strong className="text-white">{generatedChoiceCount}</strong> of {comparison.before.length} new comments selected</>,
+              ja: <>新しいコメントを <strong className="text-white">{generatedChoiceCount}</strong> / {comparison.before.length} 件選択</>,
+            })}
           </p>
           <div className="flex gap-2">
             <button
@@ -3065,7 +3079,11 @@ function CommentRegenerationComparisonDialog({
                     {existingEditing
                       ? <input
                           autoFocus
-                          aria-label={`기존 댓글 ${index + 1} 수정`}
+                          aria-label={localizedValue(locale, {
+                            ko: `기존 댓글 ${index + 1} 수정`,
+                            en: `Edit existing comment ${index + 1}`,
+                            ja: `既存のコメント ${index + 1} を編集`,
+                          })}
                           value={comparison.existingTexts[index]}
                           maxLength={EDITOR_COMMENT_MAX_CHARS}
                           onClick={(event) => event.stopPropagation()}
@@ -3086,7 +3104,7 @@ function CommentRegenerationComparisonDialog({
                           }}
                           className="block w-full rounded-lg border border-white/35 bg-black/35 px-3 py-1.5 text-[15px] font-bold leading-6 text-white outline-none focus:border-white"
                         />
-                      : <span className="block break-words text-[15px] font-bold leading-6 text-white/88">
+                      : <span data-i18n-content className="block break-words text-[15px] font-bold leading-6 text-white/88">
                           {comparison.existingTexts[index]}
                         </span>}
                   </div>
@@ -3122,7 +3140,11 @@ function CommentRegenerationComparisonDialog({
                     {generatedEditing
                       ? <input
                           autoFocus
-                          aria-label={`새 댓글 ${index + 1} 수정`}
+                          aria-label={localizedValue(locale, {
+                            ko: `새 댓글 ${index + 1} 수정`,
+                            en: `Edit new comment ${index + 1}`,
+                            ja: `新しいコメント ${index + 1} を編集`,
+                          })}
                           value={comparison.generatedTexts[index]}
                           maxLength={EDITOR_COMMENT_MAX_CHARS}
                           onClick={(event) => event.stopPropagation()}
@@ -3143,7 +3165,7 @@ function CommentRegenerationComparisonDialog({
                           }}
                           className="block w-full rounded-lg border border-violet-200/45 bg-black/35 px-3 py-1.5 text-[15px] font-bold leading-6 text-white outline-none focus:border-violet-100"
                         />
-                      : <span className="block break-words text-[15px] font-bold leading-6 text-white">
+                      : <span data-i18n-content className="block break-words text-[15px] font-bold leading-6 text-white">
                           {comparison.generatedTexts[index]}
                         </span>}
                   </div>
@@ -13498,6 +13520,8 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   }, []);
 
   useEffect(() => {
+    // Keep the selection between videos; check availability once a source is ready.
+    if (!selectedSource) return;
     if (!subtitleTemplateSelectionEnabled) {
       setSubtitleTemplateId(null);
       setSubtitleCaptionPlacement("lower");
@@ -13512,11 +13536,12 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     setVideoAspectRatio("16:9");
     setSubtitleCaptionPlacement("lower");
     setSubtitleTemplateId(requestedSubtitleTemplate);
-  }, [subtitleTemplateSelectionEnabled]);
+  }, [selectedSource, subtitleTemplateSelectionEnabled]);
 
   useEffect(() => {
     if (
-      customTemplateId
+      selectedSource
+      && customTemplateId
       && personalTemplates.length > 0
       && !sourceCompatiblePersonalTemplates.some(
         (template) => template.id === customTemplateId,
@@ -13524,7 +13549,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     ) {
       setCustomTemplateId(null);
     }
-  }, [customTemplateId, sourceCompatiblePersonalTemplates, personalTemplates.length]);
+  }, [selectedSource, customTemplateId, sourceCompatiblePersonalTemplates, personalTemplates.length]);
 
   const trySubtitleTemplate = useCallback(() => {
     markSubtitleTemplateUsed();
@@ -14087,8 +14112,6 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       setUploadVideo(null);
       setRightsConfirmed(false);
       setRightsConfirmationAttention(false);
-      setSubtitleTemplateId(null);
-      setSubtitleCaptionPlacement("lower");
       setScrollToAnalysis(false);
       uploadRequestId.current = null;
       uploadRequestIntentKey.current = null;
@@ -14145,8 +14168,6 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         setUploadVideo(null);
         setRightsConfirmed(false);
         setRightsConfirmationAttention(false);
-        setSubtitleTemplateId(null);
-        setSubtitleCaptionPlacement("lower");
         uploadRequestId.current = null;
         uploadRequestIntentKey.current = null;
         activeUploadSessionId.current = null;
@@ -14310,8 +14331,6 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       setScrollToProjects(true);
       setYoutubeUrl("");
       setAnalysis(null);
-      setSubtitleTemplateId(null);
-      setSubtitleCaptionPlacement("lower");
       setRightsConfirmed(false);
       setRightsConfirmationAttention(false);
       setCreationRestrictionOpen(false);
