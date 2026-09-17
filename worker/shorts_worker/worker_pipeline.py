@@ -29,7 +29,6 @@ from .caption_templates import (
 from .channel_thumbnail import download_channel_thumbnail
 from .comment_generator import CommentClipInput, CommentGenerator
 from .config import Settings
-from .currency_tools import CurrencyConverter
 from .editor_renderer import (
     EditorDocumentRenderer,
     editor_highlight_subtitles_enabled,
@@ -1562,9 +1561,6 @@ class BatchWorker:
                 needs_translation = translation_required(
                     source_language, str(job["output_language"]),
                 )
-                currency_converter = (
-                    CurrencyConverter(job, self.repository) if needs_translation else None
-                )
                 target_count = int(job["planned_short_count"])
                 required_minimum_count = minimum_clip_count(target_count)
                 selection_started_at = time.monotonic()
@@ -1578,9 +1574,6 @@ class BatchWorker:
                         **(
                             {"source_language": source_language}
                             if source_language is not None else {}
-                        ),
-                        **(
-                            {"currency_converter": currency_converter} if currency_converter else {}
                         ),
                     )[:target_count]
                 for clip in clips:
@@ -1618,10 +1611,7 @@ class BatchWorker:
                         [(clip.start_seconds, clip.end_seconds) for clip in windows],
                         priority_windows=priority_windows,
                     )
-                    translator = SubtitleTranslator(
-                        self.settings,
-                        currency_converter=currency_converter,
-                    )
+                    translator = SubtitleTranslator(self.settings)
                     self.repository.stage(job_id, "selecting", 45, "자막을 번역하고 있습니다.")
                     try:
                         translation_result = translator.translate_partial(
@@ -1887,10 +1877,6 @@ class BatchWorker:
                         try:
                             comments_by_clip = self.comment_generator.generate(
                                 comment_inputs,
-                                **(
-                                    {"currency_converter": currency_converter}
-                                    if currency_converter else {}
-                                ),
                             )
                         except Exception as exc:
                             used_comment_fallback = True

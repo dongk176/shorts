@@ -1,17 +1,15 @@
-import { hasUnlabeledAmount, languageContext, mentionedCurrencies } from "./language-context";
 import { commentDuplicateKey, contentLanguages, textMatchesLanguage } from "./content-language";
 import type { OutputLanguage } from "./contracts";
 import promptTranslations from "./prompt-translations.json";
 import culturePrompts from "./comment-culture-prompts.json";
 import { usesCulturalComments, type CommentProfile } from "./comment-profile";
-import { ungroundedMoney } from "./money-facts";
 
 export const AI_COMMENT_MIN_CHARS = 4;
 export const AI_COMMENT_MAX_CHARS = 50;
 export const AI_COMMENT_MAX_COUNT = 20;
 
 export type CommentRejectionCounts = Partial<Record<
-  "invalid_text" | "length" | "language" | "currency" | "money_not_grounded" | "duplicate_or_empty_key", number
+  "invalid_text" | "length" | "language" | "duplicate_or_empty_key", number
 >>;
 
 type CommentRegenerationInput = {
@@ -36,13 +34,7 @@ function formatPrompt(template: string, values: Record<string, string | number>)
 }
 
 export function buildCommentRegenerationMessages(input: CommentRegenerationInput) {
-  const messages = baseCommentRegenerationMessages(input);
-  const outputLanguage = input.outputLanguage || "ko";
-  const instruction = usesCulturalComments(input.commentProfile, outputLanguage)
-    ? culturePrompts[outputLanguage as "en" | "ja"].comment_context : undefined;
-  const context = languageContext(input.sourceLanguage, outputLanguage, instruction);
-  if (context) messages[0] = { ...messages[0], content: `${context}\n\n${messages[0].content}` };
-  return messages;
+  return baseCommentRegenerationMessages(input);
 }
 
 function baseCommentRegenerationMessages({
@@ -52,6 +44,7 @@ function baseCommentRegenerationMessages({
   targetCount,
   outputLanguage = "ko",
   commentProfile,
+  sourceLanguage,
 }: CommentRegenerationInput) {
   const language = contentLanguages[outputLanguage];
   const transcriptText = transcript
@@ -59,9 +52,11 @@ function baseCommentRegenerationMessages({
     .filter(Boolean)
     .join("\n")
     .slice(0, 12_000) || "(사용 가능한 전사 없음)";
-  if (outputLanguage === "en" || outputLanguage === "ja") {
-    const templates = (usesCulturalComments(commentProfile, outputLanguage)
-      ? culturePrompts : promptTranslations)[outputLanguage];
+  if (outputLanguage === "en" || outputLanguage === "ja"
+    || (outputLanguage === "ko" && sourceLanguage !== undefined)) {
+    const templates = outputLanguage === "ko" ? culturePrompts.ko
+      : (usesCulturalComments(commentProfile, outputLanguage)
+        ? culturePrompts : promptTranslations)[outputLanguage];
     const values = {
       intro: language.intro, style: language.style,
       output_language: outputLanguage, language_name: language.name,
@@ -134,7 +129,7 @@ export function parseCommentRegenerationResponse(
   targetCount: number,
   outputLanguage: OutputLanguage = "ko",
   rejectionCounts: CommentRejectionCounts = {},
-  sourceTranscript?: string,
+  _sourceTranscript?: string,
   languageTest = false,
 ) {
   if (!Number.isInteger(targetCount) || targetCount < 1 || targetCount > AI_COMMENT_MAX_COUNT) {
@@ -178,8 +173,6 @@ export function parseCommentRegenerationResponse(
     ? (parsed as { comments?: unknown }).comments
     : null;
   if (!Array.isArray(rawComments)) throw new Error("invalid_response_shape");
-  const sourceCurrencies = mentionedCurrencies(sourceTranscript || "");
-  const enforceMoney = !languageTest;
   const seen = new Set<string>();
   const comments: string[] = [];
   const reject = (reason: keyof CommentRejectionCounts) => {
@@ -200,21 +193,7 @@ export function parseCommentRegenerationResponse(
       reject("language");
       continue;
     }
-    if (enforceMoney && sourceCurrencies.size && [...mentionedCurrencies(comment)].some((c) => !sourceCurrencies.has(c))) {
-      reject("currency");
-      continue;
-    }
-    if (enforceMoney && (outputLanguage === "en" || outputLanguage === "ja") && sourceTranscript !== undefined
-      && hasUnlabeledAmount(comment, sourceTranscript)) {
-      reject("currency");
-      continue;
-    }
     const key = commentDuplicateKey(comment);
-    if (enforceMoney && (outputLanguage === "en" || outputLanguage === "ja") && sourceTranscript !== undefined
-      && ungroundedMoney(comment, sourceTranscript)) {
-      reject("money_not_grounded");
-      continue;
-    }
     if (!key || seen.has(key)) {
       reject("duplicate_or_empty_key");
       continue;

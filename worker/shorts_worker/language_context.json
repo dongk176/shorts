@@ -41,23 +41,8 @@
     }
   },
   "instructions": {
-    "ko": "원본 영상의 언어: {source} ({source_code})\n제목·댓글의 출력 언어: {target} ({target_code})\n제목·댓글은 출력 언어로 작성한다. 원문의 의미를 살리고 고유명사와 인용문을 문맥에 맞게 표현한다.",
-    "en": "Source video language: {source} ({source_code})\nOutput language for titles and comments: {target} ({target_code})\nWrite titles and comments in the output language based on the supplied transcript.",
-    "ja": "元動画の言語: {source} ({source_code})\nタイトル・コメントの出力言語: {target} ({target_code})\n提供された文字起こしをもとに、指定された出力言語でタイトルとコメントを書きます。"
-  },
-  "currencyPatterns": {
-    "KRW": "₩|(?<![A-Za-z])KRW(?![A-Za-z])|\\bKorean won\\b|ウォン|\\d[\\d,.\\s천만억조]*원|\\d[\\d,.\\s]*(?:(?:[kmb]|thousand|million|billion|trillion)\\s*)?won\\b",
-    "USD": "\\$|(?<![A-Za-z])USD(?![A-Za-z])|\\bdollars?\\b|달러|ドル",
-    "JPY": "[¥￥]|(?<![A-Za-z])JPY(?![A-Za-z])|\\byen\\b|\\d[\\d,.\\s万億兆]*円|\\d[\\d,.\\s만억조]*엔",
-    "EUR": "€|(?<![A-Za-z])EUR(?![A-Za-z])|\\beuros?\\b|유로|ユーロ",
-    "GBP": "£|(?<![A-Za-z])GBP(?![A-Za-z])|\\bBritish pounds?\\b|\\bpounds? sterling\\b"
-  },
-  "scaledNumberPattern": "(?:\\d[\\d,]*(?:\\.\\d+)?\\s*(?:trillion|billion|million|thousand|[kmbt])\\b|\\d[\\d,]*(?:\\.\\d+)?\\s*[千万億兆]+(?:\\s*\\d[\\d,]*(?:\\.\\d+)?\\s*[千万億兆]+)*)",
-  "amountCurrencyLabelPattern": "(?:KRW(?![A-Za-z])|USD(?![A-Za-z])|JPY(?![A-Za-z])|EUR(?![A-Za-z])|GBP(?![A-Za-z])|(?:(?:South )?Korean )?won\\b|(?:US |U\\.S\\. )?dollars?\\b|(?:Japanese )?yen\\b|euros?\\b|(?:British )?pounds?\\b|(?:韓国)?ウォン|(?:米|米国|アメリカ)?ドル|(?:日本)?円|ユーロ|(?:英)?ポンド|[₩$¥￥€£])",
-  "amountCountUnitPattern": "(?:(?:PCs?|computers?|models?|GB|MB|KB|TB|pixels?|views?|people|users?|subscribers?|followers?|likes?|comments?|shares?|times?|years?|months?|days?|hours?|minutes?|seconds?|employees?|members?|copies|words?|characters?|stars?|cells?|jobs?)\\b|世代|代|位|人|件|回|台|本|個|枚|社|字|文字|秒|分|時間|日|年|PV\\b|再生|登録|いいね|フォロワー|%|パーセント)",
-  "amountRangeSeparatorPattern": "(?:[〜～~–—-]|to\\b|から)\\s*",
-  "vagueScaledNumberPattern": "(?:数[千万億兆]+|\\b(?:(?:several|many|a few|tens of|hundreds of)\\s+(?:thousand|million|billion|trillion)s?|(?:thousands|millions|billions|trillions))\\b)",
-  "monetaryContextPattern": "(?:\\b(?:costs?|expenses?|price|rent|fees?|money|income|earn(?:s|ed|ing)?|profit|asset|revenue|salary|wealth|cash|interest|bank)\\b|固定費|費用|支出|家賃|価格|入って|入り|入る|利息|利子|銀行|資産|収益|収入|売上|稼|給料|年収|고정비|비용|지출|돈|이자|은행|자산|수익|매출|연봉|급여)",
-  "bareLargeNumberPattern": "(?<![A-Za-z0-9.,])(?:[1-9]\\d{3,}|[1-9]\\d{0,2}(?:,\\d{3})+)(?:\\.\\d+)?(?![A-Za-z0-9.,])",
-  "nonAmountNumberPrefixPattern": "(?:\\b(?:in|since|during|year|RTX|GTX|model)\\s*)$"
+    "ko": "원본 영상의 언어: {source} ({source_code})\n제목·댓글의 출력 언어: {target} ({target_code})\n제목·댓글은 출력 언어로 작성한다. 원문의 의미를 살리고 고유명사와 인용문을 문맥에 맞게 표현한다. 원문의 사실과 의미를 유지하고, 수량은 원래 단위와 함께 정확히 표현한다.",
+    "en": "Source video language: {source} ({source_code})\nOutput language for titles and comments: {target} ({target_code})\nWrite titles and comments in the output language based on the supplied transcript. Preserve the source facts and meaning, expressing quantities accurately with their original units.",
+    "ja": "元動画の言語: {source} ({source_code})\nタイトル・コメントの出力言語: {target} ({target_code})\n提供された文字起こしをもとに、指定された出力言語でタイトルとコメントを書きます。 原文の事実と意味を保ち、数値は元の単位と組で正確に表記します。"
+  }
 }

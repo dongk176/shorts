@@ -54,16 +54,17 @@ def translated_comment_messages(
     clips: list[CommentClipInput], *, min_chars: int, max_chars: int, culture: bool = False,
 ) -> list[dict[str, str]] | None:
     languages = {clip.output_language for clip in clips}
-    if not (len(languages) == 1 and languages <= {"en", "ja"} if culture
-            else languages == {"en"}):
+    supported = {"ko", "en", "ja"} if culture else {"ko", "en"}
+    if len(languages) != 1 or not languages <= supported:
         return None
     language = next(iter(languages))
-    templates = (CULTURE_COMMENT_PROMPTS if culture else PROMPT_TRANSLATIONS)[language]
+    templates = (CULTURE_COMMENT_PROMPTS if culture or language == "ko"
+                 else PROMPT_TRANSLATIONS)[language]
     profile = CONTENT_LANGUAGES[language]
-    language_rules = "\n".join(templates["comment_language_rule"].format(
-        clip_index=clip.clip_index, output_language=language.value,
+    language_rules = templates["comment_language_rule"].format(
+        clip_index=clips[0].clip_index, output_language=language.value,
         language_name=profile["name"], style=profile["style"],
-    ) for clip in clips)
+    )
     sections = [templates["comment_user"].format(
         clip_index=clip.clip_index, target_count=clip.target_count,
         title=clip.hook_title, reason=clip.reason or templates["no_reason"],

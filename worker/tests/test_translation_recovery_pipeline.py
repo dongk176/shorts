@@ -4,7 +4,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from shorts_worker import currency_tools as fx
 from shorts_worker import worker_pipeline as pipeline
 from shorts_worker.config import Settings
 from shorts_worker.schemas import HighlightClip, SubtitleSegment, TemplateSubtitleLayer
@@ -26,11 +25,6 @@ def setup_worker(tmp_path, monkeypatch, *, language, enabled=True, money=False, 
         edit_timeline_capture_enabled=True,
     )
     worker.repository = MagicMock()
-    if money:
-        from test_currency_localization import snapshot
-        rate = snapshot("JPY" if language == "ja" else "USD")
-        monkeypatch.setattr(fx, "fetch_snapshot", lambda _: rate)
-        worker.repository.pin_currency_snapshot.return_value = rate.to_dict()
     worker.repository.get_job.return_value = {
         "id": "job",
         "mvp_session_id": "session",
@@ -60,6 +54,10 @@ def setup_worker(tmp_path, monkeypatch, *, language, enabled=True, money=False, 
         "retention_days": 7,
     }
     worker.repository.claim_project_run.return_value = {"attempt_count": 1}
+    if money:
+        worker.repository.get_job.return_value["performance_metrics"] = {
+            "currencyLocalization": {"historical": True},
+        }
     worker.repository.fail_unselected_project_attempts.return_value = 0
     worker.repository.mark_project_preparation_finished.return_value = True
     worker.repository.finalize_project_job.return_value = {"final_status": "completed"}
@@ -124,8 +122,6 @@ def test_project_translation_failure_isolated_from_other_outputs(
     if money:
         translated = "価格は17万円です。" if language == "ja" else "It costs $1,133.33."
     def request(self, texts, *_):
-        if money:
-            self.currency_converter.calculate({"amount": "1700000", "sourceCurrency": "KRW"})
         return {
             "segments": [
                 {"id": i, "text": "" if text == "오류" else translated}
@@ -134,7 +130,10 @@ def test_project_translation_failure_isolated_from_other_outputs(
         }
 
     monkeypatch.setattr(SubtitleTranslator, "_request", request)
+    network = MagicMock(side_effect=AssertionError("generation must not request exchange rates"))
+    monkeypatch.setattr("httpx.Client", network)
     worker.project("job")
+    network.assert_not_called()
     worker.repository.fail_open_project_attempts.assert_not_called()
     worker.repository.finalize_project_job.assert_called_once_with("job")
     stored = {
@@ -142,13 +141,15 @@ def test_project_translation_failure_isolated_from_other_outputs(
     }
     assert len(stored) == 3
     if money:
-        worker.repository.pin_currency_snapshot.assert_called_once()
+        worker.repository.pin_currency_snapshot.assert_not_called()
+        assert worker.repository.get_job.return_value["performance_metrics"] == {
+            "currencyLocalization": {"historical": True},
+        }
         selected_input = worker.selector.select.call_args.kwargs
-        assert selected_input["currency_converter"] is not None
+        assert "currency_converter" not in selected_input
         assert "170만 원" in " ".join(s.text for s in selected_input["transcript"])
         assert "170만 원" in " ".join(s.text for s in segments)
         # The promoted web editor accepts exactly this translation contract.
-        # The project's pinned rates stay in video_jobs.performance_metrics.
         assert stored[2]["caption_render_spec"]["translation"] == {
             "policy": "translated-basic-v1", "sourceLanguage": "ko",
             "outputLanguage": language, "requestedTemplateId": "highlight",
@@ -228,7 +229,7 @@ def test_same_language_skips_translation_and_currency_and_preserves_source(
     translate = MagicMock(side_effect=AssertionError("same language must not translate"))
     fetch = MagicMock(side_effect=AssertionError("same language must not request rates"))
     monkeypatch.setattr(SubtitleTranslator, "translate_partial", translate)
-    monkeypatch.setattr(fx, "fetch_snapshot", fetch)
+    monkeypatch.setattr("httpx.Client", fetch)
     worker.project("job")
     translate.assert_not_called()
     fetch.assert_not_called()

@@ -10,13 +10,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .config import Settings
 from .content_language import CONTENT_LANGUAGES, comment_key, text_matches_language
-from .currency_tools import CurrencyConverter, complete_chat
 from .fallback_comments import select_fallback_comment_texts
-from .language_context import language_context, mentioned_currencies
 from .prompt_language import (
     CULTURE_COMMENT_MODEL,
     CULTURE_COMMENT_PROFILE,
-    CULTURE_COMMENT_PROMPTS,
     translated_comment_messages,
 )
 from .schemas import (
@@ -87,29 +84,12 @@ def _duplicate_key(text: str) -> str:
 class CommentGenerator:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
-        self.currency_converter: CurrencyConverter | None = None
 
     @staticmethod
     def _messages(
         clips: list[CommentClipInput], *, culture: bool = False,
     ) -> list[dict[str, str]]:
-        messages = CommentGenerator._base_messages(clips, culture=culture)
-        contexts = [
-            f"clipIndex: {clip.clip_index}\n"
-            + language_context(
-                clip.source_language, clip.output_language,
-                instruction=CULTURE_COMMENT_PROMPTS.get(clip.output_language, {}).get(
-                    "comment_context",
-                ) if culture else None,
-            )
-            for clip in clips if clip.source_language is not None
-        ]
-        if contexts:
-            messages[0] = {
-                **messages[0],
-                "content": "\n\n".join(contexts) + "\n\n" + messages[0]["content"],
-            }
-        return messages
+        return CommentGenerator._base_messages(clips, culture=culture)
 
     @staticmethod
     def _base_messages(
@@ -172,10 +152,8 @@ class CommentGenerator:
     @staticmethod
     def _parse_response(
         client: Any, model: str, messages: list[dict[str, str]], *, max_tokens: int | None = None,
-        currency_converter: CurrencyConverter | None = None,
     ) -> object:
-        response = complete_chat(
-            client, currency_converter=currency_converter,
+        response = client.chat.completions.create(
             model=model,
             messages=messages,
             **({"max_tokens": max_tokens} if max_tokens is not None else {}),
@@ -215,7 +193,7 @@ class CommentGenerator:
         )
         return self._parse_response(
             client, model or self.settings.gemini_comment_model, messages,
-            currency_converter=self.currency_converter, **limits,
+            **limits,
         )
 
     def _generate_with_openai(self, messages: list[dict[str, str]]) -> object:
@@ -230,7 +208,6 @@ class CommentGenerator:
             client,
             self.settings.openai_comment_fallback_model,
             messages,
-            currency_converter=self.currency_converter,
         )
 
     @staticmethod
@@ -253,12 +230,6 @@ class CommentGenerator:
         expected = {clip.clip_index: clip for clip in inputs}
         result: dict[int, list[str]] = {clip_index: [] for clip_index in expected}
         seen: dict[int, set[str]] = {clip_index: set() for clip_index in expected}
-        source_currencies = {
-            clip.clip_index: mentioned_currencies("\n".join(t.text for t in clip.transcript))
-            if clip.source_language is not None
-            and clip.output_language not in {OutputLanguage.EN, OutputLanguage.JA} else set()
-            for clip in inputs
-        }
         for raw_clip in raw_clips:
             if not isinstance(raw_clip, dict):
                 continue
@@ -288,10 +259,6 @@ class CommentGenerator:
                     text, expected[clip_index].output_language,
                 ):
                     rejection_counts["language"] += 1
-                    continue
-                if (not relaxed and source_currencies[clip_index]
-                        and mentioned_currencies(text) - source_currencies[clip_index]):
-                    rejection_counts["currency"] += 1
                     continue
                 key = _duplicate_key(text)
                 if not key or key in seen[clip_index]:
@@ -357,9 +324,8 @@ class CommentGenerator:
         return result, fallback_counts
 
     def generate(
-        self, clips: list[CommentClipInput], *, currency_converter: CurrencyConverter | None = None,
+        self, clips: list[CommentClipInput],
     ) -> dict[int, list[dict[str, object]]]:
-        self.currency_converter = currency_converter
         if not clips:
             return {}
         languages = {clip.output_language for clip in clips}

@@ -9,10 +9,8 @@ from typing import Any
 
 from .config import Settings
 from .content_language import CONTENT_LANGUAGES, text_matches_language
-from .currency_tools import CurrencyConverter
 from .errors import ShortsMakerError
-from .language_context import has_unlabeled_amount, language_context
-from .language_context import mentioned_currencies as _mentioned_currencies
+from .language_context import language_context
 from .localized_selection import (
     LocalizedSelectionError,
     SelectionAttempt,
@@ -96,18 +94,7 @@ FALLBACK_TITLE_LINES = {
     language: tuple(CONTENT_LANGUAGES[language]["title"]) for language in OutputLanguage
 }
 
-SOURCE_VALUE_INSTRUCTIONS = {
-    OutputLanguage.EN: (
-        "In titles and reasons, write numeric units and currency names in English while "
-        "preserving the original quantities and currency; never exchange currencies. "
-        "Each title line must be 5–18 characters long, including spaces."
-    ),
-    OutputLanguage.JA: (
-        "タイトルと選定理由では原文の数値の大きさと通貨を変えず、"
-        "単位と通貨名は日本語で表記する。別の通貨への換算は禁止。"
-        "タイトルの各行は空白を含めて5〜18文字にすること。"
-    ),
-}
+LOCALIZED_TITLE_LANGUAGES = {OutputLanguage.EN, OutputLanguage.JA}
 
 
 def _clean_title_line(value: str) -> str:
@@ -135,7 +122,7 @@ def _two_line_title(
             return "\n".join(part for part in parts if part)
     if not text_matches_language(value, output_language):
         return "\n".join(FALLBACK_TITLE_LINES[output_language])
-    if output_language in SOURCE_VALUE_INSTRUCTIONS:
+    if output_language in LOCALIZED_TITLE_LANGUAGES:
         lines = [" ".join(line.split()) for line in manual_title_lines(value)]
         minimum, maximum = (1, MAX_HOOK_TITLE_CHARS // 2) if relaxed_titles else (5, 18)
         if len(lines) == 2 and all(minimum <= len(line) <= maximum for line in lines):
@@ -425,13 +412,6 @@ def normalize_clips(
 class TranscriptSelector:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
-        self.currency_converter: CurrencyConverter | None = None
-
-    @property
-    def _gemini_model(self) -> str:
-        # Cross-language wording and amount references need the same capable
-        # model as subtitle translation. Same-language requests retain their model.
-        return "gemini-3.8-flash" if self.currency_converter else self.settings.gemini_text_model
 
     @staticmethod
     def _transcript_text(segments: list[SubtitleSegment]) -> str:
@@ -519,8 +499,6 @@ class TranscriptSelector:
             f"- reason은 자연스러운 {language_name}로 작성할 것.\n\n"
             "최종 응답은 요청된 Pydantic JSON 구조로만 반환할 것."
         )
-        if output_language in SOURCE_VALUE_INSTRUCTIONS:
-            system += "\n" + SOURCE_VALUE_INSTRUCTIONS[output_language]
         user = (
             f"영상 제목: {video_title}\n영상 길이: {duration_seconds:.3f}초\n"
             f"분석 범위: 전체 영상 0.000~{duration_seconds:.3f}초\n"
@@ -528,16 +506,6 @@ class TranscriptSelector:
             "\n\n타임스탬프 자막:\n"
             f"{self._transcript_text(transcript)}"
         )
-        if output_language in SOURCE_VALUE_INSTRUCTIONS:
-            currencies = _mentioned_currencies("\n".join(segment.text for segment in transcript))
-            if "KRW" in currencies:
-                currency_name = (
-                    "South Korean won" if output_language == OutputLanguage.EN else "韓国ウォン"
-                )
-                user = (
-                    f"sourceCurrencyName: KRW = {currency_name}\n"
-                    + f"sourceCurrencies: {', '.join(sorted(currencies))}\n" + user
-                )
         context = language_context(source_language, output_language)
         if context:
             system = context + "\n\n" + system
@@ -555,16 +523,14 @@ class TranscriptSelector:
         source_language: str | None = None,
         *,
         max_tokens: int | None = None,
-        currency_converter: CurrencyConverter | None = None,
     ) -> list[HighlightClip]:
         if source_language is not None:
             return request_candidates(
                 client, model, messages, output_language, max_tokens=max_tokens,
-                currency_converter=currency_converter,
             ).clips
         response_schema = (
             LocalizedSelectionResponse
-            if output_language in SOURCE_VALUE_INSTRUCTIONS else SelectionResponse
+            if output_language in LOCALIZED_TITLE_LANGUAGES else SelectionResponse
         )
         response = client.beta.chat.completions.parse(
             model=model,
@@ -581,35 +547,12 @@ class TranscriptSelector:
             parsed = response_schema.model_validate(
                 parsed.model_dump() if isinstance(parsed, SelectionResponse) else parsed,
             )
-        if output_language in SOURCE_VALUE_INSTRUCTIONS and any(
+        if output_language in LOCALIZED_TITLE_LANGUAGES and any(
             not text_matches_language(text, output_language)
             for candidate in parsed.clips
             for text in (candidate.hook_title_line1, candidate.hook_title_line2, candidate.reason)
         ):
             raise ValueError("Localized selection contains text in the wrong language.")
-        if output_language in SOURCE_VALUE_INSTRUCTIONS:
-            source_currencies = _mentioned_currencies("\n".join(
-                message["content"] for message in messages if message["role"] == "user"
-            ))
-            if source_currencies and any(
-                _mentioned_currencies(text) - source_currencies
-                for candidate in parsed.clips
-                for text in (
-                    candidate.hook_title_line1, candidate.hook_title_line2, candidate.reason,
-                )
-            ):
-                raise ValueError("Localized selection introduces a different currency.")
-            if source_language is not None:
-                source = "\n".join(m["content"] for m in messages if m["role"] == "user")
-                if any(
-                    has_unlabeled_amount(text, source)
-                    for candidate in parsed.clips
-                    for text in (
-                        candidate.hook_title_line1 + "\n" + candidate.hook_title_line2,
-                        candidate.reason,
-                    )
-                ):
-                    raise ValueError("Localized selection omits a currency label.")
         return [
             HighlightClip(
                 start_seconds=candidate.start_seconds,
@@ -646,12 +589,12 @@ class TranscriptSelector:
             {"max_tokens": self.settings.gemini_max_output_tokens}
             if self.settings.gemini_max_output_tokens is not None else {}
         )
-        if source_language is not None and output_language in SOURCE_VALUE_INSTRUCTIONS:
+        if source_language is not None and output_language in LOCALIZED_TITLE_LANGUAGES:
             try:
                 return self._parse_selection(
-                    client, self._gemini_model, messages,
+                    client, self.settings.gemini_text_model, messages,
                     output_language, source_language,
-                    currency_converter=self.currency_converter, **limits,
+                    **limits,
                 )
             except LocalizedSelectionError as error:
                 _log_selection_event(
@@ -665,11 +608,11 @@ class TranscriptSelector:
                 _log_selection_event("highlight_selection_repair", provider="gemini", attempt=1)
                 try:
                     repaired = self._parse_selection(
-                        client, self._gemini_model,
+                        client, self.settings.gemini_text_model,
                         [*messages, {"role": "user", "content": repair_instruction(
                             output_language, error,
                         )}], output_language, source_language,
-                        currency_converter=self.currency_converter, **limits,
+                        **limits,
                     )
                 except LocalizedSelectionError as repair_error:
                     replacements = [
@@ -691,8 +634,7 @@ class TranscriptSelector:
                 )][:len(error.attempt.rejected) or len(repaired)]
                 return [*accepted, *repaired]
         return self._parse_selection(
-            client, self._gemini_model, messages, output_language, source_language,
-            currency_converter=self.currency_converter,
+            client, self.settings.gemini_text_model, messages, output_language, source_language,
             **limits,
         )
 
@@ -716,7 +658,6 @@ class TranscriptSelector:
             messages,
             output_language,
             source_language,
-            currency_converter=self.currency_converter,
         )
 
     def select(
@@ -728,10 +669,8 @@ class TranscriptSelector:
         required_count: int,
         output_language: OutputLanguage = OutputLanguage.KO,
         source_language: str | None = None,
-        currency_converter: CurrencyConverter | None = None,
     ) -> list[HighlightClip]:
         minimum_count = minimum_clip_count(required_count)
-        self.currency_converter = currency_converter
 
         messages = self._selection_messages(
             video_title=video_title,
@@ -745,7 +684,7 @@ class TranscriptSelector:
         providers = (
             (
                 "gemini",
-                self._gemini_model,
+                self.settings.gemini_text_model,
                 self.settings.gemini_enabled,
                 self._select_with_gemini,
             ),
@@ -794,7 +733,7 @@ class TranscriptSelector:
                             **({"source_language": source_language}
                                if source_language is not None else {}),
                         )
-                        if output_language in SOURCE_VALUE_INSTRUCTIONS or localized
+                        if output_language in LOCALIZED_TITLE_LANGUAGES or localized
                         else select_provider(messages=messages)
                     )
                 except LocalizedSelectionError as error:

@@ -27,21 +27,23 @@ def test_equivalent_calendar_dates_pass(source, text, language):
                                 {0: source}, language) == {0: text}
 
 
-@pytest.mark.parametrize("source,text", [
-    ("10월 16일 출시입니다.", "It launches on September 16."),
-    ("10월 16일 출시입니다.", "It launches on October 17."),
-    ("10월 16일 출시입니다.", "It launches soon."),
-    ("10월 16일과 9월 23일입니다.", "The dates are October 23 and September 16."),
-    ("2026년 10월 16일입니다.", "The date is October 16, 2027."),
-    ("2026년 10월 16일입니다.", "The date is October 16."),
-    ("10월 16일에 $148.56입니다.", "It costs $148.57 on October 16."),
-    ("10월 16일에 $148.56입니다.", "It costs 148.56 yen on October 16."),
-    ("10월 16일이고 배터리는 24시간입니다.", "It launches October 16 with 25 hours of battery."),
-    ("5월 1일입니다.", "It may take 1 hour."),
-    ("10월 16일입니다.", "The dates are October 16 and 23."),
+@pytest.mark.parametrize("source,text,calendar_warning", [
+    ("10월 16일 출시입니다.", "It launches on September 16.", True),
+    ("10월 16일 출시입니다.", "It launches on October 17.", True),
+    ("10월 16일 출시입니다.", "It launches soon.", True),
+    ("10월 16일과 9월 23일입니다.", "The dates are October 23 and September 16.", True),
+    ("2026년 10월 16일입니다.", "The date is October 16, 2027.", False),
+    ("2026년 10월 16일입니다.", "The date is October 16.", False),
+    ("10월 16일에 $148.56입니다.", "It costs $148.57 on October 16.", False),
+    ("10월 16일에 $148.56입니다.", "It costs 148.56 yen on October 16.", False),
+    ("10월 16일이고 배터리는 24시간입니다.",
+     "It launches October 16 with 25 hours of battery.", False),
+    ("5월 1일입니다.", "It may take 1 hour.", True),
+    ("10월 16일입니다.", "The dates are October 16 and 23.", True),
 ])
-def test_date_and_number_differences_are_advisory(source, text):
+def test_calendar_observations_keep_usable_text_without_analyzing_amounts(
+    source, text, calendar_warning,
+):
     payload = {"segments": [{"id": 0, "text": text}]}
     assert validate_translation(payload, {0: source}, "en") == {0: text}
-    if "$148.56" not in source:
-        assert _text_warnings(text, source)
+    assert bool(_text_warnings(text, source)) is calendar_warning

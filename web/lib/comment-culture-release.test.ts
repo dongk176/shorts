@@ -17,6 +17,14 @@ describe("release-pinned culture comments", () => {
     ), "utf8")));
     expect(JSON.stringify(prompts)).not.toMatch(/don't|do not|must not|never|avoid|example|demonstration|例えば|例文|예시|모범|しない|せず|禁止/i);
   });
+  it("uses the ordinary Korean community voice for language-project regeneration", () => {
+    const messages = buildCommentRegenerationMessages({ ...input, outputLanguage: "ko" });
+    expect(messages[0].content).toContain("한국 유튜브와 숏폼 커뮤니티");
+    expect(messages[0].content).toContain("개웃기네, 미쳤네");
+    expect(messages[0].content).not.toContain("원본 영상의 언어");
+    expect(messages[0].content).not.toContain("outputLanguage=");
+    expect(messages[1].content).toContain(input.transcript[0].text);
+  });
   it.each(["ko", "en", "ja"] as const)("preserves existing %s requests and only opts in the new release", async (outputLanguage) => {
     const comment = { ko: "이 장면이 기억에 남아요", en: "That timing was perfect!", ja: "この間の取り方が絶妙すぎる" }[outputLanguage];
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: {

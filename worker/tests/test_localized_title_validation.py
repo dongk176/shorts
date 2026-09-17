@@ -15,7 +15,6 @@ from shorts_worker.schemas import (
 from shorts_worker.selector import (
     FALLBACK_TITLE_LINES,
     TranscriptSelector,
-    _mentioned_currencies,
     _two_line_title,
 )
 
@@ -127,7 +126,7 @@ def test_localized_provider_rejects_wrong_language(field, language):
 
 @pytest.mark.parametrize("language", [OutputLanguage.EN, OutputLanguage.JA])
 @pytest.mark.parametrize("field", ["hook_title_line1", "reason"])
-def test_source_currency_cannot_be_replaced_in_title_or_reason(language, field):
+def test_server_keeps_title_wording_without_currency_rejection(language, field):
     response = {
         **candidate(language),
         field: "Just $150" if language == OutputLanguage.EN else "たった15万円のPC",
@@ -137,39 +136,7 @@ def test_source_currency_cannot_be_replaced_in_title_or_reason(language, field):
         choices=[SimpleNamespace(message=SimpleNamespace(parsed={"clips": [response]}))],
     )
     source = [{"role": "user", "content": "15만 원짜리 컴퓨터로 시작해서 3천만 원을 벌었다."}]
-    with pytest.raises(ValueError, match="different currency"):
-        TranscriptSelector._parse_selection(client, "existing-model", source, language)
-
-
-def test_currency_detection_preserves_multiple_explicit_currencies_and_ordinary_words():
-    assert _mentioned_currencies("회사원들이 원래円満하게 일한다") == set()
-    assert _mentioned_currencies("I won the race after losing 5 pounds") == set()
-    assert _mentioned_currencies("15만 원, 3000万円, 20 dollars, 40 euros, 5 GBP") == {
-        "KRW", "JPY", "USD", "EUR", "GBP",
-    }
-    response = {**candidate(), "hook_title_line1": "A $150 laptop"}
-    client = MagicMock()
-    client.beta.chat.completions.parse.return_value = SimpleNamespace(
-        choices=[SimpleNamespace(message=SimpleNamespace(parsed={"clips": [response]}))],
-    )
-    source = [{"role": "user", "content": "컴퓨터 150달러와 모니터 15만 원"}]
-    assert TranscriptSelector._parse_selection(client, "existing-model", source, OutputLanguage.EN)
-
-
-@pytest.mark.parametrize("language", [OutputLanguage.EN, OutputLanguage.JA, OutputLanguage.KO])
-def test_currency_context_comes_from_real_source_and_keeps_source_text(language):
-    transcript = [SubtitleSegment(start=0, end=40, text="15만 원짜리 컴퓨터에서 시작했습니다.")]
-    messages = TranscriptSelector(Settings())._selection_messages(
-        video_title="원본 영상", duration_seconds=300, transcript=transcript,
-        required_count=5, output_language=language,
-    )
-    assert transcript[0].text in messages[1]["content"]
-    if language == OutputLanguage.KO:
-        assert "sourceCurrencies" not in messages[1]["content"]
-    else:
-        assert "sourceCurrencies: KRW" in messages[1]["content"]
-        name = "South Korean won" if language == OutputLanguage.EN else "韓国ウォン"
-        assert f"sourceCurrencyName: KRW = {name}" in messages[1]["content"]
+    assert TranscriptSelector._parse_selection(client, "existing-model", source, language)
 
 
 def test_title_cleanup_preserves_valid_punctuation_and_does_not_pad_short_lines():

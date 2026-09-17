@@ -17,7 +17,7 @@ from shorts_worker.subtitle_translation import SubtitleTranslator, inspect_trans
 def test_original_names_and_extra_fields_are_accepted(language, text):
     valid, issues = inspect_translation(
         {"segments": [{"id": 0, "text": text, "note": "extra"}]},
-        {0: "제품을 소개합니다."}, language, set(),
+        {0: "제품을 소개합니다."}, language,
     )
     assert valid == {0: text}
     assert issues == {}
@@ -33,7 +33,7 @@ def test_character_script_does_not_reject_text(language, text):
             "ko": "제품이 준비됐습니다."}[language]
     valid, issues = inspect_translation(
         {"segments": [{"id": 0, "text": good}, {"id": 1, "text": text}]},
-        {0: "준비됐습니다.", 1: "준비됐습니다."}, language, set(),
+        {0: "준비됐습니다.", 1: "준비됐습니다."}, language,
     )
     assert valid == {0: good, 1: text}
     assert issues == {}
@@ -56,9 +56,9 @@ def test_warnings_keep_captions_without_retry(monkeypatch):
     )
     assert len(calls) == 1
     assert len(result.segments) == 1 and not result.failures
-    assert translator.metrics["warningCount"] == 2
+    assert translator.metrics["warningCount"] == 1
     assert {w["reason"] for w in translator.metrics["warnings"]} == {
-        "date_changed", "number_changed",
+        "date_changed",
     }
 
 
@@ -69,7 +69,7 @@ def test_warnings_keep_captions_without_retry(monkeypatch):
 ])
 def test_only_missing_or_empty_fragments_need_recovery(segments, reason):
     valid, issues = inspect_translation(
-        {"segments": segments}, {0: "$10입니다."}, "en", {"USD"}, exact_money=True,
+        {"segments": segments}, {0: "$10입니다."}, "en",
     )
     assert not valid
     assert issues == {0: reason}
@@ -79,7 +79,7 @@ def test_first_usable_fragment_survives_duplicate_and_unrelated_ids():
     valid, issues = inspect_translation(
         {"segments": [{"id": 0, "text": ""}, {"id": 99, "text": "extra"},
                       {"id": 0, "text": "Valid."}, {"id": 0, "text": "Duplicate."}]},
-        {0: "원문"}, "en", set(),
+        {0: "원문"}, "en",
     )
     assert valid == {0: "Valid."}
     assert not issues

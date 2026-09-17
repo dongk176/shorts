@@ -56,9 +56,7 @@ def test_language_context_preserves_existing_rules_and_real_source(language):
     comment_before = CommentGenerator._messages([clip])
     changed = CommentClipInput(1, clip.hook_title, clip.reason, 45, transcript, language, "ko")
     comment_after = CommentGenerator._messages([changed])
-    assert comment_after[0]["content"] == (
-        "clipIndex: 1\n" + context + "\n\n" + comment_before[0]["content"]
-    )
+    assert comment_after[0] == comment_before[0]
     assert comment_after[1] == comment_before[1]
 
 

@@ -9,7 +9,6 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from .currency_tools import CurrencyConverter, complete_chat
 from .prompt_language import LOCALIZED_SELECTION_PROMPTS
 from .schemas import HighlightCandidate, HighlightClip, SelectionResponse
 
@@ -65,15 +64,20 @@ def validate_candidates(payload: object, *, language: str, source: str) -> Selec
 def request_candidates(
     client: Any, model: str, messages: list[dict[str, str]], language: str,
     *, max_tokens: int | None = None,
-    currency_converter: CurrencyConverter | None = None,
 ) -> SelectionAttempt:
     # Use the regular title bounds and retain independently valid candidates.
-    response = complete_chat(
-        client, currency_converter=currency_converter,
+    schema = SelectionResponse.model_json_schema()
+    target = {"ko": "Korean", "en": "English", "ja": "Japanese"}.get(language, language)
+    fields = schema["$defs"]["HighlightCandidate"]["properties"]
+    for name in ("hook_title_line1", "hook_title_line2", "reason"):
+        fields[name]["description"] = (
+            f"Write in {target}, preserving the source facts and meaning."
+        )
+    response = client.chat.completions.create(
         model=model, messages=messages,
         response_format={"type": "json_schema", "json_schema": {
             "name": "LocalizedSelectionResponse", "strict": True,
-            "schema": SelectionResponse.model_json_schema(),
+            "schema": schema,
         }},
         **({"max_tokens": max_tokens} if max_tokens is not None else {}),
     )
