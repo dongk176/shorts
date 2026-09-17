@@ -1976,6 +1976,35 @@ main#top > section#results { border: 0; border-radius: 0; padding: 0; background
   font-weight: 850;
   letter-spacing: -.035em;
 }
+.customer-review-translation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px 12px;
+  color: #a6a3ab;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.customer-review-translation button {
+  color: #f1d4d0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.customer-review-translation button:focus-visible {
+  outline: 2px solid #ff9b8d;
+  outline-offset: 4px;
+}
+.customer-review-card blockquote:lang(ja) { word-break: normal; line-break: strict; }
+.customer-review-card:has(blockquote[lang="en"]),
+.customer-review-card:has(blockquote[lang="ja"]) { height: auto; min-height: 248px; }
+.customer-review-card blockquote:lang(en),
+.customer-review-card blockquote:lang(ja) { display: block; overflow: visible; -webkit-line-clamp: unset; }
+
+@media (max-width: 640px) {
+  .customer-reviews-heading:has(.customer-review-translation) { grid-template-columns: 1fr; }
+  .customer-review-translation { justify-content: flex-start; }
+}
 .customer-review-count {
   display: flex;
   min-width: 142px;

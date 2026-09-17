@@ -203,12 +203,12 @@ export function BackgroundShowcase() {
     <section className="background-showcase-section" aria-labelledby="background-showcase-title">
       <div className="background-showcase-heading">
         <h2 id="background-showcase-title" className="hero-title">
-          {localizedValue(locale, { ko: "이 영상과 댓글, 전부", en: "This video and every comment", ja: "この動画もコメントも、すべて" })}
+          {localizedValue(locale, { ko: "이 영상과 댓글, 전부", en: "Clipped and captioned", ja: "切り抜きも字幕も、" })}
           <br />
-          {localizedValue(locale, { ko: "AI가 만들었어요", en: "were made by AI", ja: "AIが作りました" })}
+          {localizedValue(locale, { ko: "AI가 만들었어요", en: "by AI", ja: "AIで。" })}
         </h2>
         <p className="mx-auto mt-5 max-w-2xl text-sm leading-6 text-[#d5aaa4] sm:text-base">
-          {localizedValue(locale, { ko: "⬇ 소름 돋게 자연스러운 AI의 실제 댓글 ⬇", en: "⬇ Unbelievably natural comments made by AI ⬇", ja: "⬇ 驚くほど自然なAIコメント ⬇" })}
+          {localizedValue(locale, { ko: "⬇ 소름 돋게 자연스러운 AI의 실제 댓글 ⬇", en: "See how AI-generated comment overlays bring each clip to life.", ja: "AIが作成したコメント風テキストで、動画をアレンジ。" })}
         </p>
       </div>
       <div

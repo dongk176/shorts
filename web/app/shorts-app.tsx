@@ -1,5 +1,6 @@
 "use client";
 
+import { customerReviews } from "@/lib/i18n/customer-reviews";
 import { sourceLanguages, type SourceLanguage } from "@/lib/language-context";
 import { Fragment, FormEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type {
@@ -691,29 +692,7 @@ function isProjectExpired(job: VideoJob) {
   return Boolean(job.expiresAt && new Date(job.expiresAt).getTime() <= Date.now());
 }
 
-const customerReviews = [
-  { name: "김지훈", rating: 5, role: "직장인 (부업)", review: "편집 귀찮아서 한 번 써봤는데 진짜 좋긴해요. 댓글 퀄리티가 수정이 조금 필요하긴한데 괜찮은 거 꽤 많이 나옴. 어차피 나중에 수정 가능해서 잘 쓰고 있음요." },
-  { name: "Alex_Choi", rating: 5, role: "전업 크리에이터", review: "영상은 그렇다 쳐도 아니 무슨 AI가 드립을 치네요??!ㅋㅋㅋㅋㅋ 실제 댓글보다 재밌어서 좋아요." },
-  { name: "이민수", rating: 5, role: "마케터 / 대행사", review: "솔직히 모르고 쇼츠 넘기다 보면 절대 모를 듯;;;" },
-  { name: "jay_studio", rating: 5, role: "직장인 (부업)", review: "걍 내 인생 딸깍템임… 추천합니다." },
-  { name: "박현우", rating: 5, role: "전업 크리에이터", review: "1달 결제하고 써봤는데, 조회수 바로 터짐 1년결제 합니다요!" },
-  { name: "creator_09", rating: 4, role: "마케터 / 대행사", review: "다 좋은데, 댓글 패턴이 살짝 비슷비슷한 느낌? 근데 영상마다는 다르게 만들어줘서 3분 정도만 편집하면 바로 쓸 수 있을 정도." },
-  { name: "최유진", rating: 4, role: "전업 크리에이터", review: "영상 퀄리티는 진짜 미쳤는데, 가끔 맥락 못 잡고 헛소리하는 댓글 하나씩 껴있음 ㅋㅋㅋ 그건 제가 알아서 지우고 올립니다." },
-  { name: "David.K", rating: 4, role: "직장인 (부업)", review: "진짜 신세계고 편하긴 한데... 구독료가 살짝 부담스럽긴 하네요. ㅠㅠ 그래도 달에 10만원씩은 쓰고 있는데, 쇼츠로 100만 이상은 벌어요 감사합니다." },
-  { name: "정성민", rating: 5, role: "영상 편집자", review: "진짜 혼자서 유튜브 채널 3개 거뜬하게 돌릴 수 있음. 영상 생성 속도만 쫌 더 빨라지면 평생 구독 갑니다." },
-  { name: "윤서준", rating: 5, role: "직장인 (부업)", review: "댓글 진짜 존나 웃기게 다네 ㅋㅋㅋㅋㅋ 수정이 좀 필요하긴 한데 좋아요." },
-  { name: "edit_master", rating: 5, role: "영상 편집자", review: "영상 편집자 해고했습니다. 죄송합니다 ㅎ" },
-  { name: "송지아", rating: 4, role: "마케터 / 대행사", review: "와 미쳤다 진짜 ㅋㅋㅋ 근데 자막 폰트 종류 좀 늘려주세요!" },
-  { name: "Jason12", rating: 5, role: "직장인 (부업)", review: "쇼츠 외주 주다가 이거 쓰고 돈 굳음요; 진짜 개꿀통." },
-  { name: "한동훈", rating: 5, role: "전업 크리에이터", review: "조회수 복사기임 ㄹㅇ 안 쓸 이유가 없음." },
-  { name: "임지수", rating: 5, role: "전업 크리에이터", review: "이거 쓰고 첫 쇼츠 50만 찍음 ㅋㅋ 연간 결제 박습니다." },
-  { name: "Ryan_Kim", rating: 5, role: "직장인 (부업)", review: "부업으로 쇼츠 채널 2개 돌리는데 달에 150씩 꼬박꼬박 꽂힘. 구독료 뽕 뽑고도 남으니까 돈 안 아까워요." },
-  { name: "user_9902", rating: 5, role: "마케터 / 대행사", review: "처음엔 반신반의하면서 한 달만 끊었는데, 영상 하나 터진 걸로 1년 치 구독료 한방에 회수함요. 감사해요 사장님." },
-  { name: "오지훈", rating: 5, role: "전업 크리에이터", review: "편집자 동생한테 미안하지만... 걔 월급 줄 돈으로 이거 돌리니까 효율 10배는 나옴요;; 미안하다 고맙다!!!" },
-  { name: "Sarah_J", rating: 5, role: "마케터 / 대행사", review: "솔직히 요즘 실시간 트렌드 바로 반영해서 템플릿 짜주는 건 반칙 아닙니까? 다른 숏폼 서비스들 긴장 좀 해야 할 듯." },
-  { name: "신영우", rating: 5, role: "전업 크리에이터", review: "와 댓글 창 보고 소름 돋았네;; 이거 AI가 쓴 거 맞음? 릴스에 올렸더니 애들 진짜 사람인 줄 알고 키보드 배틀 뜨고 있음 개웃김 ㅋㅋㅋㅋ" },
-  { name: "Emily_Park", rating: 5, role: "전업 크리에이터", review: "솔직히 다른 사람한테 추천 안 할 듯… 내가 다 해먹게..ㅋㅋㅋㅋㅋㅋ" },
-] as const;
+
 
 const monetizationRelatedReviewNames = new Set([
   "user_9902",
@@ -731,7 +710,9 @@ const CUSTOMER_REVIEW_SCROLL_PIXELS_PER_SECOND = 60;
 const CUSTOMER_REVIEW_DRAG_THRESHOLD_PX = 4;
 
 function CustomerReviews() {
-  const { locale } = useI18n();
+  const { locale, t } = useI18n();
+  const [showOriginal, setShowOriginal] = useState(false);
+  const reviewLocale = showOriginal ? "ko" : locale;
   const railRef = useRef<HTMLDivElement>(null);
   const interactionActiveRef = useRef(false);
   const pointerTrackingRef = useRef(false);
@@ -841,6 +822,14 @@ function CustomerReviews() {
       <div className="customer-reviews-inner">
         <div className="customer-reviews-heading">
           <h2 id="customer-reviews-title">{localizedValue(locale, { ko: "사용자 후기", en: "Customer reviews", ja: "ユーザーレビュー" })}</h2>
+          {locale !== "ko" && (
+            <div className="customer-review-translation">
+              <span>{t(showOriginal ? "reviews.originalNotice" : "reviews.translationNotice")}</span>
+              <button type="button" aria-controls="customer-review-rail" aria-pressed={showOriginal} onClick={() => setShowOriginal((value) => !value)}>
+                {t(showOriginal ? "reviews.showTranslation" : "reviews.showOriginal")}
+              </button>
+            </div>
+          )}
         </div>
         <div
           id="customer-review-rail"
@@ -866,14 +855,14 @@ function CustomerReviews() {
                     <div className="customer-review-stars" role="img" aria-label={localizedValue(locale, { ko: `별점 5점 만점에 ${review.rating}점`, en: `${review.rating} out of 5 stars`, ja: `5点満点中${review.rating}点` })}>
                       {[0, 1, 2, 3, 4].map((star) => <span key={star} className={star < review.rating ? "" : "is-empty"} aria-hidden="true">★</span>)}
                     </div>
-                    <blockquote data-i18n-skip>{review.review}</blockquote>
+                    <blockquote data-i18n-skip lang={reviewLocale}>{reviewLocale === "ko" ? review.review : review.translations[reviewLocale]}</blockquote>
                     <footer>
                       <span data-i18n-skip className="customer-review-avatar" aria-hidden="true">{review.name.slice(0, 1)}</span>
                       <span>
                         <strong data-i18n-skip>{review.name}</strong>
                         <small>{localizedValue(locale, {
                           ko: review.role,
-                          en: review.role === "전업 크리에이터" ? "Full-time creator" : review.role === "영상 편집자" ? "Video editor" : review.role === "마케터 / 대행사" ? "Marketer / agency" : "Professional with a side project",
+                          en: review.role === "전업 크리에이터" ? "Full-time creator" : review.role === "영상 편집자" ? "Video editor" : review.role === "마케터 / 대행사" ? "Marketer / agency" : "Creator with a full-time job",
                           ja: review.role === "전업 크리에이터" ? "専業クリエイター" : review.role === "영상 편집자" ? "動画編集者" : review.role === "마케터 / 대행사" ? "マーケター／代理店" : "会社員（副業）",
                         })}</small>
                       </span>
@@ -930,12 +919,12 @@ function ThreeStepProcess() {
     ko: processSteps,
     en: [
       { number: "01", icon: "↗", title: "Copy and paste a link", descriptionLines: ["Paste the YouTube video link you want to turn into Shorts.", "Longer videos can provide more highlights."] },
-      { number: "02", icon: "✦", title: "AI extracts highlights", descriptionLines: ["AI finds the moments most likely to go viral.", "Hook titles, captions, and comments are created for you."] },
-      { number: "03", icon: "⇩", title: "Edit freely and download", descriptionLines: ["Preview the finished Shorts and edit them your way,", "then publish to YouTube Shorts, Reels, or TikTok."] },
+      { number: "02", icon: "✦", title: "AI extracts highlights", descriptionLines: ["AI finds the moments most likely to go viral.", "AI creates titles, captions, and comment overlays for your clips."] },
+      { number: "03", icon: "⇩", title: "Edit and download", descriptionLines: ["Preview the finished Shorts and edit them your way,", "then publish to YouTube Shorts, Reels, or TikTok."] },
     ],
     ja: [
       { number: "01", icon: "↗", title: "リンクをコピー＆貼り付け", descriptionLines: ["ショート動画にしたいYouTube動画のリンクを貼り付けます。", "長い動画ほど多くのハイライトを見つけられます。"] },
-      { number: "02", icon: "✦", title: "AIがハイライトを抽出", descriptionLines: ["AIがバズりやすい場面を見つけます。", "フックタイトル、字幕、コメントまで自動で仕上げます。"] },
+      { number: "02", icon: "✦", title: "AIがハイライトを抽出", descriptionLines: ["AIがバズりやすい場面を見つけます。", "目を引くタイトルや字幕、コメント風のテキストも自動で作成します。"] },
       { number: "03", icon: "⇩", title: "自由に編集してダウンロード", descriptionLines: ["完成したショート動画を確認して自由に編集し、", "YouTube Shorts・Reels・TikTokですぐに活用できます。"] },
     ],
   });
@@ -944,7 +933,7 @@ function ThreeStepProcess() {
       <div className="three-step-process-inner">
         <div className="three-step-process-heading">
           <h2 id="three-step-process-title">{localizedValue(locale, { ko: "3단계로 끝나는 과정", en: "Done in three steps", ja: "3ステップで完成" })}</h2>
-          <p>{localizedValue(locale, { ko: "유튜브 링크 하나면 충분합니다. AI가 가장 빛나는 1분을 찾아드려요.", en: "One YouTube link is all you need. AI finds the best minute.", ja: "YouTubeリンクひとつで十分です。AIが最も輝く1分を見つけます。" })}</p>
+          <p>{localizedValue(locale, { ko: "유튜브 링크 하나면 충분합니다. AI가 가장 빛나는 1분을 찾아드려요.", en: "One YouTube link is all you need. AI finds the highlights.", ja: "YouTubeリンクひとつで十分です。AIが動画の見どころを見つけます。" })}</p>
         </div>
 
         <ol className="process-step-list">
@@ -2396,6 +2385,7 @@ function UploadBetaNoticeDialog({
   onConfirm: () => void;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
   useEffect(() => {
     if (!open) return;
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -2428,12 +2418,12 @@ function UploadBetaNoticeDialog({
         <div aria-hidden="true" className="pointer-events-none absolute inset-x-16 -top-24 h-40 rounded-full bg-violet-500/15 blur-3xl" />
         <div aria-hidden="true" className="relative mx-auto grid h-12 w-12 place-items-center rounded-full border border-violet-300/20 bg-violet-500/10 text-2xl text-violet-200">i</div>
         <h2 id="file-upload-beta-notice-title" className="relative mt-5 text-2xl font-extrabold tracking-[-0.025em] text-white">
-          파일 업로드 안내
+          {t("home.uploadNoticeTitle")}
         </h2>
         <p id="file-upload-beta-notice-description" className="relative mt-4 break-keep text-balance text-sm font-semibold leading-6 text-violet-100/80">
-          <span className="block">파일 업로드 기능은 현재 베타 서비스예요.</span>
-          <span className="mt-1 block">영상 크기와 네트워크 환경에 따라 업로드에 시간이 걸릴 수 있습니다.</span>
-          <span className="mt-3 block">업로드가 진행되는 동안 새 창에서 다른 작업을 시작해 보세요.</span>
+          <span className="block">{t("home.uploadNoticeIntro")}</span>
+          <span className="mt-1 block">{t("home.uploadNoticeTiming")}</span>
+          <span className="mt-3 block">{t("home.uploadNoticeContinue")}</span>
         </p>
         <div className="relative mt-8 grid gap-3 sm:grid-cols-[.8fr_1.2fr]">
           <button
@@ -2441,7 +2431,7 @@ function UploadBetaNoticeDialog({
             onClick={onClose}
             className="min-h-12 rounded-xl border border-white/15 px-5 py-3 text-sm font-extrabold text-neutral-200 transition hover:bg-white/[.06] active:scale-[.99]"
           >
-            취소
+            {t("common.cancel")}
           </button>
           <button
             type="button"
@@ -2449,7 +2439,7 @@ function UploadBetaNoticeDialog({
             onClick={onConfirm}
             className="min-h-12 rounded-xl bg-white px-5 py-3 text-sm font-extrabold text-black transition hover:bg-neutral-100 active:scale-[.99]"
           >
-            확인하고 업로드
+            {t("home.uploadNoticeConfirm")}
           </button>
         </div>
       </section>
@@ -12727,7 +12717,7 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
   return (
     <div className="project-workspace">
       <header className="workspace-header">
-        <div className="min-w-0"><button data-project-guide="back" onClick={onBack} className="text-xs font-semibold text-neutral-400 hover:text-white">{locale === "ko" ? `← 프로젝트 /${job.projectNumber}` : locale === "en" ? `← Project /${job.projectNumber}` : `← プロジェクト /${job.projectNumber}`}</button><div className="mt-1 flex min-w-0 items-center gap-3"><h1 data-i18n-skip className="truncate text-base font-bold">{job.videoTitle}</h1>{job.isExample && <span className="shrink-0 rounded bg-red-500/15 px-2 py-1 text-[11px] font-extrabold text-red-300">예시 작업 · 읽기 전용</span>}<span className="shrink-0 text-xs text-neutral-500">{locale === "ko" ? `쇼츠 ${job.shorts.length}개` : locale === "en" ? `${job.shorts.length} Shorts` : `ショート動画 ${job.shorts.length}件`}</span></div></div>
+        <div className="min-w-0"><button data-project-guide="back" onClick={onBack} className="text-xs font-semibold text-neutral-400 hover:text-white">{locale === "ko" ? `← 프로젝트 /${job.projectNumber}` : locale === "en" ? `← Project /${job.projectNumber}` : `← プロジェクト /${job.projectNumber}`}</button><div className="mt-1 flex min-w-0 items-center gap-3"><h1 data-i18n-skip className="truncate text-base font-bold">{job.videoTitle}</h1>{job.isExample && <span className="shrink-0 rounded bg-red-500/15 px-2 py-1 text-[11px] font-extrabold text-red-300">예시 작업 · 읽기 전용</span>}<span className="shrink-0 text-xs text-neutral-500">{locale === "ko" ? `쇼츠 ${job.shorts.length}개` : locale === "en" ? `${job.shorts.length} Shorts` : `ショート動画 ${job.shorts.length}本`}</span></div></div>
         <ProjectDownloadButton key={job.id} projectNumber={job.projectNumber} disabled={job.isExample || !downloadableItems.length} canDownload={access.canDownload} onPaywall={() => setDownloadPaywallOpen(true)} locale={locale} />
       </header>
       <ProjectActionGuide
@@ -14530,7 +14520,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       <section className={`hero mx-auto flex w-full max-w-4xl flex-col items-center text-center ${adminTemplateLayoutEnabled ? "order-[-2]" : ""}`}>
         <h1 className="hero-title">{t("home.heroLine1")}<br /><span>{t("home.heroLine2")}</span></h1>
         {uploadModeVisible ? (
-          <div className="source-input-mode mt-8 w-full max-w-3xl" role="tablist" aria-label="원본 영상 입력 방식">
+          <div className="source-input-mode mt-8 w-full max-w-3xl" role="tablist" aria-label={t("home.sourceMode")}>
             <button
               type="button"
               role="tab"
@@ -14541,7 +14531,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
               <svg viewBox="0 0 24 24" width="21" height="21" fill="none" aria-hidden="true">
                 <path d="M9.7 13.8a4 4 0 0 0 5.66 0l2.83-2.83a4 4 0 0 0-5.66-5.66l-1.62 1.62M14.3 10.2a4 4 0 0 0-5.66 0l-2.83 2.83a4 4 0 1 0 5.66 5.66l1.62-1.62" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
               </svg>
-              유튜브 링크
+              {t("home.youtubeTab")}
             </button>
             <button
               type="button"
@@ -14554,7 +14544,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
               <svg viewBox="0 0 24 24" width="21" height="21" fill="none" aria-hidden="true">
                 <path d="M12 15V3m0 0L7.5 7.5M12 3l4.5 4.5M5 13v5.25A2.75 2.75 0 0 0 7.75 21h8.5A2.75 2.75 0 0 0 19 18.25V13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
-              파일 업로드
+              {t("home.uploadTab")}
             </button>
           </div>
         ) : null}

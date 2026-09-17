@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { koMessages } from "../lib/i18n/messages";
 
 const source = readFileSync(new URL("./shorts-app.tsx", import.meta.url), "utf8");
 const stateSource = readFileSync(new URL("../lib/mvp-state.ts", import.meta.url), "utf8");
@@ -99,12 +100,13 @@ describe("file upload UI authentication and capability isolation", () => {
     expect(source).toContain("const [uploadBetaNoticeOpen, setUploadBetaNoticeOpen] = useState(false)");
     expect(source).toContain("if (!betaNoticeConfirmed)");
     expect(source).toContain("setUploadBetaNoticeOpen(true)");
-    expect(source).toContain("파일 업로드 기능은 현재 베타 서비스예요.");
-    expect(source).toContain('className="block">파일 업로드 기능은 현재 베타 서비스예요.</span>');
-    expect(source).toContain('className="mt-1 block">영상 크기와 네트워크 환경에 따라 업로드에 시간이 걸릴 수 있습니다.</span>');
-    expect(source).toContain('className="mt-3 block">업로드가 진행되는 동안 새 창에서 다른 작업을 시작해 보세요.</span>');
-    expect(source).toContain("업로드가 진행되는 동안 새 창에서 다른 작업을 시작해 보세요.");
-    expect(source).toContain("확인하고 업로드");
+    expect(source).toContain('className="block">{t("home.uploadNoticeIntro")}</span>');
+    expect(source).toContain('className="mt-1 block">{t("home.uploadNoticeTiming")}</span>');
+    expect(source).toContain('className="mt-3 block">{t("home.uploadNoticeContinue")}</span>');
+    expect(source).toContain('t("home.uploadNoticeConfirm")');
+    expect(koMessages["home.uploadNoticeIntro"]).toBe("파일 업로드 기능은 현재 베타 서비스예요.");
+    expect(koMessages["home.uploadNoticeTiming"]).toBe("영상 크기와 네트워크 환경에 따라 업로드에 시간이 걸릴 수 있습니다.");
+    expect(koMessages["home.uploadNoticeConfirm"]).toBe("확인하고 업로드");
     expect(source).toContain("void createUploadJob(true)");
     expect(source.indexOf("if (!betaNoticeConfirmed)")).toBeLessThan(
       source.indexOf('>("/api/file-upload/sessions"'),

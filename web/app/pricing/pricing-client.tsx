@@ -268,7 +268,7 @@ export function PricingClient({
   onRequireLogin: () => void;
 }) {
   const { refreshUsage } = useUsageState();
-  const { locale } = useI18n();
+  const { locale, t } = useI18n();
   const [previewMessage, setPreviewMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -393,8 +393,8 @@ export function PricingClient({
           text: locale === "ko"
             ? `원본 영상 처리시간 · ${localizedMonthlyMinutes} × ${packageMonths}개월`
             : locale === "en"
-              ? `Source-video processing · ${localizedMonthlyMinutes} × ${packageMonths} months`
-              : `元動画処理時間 · ${localizedMonthlyMinutes} × ${packageMonths}か月`,
+              ? `Process ${localizedMonthlyMinutes} for ${packageMonths} months`
+              : `動画の処理枠 · ${localizedMonthlyMinutes} × ${packageMonths}か月`,
           strong: localizedMonthlyMinutes,
         },
         {
@@ -799,13 +799,13 @@ export function PricingClient({
       <>
         <section className={`hero pricing-hero ${styles.hero}`}>
           <h1>
-            <span>얼리버드 할인으로</span><br />
-            <span className="pricing-hero-accent">패키지 상품을 만나보세요</span>
+            <span>{t("pricing.heroLine1")}</span><br />
+            <span className="pricing-hero-accent">{t("pricing.heroLine2")}</span>
           </h1>
         </section>
         <section
           className={styles.pricingStateSkeleton}
-          aria-label="요금제 정보를 불러오는 중"
+          aria-label={t("common.loading")}
           aria-busy="true"
         >
           <div className={styles.skeletonStatusCard}>
@@ -829,8 +829,8 @@ export function PricingClient({
         <>
           <section className={`hero pricing-hero ${styles.hero}`}>
             <h1>
-              <span>얼리버드 할인으로</span><br />
-              <span className="pricing-hero-accent">패키지 상품을 만나보세요</span>
+              <span>{t("pricing.heroLine1")}</span><br />
+              <span className="pricing-hero-accent">{t("pricing.heroLine2")}</span>
             </h1>
           </section>
 
@@ -928,7 +928,7 @@ export function PricingClient({
       <EbookPreviewRail
         canDownload={Boolean(state && billingSupportsEbookDownloads(state.billing))}
         description={ancillaryOnly
-          ? "활성 스타터·전문가 이용자는 전자책 원본을 다운로드할 수 있습니다.\n누구나 각 전자책을 3페이지까지 미리 볼 수 있습니다."
+          ? "활성 스타터·전문가 이용자는 전자책 원본을 다운로드할 수 있습니다."
           : undefined}
         onChoosePackage={() => {
           document.getElementById(ancillaryOnly ? "toss-pricing-plans" : "pricing-plans")?.scrollIntoView({

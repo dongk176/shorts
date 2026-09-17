@@ -28,7 +28,8 @@ import {
   type TemplateFavoriteKey,
 } from "@/lib/template-favorites";
 import { userFacingErrorMessage } from "@/lib/public-error";
-import { formatLocale } from "@/lib/i18n/config";
+import { translateLegacyText } from "@/lib/i18n/legacy-phrases";
+import { localizedValue, formatLocale } from "@/lib/i18n/config";
 import { useI18n } from "@/lib/i18n/provider";
 import { isEditorRenderSpecV4Enabled } from "@/lib/editor-render-v4-feature";
 import { titleLineBackground, titleLineColor } from "@/lib/title-preview";
@@ -181,6 +182,7 @@ function CommentCaptureCard({ comment }: { comment: CommentOverlay }) {
     notation: "compact",
     maximumFractionDigits: 1,
   }).format(comment.likeCount);
+  const sampleText = localizedValue(locale, { ko: comment.text, en: "Okay, that made me laugh 😂", ja: "これは笑った😂" });
   const ageLabel = locale === "ko" ? comment.ageLabel : locale === "en" ? "5 months ago" : "5か月前";
   return (
     <div className="w-full pb-[0.6cqw] pl-[4.4cqw] pr-[2.8cqw] pt-[4.5cqw] text-left text-white" style={{ backgroundColor: COMMENT_BACKGROUND_COLOR }}>
@@ -188,7 +190,7 @@ function CommentCaptureCard({ comment }: { comment: CommentOverlay }) {
         <div data-i18n-skip className="grid h-[8.6cqw] w-[8.6cqw] shrink-0 place-items-center rounded-full text-[3.7cqw] font-bold text-white blur-[0.65cqw]" style={{ background: comment.avatarColor }}>{comment.initial}</div>
         <div className="min-w-0 flex-1">
           <div className="w-fit max-w-[74cqw] truncate text-[3.45cqw] font-bold leading-tight text-neutral-100 blur-[0.52cqw]"><span data-i18n-skip>@{comment.nickname}</span> <span className="font-normal text-neutral-400">{ageLabel}</span></div>
-          <p data-i18n-skip className="mt-[1.5cqw] line-clamp-2 whitespace-pre-wrap font-normal leading-[1.28] text-white/95 blur-[0.05cqw]" style={{ fontSize: `${COMMENT_CAPTURE_BODY_FONT_CQW}cqw` }}>{comment.text}</p>
+          <p data-i18n-skip className="mt-[1.5cqw] line-clamp-2 whitespace-pre-wrap font-normal leading-[1.28] text-white/95 blur-[0.05cqw]" style={{ fontSize: `${COMMENT_CAPTURE_BODY_FONT_CQW}cqw` }}>{sampleText}</p>
           <div className="mt-[2.1cqw] flex items-center gap-[1.25cqw] text-[3.4cqw] text-neutral-300/80 blur-[0.035cqw]">
             <ReactionIcon /><span>{compactCount}</span>
             <span className="ml-[2.2cqw]"><ReactionIcon down /></span>
@@ -225,6 +227,7 @@ function TemplatePreview({
   template: TemplateShowcase;
   titleV4Enabled?: boolean;
 }) {
+  const { locale } = useI18n();
   const [firstLine, secondLine] = template.label.split("\n");
   const isLight = template.id === "white-yellow" || template.id === "paper";
   const foreground = isLight ? "text-black" : "text-white";
@@ -268,7 +271,7 @@ function TemplatePreview({
       data-template-preview
       className={`relative mx-auto aspect-[9/16] w-full max-w-[164px] overflow-hidden rounded-lg ${foreground}`}
       style={{ aspectRatio: "9 / 16", background: template.background, containerType: "inline-size" }}
-      aria-label={`${template.name} 쇼츠 미리보기`}
+      aria-label={localizedValue(locale, { ko: `${template.name} 쇼츠 미리보기`, en: `${template.name} preview`, ja: `${template.name}のプレビュー` })}
     >
       {titleV4Enabled
         ? <TemplateTitleV4Preview
@@ -358,11 +361,13 @@ function UnifiedSubtitlePresetPreview({
   preset: (typeof unifiedSubtitlePresets)[number];
   positionedWordsV4Enabled: boolean;
 }) {
-  const template = unifiedSubtitlePreviewTemplates[preset.variant];
+  const { locale } = useI18n();
+  const template = { ...unifiedSubtitlePreviewTemplates[preset.variant], name: preset.name };
   return <CustomTemplateCanvasPreview
     template={template}
-    firstLine="AI가 고른 오늘의"
-    secondLine="핵심 장면"
+    previewLocale={locale}
+    firstLine={localizedValue(locale, { ko: "AI가 고른 오늘의", en: "The best moments", ja: "AIが選んだ" })}
+    secondLine={localizedValue(locale, { ko: "핵심 장면", en: "picked by AI", ja: "動画の見どころ" })}
     channelLabel="Easy Cut"
     showUnifiedSubtitle
     positionedWordsV4Enabled={positionedWordsV4Enabled}
@@ -388,6 +393,7 @@ export function TemplateLibrary({
   initialFavoriteTemplateKeys: TemplateFavoriteKey[];
   onLoginRequest?: (next: string) => void;
 }) {
+  const { locale } = useI18n();
   const positionedWordsV4Enabled = isEditorRenderSpecV4Enabled();
   const [query, setQuery] = useState("");
   const [favoriteTemplateKeys, setFavoriteTemplateKeys] = useState(initialFavoriteTemplateKeys);
@@ -397,17 +403,40 @@ export function TemplateLibrary({
   const favoriteTemplateKeySet = useMemo(() => new Set(favoriteTemplateKeys), [favoriteTemplateKeys]);
   const displayedPresetTemplates = useMemo(() => templates.map((template) => ({
     ...template,
-    name: presetTemplateDisplayName(
+    name: translateLegacyText(presetTemplateDisplayName(
       template.id,
       template.name,
       adminPresetNamesEnabled,
-    ),
-    description: presetTemplateDisplayDescription(
+    ), locale),
+    description: translateLegacyText(presetTemplateDisplayDescription(
       template.id,
       template.description,
       adminPresetNamesEnabled,
-    ),
-  })), [adminPresetNamesEnabled]);
+    ), locale),
+    category: translateLegacyText(template.category, locale),
+    label: localizedValue(locale, {
+      ko: template.label,
+      en: {
+        "comment-capture": "Add comments\nKeep them watching",
+        "dark-red": "The one thing\nyou need to know",
+        "white-yellow": "A quick tip\nto try today",
+        "dark-minimal": "Let the video\ntell the story",
+        paper: "A simple idea\nput into practice",
+      }[template.id],
+      ja: {
+        "comment-capture": "コメント風の演出で\n見どころを楽しく",
+        "dark-red": "知っておきたい\n大切なこと",
+        "white-yellow": "今日から使える\nちょっとしたコツ",
+        "dark-minimal": "動画そのものの\n魅力を伝える",
+        paper: "シンプルな工夫を\n今日から実践",
+      }[template.id],
+    }),
+  })), [adminPresetNamesEnabled, locale]);
+  const displayedSubtitlePresets = useMemo(() => unifiedSubtitlePresets.map((preset) => ({
+    ...preset,
+    name: translateLegacyText(preset.name, locale),
+    description: translateLegacyText(preset.description, locale),
+  })), [locale]);
 
   const showToast = useCallback((message: string) => {
     if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
@@ -459,46 +488,46 @@ export function TemplateLibrary({
   }, [authenticated, favoriteTemplateKeys, savingTemplateKey, showToast]);
 
   const visibleTemplates = useMemo(() => {
-    const normalizedQuery = query.trim().toLocaleLowerCase("ko-KR");
+    const normalizedQuery = query.trim().toLocaleLowerCase(formatLocale(locale));
     if (!normalizedQuery) return displayedPresetTemplates;
     return displayedPresetTemplates.filter((template) => (
       `${template.name} ${template.description} ${template.category}`
-        .toLocaleLowerCase("ko-KR")
+        .toLocaleLowerCase(formatLocale(locale))
         .includes(normalizedQuery)
     ));
-  }, [displayedPresetTemplates, query]);
+  }, [displayedPresetTemplates, query, locale]);
   const visiblePersonalTemplates = useMemo(() => {
-    const normalizedQuery = query.trim().toLocaleLowerCase("ko-KR");
+    const normalizedQuery = query.trim().toLocaleLowerCase(formatLocale(locale));
     if (!normalizedQuery) return personalTemplates;
-    return personalTemplates.filter((template) => template.name.toLocaleLowerCase("ko-KR").includes(normalizedQuery));
-  }, [personalTemplates, query]);
+    return personalTemplates.filter((template) => template.name.toLocaleLowerCase(formatLocale(locale)).includes(normalizedQuery));
+  }, [personalTemplates, query, locale]);
   const visibleUnifiedSubtitlePresets = useMemo(() => {
     if (!unifiedSubtitlePreviewEnabled) return [];
-    const normalizedQuery = query.trim().toLocaleLowerCase("ko-KR");
-    if (!normalizedQuery) return unifiedSubtitlePresets;
-    return unifiedSubtitlePresets.filter((preset) => (
-      `${preset.name} ${preset.description} 자막`
-        .toLocaleLowerCase("ko-KR")
+    const normalizedQuery = query.trim().toLocaleLowerCase(formatLocale(locale));
+    if (!normalizedQuery) return displayedSubtitlePresets;
+    return displayedSubtitlePresets.filter((preset) => (
+      `${preset.name} ${preset.description} ${translateLegacyText("자막 템플릿", locale)}`
+        .toLocaleLowerCase(formatLocale(locale))
         .includes(normalizedQuery)
     ));
-  }, [query, unifiedSubtitlePreviewEnabled]);
+  }, [query, unifiedSubtitlePreviewEnabled, displayedSubtitlePresets, locale]);
 
   return (
     <div className="mx-auto w-full max-w-[1040px]">
       <div className="flex flex-col gap-6 border-b border-white/10 pb-7 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-[28px] font-black tracking-[-.045em] text-[#e4e1e6] sm:text-4xl">템플릿 라이브러리</h1>
-          <p className="mt-3 text-sm text-[#94949e] sm:text-base">다음 쇼츠의 시작점을 선택하세요.</p>
+          <h1 className="text-[28px] font-black tracking-[-.045em] text-[#e4e1e6] sm:text-4xl">{translateLegacyText("템플릿 라이브러리", locale)}</h1>
+          <p className="mt-3 text-sm text-[#94949e] sm:text-base">{translateLegacyText("다음 쇼츠의 시작점을 선택하세요.", locale)}</p>
         </div>
 
         <label className="relative block w-full sm:w-64">
-          <span className="sr-only">템플릿 검색</span>
+          <span className="sr-only">{translateLegacyText("템플릿 검색", locale)}</span>
           <span aria-hidden="true" className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-lg text-neutral-500">⌕</span>
           <input
             type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="템플릿 검색"
+            placeholder={translateLegacyText("템플릿 검색", locale)}
             className="h-11 w-full rounded-xl border border-white/10 bg-[#1f1f22] pl-10 pr-4 text-sm text-neutral-100 outline-none transition placeholder:text-neutral-600 focus:border-[#ff715e]/70 focus:ring-2 focus:ring-[#ff715e]/10"
           />
         </label>
@@ -512,7 +541,7 @@ export function TemplateLibrary({
             <article key={template.id} className="relative flex min-h-[456px] min-w-0 flex-col rounded-2xl border border-[#ff715e]/25 bg-[rgba(26,26,30,.72)] p-4 shadow-[0_16px_48px_rgba(0,0,0,.18)] backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:border-[#ff715e]/50 hover:shadow-[0_20px_55px_rgba(255,113,94,.09)]">
               <Link href={canUseCustomTemplates ? `/templates/${template.id}/edit` : "/pricing"} prefetch={false} className="flex flex-1 flex-col">
                 <div className="flex flex-1 items-center justify-center px-2 py-4"><CustomTemplatePreview template={template} showUnifiedSubtitle={unifiedSubtitleCanaryEnabled} positionedWordsV4Enabled={positionedWordsV4Enabled} /></div>
-                <div className="flex items-start justify-between gap-4 px-2 pb-1 pt-4"><div className="min-w-0"><h2 data-i18n-skip className="truncate text-lg font-bold tracking-[-.025em] text-[#e4e1e6]">{template.name}</h2><p className="mt-1 truncate text-xs text-[#777780]">내가 저장한 템플릿</p></div><span className="shrink-0 rounded-full border border-[#ff715e]/20 bg-[#ff715e]/10 px-2.5 py-1 text-[10px] font-bold text-[#ff9b8d]">내 템플릿</span></div>
+                <div className="flex flex-col items-start gap-2 px-2 pb-1 pt-4"><div className="min-w-0"><h2 data-i18n-skip className="break-words text-base font-bold leading-snug tracking-[-.025em] text-[#e4e1e6]">{template.name}</h2><p className="mt-1 text-xs leading-relaxed text-[#9999a2]">내가 저장한 템플릿</p></div><span className="shrink-0 rounded-full border border-[#ff715e]/20 bg-[#ff715e]/10 px-2.5 py-1 text-[10px] font-bold text-[#ff9b8d]">내 템플릿</span></div>
               </Link>
               <TemplateFavoriteButton
                 active={favoriteTemplateKeySet.has(templateKey)}
@@ -542,9 +571,9 @@ export function TemplateLibrary({
                 className="flex flex-1 flex-col"
               >
                 <div className="flex flex-1 items-center justify-center px-2 py-4"><UnifiedSubtitlePresetPreview preset={preset} positionedWordsV4Enabled={positionedWordsV4Enabled} /></div>
-                <div className="flex items-start justify-between gap-4 px-2 pb-1 pt-4">
-                  <div className="min-w-0"><h2 className="truncate text-lg font-bold tracking-[-.025em] text-[#e4e1e6]">{preset.name}</h2><p className="mt-1 truncate text-xs text-[#777780]">{preset.description}</p></div>
-                  <span className="shrink-0 rounded-full border border-[#35e6e3]/20 bg-[#35e6e3]/10 px-2.5 py-1 text-[10px] font-bold text-[#74efec]">자막 템플릿</span>
+                <div className="flex flex-col items-start gap-2 px-2 pb-1 pt-4">
+                  <div className="min-w-0"><h2 className="break-words text-base font-bold leading-snug tracking-[-.025em] text-[#e4e1e6]">{preset.name}</h2><p className="mt-1 text-xs leading-relaxed text-[#9999a2]">{preset.description}</p></div>
+                  <span className="shrink-0 rounded-full border border-[#35e6e3]/20 bg-[#35e6e3]/10 px-2.5 py-1 text-[10px] font-bold text-[#74efec]">{translateLegacyText("자막 템플릿", locale)}</span>
                 </div>
               </Link>
             </article>
@@ -573,10 +602,10 @@ export function TemplateLibrary({
                     titleV4Enabled={positionedWordsV4Enabled}
                   />
                 </div>
-                <div className="flex items-start justify-between gap-4 px-2 pb-1 pt-4">
+                <div className="flex flex-col items-start gap-2 px-2 pb-1 pt-4">
                   <div className="min-w-0">
-                    <h2 className="truncate text-lg font-bold tracking-[-.025em] text-[#e4e1e6]">{template.name}</h2>
-                    <p className="mt-1 truncate text-xs text-[#777780]">{template.description}</p>
+                    <h2 className="break-words text-base font-bold leading-snug tracking-[-.025em] text-[#e4e1e6]">{template.name}</h2>
+                    <p className="mt-1 text-xs leading-relaxed text-[#9999a2]">{template.description}</p>
                   </div>
                   <span className="shrink-0 rounded-full border border-white/[.08] bg-[#1f1f22] px-2.5 py-1 text-[10px] font-bold text-[#94949e]">{template.category}</span>
                 </div>

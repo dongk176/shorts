@@ -5,6 +5,12 @@ type Phrase = readonly [ko: string, en: string, ja: string];
 // Legacy page copy is kept here while the product moves to semantic message keys.
 // User-provided and generated content is intentionally excluded from this table.
 const phrases: readonly Phrase[] = [
+  ["활성 스타터·전문가 이용자는 전자책 원본을 다운로드할 수 있습니다.", "Download every guide with an active Starter or Expert plan.", "スターター・エキスパートプランをご利用中の方は、すべてのガイドをPDFでダウンロードできます。"],
+  ["자막 팝형", "Pop-up captions", "ポップアップ字幕"],
+  ["자막 강조형", "Highlighted captions", "ハイライト字幕"],
+  ["핵심 어절을 크고 리듬감 있게", "Make key words pop as you speak", "大きく動きのある字幕で、言葉を印象的に"],
+  ["말하는 어절을 포인트 색으로", "Highlight each word as it is spoken", "話している言葉をアクセントカラーで強調"],
+  ["자막 템플릿", "Caption template", "字幕テンプレート"],
   ["+ 텍스트 추가", "+ Add text", "+ テキストを追加"],
   ["복구하기", "Redo", "やり直す"],
   ["템플릿 편집 도구", "Template editing tools", "テンプレート編集ツール"],
@@ -58,7 +64,7 @@ const phrases: readonly Phrase[] = [
   ["AI 쇼츠 자동 제작 | 유튜브 링크로 숏폼 만들기 - 이지컷", "AI Shorts Maker | Turn YouTube Links into Short Videos - Easy Cut", "AIショート動画自動作成 | YouTubeリンクからショート動画へ - Easy Cut"],
   ["AI 쇼츠 제작 요금제·가격 | 이지컷", "AI Shorts Pricing & Plans | Easy Cut", "AIショート動画の料金・プラン | Easy Cut"],
   ["AI 쇼츠 템플릿 라이브러리 | 이지컷", "AI Shorts Template Library | Easy Cut", "AIショート動画テンプレートライブラリ | Easy Cut"],
-  ["유튜브 실시간 인기 영상·쇼츠 소재 찾기 | 이지컷", "Trending YouTube Videos & Shorts Ideas | Easy Cut", "YouTubeリアルタイム人気動画・ショート素材 | Easy Cut"],
+  ["유튜브 실시간 인기 영상·쇼츠 소재 찾기 | 이지컷", "Trending YouTube Videos & Shorts Ideas | Easy Cut", "YouTube人気動画動画・ショート素材 | Easy Cut"],
   ["AI 쇼츠 제작 자주 묻는 질문 | 이지컷", "AI Shorts FAQ | Easy Cut", "AIショート動画作成 よくある質問 | Easy Cut"],
   ["AI 쇼츠 만들기: 유튜브 영상으로 쇼츠 자동 제작 | 이지컷", "Create AI Shorts from YouTube Videos | Easy Cut", "YouTube動画からAIショート動画を自動作成 | Easy Cut"],
   ["AI 쇼츠 제작 툴 비교: 이지컷·알파컷·피카클립", "AI Shorts Tool Comparison: Easy Cut, AlphaCut & FikaClip", "AIショート動画ツール比較：Easy Cut・AlphaCut・FikaClip"],
@@ -149,14 +155,14 @@ const phrases: readonly Phrase[] = [
   ["켜짐", "On", "オン"],
   ["꺼짐", "Off", "オフ"],
 
-  ["실시간 인기", "Trending now", "リアルタイム人気"],
+  ["실시간 인기", "Trending now", "人気動画"],
   ["지금 떠오르는 영상을 놓치지 마세요.", "Don't miss the videos trending right now.", "今注目されている動画を見逃さないでください。"],
-  ["활성 구독 또는 기간 패키지로 원하는 영상만 빠르게 찾아보세요.", "Use an active subscription or term package to quickly find the right videos.", "有効なサブスクリプションまたは期間パッケージで、目的の動画をすばやく見つけましょう。"],
+  ["활성 구독 또는 기간 패키지로 원하는 영상만 빠르게 찾아보세요.", "Use an active subscription or fixed-term plan to quickly find the right videos.", "有効なサブスクリプションまたは期間パッケージで、目的の動画をすばやく見つけましょう。"],
   ["필터", "Filters", "フィルター"],
   ["활성 이용권 전용", "Active plan only", "有効なプラン限定"],
-  ["실시간 인기 필터 이용 안내", "Trending filter access", "リアルタイム人気フィルターのご案内"],
-  ["해당 기능은 구독 또는 기간 패키지가 활성화되어 있을 때 사용할 수 있어요.", "This feature is available while a subscription or term package is active.", "この機能は、サブスクリプションまたは期間パッケージが有効な場合に利用できます。"],
-  ["해당 기능은 로그인 후 구독 또는 기간 패키지가 활성화되어 있을 때 사용할 수 있어요.", "Sign in and activate a subscription or term package to use this feature.", "ログイン後、サブスクリプションまたは期間パッケージが有効な場合に利用できます。"],
+  ["실시간 인기 필터 이용 안내", "Trending filter access", "人気動画フィルターのご案内"],
+  ["해당 기능은 구독 또는 기간 패키지가 활성화되어 있을 때 사용할 수 있어요.", "This feature is available while a subscription or fixed-term plan is active.", "この機能は、サブスクリプションまたは期間パッケージが有効な場合に利用できます。"],
+  ["해당 기능은 로그인 후 구독 또는 기간 패키지가 활성화되어 있을 때 사용할 수 있어요.", "Sign in and activate a subscription or fixed-term plan to use this feature.", "ログイン後、サブスクリプションまたは期間パッケージが有効な場合に利用できます。"],
   ["인기 영상을 불러오는 중", "Loading trending videos", "人気動画を読み込み中"],
   ["인기 영상을 불러오지 못했습니다", "Could not load trending videos", "人気動画を読み込めませんでした"],
   ["인기 영상 필터", "Trending video filters", "人気動画フィルター"],
@@ -190,7 +196,7 @@ const phrases: readonly Phrase[] = [
   ["기능·제공량 비교표", "Feature and allowance comparison", "機能・提供量の比較"],
   ["처리시간", "Processing time", "処理時間"],
   ["프로젝트 보관", "Project retention", "プロジェクト保存期間"],
-  ["동시 작업", "Concurrent jobs", "同時処理"],
+  ["동시 작업", "Videos processed at once", "同時に処理できる動画数"],
   ["추가 처리시간", "Additional processing time", "追加処理時間"],
   ["추가 시간 구매", "Buy additional time", "追加時間を購入"],
   ["활성 구독자만 구매 가능", "Available to active subscribers", "有効な登録者のみ購入可能"],
@@ -245,20 +251,20 @@ const phrases: readonly Phrase[] = [
   ["AI 하이라이트 분석", "AI highlight analysis", "AIハイライト分析"],
   ["긴 영상을 처음부터 다시 보지 않아도 핵심 장면을 자동으로 선별합니다.", "AI selects key moments without making you rewatch the entire video.", "長い動画を最初から見直さなくても、重要な場面を自動で選びます。"],
   ["제목·자막 편집", "Edit titles and captions", "タイトル・字幕編集"],
-  ["자유롭게 편집하고 다운로드", "Edit freely and download", "自由に編集してダウンロード"],
+  ["자유롭게 편집하고 다운로드", "Edit and download", "自由に編集してダウンロード"],
   ["긴 영상에서 핵심 구간을 찾고 제목, 자막, 비율과 템플릿을 적용해 짧은 숏폼으로 완성하는 과정을 확인하세요.", "See how to find key moments in long videos and turn them into short-form content with titles, captions, aspect ratios, and templates.", "長い動画から重要な場面を見つけ、タイトル・字幕・画面比率・テンプレートを適用してショート動画に仕上げる流れをご覧ください。"],
   ["유튜브 영상을 AI 쇼츠로 만드는 방법", "How to turn YouTube videos into AI Shorts", "YouTube動画をAIショート動画にする方法"],
   ["복잡한 영상 편집 타임라인 없이 링크 입력부터 쇼츠 완성까지 세 단계로 진행합니다.", "Go from pasting a link to finished Shorts in three steps, without a complicated editing timeline.", "複雑な編集タイムラインを使わず、リンク入力からショート動画の完成まで3ステップで進めます。"],
   ["유튜브 링크 입력", "Paste a YouTube link", "YouTubeリンクを入力"],
   ["쇼츠 AI가 영상의 맥락과 몰입 구간을 분석해 30~60초 후보를 찾습니다.", "The Shorts AI analyzes context and engaging moments to find 30–60 second candidates.", "ショート動画AIが文脈と注目区間を分析し、30〜60秒の候補を見つけます。"],
   ["편집하고 다운로드", "Edit and download", "編集してダウンロード"],
-  ["후킹 제목, 자막, 화면 비율과 템플릿을 확인하고 완성된 쇼츠를 내려받습니다.", "Review the hook title, captions, aspect ratio, and template, then download the finished Shorts.", "フックタイトル、字幕、画面比率、テンプレートを確認し、完成したショート動画をダウンロードします。"],
+  ["후킹 제목, 자막, 화면 비율과 템플릿을 확인하고 완성된 쇼츠를 내려받습니다.", "Review the title, captions, aspect ratio, and template, then download the finished Shorts.", "目を引くタイトル、字幕、画面比率、テンプレートを確認し、完成したショート動画をダウンロードします。"],
   ["쇼츠 자동 제작에 필요한 기능을 한곳에", "Everything you need to create Shorts automatically", "ショート動画の自動作成に必要な機能をひとつに"],
   ["이지컷은 하이라이트 탐색부터 제목, 자막, 비율, 템플릿과 다운로드까지 한 흐름으로 연결합니다.", "Easy Cut connects highlight discovery, titles, captions, aspect ratios, templates, and downloads in one workflow.", "Easy Cutは、ハイライト検出からタイトル、字幕、画面比率、テンプレート、ダウンロードまでをひとつの流れでつなぎます。"],
   ["AI 하이라이트 추출", "AI highlight extraction", "AIハイライト抽出"],
   ["30~60초 쇼츠 제작", "Create 30–60 second Shorts", "30〜60秒のショート動画作成"],
   ["YouTube Shorts, 릴스, 틱톡에 활용하기 좋은 짧은 클립으로 만듭니다.", "Create short clips suited for YouTube Shorts, Reels, and TikTok.", "YouTube Shorts、リール、TikTokに使いやすい短いクリップを作成します。"],
-  ["후킹 제목·자동 자막", "Hook titles and automatic captions", "フックタイトル・自動字幕"],
+  ["후킹 제목·자동 자막", "Attention-grabbing titles and automatic captions", "目を引くタイトル・自動字幕"],
   ["영상 맥락에 맞는 제목과 자막 초안을 만들고 결과 화면에서 수정할 수 있습니다.", "Generate title and caption drafts that fit the video's context, then edit them on the results screen.", "動画の文脈に合うタイトルと字幕の下書きを作成し、結果画面で編集できます。"],
   ["5가지 화면 비율", "5 aspect ratios", "5種類の画面比率"],
   ["16:9, 5:4, 1:1, 4:5, 9:16 비율 중 콘텐츠에 맞는 화면을 선택합니다.", "Choose the aspect ratio that fits your content: 16:9, 5:4, 1:1, 4:5, or 9:16.", "16:9、5:4、1:1、4:5、9:16からコンテンツに合う画面比率を選べます。"],
@@ -293,8 +299,8 @@ const phrases: readonly Phrase[] = [
   ["월간 구독과 3·6·12개월 패키지 중 제작량과 이용기간에 맞춰 선택할 수 있습니다.", "Choose a monthly subscription or a 3-, 6-, or 12-month package based on your production volume and usage period.", "制作量と利用期間に合わせて、月額サブスクリプションまたは3・6・12か月パッケージを選べます。"],
   ["월 9,900원 · 매월 자동결제", "KRW 9,900/month · Auto-renews monthly", "月額9,900ウォン・毎月自動決済"],
   ["필요한 기간만 월 단위로 시작할 수 있는 구독 상품입니다.", "A subscription you can start monthly for only as long as you need.", "必要な期間だけ月単位で始められるサブスクリプションです。"],
-  ["꾸준히 쇼츠를 제작하는 크리에이터를 위한 기간 패키지입니다.", "A term package for creators who produce Shorts consistently.", "継続的にショート動画を制作するクリエイター向けの期間パッケージです。"],
-  ["제작량이 많은 크리에이터와 운영팀을 위한 기간 패키지입니다.", "A term package for high-volume creators and production teams.", "制作量の多いクリエイターや運営チーム向けの期間パッケージです。"],
+  ["꾸준히 쇼츠를 제작하는 크리에이터를 위한 기간 패키지입니다.", "A fixed-term plan for creators who produce Shorts consistently.", "継続的にショート動画を制作するクリエイター向けの期間パッケージです。"],
+  ["제작량이 많은 크리에이터와 운영팀을 위한 기간 패키지입니다.", "A fixed-term plan for high-volume creators and production teams.", "制作量の多いクリエイターや運営チーム向けの期間パッケージです。"],
   ["패키지는 선택한 기간의 총액을 결제하며, 표시된 월 금액은 비교를 위한 월 환산액입니다.", "Packages are charged in full for the selected term; the monthly amount shown is an equivalent for comparison.", "パッケージは選択期間の総額を支払い、表示される月額は比較用の月換算額です。"],
   ["활성 이용권 보유자는 얼리버드 추가시간도 선택할 수 있습니다:", "Active-plan users can also choose early-bird additional time:", "有効な利用権をお持ちの方は早割の追加時間も選べます："],
   [". 각 상품은 계정당 한 번 구매할 수 있고 구매일로부터 90일간 유효합니다.", ". Each product can be purchased once per account and is valid for 90 days from purchase.", "。各商品は1アカウントにつき1回購入でき、購入日から90日間有効です。"],
@@ -315,7 +321,7 @@ const phrases: readonly Phrase[] = [
   ["월 50·150·450분", "50, 150, or 450 min/month", "月50・150・450分"],
   ["월 5·15·50회", "5, 15, or 50 outputs/month", "月5・15・50回"],
   ["유료 플랜 월간 결제", "Paid plan monthly price", "有料プランの月額"],
-  ["월 9,900원 또는 기간 패키지", "KRW 9,900/month or term package", "月額9,900ウォンまたは期間パッケージ"],
+  ["월 9,900원 또는 기간 패키지", "KRW 9,900/month or fixed-term plan", "月額9,900ウォンまたは期間パッケージ"],
   ["월 6,900·19,800·57,900원", "KRW 6,900 / 19,800 / 57,900 per month", "月額6,900・19,800・57,900ウォン"],
   ["월 6,900·12,900·34,900원", "KRW 6,900 / 12,900 / 34,900 per month", "月額6,900・12,900・34,900ウォン"],
   ["하이라이트 자동 추출", "Automatic highlight extraction", "ハイライト自動抽出"],
@@ -470,25 +476,25 @@ const phrases: readonly Phrase[] = [
   // Remaining customer-facing copy on legacy template, pricing, discovery,
   // guide, and account-adjacent surfaces. User and generated content must not
   // be added here; those nodes opt out with data-i18n-skip.
-  ["다음 쇼츠의 시작점을 선택하세요.", "Choose where your next Short begins.", "次のショート動画の始まりを選んでください。"],
+  ["다음 쇼츠의 시작점을 선택하세요.", "Choose a template for your next Short.", "動画に合うテンプレートを選びましょう。"],
   ["새 템플릿", "New template", "新しいテンプレート"],
   ["빈 화면에서 직접 디자인하기", "Design from scratch", "白紙からデザイン"],
   ["유료 플랜에서 직접 디자인하기", "Design your own on a paid plan", "有料プランで自由にデザイン"],
   ["로그인 후 자주 쓰는 템플릿을 저장할 수 있습니다.", "Sign in to save favorite templates.", "ログインするとお気に入りのテンプレートを保存できます。"],
-  ["댓글 캡처", "Comment capture", "コメントキャプチャー"],
+  ["댓글 캡처", "Comment overlay", "コメント風"],
   ["다크 레드", "Dark red", "ダークレッド"],
   ["다크", "Dark", "ダーク"],
   ["화이트 옐로", "White yellow", "ホワイトイエロー"],
   ["화이트", "White", "ホワイト"],
   ["다크 미니멀", "Dark minimal", "ダークミニマル"],
   ["페이퍼", "Paper", "ペーパー"],
-  ["댓글 반응을 활용해 시청 흐름을 이어가는 구성", "Use comment reactions to keep viewers engaged", "コメント反応で視聴の流れをつなぐ構成"],
-  ["강한 레드 포인트로 핵심을 각인하는 구성", "Emphasize the key point with a bold red accent", "強い赤のアクセントで要点を印象づける構成"],
+  ["댓글 반응을 활용해 시청 흐름을 이어가는 구성", "Add comment-style text to bring your clips to life", "コメント風の演出で、動画に楽しさをプラス。"],
+  ["강한 레드 포인트로 핵심을 각인하는 구성", "Emphasize the key point with a bold red accent", "赤のアクセントで、大切なポイントを印象的に。"],
   ["어두운 배경과 선택한 브랜드 컬러로 핵심을 각인하는 구성", "Emphasize the key point with a dark background and your brand color", "暗い背景と選択したブランドカラーで要点を印象づける構成"],
-  ["밝고 친근하게 내용을 전달하는 구성", "Deliver the message in a bright, friendly style", "明るく親しみやすく内容を伝える構成"],
+  ["밝고 친근하게 내용을 전달하는 구성", "Deliver the message in a bright, friendly style", "明るく親しみやすいデザインで、わかりやすく。"],
   ["밝은 배경과 선택한 브랜드 컬러로 내용을 전달하는 구성", "Deliver the message with a bright background and your brand color", "明るい背景と選択したブランドカラーで内容を伝える構成"],
-  ["장식을 덜어내고 영상에 집중하는 구성", "A minimal layout that keeps focus on the video", "装飾を抑えて動画に集中する構成"],
-  ["차분하고 신뢰감 있게 이야기를 전하는 구성", "Tell the story with a calm, credible look", "落ち着きと信頼感のある見た目で伝える構成"],
+  ["장식을 덜어내고 영상에 집중하는 구성", "A minimal layout that keeps focus on the video", "装飾を抑えて、動画の魅力を引き立てます。"],
+  ["차분하고 신뢰감 있게 이야기를 전하는 구성", "Tell the story with a calm, credible look", "落ち着いたデザインで、じっくり伝えたい内容に。"],
   ["소셜", "Social", "ソーシャル"],
   ["정보", "Information", "情報"],
   ["교육", "Education", "教育"],
@@ -587,18 +593,18 @@ const phrases: readonly Phrase[] = [
   ["현재 진행 중인 할부 혜택이 없습니다. 일시불로 결제해 주세요.", "There are no current installment offers. Please pay in full.", "現在、分割払い特典はありません。一括払いをご利用ください。"],
   ["현재 진행 중인 혜택 없음", "No current offers", "現在利用できる特典はありません"],
 
-  ["얼리버드 할인으로", "Save with early-bird pricing", "早割価格で"],
-  ["패키지 상품을 만나보세요", "Explore our package plans", "パッケージプランをご覧ください"],
+  ["얼리버드 할인으로", "Save with early-bird pricing", "早割でお得に。"],
+  ["패키지 상품을 만나보세요", "Choose a plan that fits your workflow", "制作スタイルに合ったプランを。"],
   ["이용 중", "Active", "利用中"],
-  ["기간 패키지", "Term packages", "期間パッケージ"],
+  ["기간 패키지", "Fixed-term plans", "パッケージプラン"],
   ["원본 영상 처리", "Source video processing", "元動画の処理"],
   ["패키지 이용기간", "Package term", "パッケージ利用期間"],
   ["가장 합리적", "Best value", "最もお得"],
   ["스타터 패키지", "Starter package", "スターターパッケージ"],
   ["전문가 패키지", "Expert package", "エキスパートパッケージ"],
   ["이지컷 프로", "Easy Cut Pro", "Easy Cut Pro"],
-  ["꾸준히 제작하는 크리에이터를 위한 구성입니다.", "Built for creators who publish consistently.", "継続的に制作するクリエイター向けの構成です。"],
-  ["대량 제작자와 운영팀을 위한 최대 용량입니다.", "Maximum capacity for high-volume creators and teams.", "大量制作するクリエイターや運営チーム向けの最大容量です。"],
+  ["꾸준히 제작하는 크리에이터를 위한 구성입니다.", "Built for creators who publish consistently.", "定期的に動画を投稿するクリエイターに。"],
+  ["대량 제작자와 운영팀을 위한 최대 용량입니다.", "For creators and teams producing more videos.", "多くの動画を制作するクリエイターやチームに。"],
   ["모든 핵심 기능을 가볍게 시작하세요.", "Start easily with every core feature.", "すべての主要機能を手軽に始めましょう。"],
   ["이지컷 프로 선택", "Choose Easy Cut Pro", "Easy Cut Proを選択"],
   ["스타터 패키지 선택", "Choose Starter", "スターターパッケージを選択"],
@@ -609,7 +615,7 @@ const phrases: readonly Phrase[] = [
   ["월간 구독", "Monthly subscription", "月額サブスクリプション"],
   ["월 60분", "60 min/month", "月60分"],
   ["/월", "/month", "/月"],
-  ["월 원본 영상 처리시간", "Monthly source-video processing", "月間元動画処理時間"],
+  ["월 원본 영상 처리시간", "Monthly source-video processing", "毎月処理できる動画の長さ"],
   ["예상 쇼츠 제작량", "Estimated Shorts output", "ショート動画の推定作成数"],
   ["연장된 이용기간", "Extended access period", "延長された利用期間"],
   ["현재 이용기간 종료일", "Current period ends", "現在の利用期間終了日"],
@@ -750,7 +756,7 @@ const phrases: readonly Phrase[] = [
   ["왼쪽에서 스타일을 고르고, 화면에서 요소를 편집하고, 아래 타임라인에서 시간을 다듬으면 됩니다.", "Choose a style on the left, edit elements on the canvas, and fine-tune timing in the timeline below.", "左側でスタイルを選び、画面上で要素を編集し、下のタイムラインで時間を調整できます。"],
   ["자동 저장", "Autosave", "自動保存"],
   ["분할", "Split", "分割"],
-  ["후킹 제목", "Hook title", "フックタイトル"],
+  ["후킹 제목", "Title", "タイトル"],
   ["제목 오버레이 선택 및 세로 이동", "Select and move title overlay vertically", "タイトルオーバーレイを選択して上下に移動"],
   ["채널명 오버레이 선택 및 이동", "Select and move channel-name overlay", "チャンネル名オーバーレイを選択して移動"],
   ["미리보기 재생 및 화면 제어", "Preview playback and display controls", "プレビュー再生と画面操作"],
@@ -873,8 +879,8 @@ const phrases: readonly Phrase[] = [
   ["요청 시간 초과", "Request timed out", "リクエストがタイムアウトしました"],
   ["원본 영상 권리 확인", "Confirm source-video rights", "元動画の権利確認"],
   ["원본 영상 타임라인", "Source video timeline", "元動画のタイムライン"],
-  ["원본 영상 처리", "Source-video processing", "元動画処理"],
-  ["· 원본 영상 처리", "· Source-video processing", "· 元動画処理"],
+  ["원본 영상 처리", "Source-video processing", "動画の処理枠"],
+  ["· 원본 영상 처리", "· Source-video processing", "· 動画の処理枠"],
   ["원본 영상에 자막이 없을 때", "When the source has no captions", "元動画に字幕がない場合"],
   ["위", "Top", "上"],
   ["이 브라우저에 임시 저장 · ⌘S 또는 Ctrl+S로 지금 저장", "Temporarily saved in this browser · Press ⌘S or Ctrl+S to save now", "このブラウザに一時保存・⌘SまたはCtrl+Sで今すぐ保存"],
@@ -951,11 +957,11 @@ const phrases: readonly Phrase[] = [
   ["AI로 댓글 재생성", "Regenerate comments with AI", "AIでコメントを再生成"],
   ["iPhone과 iPad는 여러 파일의 자동 저장을 제한합니다. 아래 각 쇼츠의 다운로드 버튼을 누르면 파일 앱의 다운로드 폴더에 안전하게 저장됩니다.", "iPhone and iPad limit automatic saving of multiple files. Use each Short's download button below to save safely to the Files app's Downloads folder.", "iPhoneとiPadでは複数ファイルの自動保存が制限されます。各ショート動画のダウンロードボタンを押すと、ファイルアプリのダウンロードフォルダに保存されます。"],
   ["프로젝트 30일 보관", "Projects stored for 30 days", "プロジェクトを30日間保存"],
-  ["실시간 인기 필터 제공", "Trending filters included", "リアルタイム人気フィルター付き"],
-  ["숏폼 전략 가이드 PDF 다운로드", "Short-form strategy guide PDF", "ショート動画戦略ガイドPDF"],
+  ["실시간 인기 필터 제공", "Trending filters included", "人気動画フィルター付き"],
+  ["숏폼 전략 가이드 PDF 다운로드", "Short-form video guide PDF (Korean)", "ショート動画ガイドPDF（韓国語）"],
   ["숏폼 전략 가이드 PDF 미제공", "Short-form strategy guide PDF not included", "ショート動画戦略ガイドPDFは対象外"],
   ["숏폼 전략 가이드 전자책", "Short-form strategy e-books", "ショート動画戦略ガイド電子書籍"],
-  ["활성 기간 패키지 이용자는 모든 전자책 원본을 다운로드할 수 있습니다. 각 전자책은 3페이지까지 미리 볼 수 있습니다.", "Users with an active term package can download every full e-book. Each e-book can be previewed through page 3.", "有効な期間パッケージ利用者は、すべての電子書籍の原本をダウンロードできます。各電子書籍は3ページまでプレビューできます。"],
+  ["활성 기간 패키지 이용자는 모든 전자책 원본을 다운로드할 수 있습니다. 각 전자책은 3페이지까지 미리 볼 수 있습니다.", "Users with an active fixed-term plan can download every full e-book. Each e-book can be previewed through page 3.", "有効な期間パッケージ利用者は、すべての電子書籍の原本をダウンロードできます。各電子書籍は3ページまでプレビューできます。"],
   ["전자책 목록 이동", "E-book navigation", "電子書籍の移動"],
   ["이전 전자책 보기", "View previous e-book", "前の電子書籍を見る"],
   ["다음 전자책 보기", "View next e-book", "次の電子書籍を見る"],
@@ -964,8 +970,8 @@ const phrases: readonly Phrase[] = [
   ["다운로드 준비 중...", "Preparing download...", "ダウンロードを準備中..."],
   ["4페이지부터 잠김", "Locked from page 4", "4ページ目以降はロックされています"],
   ["4페이지부터 잠겨 있어요", "Pages are locked from page 4", "4ページ目以降はロックされています"],
-  ["기간 패키지 구매 시 원본 PDF를 다운로드할 수 있습니다.", "Purchase a term package to download the full PDF.", "期間パッケージを購入すると元のPDFをダウンロードできます。"],
-  ["기간 패키지 확인하기", "View term packages", "期間パッケージを見る"],
+  ["기간 패키지 구매 시 원본 PDF를 다운로드할 수 있습니다.", "Purchase a fixed-term plan to download the full PDF.", "期間パッケージを購入すると元のPDFをダウンロードできます。"],
+  ["기간 패키지 확인하기", "View fixed-term plans", "期間パッケージを見る"],
   ["남은 다운로드", "Downloads remaining", "残りのダウンロード回数"],
   ["전자책을 다운로드하지 못했습니다. 잠시 후 다시 시도해 주세요.", "Could not download the e-book. Please try again shortly.", "電子書籍をダウンロードできませんでした。少し待ってからもう一度お試しください。"],
   ["원본 PDF 다운로드를 시작했습니다.", "The full PDF download has started.", "元のPDFのダウンロードを開始しました。"],
@@ -987,12 +993,12 @@ const phrases: readonly Phrase[] = [
   ["구분", "Feature", "区分"],
   ["스타터", "Starter", "スターター"],
   ["전문가", "Expert", "エキスパート"],
-  ["실시간 인기 필터", "Trending filters", "リアルタイム人気フィルター"],
-  ["전략 가이드 PDF", "Strategy guide PDF", "戦略ガイドPDF"],
+  ["실시간 인기 필터", "Trending filters", "人気動画フィルター"],
+  ["전략 가이드 PDF", "Guide PDF (Korean)", "ガイドPDF（韓国語）"],
   ["제공", "Included", "提供"],
   ["미제공", "Not included", "対象外"],
 
-  ["어떤 영상을 쇼츠로 만들어야 할까?", "Which videos should you turn into Shorts?", "どんな動画をショート動画にするべき？"],
+  ["어떤 영상을 쇼츠로 만들어야 할까?", "Which videos should you turn into Shorts?", "ショート動画に向いているのは、どんな動画？"],
   ["Easy Cut 실전 가이드 · 8페이지", "Easy Cut Practical Guide · 8 pages", "Easy Cut実践ガイド · 8ページ"],
   ["한 채널을 한 카테고리, 한 주제, 한 크리에이터로 좁혀 오래 운영할 수 있는 쇼츠 채널의 방향을 정해보세요.", "Focus each channel on one category, one topic, and one creator to build a Shorts channel you can sustain.", "1つのチャンネルを1カテゴリー・1テーマ・1クリエイターに絞り、長く運営できるショート動画チャンネルの方向性を決めましょう。"],
   ["쇼츠 채널 운영 가이드 8페이지", "Eight-page Shorts channel guide", "ショート動画チャンネル運営ガイド8ページ"],
@@ -1026,7 +1032,7 @@ const phrases: readonly Phrase[] = [
   ["새 기능을 가장 먼저", "New features first", "新機能をいち早く"],
   ["새로운 기능과 주요 소식을 일반 공개 전에 알려드립니다.", "Hear about new features and important news before public release.", "新機能や重要なお知らせを一般公開前にお伝えします。"],
 
-  ["이지컷의 쇼츠 AI 기능, 사용할 수 있는 영상과 생성 결과 편집에 관한 주요 답변을 확인하세요.", "Find answers about Easy Cut's Shorts AI, supported videos, and editing generated results.", "Easy Cutのショート動画AI、使用できる動画、生成結果の編集に関する主な回答をご確認ください。"],
+  ["이지컷의 쇼츠 AI 기능, 사용할 수 있는 영상과 생성 결과 편집에 관한 주요 답변을 확인하세요.", "Find answers about Easy Cut's Shorts AI, supported videos, and editing generated results.", "動画の作成や編集について、よくある質問をまとめました。"],
   ["AI 쇼츠 제작 자주 묻는 질문", "AI Shorts FAQ", "AIショート動画作成 よくある質問"],
   ["이지컷·알파컷·피카클립", "Easy Cut · AlphaCut · FikaClip", "Easy Cut・AlphaCut・FikaClip"],
   ["이지컷:", "Easy Cut:", "Easy Cut："],
@@ -1091,7 +1097,7 @@ function translateDynamicText(value: string, locale: Exclude<SiteLocale, "ko">) 
   if (shortsCountMatch) {
     return withOriginalWhitespace(value, locale === "en"
       ? `${shortsCountMatch[1]} Shorts`
-      : `ショート動画 ${shortsCountMatch[1]}件`);
+      : `ショート動画 ${shortsCountMatch[1]}本`);
   }
   const viralScoreMatch = /^바이럴 점수 (\d+)\/100$/.exec(trimmed);
   if (viralScoreMatch) {
@@ -1227,7 +1233,7 @@ function translateDynamicText(value: string, locale: Exclude<SiteLocale, "ko">) 
   if (packageMinutesMatch) {
     return withOriginalWhitespace(value, locale === "en"
       ? `Source-video processing · ${packageMinutesMatch[1]} min/month × ${packageMinutesMatch[2]} months`
-      : `元動画処理時間 · 毎月${packageMinutesMatch[1]}分 × ${packageMinutesMatch[2]}か月`);
+      : `動画の処理枠 · 毎月${packageMinutesMatch[1]}分 × ${packageMinutesMatch[2]}か月`);
   }
   const subscriptionMinutesMatch = /^매월 자동결제 · 월 ([\d,]+)분$/.exec(trimmed);
   if (subscriptionMinutesMatch) {
@@ -1239,7 +1245,7 @@ function translateDynamicText(value: string, locale: Exclude<SiteLocale, "ko">) 
   if (sourceMinutesMatch) {
     return withOriginalWhitespace(value, locale === "en"
       ? `${sourceMinutesMatch[1]} min/month · source-video processing`
-      : `月${sourceMinutesMatch[1]}分 · 元動画処理`);
+      : `動画の処理枠：月${sourceMinutesMatch[1]}分`);
   }
   const shortsEstimateMatch = /^쇼츠 약 ([\d,]+)개(?: · 10분 영상 기준)?$/.exec(trimmed);
   if (shortsEstimateMatch) {
@@ -1251,7 +1257,9 @@ function translateDynamicText(value: string, locale: Exclude<SiteLocale, "ko">) 
       : `ショート動画約${shortsEstimateMatch[1]}本${suffix}`);
   }
   const concurrentMatch = /^동시 작업 (\d+)개$/.exec(trimmed);
-  if (concurrentMatch) return withOriginalWhitespace(value, locale === "en" ? `${concurrentMatch[1]} concurrent jobs` : `同時処理${concurrentMatch[1]}件`);
+  if (concurrentMatch) return withOriginalWhitespace(value, locale === "en"
+    ? concurrentMatch[1] === "1" ? "Process 1 video at a time" : `Process ${concurrentMatch[1]} videos at once`
+    : concurrentMatch[1] === "1" ? "動画を1本ずつ処理" : `動画${concurrentMatch[1]}本を同時に処理`);
   const installmentMatch = /^(\d+)개월 할부$/.exec(trimmed);
   if (installmentMatch) {
     return withOriginalWhitespace(

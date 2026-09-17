@@ -1,3 +1,4 @@
+import { localizedValue, type SiteLocale } from "@/lib/i18n/config";
 import { CustomTemplateTitlePreview } from "@/components/custom-template-title-preview";
 import { TemplateTitleV4Preview } from "@/components/template-title-v4-preview";
 import { TemplateSubtitlePreview } from "@/components/template-subtitle-preview";
@@ -60,6 +61,7 @@ export function CustomTemplateCanvasPreview({
   showUnifiedSubtitle = false,
   positionedWordsV4Enabled = false,
   titleV4Enabled = positionedWordsV4Enabled,
+  previewLocale = "ko",
 }: {
   template: CustomTemplate;
   firstLine: string;
@@ -68,6 +70,7 @@ export function CustomTemplateCanvasPreview({
   showUnifiedSubtitle?: boolean;
   positionedWordsV4Enabled?: boolean;
   titleV4Enabled?: boolean;
+  previewLocale?: SiteLocale;
 }) {
   const config = template.config;
   const unifiedConfig = showUnifiedSubtitle && isTemplateConfigV5(config)
@@ -81,7 +84,7 @@ export function CustomTemplateCanvasPreview({
       data-i18n-content=""
       className="relative mx-auto aspect-[9/16] w-full max-w-[164px] overflow-hidden rounded-lg"
       style={{ ...templateBackgroundStyle(config.background), containerType: "inline-size" }}
-      aria-label={`${template.name} 쇼츠 미리보기`}
+      aria-label={localizedValue(previewLocale, { ko: `${template.name} 쇼츠 미리보기`, en: `${template.name} preview`, ja: `${template.name}のプレビュー` })}
     >
       <div className="absolute bg-neutral-700" style={{ ...customVideoFrameStyle(config.video), zIndex: templateDesignLayerZIndex(config, "video") }}>
         <div className="absolute inset-x-0 top-1/2 h-px bg-white/20" />
@@ -106,6 +109,7 @@ export function CustomTemplateCanvasPreview({
           />}
       {unifiedConfig
         ? <TemplateSubtitlePreview
+            previewLocale={previewLocale}
             subtitle={unifiedConfig.subtitle}
             positionedWordsV4Enabled={positionedWordsV4Enabled}
           />

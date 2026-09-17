@@ -1,5 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { renderToStaticMarkup } from "react-dom/server";
+import { TemplateSubtitlePreview } from "./template-subtitle-preview";
 import { editorCaptionCssToAssScaleById } from "../lib/editor-fonts";
 import { createUnifiedSubtitleTemplateConfig } from "../lib/template-config";
 import { compileTemplateSubtitlePreviewGeometryV4 } from "../lib/template-subtitle-preview-v4";
@@ -29,7 +31,11 @@ const templateEditorSource = readFileSync(
 describe("V4 positioned subtitle preview isolation", () => {
   it("keeps the default template preview on its legacy layout", () => {
     expect(previewSource).toContain("positionedWordsV4Enabled = false");
-    expect(previewSource).toContain('gap-[.18em] whitespace-nowrap');
+    const markup = renderToStaticMarkup(<TemplateSubtitlePreview subtitle={createUnifiedSubtitleTemplateConfig("pop").subtitle} />);
+    expect(markup).toContain("gap-[.18em]");
+    expect(markup).toContain("whitespace-nowrap");
+    expect(markup).toContain("자막");
+    expect(markup).toContain("입니다");
   });
 
   it("uses absolute advance boxes only when the explicit V4 preview prop is on", () => {

@@ -182,13 +182,13 @@ function TransformationExample({
               aria-hidden={!messageVisible}
             >
               <p>
-                <span>{localizedValue(locale, { ko: "클릭 한 번으로", en: "One click handles", ja: "ワンクリックで" })}</span>{" "}
-                <span>{localizedValue(locale, { ko: "편집부터", en: "editing through", ja: "編集から" })}</span>{" "}
-                <span>{localizedValue(locale, { ko: "리얼한 댓글 생성까지", en: "realistic comment creation", ja: "リアルなコメント作成まで" })}</span>
+                <span>{localizedValue(locale, { ko: "클릭 한 번으로", en: "From editing", ja: "動画の編集から" })}</span>{" "}
+                <span>{localizedValue(locale, { ko: "편집부터", en: "to on-screen", ja: "コメント風の" })}</span>{" "}
+                <span>{localizedValue(locale, { ko: "리얼한 댓글 생성까지", en: "comment overlays", ja: "テキスト作成まで" })}</span>
               </p>
               <strong>
                 <span>{localizedValue(locale, { ko: "AI가", en: "AI does", ja: "AIが" })}</span>{" "}
-                <span>{localizedValue(locale, { ko: "다 해줌", en: "it all", ja: "全部やります" })}</span>
+                <span>{localizedValue(locale, { ko: "다 해줌", en: "it all", ja: "まとめて作成" })}</span>
                 <em aria-hidden="true">✨</em>
               </strong>
             </div>

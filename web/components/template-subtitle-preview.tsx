@@ -1,5 +1,6 @@
 "use client";
 
+import { localizedValue, type SiteLocale } from "@/lib/i18n/config";
 import { useEffect, useMemo, useState, type PointerEventHandler } from "react";
 import {
   FlowSubtitleWords,
@@ -23,23 +24,26 @@ export function TemplateSubtitlePreview({
   selected = false,
   onPointerDown,
   positionedWordsV4Enabled = false,
+  previewLocale = "ko",
 }: {
   subtitle: TemplateConfigV5["subtitle"];
   selected?: boolean;
   onPointerDown?: PointerEventHandler<HTMLButtonElement>;
   positionedWordsV4Enabled?: boolean;
+  previewLocale?: SiteLocale;
 }) {
   if (!subtitle.visible) return null;
-  const previewWords = subtitle.variant === "pop"
-    ? [
-        { text: "자막", active: true, spaceBefore: false },
-        { text: "입니다", active: false, spaceBefore: true },
-      ]
-    : [
-        { text: "이게", active: false, spaceBefore: false },
-        { text: "바로", active: false, spaceBefore: true },
-        { text: "자막입니다", active: true, spaceBefore: true },
-      ];
+  const previewWords = localizedValue(previewLocale, {
+    ko: subtitle.variant === "pop"
+      ? [{ text: "자막", active: true, spaceBefore: false }, { text: "입니다", active: false, spaceBefore: true }]
+      : [{ text: "이게", active: false, spaceBefore: false }, { text: "바로", active: false, spaceBefore: true }, { text: "자막입니다", active: true, spaceBefore: true }],
+    en: subtitle.variant === "pop"
+      ? [{ text: "Make", active: false, spaceBefore: false }, { text: "it", active: false, spaceBefore: true }, { text: "pop", active: true, spaceBefore: true }]
+      : [{ text: "Make", active: false, spaceBefore: false }, { text: "every", active: true, spaceBefore: true }, { text: "word", active: false, spaceBefore: true }, { text: "count", active: false, spaceBefore: true }],
+    ja: subtitle.variant === "pop"
+      ? [{ text: "言葉が", active: false, spaceBefore: false }, { text: "弾む", active: true, spaceBefore: false }]
+      : [{ text: "伝えたい", active: false, spaceBefore: false }, { text: "言葉", active: true, spaceBefore: false }, { text: "を強調", active: false, spaceBefore: false }],
+  });
   if (positionedWordsV4Enabled) return <ExactTemplateSubtitlePreview
     subtitle={subtitle}
     previewWords={previewWords}
@@ -48,7 +52,7 @@ export function TemplateSubtitlePreview({
   />;
   const font = resolveEditorFontFace(subtitle.fontId, "title");
   const content = (
-    <span className="flex items-center justify-center gap-[.18em] whitespace-nowrap">
+    <span className={`flex items-center justify-center whitespace-nowrap ${previewLocale === "ja" ? "" : "gap-[.18em]"}`}>
       {previewWords.map((word) => {
         const active = word.active;
         return (

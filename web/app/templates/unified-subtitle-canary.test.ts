@@ -55,6 +55,6 @@ describe("unified template subtitle access", () => {
     expect(editorSource).toContain("next.subtitle.visible = !next.subtitle.visible");
     expect(editorSource).not.toContain("어드민 카나리");
     expect(editorSource).not.toContain("직접 업로드 영상에 동일하게 적용");
-    expect(librarySource).toContain(">자막 템플릿</span>");
+    expect(librarySource).toContain('{translateLegacyText("자막 템플릿", locale)}</span>');
   });
 });

@@ -1,6 +1,9 @@
 "use client";
 
 import Image from "next/image";
+import { useI18n } from "@/lib/i18n/provider";
+import { translateLegacyText } from "@/lib/i18n/legacy-phrases";
+import type { SiteLocale } from "@/lib/i18n/config";
 import { useEffect, useRef, useState } from "react";
 import {
   PaymentMessageOverlay,
@@ -54,22 +57,24 @@ function downloadName(contentDisposition: string | null, fallback: string) {
   }
 }
 
-async function downloadErrorMessage(response: Response) {
+async function downloadErrorMessage(response: Response, locale: SiteLocale, fallback: string) {
   const body = await response.json().catch(() => null) as { detail?: unknown } | null;
-  return typeof body?.detail === "string"
-    ? body.detail
-    : "전자책을 다운로드하지 못했습니다. 잠시 후 다시 시도해 주세요.";
+  if (typeof body?.detail !== "string") return fallback;
+  const message = translateLegacyText(body.detail, locale);
+  return locale !== "ko" && /[가-힣]/.test(message) ? fallback : message;
 }
 
 export function EbookPreviewRail({
   canDownload,
   onChoosePackage,
-  description = "활성 기간 패키지 이용자는 모든 전자책 원본을 다운로드할 수 있습니다. 각 전자책은 3페이지까지 미리 볼 수 있습니다.",
+  description,
 }: {
   canDownload: boolean;
   onChoosePackage: () => void;
   description?: string;
 }) {
+  const { locale, t } = useI18n();
+  const bookTitle = (book: Ebook) => translateLegacyText(book.title, locale);
   const [activeBook, setActiveBook] = useState<Ebook | null>(null);
   const [downloadingSlug, setDownloadingSlug] = useState<string | null>(null);
   const [downloadMessage, setDownloadMessage] = useState<DownloadMessage | null>(null);
@@ -139,7 +144,7 @@ export function EbookPreviewRail({
         { cache: "no-store" },
       );
       if (!response.ok) {
-        throw new Error(await downloadErrorMessage(response));
+        throw new Error(await downloadErrorMessage(response, locale, t("ebook.error")));
       }
 
       const objectUrl = URL.createObjectURL(await response.blob());
@@ -161,21 +166,21 @@ export function EbookPreviewRail({
         : null;
       setDownloadMessage({
         message: remaining === null
-          ? "원본 PDF 다운로드를 시작했습니다."
+          ? t("ebook.downloadStartedMessage")
           : remaining === 0
-            ? "이 전자책의 다운로드 가능 횟수를 모두 사용했습니다."
-            : `이 전자책을 ${remaining}번 더 다운로드할 수 있습니다.`,
+            ? t("ebook.noneRemaining")
+            : t("ebook.remainingMessage", { count: remaining }),
         remaining,
-        title: "전자책 다운로드 완료",
+        title: t("ebook.downloadStarted"),
         tone: "success",
       });
     } catch (error) {
       setDownloadMessage({
         message: error instanceof Error
           ? error.message
-          : "전자책을 다운로드하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+          : t("ebook.error"),
         remaining: null,
-        title: "다운로드할 수 없습니다",
+        title: t("ebook.errorTitle"),
         tone: "error",
       });
     } finally {
@@ -189,20 +194,22 @@ export function EbookPreviewRail({
       <section className="pricing-ebooks" aria-labelledby="ebook-preview-heading">
         <div className="ebook-rail-heading">
           <div>
-            <h2 id="ebook-preview-heading">숏폼 전략 가이드 전자책</h2>
-            <p style={{ whiteSpace: "pre-line" }}>{description}</p>
+            <h2 id="ebook-preview-heading">{t("ebook.heading")}</h2>
+            <p style={{ whiteSpace: "pre-line" }}>{description ? translateLegacyText(description, locale) : t("ebook.description")}</p>
+            {locale !== "ko" && <p className="font-semibold text-amber-100">{t("ebook.languageNotice")}</p>}
+            <p>{t(canDownload ? "ebook.downloadHint" : "ebook.previewHint")}</p>
           </div>
-          <div className="ebook-rail-actions" aria-label="전자책 목록 이동">
-            <button type="button" onClick={() => scrollRail(-1)} aria-label="이전 전자책 보기">
+          <div className="ebook-rail-actions" aria-label={t("ebook.navigation")}>
+            <button type="button" onClick={() => scrollRail(-1)} aria-label={t("ebook.previous")}>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
             </button>
-            <button type="button" onClick={() => scrollRail(1)} aria-label="다음 전자책 보기">
+            <button type="button" onClick={() => scrollRail(1)} aria-label={t("ebook.next")}>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
             </button>
           </div>
         </div>
 
-        <div ref={railRef} className="ebook-rail" aria-label="전자책 미리보기 목록">
+        <div ref={railRef} className="ebook-rail" aria-label={t("ebook.list")}>
           {visibleEbooks.map((book) => (
             <button
               key={book.slug}
@@ -210,7 +217,7 @@ export function EbookPreviewRail({
               className="ebook-card"
               disabled={canDownload && downloadingSlug !== null}
               aria-busy={downloadingSlug === book.slug}
-              aria-label={canDownload ? `${book.title} 다운로드` : `${book.title} 미리보기 열기`}
+              aria-label={t(canDownload ? "ebook.downloadLabel" : "ebook.previewLabel", { title: bookTitle(book) })}
               onClick={(event) => {
                 if (canDownload) {
                   void downloadEbook(book);
@@ -221,12 +228,15 @@ export function EbookPreviewRail({
               }}
             >
               <span className="ebook-card-title">
-                {downloadingSlug === book.slug ? "다운로드 준비 중..." : book.title}
+                {downloadingSlug === book.slug ? t("ebook.preparing") : bookTitle(book)}
+              </span>
+              <span className="mb-2 block w-full text-center text-xs text-neutral-400">
+                {t(canDownload ? "ebook.download" : "ebook.preview")}{locale !== "ko" ? ` · ${t("ebook.languageBadge")}` : ""}
               </span>
               <span className="ebook-card-cover">
                 <Image
                   src={pageImage(book.slug, 1)}
-                  alt={`${book.title} 표지`}
+                  alt={t("ebook.cover", { title: bookTitle(book) })}
                   fill
                   sizes="(max-width: 520px) 168px, 206px"
                   quality={88}
@@ -253,10 +263,10 @@ export function EbookPreviewRail({
             >
               <header className="ebook-preview-header">
                 <div>
-                  <h2 id="ebook-dialog-title">{activeBook.title}</h2>
-                  <p id="ebook-dialog-description">1~3페이지 미리보기 · 전체 {activeBook.pageCount}페이지</p>
+                  <h2 id="ebook-dialog-title">{bookTitle(activeBook)}</h2>
+                  <p id="ebook-dialog-description">{t("ebook.previewPages", { count: activeBook.pageCount })}</p>
                 </div>
-                <button ref={closeButtonRef} type="button" onClick={closePreview} aria-label="전자책 미리보기 닫기">
+                <button ref={closeButtonRef} type="button" onClick={closePreview} aria-label={t("ebook.closePreview")}>
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
                 </button>
               </header>
@@ -265,11 +275,11 @@ export function EbookPreviewRail({
                 <ol className="ebook-preview-pages">
                   {previewPages.map((page) => (
                     <li key={page}>
-                      <div className="ebook-preview-page-meta"><strong>{page}</strong><span>/ 3 미리보기</span></div>
+                      <div className="ebook-preview-page-meta"><strong>{t("ebook.previewPage", { page })}</strong></div>
                       <div className="ebook-preview-page-image">
                         <Image
                           src={pageImage(activeBook.slug, page)}
-                          alt={`${activeBook.title} ${page}페이지`}
+                          alt={t("ebook.page", { title: bookTitle(activeBook), page })}
                           width={2000}
                           height={activeBook.pageHeight}
                           sizes="(max-width: 760px) calc(100vw - 32px), 720px"
@@ -282,7 +292,7 @@ export function EbookPreviewRail({
 
                 <div
                   className="ebook-preview-locked"
-                  aria-label="4페이지부터 잠김"
+                  aria-label={t("ebook.locked")}
                 >
                   <Image
                     src={pageImage(activeBook.slug, 4)}
@@ -295,8 +305,8 @@ export function EbookPreviewRail({
                     <span aria-hidden="true">
                       <svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="3" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>
                     </span>
-                    <strong>4페이지부터 잠겨 있어요</strong>
-                    <p>기간 패키지 구매 시 원본 PDF를 다운로드할 수 있습니다.</p>
+                    <strong>{t("ebook.locked")}</strong>
+                    <p>{t("ebook.unlock")}</p>
                     {!canDownload && (
                       <button
                         ref={yearlyCtaRef}
@@ -304,7 +314,7 @@ export function EbookPreviewRail({
                         className="ebook-preview-lock-cta"
                         onClick={choosePackage}
                       >
-                        기간 패키지 확인하기
+                        {t("ebook.choosePlan")}
                       </button>
                     )}
                   </div>
@@ -320,12 +330,13 @@ export function EbookPreviewRail({
         tone={downloadMessage?.tone || "info"}
         title={downloadMessage?.title || ""}
         message={downloadMessage?.message || ""}
+        closeLabel={t("common.confirm")}
         onClose={() => setDownloadMessage(null)}
         highlight={downloadMessage?.remaining !== null && downloadMessage?.remaining !== undefined ? (
           <div className="relative mt-5 rounded-2xl border border-white/10 bg-black/20 px-5 py-4">
-            <span className="block text-xs font-bold text-neutral-400">남은 다운로드</span>
+            <span className="block text-xs font-bold text-neutral-400">{t("ebook.remainingLabel")}</span>
             <strong className="mt-1 block text-3xl font-black text-white">
-              {downloadMessage.remaining}회
+              {t("ebook.remainingCount", { count: downloadMessage.remaining })}
             </strong>
           </div>
         ) : undefined}

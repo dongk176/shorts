@@ -16,7 +16,7 @@ export async function generateMetadata(): Promise<Metadata> {
       en: "Easy Cut | AI YouTube Shorts Maker & Video Editor",
       ja: "Easy Cut | AIショート動画作成・YouTube動画編集",
     }),
-    description: localizedValue(locale, { ko: DEFAULT_DESCRIPTION, en: "Paste a YouTube link and let AI find highlights, create 30–60 second Shorts, hook titles, and captions automatically.", ja: "YouTubeリンクを貼り付けるだけで、AIがハイライトを見つけ、30〜60秒のショート動画、フックタイトル、字幕を自動作成します。" }),
+    description: localizedValue(locale, { ko: DEFAULT_DESCRIPTION, en: "Paste a YouTube link and let AI find highlights, create 30–60 second Shorts, attention-grabbing titles, and captions automatically.", ja: "YouTubeリンクを貼り付けるだけで、AIがハイライトを見つけ、30〜60秒のショート動画、目を引くタイトル、字幕を自動作成します。" }),
     path: "/",
   });
 }
@@ -47,7 +47,7 @@ export default async function Home() {
     featureList: [
       localizedValue(locale, { ko: "YouTube 링크 기반 AI 하이라이트 추출", en: "AI highlight extraction from YouTube links", ja: "YouTubeリンクからAIでハイライトを抽出" }),
       localizedValue(locale, { ko: "30~60초 쇼츠 자동 제작", en: "Automatic 30–60 second Shorts creation", ja: "30〜60秒のショート動画を自動作成" }),
-      localizedValue(locale, { ko: "자동 자막과 후킹 제목", en: "Automatic captions and hook titles", ja: "字幕とフックタイトルを自動生成" }),
+      localizedValue(locale, { ko: "자동 자막과 후킹 제목", en: "Automatic captions and attention-grabbing titles", ja: "字幕と目を引くタイトルを自動生成" }),
       localizedValue(locale, { ko: "5가지 영상 비율", en: "Five video aspect ratios", ja: "5種類の動画比率" }),
       localizedValue(locale, { ko: "4가지 쇼츠 템플릿", en: "Four Shorts templates", ja: "4種類のショート動画テンプレート" }),
       localizedValue(locale, { ko: "제목과 자막 편집", en: "Title and caption editing", ja: "タイトルと字幕の編集" }),

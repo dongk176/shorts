@@ -75,6 +75,13 @@ describe("legacy UI translations", () => {
     expect(translateLegacyText(`${videoTitle} 다운로드`, "en")).toBe(`${videoTitle} Download`);
   });
 
+  it("uses singular English video counts and Japanese video counters", () => {
+    expect(translateLegacyText("동시 작업 1개", "en")).toBe("Process 1 video at a time");
+    expect(translateLegacyText("동시 작업 3개", "en")).toBe("Process 3 videos at once");
+    expect(translateLegacyText("동시 작업 1개", "ja")).toBe("動画を1本ずつ処理");
+    expect(translateLegacyText("동시 작업 3개", "ja")).toBe("動画3本を同時に処理");
+  });
+
   it("switches a known page title directly between non-Korean locales", () => {
     expect(translateLegacyDocumentTitle("AIショート動画の料金・プラン | Easy Cut", "en")).toBe(
       "AI Shorts Pricing & Plans | Easy Cut",
