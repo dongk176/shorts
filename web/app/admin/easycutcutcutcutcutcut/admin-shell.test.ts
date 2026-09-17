@@ -73,6 +73,7 @@ describe("administrator shell recovery", () => {
     expect(shellSource).toContain("initialData={overview.salesTrend}");
     expect(shellSource).toContain("initialData={overview.memberTrend}");
     expect(pageSource).toContain("<AdminShell");
+    expect(pageSource).toContain("expenseAccess={expenseAccess}");
   });
 
   it("keeps the editor release controls in the recovered shell", () => {

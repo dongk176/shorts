@@ -1,3 +1,5 @@
+import { hasExpenseAccess } from "@/lib/admin-expenses-access";
+import { AdminExpenses } from "./expenses/admin-expenses";
 import { AdminCreatorSupport } from "./admin-creator-support";
 import { AdminLanguageTest } from "./admin-language-test";
 import { AdminYoutubeDiscovery } from "./admin-youtube-discovery";
@@ -119,6 +121,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
   const requestedTab = first(params.tab);
   const validTabs: AdminTab[] = [
     "billing",
+    "expenses",
     "refunds",
     "members",
     "managed-accounts",
@@ -136,6 +139,11 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
   const tab: AdminTab = validTabs.includes(requestedTab as AdminTab)
     ? requestedTab as AdminTab
     : "billing";
+  const expenseAccess = await hasExpenseAccess(admin);
+  if (tab === "expenses") {
+    if (!expenseAccess) notFound();
+    return <AdminShell activeTab={tab} expenseAccess><AdminExpenses /></AdminShell>;
+  }
   const requestedStatus = first(params.status);
   const requestedProvider = first(params.provider);
   const status = ["pending", "processing", "succeeded", "failed", "unknown", "manual_review", "canceled", "expired"].includes(requestedStatus)
@@ -745,6 +753,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
   return (
     <AdminShell
       activeTab={tab}
+      expenseAccess={expenseAccess}
     >
       {tab === "billing" ? (
         <AdminBillingDashboard

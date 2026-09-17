@@ -10,6 +10,7 @@ import type { AdminTrendData } from "@/lib/admin-trends";
 
 export type AdminTab =
   | "billing"
+  | "expenses"
   | "refunds"
   | "members"
   | "managed-accounts"
@@ -46,6 +47,7 @@ type AdminOverviewData = {
 
 type AdminShellProps = {
   activeTab: AdminTab;
+  expenseAccess?: boolean;
   children: ReactNode;
 };
 
@@ -91,6 +93,7 @@ const navigationGroups: Array<{
     items: [
       { tab: "billing", label: "결제 관리", icon: "billing" },
       { tab: "refunds", label: "환불 운영", icon: "refunds" },
+      { tab: "expenses", label: "매입·비용 관리", icon: "billing" },
       { tab: "installments", label: "할부 혜택", icon: "installments" },
     ],
   },
@@ -136,6 +139,7 @@ const navigationGroups: Array<{
 ];
 
 const pageCopy: Record<AdminTab, { eyebrow: string; title: string }> = {
+  expenses: { eyebrow: "Finance / Expenses", title: "매입·비용 관리" },
   billing: { eyebrow: "Commerce / Payments", title: "결제 운영" },
   refunds: { eyebrow: "Commerce / Refunds", title: "환불 운영" },
   members: { eyebrow: "Customers / Members", title: "회원 관리" },
@@ -203,7 +207,7 @@ function AdminIcon({ name, className }: { name: IconName; className?: string }) 
   return <svg {...common}><rect x="3" y="5" width="18" height="14" rx="3" /><path d="M7 9h10M7 13h4M15 13h2" /></svg>;
 }
 
-function AdminNavigation({ activeTab }: Pick<AdminShellProps, "activeTab">) {
+function AdminNavigation({ activeTab, expenseAccess }: Pick<AdminShellProps, "activeTab" | "expenseAccess">) {
   const activeGroup = navigationGroups.find((group) => group.items.some((item) => item.tab === activeTab));
   const [openGroupId, setOpenGroupId] = useState<string | null>(activeGroup?.id ?? null);
 
@@ -229,7 +233,7 @@ function AdminNavigation({ activeTab }: Pick<AdminShellProps, "activeTab">) {
               </svg>
             </button>
             <div id={panelId} className={styles.navGroupItems} hidden={!expanded}>
-              {group.items.map((item) => {
+              {group.items.filter(item => item.tab !== "expenses" || expenseAccess).map((item) => {
                 const active = activeTab === item.tab;
                 return (
                   <Link
@@ -264,12 +268,14 @@ function compactMoney(value: number) {
 
 export function AdminShell({
   activeTab,
+  expenseAccess = false,
   children,
 }: AdminShellProps) {
   const [overview, setOverview] = useState<AdminOverviewData | null>(null);
   const [overviewError, setOverviewError] = useState<string | null>(null);
   const [overviewAttempt, setOverviewAttempt] = useState(0);
   useEffect(() => {
+    if (activeTab === "expenses") return;
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 8_000);
     setOverviewError(null);
@@ -294,7 +300,7 @@ export function AdminShell({
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [overviewAttempt]);
+  }, [overviewAttempt, activeTab]);
   const metrics = overview?.metrics ?? emptyMetrics;
   const currentPage = pageCopy[activeTab];
   const subscriptionTotal = Math.max(
@@ -344,7 +350,7 @@ export function AdminShell({
           </div>
         </div>
 
-        <AdminNavigation key={activeTab} activeTab={activeTab} />
+        <AdminNavigation key={activeTab} activeTab={activeTab} expenseAccess={expenseAccess} />
 
       </aside>
 
@@ -370,7 +376,7 @@ export function AdminShell({
         </header>
 
         <div className={styles.workspace}>
-          <section aria-labelledby="admin-overview-title" aria-busy={!overview && !overviewError}>
+          {activeTab !== "expenses" ? <section aria-labelledby="admin-overview-title" aria-busy={!overview && !overviewError}>
             <div className={styles.overviewHeading}>
               <div>
                 <p className={styles.overviewKicker}>Operations overview</p>
@@ -451,7 +457,7 @@ export function AdminShell({
                 </div>
               </article>
             </div>
-          </section>
+          </section> : null}
 
           <div className={styles.content}>{children}</div>
         </div>
