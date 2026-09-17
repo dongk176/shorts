@@ -1424,7 +1424,11 @@ def test_project_finishes_user_outputs_before_timeline_postprocessing() -> None:
 def test_caption_template_projects_capture_the_padded_edit_timeline() -> None:
     source = inspect.getsource(BatchWorker.project)
 
-    assert "and not subtitle_template_id" not in source
+    timeline_creation = source[
+        source.index("edit_timeline_clips = ("):
+        source.index("if subtitle_template_id and edit_timeline_clips:")
+    ]
+    assert "subtitle_template_id" not in timeline_creation
     assert "caption_editor_sources.get(index)" in source
 
 

@@ -1648,9 +1648,17 @@ class BatchWorker:
                         "outputLanguage": str(job["output_language"]),
                         "requestedTemplateId": stored_subtitle_template_id or None,
                     }
-                    subtitle_template_id = "basic"
-                    if unified_template_subtitle is None:
-                        subtitle_template_enabled = True
+                    # Translating the saved script does not add a caption layer
+                    # to the built-in comment preset. Keep its original layout.
+                    plain_comment_preset = (
+                        job["template_id"] == "comment-capture"
+                        and not subtitle_template_id
+                        and _custom_template_config(job) is None
+                    )
+                    if not plain_comment_preset:
+                        subtitle_template_id = "basic"
+                        if unified_template_subtitle is None:
+                            subtitle_template_enabled = True
                 caption_render_specs: dict[int, dict[str, object]] = {}
                 caption_editor_sources: dict[int, dict[str, object]] = {}
                 caption_unavailable: set[int] = set()

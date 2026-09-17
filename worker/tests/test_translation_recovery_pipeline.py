@@ -270,3 +270,62 @@ def test_caption_layout_failure_keeps_video_and_source_script(tmp_path, monkeypa
         assert short["subtitles_enabled"] is False
         assert short["caption_render_spec"] is None
         assert short["subtitles"]
+
+
+@pytest.mark.parametrize("source_language,output_language", [
+    ("ko", "en"), ("ko", "ja"), ("en", "ko"),
+    ("en", "ja"), ("ja", "ko"), ("ja", "en"),
+])
+@pytest.mark.parametrize("ratio", ["16:9", "5:4", "1:1"])
+def test_translated_builtin_comment_keeps_script_without_adding_caption_layer(
+    tmp_path, monkeypatch, source_language, output_language, ratio,
+):
+    worker, _, compiler = setup_worker(tmp_path, monkeypatch, language=output_language)
+    job = worker.repository.get_job.return_value
+    job.update(
+        source_language_hint=source_language, template_id="comment-capture",
+        subtitle_template_id=None, subtitle_template_snapshot=None,
+        template_snapshot={"presetVersion": 3}, video_aspect_ratio=ratio,
+    )
+    monkeypatch.setattr(pipeline, "_unified_template_subtitle", lambda _: None)
+    translated = {"ko": "안녕하세요.", "en": "Hello.", "ja": "こんにちは。"}[output_language]
+    request = MagicMock(side_effect=lambda texts, *_: {
+        "segments": [{"id": i, "text": translated} for i in texts],
+    })
+    monkeypatch.setattr(SubtitleTranslator, "_request", request)
+    worker.comment_generator = MagicMock()
+    comments = [{
+        "id": "comment-1", "text": translated, "nickname": "Viewer",
+        "initial": "V", "ageLabel": "1 day ago", "likeCount": 20,
+        "avatarColor": "#2674C8", "startSeconds": 0, "endSeconds": 40,
+    }]
+    worker.comment_generator.generate.return_value = {i: comments for i in [1, 2, 3]}
+
+    worker.project("job")
+
+    assert request.called
+    compiler.assert_not_called()
+    worker.repository.fail_open_project_attempts.assert_not_called()
+    worker.repository.finalize_project_job.assert_called_once()
+    worker.comment_generator.generate.assert_called_once()
+    assert all(item.output_language == output_language
+               for item in worker.comment_generator.generate.call_args.args[0])
+    stored = [call.kwargs for call in worker.repository.add_pending_short.call_args_list]
+    assert len(stored) == 3
+    for short in stored:
+        assert short["subtitles"]
+        assert all(segment["text"] == translated for segment in short["subtitles"])
+        assert short["subtitles_enabled"] is False
+        assert short["caption_render_spec"] is None
+        assert short["job"]["subtitle_template_id"] is None
+        assert short["job"]["template_snapshot"] == {"presetVersion": 3}
+        assert short["initial_render_spec"].get("subtitles") is None
+        assert short["comment_overlays"] == comments
+        assert short["initial_render_spec"]["layerOrder"] == [
+            "video", "title", "comment", "channel",
+        ]
+        assert short["initial_render_spec"]["channel"]["visible"] is True
+    for target in worker._capture_project_timelines.call_args.kwargs["targets"]:
+        assert target.caption_editor_source is None
+        assert target.subtitles
+        assert all(segment.text == translated for segment in target.subtitles)
