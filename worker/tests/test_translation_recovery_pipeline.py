@@ -277,13 +277,16 @@ def test_caption_layout_failure_keeps_video_and_source_script(tmp_path, monkeypa
     ("en", "ja"), ("ja", "ko"), ("ja", "en"),
 ])
 @pytest.mark.parametrize("ratio", ["16:9", "5:4", "1:1"])
-def test_translated_builtin_comment_keeps_script_without_adding_caption_layer(
-    tmp_path, monkeypatch, source_language, output_language, ratio,
+@pytest.mark.parametrize("template_id", [
+    "comment-capture", "dark-minimal", "paper", "dark-red", "white-yellow",
+])
+def test_translated_builtin_preset_keeps_script_without_adding_caption_layer(
+    tmp_path, monkeypatch, source_language, output_language, ratio, template_id,
 ):
     worker, _, compiler = setup_worker(tmp_path, monkeypatch, language=output_language)
     job = worker.repository.get_job.return_value
     job.update(
-        source_language_hint=source_language, template_id="comment-capture",
+        source_language_hint=source_language, template_id=template_id,
         subtitle_template_id=None, subtitle_template_snapshot=None,
         template_snapshot={"presetVersion": 3}, video_aspect_ratio=ratio,
     )
@@ -307,9 +310,12 @@ def test_translated_builtin_comment_keeps_script_without_adding_caption_layer(
     compiler.assert_not_called()
     worker.repository.fail_open_project_attempts.assert_not_called()
     worker.repository.finalize_project_job.assert_called_once()
-    worker.comment_generator.generate.assert_called_once()
-    assert all(item.output_language == output_language
-               for item in worker.comment_generator.generate.call_args.args[0])
+    if template_id == "comment-capture":
+        worker.comment_generator.generate.assert_called_once()
+        assert all(item.output_language == output_language
+                   for item in worker.comment_generator.generate.call_args.args[0])
+    else:
+        worker.comment_generator.generate.assert_not_called()
     stored = [call.kwargs for call in worker.repository.add_pending_short.call_args_list]
     assert len(stored) == 3
     for short in stored:
@@ -320,12 +326,48 @@ def test_translated_builtin_comment_keeps_script_without_adding_caption_layer(
         assert short["job"]["subtitle_template_id"] is None
         assert short["job"]["template_snapshot"] == {"presetVersion": 3}
         assert short["initial_render_spec"].get("subtitles") is None
-        assert short["comment_overlays"] == comments
-        assert short["initial_render_spec"]["layerOrder"] == [
-            "video", "title", "comment", "channel",
-        ]
+        assert short["comment_overlays"] == (comments if template_id == "comment-capture" else [])
+        assert "subtitles" not in short["initial_render_spec"]["layerOrder"]
+        if template_id == "comment-capture":
+            assert short["initial_render_spec"]["layerOrder"] == [
+                "video", "title", "comment", "channel",
+            ]
         assert short["initial_render_spec"]["channel"]["visible"] is True
     for target in worker._capture_project_timelines.call_args.kwargs["targets"]:
         assert target.caption_editor_source is None
         assert target.subtitles
         assert all(segment.text == translated for segment in target.subtitles)
+
+
+@pytest.mark.parametrize("language", ["en", "ja"])
+@pytest.mark.parametrize("caption_template", ["basic", "pop", "highlight"])
+def test_selected_subtitle_template_uses_basic_translation_in_render_and_editor(
+    tmp_path, monkeypatch, language, caption_template,
+):
+    worker, _, compiler = setup_worker(tmp_path, monkeypatch, language=language)
+    job = worker.repository.get_job.return_value
+    job.update(
+        subtitle_template_id=caption_template,
+        subtitle_template_snapshot={"subtitleTemplateId": caption_template},
+    )
+    monkeypatch.setattr(pipeline, "_unified_template_subtitle", lambda _: None)
+    translated = "Hello." if language == "en" else "こんにちは。"
+    monkeypatch.setattr(SubtitleTranslator, "_request", lambda self, texts, *_: {
+        "segments": [{"id": i, "text": translated} for i in texts],
+    })
+
+    worker.project("job")
+
+    assert compiler.called
+    worker.repository.fail_open_project_attempts.assert_not_called()
+    worker.repository.finalize_project_job.assert_called_once()
+    stored = [call.kwargs for call in worker.repository.add_pending_short.call_args_list]
+    assert len(stored) == 3
+    for short in stored:
+        assert short["subtitles_enabled"] is True
+        assert short["caption_render_spec"]["templateId"] == "basic"
+        translation = short["caption_render_spec"]["translation"]
+        assert translation["requestedTemplateId"] == caption_template
+        assert short["job"]["subtitle_template_id"] == caption_template
+    for target in worker._capture_project_timelines.call_args.kwargs["targets"]:
+        assert target.caption_editor_source["spec"]["templateId"] == "basic"
