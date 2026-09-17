@@ -47,7 +47,7 @@ describe("subtitle template discovery", () => {
     );
     expect(shortsAppSource).toContain('setTemplateId("dark-minimal")');
     expect(shortsAppSource).toContain(
-      "enabled={subtitleTemplateSelectionEnabled && Boolean(subtitleTemplateId)}",
+      "enabled={subtitlePositionGuideEnabled && subtitleTemplateSelectionEnabled && Boolean(subtitleTemplateId)}",
     );
   });
 });

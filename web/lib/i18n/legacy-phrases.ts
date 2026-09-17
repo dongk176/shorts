@@ -5,6 +5,50 @@ type Phrase = readonly [ko: string, en: string, ja: string];
 // Legacy page copy is kept here while the product moves to semantic message keys.
 // User-provided and generated content is intentionally excluded from this table.
 const phrases: readonly Phrase[] = [
+  ["방금 전 저장됨", "Saved just now", "たった今保存"],
+  ["편집 사이드바 닫기", "Close editing sidebar", "編集サイドバーを閉じる"],
+  ["편집 사이드바 열기", "Open editing sidebar", "編集サイドバーを開く"],
+  ["구간 선택 가이드 닫기", "Close range guide", "区間ガイドを閉じる"],
+  ["구간 선택 · 시작", "Video range · Start", "区間選択 · 開始"],
+  ["시작점을 정하세요", "Choose the start point", "開始位置を選びましょう"],
+  ["왼쪽 손잡이를 움직여 분석을 시작할 지점을 정하세요. 아래 시작 시각에 직접 입력할 수도 있어요.", "Drag the left handle to choose where analysis starts. You can also enter the start time below.", "左のハンドルを動かして分析の開始位置を選びます。下の開始時刻に直接入力することもできます。"],
+  ["구간 선택 · 종료", "Video range · End", "区間選択 · 終了"],
+  ["끝점을 정하세요", "Choose the end point", "終了位置を選びましょう"],
+  ["오른쪽 손잡이를 움직여 분석을 마칠 지점을 정하세요. 한 번에 최대 60분까지 선택할 수 있어요.", "Drag the right handle to choose where analysis ends. Select up to 60 minutes at a time.", "右のハンドルを動かして分析の終了位置を選びます。一度に最大60分まで選択できます。"],
+  ["사용량 안내", "Processing time", "利用時間のご案内"],
+  ["선택한 길이만큼만 차감돼요", "Only the selected duration counts", "選んだ区間の時間だけ消費します"],
+  ["원본 영상 전체가 아니라 선택한 구간의 길이만큼 사용량이 차감됩니다. 예상 쇼츠 수도 선택한 길이를 기준으로 계산돼요.", "Your processing allowance is used only for the selected range. The estimated number of Shorts also uses that duration.", "処理時間は選択した区間の長さだけ消費します。予想ショート数も選択した長さを基準に計算されます。"],
+  ["구간 선택 가이드 완료", "Range guide complete", "区間選択ガイド完了"],
+  ["원하는 부분만 쇼츠로 만들어 보세요", "Turn your chosen section into Shorts", "好きな部分をショート動画にしましょう"],
+  ["시작점과 끝점을 맞춘 뒤 선택 시간과 차감 시간을 확인하고 쇼츠 생성을 시작하면 됩니다.", "Set the start and end points, check the selected duration and processing time, then start creating Shorts.", "開始・終了位置を調整し、選択時間と消費時間を確認してからショート動画の作成を始めましょう。"],
+  ["자막 위치 가이드 닫기", "Close caption position guide", "字幕位置ガイドを閉じる"],
+  ["자막 위치 · 하단", "Caption position · Bottom", "字幕位置 · 下部"],
+  ["원본에 자막이 없다면 하단", "Use the bottom for videos without captions", "元動画に字幕がなければ下部へ"],
+  ["대사가 계속 이어지거나 원본 영상에 자막이 없을 때 좋아요. 화면을 덜 가리면서 내용을 안정적으로 전달합니다.", "Works well for continuous speech or source videos without captions. Keeps the picture clear while making dialogue easy to follow.", "会話が続く動画や元動画に字幕がない場合に適しています。画面を隠しすぎず、内容を読みやすく伝えます。"],
+  ["자막 위치 · 중앙", "Caption position · Center", "字幕位置 · 中央"],
+  ["짧은 대사와 몰입형 장면은 중앙", "Use the center for short, engaging dialogue", "短いセリフや引き込むシーンは中央へ"],
+  ["자막이 간헐적으로 나오거나 시선을 대사에 모으고 싶을 때 좋아요. 얼굴이나 핵심 장면을 가리지 않는지 미리보기로 확인하세요.", "Works well for occasional captions or drawing attention to dialogue. Check the preview to keep faces and key action visible.", "字幕が時々出る場合やセリフに注目させたい場合に適しています。顔や大切な場面を隠していないかプレビューで確認しましょう。"],
+  ["자막 위치 선택 완료", "Caption position guide complete", "字幕位置ガイド完了"],
+  ["선택한 위치가 그대로 렌더링돼요", "Your chosen position is used in the video", "選んだ位置が動画にも反映されます"],
+  ["하단과 중앙을 눌러 영상 비율별 위치를 비교하세요. 템플릿 미리보기와 실제 영상에 같은 위치가 적용됩니다.", "Compare bottom and center positions for each aspect ratio. The template preview and finished video use the same position.", "下部と中央を選び、動画の比率ごとに位置を比較しましょう。テンプレートのプレビューと完成動画には同じ位置が適用されます。"],
+  ["자막 템플릿 안내 닫기", "Close caption template guide", "字幕テンプレートガイドを閉じる"],
+  ["새로운 자막 스타일", "New caption styles", "新しい字幕スタイル"],
+  ["자막 템플릿이 생겼어요!", "Caption templates are here!", "字幕テンプレートが登場しました！"],
+  ["중요한 단어를 자동으로 강조해 쇼츠의 몰입도를 높여 보세요. 자막 위치도 영상에 맞게 바로 고를 수 있어요.", "Highlight key words automatically to make your Shorts engaging. Choose the caption position that suits your video.", "大切な言葉を自動で強調して、ショート動画をもっと魅力的に。動画に合う字幕位置もすぐに選べます。"],
+  ["자막 템플릿 써보기", "Try caption templates", "字幕テンプレートを試す"],
+  ["말하는 어절만 브랜드 컬러로", "Highlight spoken words in your brand color", "話している言葉をブランドカラーで強調"],
+  ["하단", "Bottom", "下部"],
+  ["원본 영상에 자막이 없을 때", "For videos without captions", "元動画に字幕がない場合"],
+  ["화면을 덜 가리며 내용을 안정적으로 전달해요.", "Keeps the picture clear and dialogue easy to follow.", "画面を隠しすぎず、内容を読みやすく伝えます。"],
+  ["짧은 대사·몰입형 장면", "Short dialogue and engaging scenes", "短いセリフ・引き込むシーン"],
+  ["간헐적 자막에 시선을 빠르게 모아줘요.", "Draws attention to occasional captions.", "時々表示される字幕に視線を集めます。"],
+  ["자주 쓰는 내 템플릿", "Favorite custom template", "よく使うマイテンプレート"],
+  ["이 영상은 내가 소유하고 있거나, 권리자로부터 쇼츠 제작·편집 및 이용에 필요한 허가를 받은 영상임을 확인합니다.", "I confirm that I own this video or have the rights holder's permission to create, edit, and use Shorts from it.", "この動画を所有しているか、権利者からショート動画の作成・編集・利用に必要な許可を得ていることを確認します。"],
+  ["가로모드 16:9", "Landscape 16:9", "横長 16:9"],
+  ["가로 5:4", "Landscape 5:4", "横長 5:4"],
+  ["정사각형 1:1", "Square 1:1", "正方形 1:1"],
+  ["세로형 4:5", "Portrait 4:5", "縦長 4:5"],
+  ["세로 꽉참 9:16", "Full portrait 9:16", "縦いっぱい 9:16"],
   ["활성 스타터·전문가 이용자는 전자책 원본을 다운로드할 수 있습니다.", "Download every guide with an active Starter or Expert plan.", "スターター・エキスパートプランをご利用中の方は、すべてのガイドをPDFでダウンロードできます。"],
   ["자막 팝형", "Pop-up captions", "ポップアップ字幕"],
   ["자막 강조형", "Highlighted captions", "ハイライト字幕"],
@@ -1099,6 +1143,22 @@ function withOriginalWhitespace(original: string, translated: string) {
 function translateDynamicText(value: string, locale: Exclude<SiteLocale, "ko">) {
   const trimmed = value.trim();
   const translateKnown = (source: string) => phraseMaps[locale].get(source) || source;
+  const draftSavedMatch = /^(\d+)(분|시간|일) 전 저장됨$/.exec(trimmed);
+  if (draftSavedMatch) {
+    const unit = draftSavedMatch[2] === "분" ? ["min", "分"]
+      : draftSavedMatch[2] === "시간" ? ["hr", "時間"] : ["days", "日"];
+    return withOriginalWhitespace(value, locale === "en"
+      ? `Saved ${draftSavedMatch[1]} ${unit[0]} ago`
+      : `${draftSavedMatch[1]}${unit[1]}前に保存`);
+  }
+  const brandColorMatch = /^(.+) 브랜드 컬러$/.exec(trimmed);
+  if (brandColorMatch) return withOriginalWhitespace(value, locale === "en"
+    ? `${translateKnown(brandColorMatch[1])} brand color`
+    : `${translateKnown(brandColorMatch[1])} ブランドカラー`);
+  const commentMoveMatch = /^댓글 (\d+): (.+) 선택 및 이동$/.exec(trimmed);
+  if (commentMoveMatch) return withOriginalWhitespace(value, locale === "en"
+    ? `Select and move comment ${commentMoveMatch[1]}: ${commentMoveMatch[2]}`
+    : `コメント${commentMoveMatch[1]}を選択して移動：${commentMoveMatch[2]}`);
   const colorMatch = /^(텍스트 )?색상 (.+)$/.exec(trimmed);
   if (colorMatch) return withOriginalWhitespace(value, locale === "en"
     ? `${colorMatch[1] ? "Text color" : "Color"}: ${translateKnown(colorMatch[2])}`

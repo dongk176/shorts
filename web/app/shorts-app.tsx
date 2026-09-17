@@ -1439,6 +1439,7 @@ function TemplatePreview({ template, videoAspectRatio, channelName, channelThumb
   return (
     <div
       data-template-preview
+      data-i18n-content=""
       className={`relative mx-auto aspect-[9/16] w-full max-w-[164px] overflow-hidden rounded-lg ${foreground}`}
       style={{ aspectRatio: "9 / 16", background: template.background, containerType: "inline-size" }}
     >
@@ -1538,6 +1539,7 @@ function SubtitleTemplatePreview({
   return (
     <div
       data-subtitle-template-preview={id}
+      data-i18n-content=""
       data-video-aspect-ratio={videoAspectRatio}
       className="relative mx-auto aspect-[9/16] w-full max-w-[150px] overflow-hidden rounded-[10px] bg-black shadow-[inset_0_0_0_1px_rgba(255,255,255,.08)]"
       style={{ containerType: "inline-size" }}
@@ -2050,6 +2052,7 @@ function TemplatePicker({
   canUseCustomTemplates,
   unifiedTemplateSubtitleCanaryEnabled,
   subtitleTemplateSelectionEnabled,
+  subtitlePositionGuideEnabled,
   subtitleTemplateId,
   onSubtitleTemplateChange,
   subtitleCaptionPlacement,
@@ -2073,6 +2076,7 @@ function TemplatePicker({
   canUseCustomTemplates: boolean;
   unifiedTemplateSubtitleCanaryEnabled: boolean;
   subtitleTemplateSelectionEnabled: boolean;
+  subtitlePositionGuideEnabled: boolean;
   subtitleTemplateId: SubtitleTemplateSelectionId | null;
   onSubtitleTemplateChange: (value: SubtitleTemplateSelectionId | null) => void;
   subtitleCaptionPlacement: SubtitleCaptionPlacement;
@@ -2119,7 +2123,7 @@ function TemplatePicker({
   const renderFavoriteCard = (card: FavoriteTemplateCard) => {
     if (card.kind === "custom") {
       const selected = !subtitleTemplateId && customTemplateId === card.template.id;
-      return <button key={`favorite-custom-${card.template.id}`} type="button" aria-pressed={selected} onClick={() => onCustomTemplateChange(card.template)} className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition sm:w-[220px] ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}><CustomHomeTemplatePreview template={card.template} showUnifiedSubtitle={unifiedTemplateSubtitleCanaryEnabled} positionedWordsV4Enabled={positionedWordsV4Enabled} /><span className="mt-2.5 block truncate text-center text-sm font-semibold">{card.template.name}</span><span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">자주 쓰는 내 템플릿</span></button>;
+      return <button key={`favorite-custom-${card.template.id}`} type="button" aria-pressed={selected} onClick={() => onCustomTemplateChange(card.template)} className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition sm:w-[220px] ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}><CustomHomeTemplatePreview template={card.template} showUnifiedSubtitle={unifiedTemplateSubtitleCanaryEnabled} positionedWordsV4Enabled={positionedWordsV4Enabled} /><span data-i18n-skip className="mt-2.5 block truncate text-center text-sm font-semibold">{card.template.name}</span><span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">자주 쓰는 내 템플릿</span></button>;
     }
     const selected = !subtitleTemplateId && !customTemplateId && value === card.template.id;
     return (
@@ -2164,7 +2168,7 @@ function TemplatePicker({
     <div id="template-picker">
       <div className="flex items-center gap-3">
         <h2 className="text-xl font-bold">템플릿</h2>
-        <span className="text-xs font-semibold text-red-300">{selectedSubtitleTemplate?.name || selectedCustom?.name || selectedPresetDisplayName}</span>
+        <span data-i18n-skip={!selectedSubtitleTemplate && Boolean(selectedCustom) || undefined} className="text-xs font-semibold text-red-300">{selectedSubtitleTemplate?.name || selectedCustom?.name || selectedPresetDisplayName}</span>
       </div>
       {translationNotice && (
         <p role="status" data-subtitle-translation-notice className="mt-3 rounded-xl border border-[#ff715e]/25 bg-[#ff715e]/[.07] px-4 py-3 text-sm leading-6 text-neutral-200">
@@ -2214,7 +2218,7 @@ function TemplatePicker({
         {remainingFavoriteCards.map(renderFavoriteCard)}
         {remainingPersonalTemplates.map((template) => {
           const selected = !subtitleTemplateId && customTemplateId === template.id;
-          return <button key={template.id} type="button" aria-pressed={selected} onClick={() => onCustomTemplateChange(template)} className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition sm:w-[220px] ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}><CustomHomeTemplatePreview template={template} showUnifiedSubtitle={unifiedTemplateSubtitleCanaryEnabled} positionedWordsV4Enabled={positionedWordsV4Enabled} /><span className="mt-2.5 block truncate text-center text-sm font-semibold">{template.name}</span><span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">내 템플릿</span></button>;
+          return <button key={template.id} type="button" aria-pressed={selected} onClick={() => onCustomTemplateChange(template)} className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition sm:w-[220px] ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}><CustomHomeTemplatePreview template={template} showUnifiedSubtitle={unifiedTemplateSubtitleCanaryEnabled} positionedWordsV4Enabled={positionedWordsV4Enabled} /><span data-i18n-skip className="mt-2.5 block truncate text-center text-sm font-semibold">{template.name}</span><span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">내 템플릿</span></button>;
         })}
       </div>
       {settingsBelowRail && templateSettings}
@@ -2251,7 +2255,7 @@ function TemplatePicker({
         </section>
       )}
       <SubtitlePositionGuide
-        enabled={subtitleTemplateSelectionEnabled && Boolean(subtitleTemplateId)}
+        enabled={subtitlePositionGuideEnabled && subtitleTemplateSelectionEnabled && Boolean(subtitleTemplateId)}
       />
       {!subtitleTemplateId && !customTemplateId && value === "comment-capture" && (
         <p className="mt-3 rounded-xl border border-cyan-300/15 bg-cyan-300/[.06] px-4 py-3 text-sm text-cyan-100">
@@ -14820,6 +14824,8 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
             canUseCustomTemplates={canUseCustomTemplates}
             unifiedTemplateSubtitleCanaryEnabled={unifiedTemplateSubtitleCanaryEnabled}
             subtitleTemplateSelectionEnabled={subtitleTemplateSelectionEnabled}
+            subtitlePositionGuideEnabled={sourceRangeGuideComplete && (!languageAvailable || languageGuideComplete)
+              && !longSourceNoticeOpen && !creationRestrictionOpen}
             subtitleTemplateId={subtitleTemplateId}
             subtitleCaptionPlacement={subtitleCaptionPlacement}
             onSubtitleCaptionPlacementChange={setSubtitleCaptionPlacement}

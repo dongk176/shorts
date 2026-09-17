@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -113,6 +114,7 @@ export function FeatureGuideOverlay({
   lastStepPrimaryLabel?: string;
   onLastStepPrimaryAction?: () => void;
 }) {
+  const guideId = useId();
   const [mounted, setMounted] = useState(false);
   const [open, setOpen] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
@@ -171,7 +173,7 @@ export function FeatureGuideOverlay({
   }, [closeForSession, onLastStepPrimaryAction, storageKey]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!enabled || !open) return;
     const previousOverflow = document.body.style.overflow;
     const previouslyFocused = document.activeElement instanceof HTMLElement
       ? document.activeElement
@@ -183,15 +185,15 @@ export function FeatureGuideOverlay({
       document.body.style.overflow = previousOverflow;
       previouslyFocused?.focus();
     };
-  }, [open]);
+  }, [enabled, open]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!enabled || !open) return;
     cardRef.current?.focus();
-  }, [open, stepIndex]);
+  }, [enabled, open, stepIndex]);
 
   const trackTarget = useCallback((stabilizeBeforePaint: boolean) => {
-    if (!open || !targetSelector) {
+    if (!enabled || !open || !targetSelector) {
       setTargetRect(null);
       return;
     }
@@ -239,7 +241,7 @@ export function FeatureGuideOverlay({
       window.removeEventListener("resize", measure);
       document.removeEventListener("scroll", measure, GUIDE_SCROLL_LISTENER_OPTIONS);
     };
-  }, [open, step.scrollBlock, targetSelector]);
+  }, [enabled, open, step.scrollBlock, targetSelector]);
 
   useLayoutEffect(() => {
     if (!smoothTransitions) return;
@@ -353,15 +355,15 @@ export function FeatureGuideOverlay({
     targetRect,
   ]);
 
-  if (!mounted || !open || !step) return null;
+  if (!mounted || !enabled || !open || !step) return null;
 
   return createPortal(
     <div
       className="fixed inset-0 z-[200]"
       role="dialog"
       aria-modal="true"
-      aria-labelledby="feature-guide-title"
-      aria-describedby="feature-guide-description"
+      aria-labelledby={`${guideId}-title`}
+      aria-describedby={`${guideId}-description`}
       data-feature-guide-tone={tone}
       onKeyDown={(event) => {
         if (event.key === "Escape") { event.preventDefault(); closeForSession(); }
@@ -420,10 +422,10 @@ export function FeatureGuideOverlay({
             </button>
           </div>
 
-          <h2 id="feature-guide-title" className="text-xl font-extrabold leading-snug">
+          <h2 id={`${guideId}-title`} className="text-xl font-extrabold leading-snug">
             {step.title}
           </h2>
-          <p id="feature-guide-description" className="mt-3 text-sm leading-6 text-neutral-300">
+          <p id={`${guideId}-description`} className="mt-3 text-sm leading-6 text-neutral-300">
             {step.description}
           </p>
 
