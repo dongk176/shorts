@@ -63,9 +63,9 @@ def test_new_source_language_empty_title_gets_one_bounded_retry(language, output
 
 
 @pytest.mark.parametrize("language,source", [
-    (OutputLanguage.EN, None), (OutputLanguage.JA, None), (OutputLanguage.KO, "ko"),
+    (OutputLanguage.EN, None), (OutputLanguage.JA, None), (OutputLanguage.KO, None),
 ])
-def test_legacy_and_korean_do_not_get_an_extra_retry(language, source):
+def test_legacy_requests_do_not_get_an_extra_retry(language, source):
     client = MagicMock()
     client.beta.chat.completions.parse.side_effect = length_error(OutputLanguage.EN)
     with patch("openai.OpenAI", return_value=client), pytest.raises(ValidationError):
@@ -98,3 +98,20 @@ def test_non_length_errors_do_not_trigger_the_correction_call(error):
             messages=[], output_language=OutputLanguage.JA, source_language="ko",
         )
     assert client.chat.completions.create.call_count == 1
+
+
+def test_same_language_korean_keeps_valid_titles_without_currency_or_script_repair():
+    client = MagicMock()
+    client.chat.completions.create.return_value = SimpleNamespace(usage=None, choices=[
+        SimpleNamespace(finish_reason="stop", message=SimpleNamespace(content=json.dumps({
+            "clips": [{**title_response(OutputLanguage.EN)["clips"][0],
+                       "hook_title_line1": "Apple Watch Ultra",
+                       "hook_title_line2": "고른 이유는"}],
+        }))),
+    ])
+    with patch("openai.OpenAI", return_value=client):
+        result = TranscriptSelector(Settings())._select_with_gemini(
+            messages=[], output_language=OutputLanguage.KO, source_language="ko",
+        )
+    assert result[0].hook_title == "Apple Watch Ultra\n고른 이유는"
+    client.chat.completions.create.assert_called_once()

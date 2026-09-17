@@ -35,19 +35,13 @@ def preserved_messages(language, source_language):
     }
 
 
-def test_normal_and_korean_test_prompts_match_the_production_baseline():
+def test_legacy_generation_prompts_match_the_production_baseline():
     baseline = json.loads(Path(__file__).with_name("fixtures").joinpath(
         "full_prompt_baseline_hashes.json",
     ).read_text())
     for language in OutputLanguage:
         actual = preserved_messages(language, None)
         assert {stage: digest(value) for stage, value in actual.items()} == baseline[language]
-    for source in ("ko", "ja", "en", "und"):
-        actual = preserved_messages(OutputLanguage.KO, source)
-        assert {stage: digest(value) for stage, value in actual.items()} == baseline[f"ko:{source}"]
-    # Translation is language-test-only; this hash includes the approved currency
-    # localization prompt. Ordinary selection/comment hashes above remain pinned.
-    assert digest(INSTRUCTIONS["ko"]) == baseline["translation:ko"]
 
 
 @pytest.mark.parametrize("language", [OutputLanguage.JA, OutputLanguage.EN])

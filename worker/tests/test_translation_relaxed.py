@@ -28,15 +28,15 @@ def test_original_names_and_extra_fields_are_accepted(language, text):
     ("ja", "This entire sentence is still in English."),
     ("ko", "この文章は日本語のまま残っています。"),
 ])
-def test_wrong_language_does_not_remove_neighbor(language, text):
+def test_character_script_does_not_reject_text(language, text):
     good = {"en": "The product is ready.", "ja": "製品の準備ができました。",
             "ko": "제품이 준비됐습니다."}[language]
     valid, issues = inspect_translation(
         {"segments": [{"id": 0, "text": good}, {"id": 1, "text": text}]},
         {0: "준비됐습니다.", 1: "준비됐습니다."}, language, set(),
     )
-    assert valid == {0: good}
-    assert issues == {1: "wrong_language"}
+    assert valid == {0: good, 1: text}
+    assert issues == {}
 
 
 def test_warnings_keep_captions_without_retry(monkeypatch):
@@ -65,15 +65,21 @@ def test_warnings_keep_captions_without_retry(monkeypatch):
 @pytest.mark.parametrize("segments,reason", [
     ([], "missing_segment"),
     ([{"id": 0, "text": ""}], "invalid_text"),
-    ([{"id": 1, "text": "Hello."}], "invalid_id"),
-    ([{"id": 0, "text": "Hello."}, {"id": 0, "text": "Hello."}], "duplicate_id"),
-    ([{"id": 0, "text": "It costs $11."}], "amount_changed"),
-    ([{"id": 0, "text": "It costs 10 yen."}], "currency_changed"),
-    ([{"id": 0, "text": "It costs $10 plus $2."}], "amount_changed"),
+    ([{"id": 1, "text": "Hello."}], "missing_segment"),
 ])
-def test_structural_and_converted_money_errors_still_block(segments, reason):
+def test_only_missing_or_empty_fragments_need_recovery(segments, reason):
     valid, issues = inspect_translation(
         {"segments": segments}, {0: "$10입니다."}, "en", {"USD"}, exact_money=True,
     )
     assert not valid
     assert issues == {0: reason}
+
+
+def test_first_usable_fragment_survives_duplicate_and_unrelated_ids():
+    valid, issues = inspect_translation(
+        {"segments": [{"id": 0, "text": ""}, {"id": 99, "text": "extra"},
+                      {"id": 0, "text": "Valid."}, {"id": 0, "text": "Duplicate."}]},
+        {0: "원문"}, "en", set(),
+    )
+    assert valid == {0: "Valid."}
+    assert not issues

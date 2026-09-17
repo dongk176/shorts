@@ -9,6 +9,7 @@ from typing import Any
 
 from .config import Settings
 from .content_language import CONTENT_LANGUAGES, text_matches_language
+from .currency_tools import CurrencyConverter
 from .errors import ShortsMakerError
 from .language_context import has_unlabeled_amount, language_context
 from .language_context import mentioned_currencies as _mentioned_currencies
@@ -18,7 +19,6 @@ from .localized_selection import (
     repair_instruction,
     request_candidates,
 )
-from .money_facts import ungrounded_money
 from .prompt_language import translated_selection_messages
 from .schemas import (
     AI_CLIP_FALLBACK_SECONDS,
@@ -121,6 +121,18 @@ def _clean_title_line(value: str) -> str:
 def _two_line_title(
     value: str, output_language: OutputLanguage, *, relaxed_titles: bool = False,
 ) -> str:
+    if relaxed_titles:
+        # AI owns the wording; keep names and quotations regardless of script.
+        lines = [line.strip() for line in manual_title_lines(value) if line.strip()]
+        if len(lines) == 2 and len("\n".join(lines)) <= MAX_HOOK_TITLE_CHARS:
+            return "\n".join(lines)
+        clean = " ".join(lines)[:MAX_HOOK_TITLE_CHARS - 1]
+        if clean:
+            spaces = [i for i, char in enumerate(clean) if char == " "]
+            split = (min(spaces, key=lambda i: abs(i - len(clean) / 2))
+                     if spaces else len(clean) // 2)
+            parts = [part.strip() for part in (clean[:split], clean[split:])]
+            return "\n".join(part for part in parts if part)
     if not text_matches_language(value, output_language):
         return "\n".join(FALLBACK_TITLE_LINES[output_language])
     if output_language in SOURCE_VALUE_INSTRUCTIONS:
@@ -413,6 +425,13 @@ def normalize_clips(
 class TranscriptSelector:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
+        self.currency_converter: CurrencyConverter | None = None
+
+    @property
+    def _gemini_model(self) -> str:
+        # Cross-language wording and amount references need the same capable
+        # model as subtitle translation. Same-language requests retain their model.
+        return "gemini-3.8-flash" if self.currency_converter else self.settings.gemini_text_model
 
     @staticmethod
     def _transcript_text(segments: list[SubtitleSegment]) -> str:
@@ -536,10 +555,12 @@ class TranscriptSelector:
         source_language: str | None = None,
         *,
         max_tokens: int | None = None,
+        currency_converter: CurrencyConverter | None = None,
     ) -> list[HighlightClip]:
-        if source_language is not None and output_language in SOURCE_VALUE_INSTRUCTIONS:
+        if source_language is not None:
             return request_candidates(
                 client, model, messages, output_language, max_tokens=max_tokens,
+                currency_converter=currency_converter,
             ).clips
         response_schema = (
             LocalizedSelectionResponse
@@ -628,8 +649,9 @@ class TranscriptSelector:
         if source_language is not None and output_language in SOURCE_VALUE_INSTRUCTIONS:
             try:
                 return self._parse_selection(
-                    client, self.settings.gemini_text_model, messages,
-                    output_language, source_language, **limits,
+                    client, self._gemini_model, messages,
+                    output_language, source_language,
+                    currency_converter=self.currency_converter, **limits,
                 )
             except LocalizedSelectionError as error:
                 _log_selection_event(
@@ -643,10 +665,11 @@ class TranscriptSelector:
                 _log_selection_event("highlight_selection_repair", provider="gemini", attempt=1)
                 try:
                     repaired = self._parse_selection(
-                        client, self.settings.gemini_text_model,
+                        client, self._gemini_model,
                         [*messages, {"role": "user", "content": repair_instruction(
                             output_language, error,
-                        )}], output_language, source_language, **limits,
+                        )}], output_language, source_language,
+                        currency_converter=self.currency_converter, **limits,
                     )
                 except LocalizedSelectionError as repair_error:
                     replacements = [
@@ -668,7 +691,8 @@ class TranscriptSelector:
                 )][:len(error.attempt.rejected) or len(repaired)]
                 return [*accepted, *repaired]
         return self._parse_selection(
-            client, self.settings.gemini_text_model, messages, output_language, source_language,
+            client, self._gemini_model, messages, output_language, source_language,
+            currency_converter=self.currency_converter,
             **limits,
         )
 
@@ -692,6 +716,7 @@ class TranscriptSelector:
             messages,
             output_language,
             source_language,
+            currency_converter=self.currency_converter,
         )
 
     def select(
@@ -703,29 +728,10 @@ class TranscriptSelector:
         required_count: int,
         output_language: OutputLanguage = OutputLanguage.KO,
         source_language: str | None = None,
-        ground_money: bool = False,
+        currency_converter: CurrencyConverter | None = None,
     ) -> list[HighlightClip]:
         minimum_count = minimum_clip_count(required_count)
-
-        def repair_money_metadata(clip: HighlightClip) -> HighlightClip:
-            source = " ".join(s.text for s in transcript
-                              if s.end > clip.start_seconds and s.start < clip.end_seconds)
-            repaired = {}
-            for field, text in (("hook_title", clip.hook_title), ("reason", clip.reason or "")):
-                if ungrounded_money(text, source) or has_unlabeled_amount(text, source):
-                    repaired[field] = (
-                        "\n".join(FALLBACK_TITLE_LINES[output_language])
-                        if field == "hook_title" else CONTENT_LANGUAGES[output_language]["reason"]
-                    )
-            if repaired:
-                _log_selection_event(
-                    "highlight_metadata_repaired",
-                    fields=list(repaired),
-                    reason="money_not_grounded",
-                    start_seconds=clip.start_seconds,
-                    end_seconds=clip.end_seconds,
-                )
-            return clip.model_copy(update=repaired) if repaired else clip
+        self.currency_converter = currency_converter
 
         messages = self._selection_messages(
             video_title=video_title,
@@ -739,7 +745,7 @@ class TranscriptSelector:
         providers = (
             (
                 "gemini",
-                self.settings.gemini_text_model,
+                self._gemini_model,
                 self.settings.gemini_enabled,
                 self._select_with_gemini,
             ),
@@ -750,7 +756,7 @@ class TranscriptSelector:
                 self._select_with_openai,
             ),
         )
-        localized = source_language is not None and output_language in SOURCE_VALUE_INSTRUCTIONS
+        localized = source_language is not None
         retained: list[HighlightClip] = []
         for provider, model, configured, select_provider in providers:
             if not transcript:
@@ -788,7 +794,7 @@ class TranscriptSelector:
                             **({"source_language": source_language}
                                if source_language is not None else {}),
                         )
-                        if output_language in SOURCE_VALUE_INSTRUCTIONS
+                        if output_language in SOURCE_VALUE_INSTRUCTIONS or localized
                         else select_provider(messages=messages)
                     )
                 except LocalizedSelectionError as error:
@@ -814,8 +820,6 @@ class TranscriptSelector:
                     selection_model=model,
                     relaxed_titles=localized,
                 )
-                if ground_money:
-                    normalized = [repair_money_metadata(clip) for clip in normalized]
             except Exception as exc:
                 _log_selection_event(
                     "highlight_selection_provider",
@@ -870,8 +874,6 @@ class TranscriptSelector:
             output_language=output_language,
             relaxed_titles=localized,
         )
-        if ground_money:
-            fallback = [repair_money_metadata(clip) for clip in fallback]
         _log_selection_event(
             "highlight_selection_completed",
             source="deterministic",

@@ -33,22 +33,29 @@ it.each([
   expect(bodies[0]).toEqual(bodies[1]);
 });
 
-it("keeps Korean regeneration unchanged even with a test project marker", () => {
+it("preserves Korean reactions for language projects while keeping legacy behavior", () => {
   const payload = response(["150유로면 사고 싶다"]);
-  for (const languageTest of [false, true]) {
-    expect(() => parseCommentRegenerationResponse(
-      payload, 1, "ko", {}, "가격은 2000달러입니다.", languageTest,
-    )).toThrow("wrong_comment_count");
-  }
-  expect(parseCommentRegenerationResponse(payload, 1, "ko")).toEqual(["150유로면 사고 싶다"]);
+  expect(() => parseCommentRegenerationResponse(
+    payload, 1, "ko", {}, "가격은 2000달러입니다.", false,
+  )).toThrow("wrong_comment_count");
+  expect(parseCommentRegenerationResponse(
+    payload, 1, "ko", {}, "가격은 2000달러입니다.", true,
+  )).toEqual(["150유로면 사고 싶다"]);
 });
 
+it.each(["한국어 댓글입니다", "Apple Watch Ultra", "x".repeat(100)])(
+  "preserves names and supplied wording in language projects: %s", (comment) => {
+    expect(parseCommentRegenerationResponse(response([comment]), 1, "en", {}, "source", true))
+      .toEqual([comment]);
+  },
+);
+
 it.each([
-  { comments: ["한국어 댓글입니다"] },
+  { comments: [""] },
   { comments: ["A", "A"] },
   { comments: ["This is the same comment", "This is the same comment!"] },
-  { comments: ["x".repeat(51)] },
-])("retains language, length, duplicate and count checks for test comments", ({ comments }) => {
+  { comments: ["x".repeat(201)] },
+])("retains storage, duplicate and count checks", ({ comments }) => {
   expect(() => parseCommentRegenerationResponse(
     response(comments), comments.length, "en", {}, "2000 dollars", true,
   )).toThrow("wrong_comment_count");

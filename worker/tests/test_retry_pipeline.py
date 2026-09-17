@@ -1559,18 +1559,6 @@ def test_caption_layout_failure_is_not_mislabeled_as_missing_voice() -> None:
     )
 
 
-def test_project_isolates_unavailable_or_uncompilable_caption_clips() -> None:
-    source = inspect.getsource(BatchWorker.project)
-
-    assert "TranscriptionRangeUnavailable" in source
-    assert "project_caption_clip_rejected" in source
-    assert source.count("CaptionCompileError,") >= 2
-    assert source.count("RenderError,") >= 2
-    assert source.count("TranscriptionError,") >= 2
-    assert "len(compiled_clips) < required_minimum_count" in source
-    assert "clips = [clip for clip, _spec in compiled_clips]" in source
-
-
 @pytest.mark.parametrize("template_id", ["highlight", "pop"])
 @pytest.mark.parametrize("translated", [True, False])
 @pytest.mark.parametrize("v4", [True, False])

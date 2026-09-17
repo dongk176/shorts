@@ -41,7 +41,7 @@
     }
   },
   "instructions": {
-    "ko": "원본 영상의 언어: {source} ({source_code})\n제목·댓글의 출력 언어: {target} ({target_code})\n제목·댓글은 출력 언어로 작성한다. 원문의 의미·수치·통화를 유지하며, 통화를 변경하거나 환산하지 않는다.",
+    "ko": "원본 영상의 언어: {source} ({source_code})\n제목·댓글의 출력 언어: {target} ({target_code})\n제목·댓글은 출력 언어로 작성한다. 원문의 의미를 살리고 고유명사와 인용문을 문맥에 맞게 표현한다.",
     "en": "Source video language: {source} ({source_code})\nOutput language for titles and comments: {target} ({target_code})\nWrite titles and comments in the output language based on the supplied transcript.",
     "ja": "元動画の言語: {source} ({source_code})\nタイトル・コメントの出力言語: {target} ({target_code})\n提供された文字起こしをもとに、指定された出力言語でタイトルとコメントを書きます。"
   },

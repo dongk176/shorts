@@ -179,7 +179,7 @@ export function parseCommentRegenerationResponse(
     : null;
   if (!Array.isArray(rawComments)) throw new Error("invalid_response_shape");
   const sourceCurrencies = mentionedCurrencies(sourceTranscript || "");
-  const enforceMoney = !languageTest || (outputLanguage !== "en" && outputLanguage !== "ja");
+  const enforceMoney = !languageTest;
   const seen = new Set<string>();
   const comments: string[] = [];
   const reject = (reason: keyof CommentRejectionCounts) => {
@@ -191,12 +191,12 @@ export function parseCommentRegenerationResponse(
       continue;
     }
     const comment = normalizedComment(rawComment);
-    if (Array.from(comment).length < AI_COMMENT_MIN_CHARS
-      || Array.from(comment).length > AI_COMMENT_MAX_CHARS) {
+    if (Array.from(comment).length < (languageTest ? 1 : AI_COMMENT_MIN_CHARS)
+      || Array.from(comment).length > (languageTest ? 200 : AI_COMMENT_MAX_CHARS)) {
       reject("length");
       continue;
     }
-    if (!textMatchesLanguage(comment, outputLanguage)) {
+    if (!languageTest && !textMatchesLanguage(comment, outputLanguage)) {
       reject("language");
       continue;
     }

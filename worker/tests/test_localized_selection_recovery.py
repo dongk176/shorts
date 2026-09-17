@@ -28,7 +28,6 @@ def response(items):
 
 
 @pytest.mark.parametrize("bad,code", [
-    ({"reason": "원문을 그대로 쓴 선정 이유"}, "language"),
     ({"hook_title_line1": ""}, "schema"),
     ({"end_seconds": float("nan")}, "invalid_range"),
 ])
@@ -71,7 +70,7 @@ def test_proper_name_line_and_exact_five_character_punctuation_are_preserved():
 
 def test_single_repair_requests_only_rejected_candidates_and_keeps_good_titles():
     good = candidate()
-    invalid = {**candidate(1), "reason": "한국어 이유입니다"}
+    invalid = {**candidate(1), "end_seconds": 1}
     client = MagicMock()
     client.chat.completions.create.side_effect = [
         response([good, invalid]), response([candidate(1)]),
@@ -93,7 +92,7 @@ def test_single_repair_requests_only_rejected_candidates_and_keeps_good_titles()
 def test_failed_repair_keeps_already_valid_candidates():
     client = MagicMock()
     client.chat.completions.create.side_effect = [
-        response([candidate(), {**candidate(1), "reason": "한국어"}]), TimeoutError(),
+        response([candidate(), {**candidate(1), "end_seconds": 1}]), TimeoutError(),
     ]
     with (patch("openai.OpenAI", return_value=client),
           pytest.raises(LocalizedSelectionError) as error):
@@ -109,7 +108,7 @@ def test_partial_repair_after_invalid_json_keeps_valid_replacements():
     malformed.choices[0].message.content = "invalid JSON"
     client = MagicMock()
     client.chat.completions.create.side_effect = [
-        malformed, response([candidate(), {**candidate(1), "reason": "한국어"}]),
+        malformed, response([candidate(), {**candidate(1), "end_seconds": 1}]),
     ]
     with (patch("openai.OpenAI", return_value=client),
           pytest.raises(LocalizedSelectionError) as error):

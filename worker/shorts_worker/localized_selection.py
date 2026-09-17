@@ -9,7 +9,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from .content_language import text_matches_language
+from .currency_tools import CurrencyConverter, complete_chat
 from .prompt_language import LOCALIZED_SELECTION_PROMPTS
 from .schemas import HighlightCandidate, HighlightClip, SelectionResponse
 
@@ -52,29 +52,24 @@ def validate_candidates(payload: object, *, language: str, source: str) -> Selec
             result.rejected.append({"candidate_index": index + 1, "code": "invalid_range"})
             continue
         title = candidate.hook_title_line1 + "\n" + candidate.hook_title_line2
-        # A proper name may occupy a title line. Check the complete title's script.
-        for name, text in (("title", title), ("reason", candidate.reason)):
-            if not text_matches_language(text, language):
-                rejection.update(code="language", field=name)
-                result.rejected.append(rejection)
-                break
-        else:
-            result.clips.append(HighlightClip(
-                start_seconds=candidate.start_seconds, end_seconds=candidate.end_seconds,
-                hook_title=title, reason=candidate.reason,
-                viral_score=sum((candidate.hook_score, candidate.completeness_score,
-                                 candidate.impact_score, candidate.shareability_score,
-                                 candidate.density_score)),
-            ))
+        result.clips.append(HighlightClip(
+            start_seconds=candidate.start_seconds, end_seconds=candidate.end_seconds,
+            hook_title=title, reason=candidate.reason,
+            viral_score=sum((candidate.hook_score, candidate.completeness_score,
+                             candidate.impact_score, candidate.shareability_score,
+                             candidate.density_score)),
+        ))
     return result
 
 
 def request_candidates(
     client: Any, model: str, messages: list[dict[str, str]], language: str,
     *, max_tokens: int | None = None,
+    currency_converter: CurrencyConverter | None = None,
 ) -> SelectionAttempt:
     # Use the regular title bounds and retain independently valid candidates.
-    response = client.chat.completions.create(
+    response = complete_chat(
+        client, currency_converter=currency_converter,
         model=model, messages=messages,
         response_format={"type": "json_schema", "json_schema": {
             "name": "LocalizedSelectionResponse", "strict": True,

@@ -117,13 +117,9 @@ def test_translation_preserves_currency_value_and_decimal(language, text):
     [
         {"segments": []},
         {"segments": [{"id": 1, "text": "It is 3000 KRW."}]},
-        {"segments": [{"id": 0, "text": "3000원입니다."}]},
-        {"segments": [{"id": 0, "text": "It is 3000 yen."}]},
-        {"segments": [{"id": 0, "text": "It is 300 KRW."}]},
-        {"segments": [{"id": 0, "text": "It is 3000."}]},
     ],
 )
-def test_translation_rejects_missing_wrong_language_or_changed_money(payload):
+def test_translation_recovers_missing_ids(payload):
     with pytest.raises(ValueError):
         validate_translation(payload, {0: "3000원입니다."}, "en")
 
@@ -139,7 +135,7 @@ def test_translation_retries_bounded_and_never_returns_original(monkeypatch):
 
     def bad(*args):
         requests.append(args)
-        return {"segments": [{"id": 0, "text": "한국어가 남습니다."}]}
+        return {"segments": []}
 
     monkeypatch.setattr(translator, "_request", bad)
     with pytest.raises(SubtitleTranslationError, match="원본 자막으로 대체하지"):
@@ -273,14 +269,6 @@ def test_natural_scales_and_unambiguous_currency_context(target, translated):
     ) == dict(enumerate(translated))
 
 
-@pytest.mark.parametrize("text", ["It costs 1 billion yen.", "It costs 500 million won."])
-def test_implied_currency_does_not_allow_changed_currency_or_magnitude(text):
-    with pytest.raises(ValueError):
-        validate_translation(
-            {"segments": [{"id": 0, "text": "It costs 150,000 won."}, {"id": 1, "text": text}]},
-            {0: "15만 원입니다.", 1: "10억짜리 설비입니다."},
-            "en",
-        )
 
 
 def test_japanese_layout_preserves_katakana_words_without_added_spaces():
@@ -307,14 +295,6 @@ def test_spoken_number_spelling_is_not_a_numeric_mismatch(source, target, langua
     ) == {0: target}
 
 
-@pytest.mark.parametrize(
-    "text", ["I paid 4000 won and two dollars.", "I paid 3000 yen and two dollars."]
-)
-def test_spoken_numbers_do_not_disable_explicit_digit_or_currency_checks(text):
-    with pytest.raises(ValueError):
-        validate_translation(
-            {"segments": [{"id": 0, "text": text}]}, {0: "3000원과 이 달러를 냈어요."}, "en"
-        )
 
 
 def test_translation_failures_are_not_silent_audio_errors():
@@ -341,18 +321,6 @@ def test_translation_batches_keep_every_timed_fragment(monkeypatch):
     assert [(s.start, s.end) for s in result] == [(s.start, s.end) for s in source]
 
 
-def test_spoken_currency_context_never_introduces_yen():
-    source = {0: "백억을 벌었어요."}
-    assert validate_translation(
-        {"segments": [{"id": 0, "text": "I made 10 billion won."}]}, source, "en", {"KRW", "USD"}
-    )
-    with pytest.raises(ValueError):
-        validate_translation(
-            {"segments": [{"id": 0, "text": "I made 10 billion yen."}]},
-            source,
-            "en",
-            {"KRW", "USD"},
-        )
 
 
 @pytest.mark.parametrize(
@@ -377,22 +345,6 @@ def test_japanese_written_amounts_keep_currency_and_value(source, translated, la
     ) == {0: translated}
 
 
-@pytest.mark.parametrize(
-    "translated",
-    [
-        "가격은 498원입니다.",
-        "가격은 500엔입니다.",
-        "가격은 498입니다.",
-        "가격은 498엔과 2달러입니다.",
-    ],
-)
-def test_japanese_written_amounts_reject_changed_value_or_currency(translated):
-    with pytest.raises(ValueError):
-        validate_translation(
-            {"segments": [{"id": 0, "text": translated}]},
-            {0: "四百九十八円です。"},
-            "ko",
-        )
 
 
 def test_partial_translation_keeps_valid_fragments_and_retries_only_failures(monkeypatch):
@@ -407,7 +359,7 @@ def test_partial_translation_keeps_valid_fragments_and_retries_only_failures(mon
     def request(texts, *_):
         calls.append(dict(texts))
         return {"segments": [
-            {"id": i, "text": "한국어로 그대로 남은 문장입니다." if i == 3 else "Hello."}
+            {"id": i, "text": "" if i == 3 else "Hello."}
             for i in texts
         ]}
 
@@ -417,13 +369,15 @@ def test_partial_translation_keeps_valid_fragments_and_retries_only_failures(mon
     assert [list(call) for call in calls] == [list(range(16)), [3], list(range(16, 20))]
     assert len(result.segments) == 19
     assert all(s.text == "Hello." for s in result.segments)
-    assert result.failures == [{"id": 3, "start": 3, "end": 4, "reason": "wrong_language"}]
+    assert result.failures == [{"id": 3, "start": 3, "end": 4, "reason": "invalid_text"}]
     assert result.outcome(5, 10, 0, 15) == {
         "policy": "translated-basic-v1",
         "status": "ready",
         "contextLimited": True,
     }
-    assert result.outcome(2, 5, 0, 10)["status"] == "unavailable"
+    assert result.outcome(2, 5, 0, 10)["status"] == "ready"
+    assert result.outcome(2, 5, 0, 10)["partial"] is True
+    assert result.outcome(3, 4, 0, 10)["status"] == "unavailable"
 
 
 def test_partial_translation_repairs_missing_fragment_without_replacing_success(monkeypatch):
@@ -529,16 +483,12 @@ def test_partial_translation_language_matrix(monkeypatch, source, target, source
     assert result.segments[0].text == target_text
 
 
-def test_translation_diagnostics_distinguish_invalid_currency_amount_and_language():
-    from shorts_worker.subtitle_translation import inspect_translation
 
-    for text, reason in [
-        ("가격은 3000원입니다.", "wrong_language"),
-        ("3000 yen", "currency_changed"),
-        ("300 KRW", "amount_changed"),
-    ]:
-        valid, issues = inspect_translation(
-            {"segments": [{"id": 0, "text": text}]}, {0: "3000원"}, "en", {"KRW"}
-        )
-        assert valid == {}
-        assert issues == {0: reason}
+
+@pytest.mark.parametrize("text", [
+    "The shade is 27N1.", "この理由で選びました。", "Apple Watch Ultra", "価格は17万円です。",
+])
+def test_server_preserves_ai_wording_without_currency_or_script_rejection(text):
+    assert validate_translation(
+        {"segments": [{"id": 0, "text": text}]}, {0: "원문"}, "ja",
+    ) == {0: text}

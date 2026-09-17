@@ -22,3 +22,16 @@ describe("subtitle translation outcome", () => {
     expect(subtitleTranslationNotice({ ...ready, contextLimited: true }, "ko")).toContain("현재 쇼츠의 자막은 번역됐습니다");
   });
 });
+
+
+it("preserves partial subtitles and their notice across reloads in every UI language", () => {
+  const snapshot = { translationOutcome: {
+    policy: "translated-basic-v1", status: "ready", contextLimited: true, partial: true,
+  } };
+  const outcome = subtitleTranslationOutcome(JSON.parse(JSON.stringify(snapshot)));
+  expect(outcome?.partial).toBe(true);
+  for (const locale of ["ko", "en", "ja"]) {
+    expect(subtitleTranslationNotice(outcome, locale)).toBeTruthy();
+  }
+  expect(subtitleTranslationNotice(outcome, "ko")).toContain("완료된 자막은 유지");
+});

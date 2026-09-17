@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from shorts_worker import currency_localization as fx
+from shorts_worker import currency_tools as fx
 from shorts_worker import worker_pipeline as pipeline
 from shorts_worker.config import Settings
 from shorts_worker.schemas import HighlightClip, SubtitleSegment, TemplateSubtitleLayer
@@ -13,12 +13,7 @@ from shorts_worker.subtitles import ELEVENLABS_FALLBACK_POLICY, TranscriptWord
 from shorts_worker.worker_pipeline import BatchWorker
 
 
-@pytest.mark.parametrize("bad_start", [50, 20])
-@pytest.mark.parametrize("language,enabled", [("en", True), ("ja", True), ("en", False)])
-@pytest.mark.parametrize("money", [False, True])
-def test_project_translation_failure_isolated_from_other_outputs(
-    tmp_path, monkeypatch, bad_start, language, enabled, money,
-):
+def setup_worker(tmp_path, monkeypatch, *, language, enabled=True, money=False, bad_start=-1):
     monkeypatch.setenv("EASYCUT_LANGUAGE_TEST_WORKER", "true")
     monkeypatch.setenv("EASYCUT_LANGUAGE_TEST_RELEASE_ID", "release")
     monkeypatch.setattr(pipeline, "verify_initial_render_v4_runtime", lambda _: {})
@@ -88,7 +83,10 @@ def test_project_translation_failure_isolated_from_other_outputs(
 
     def transcribe(**kwargs):
         kwargs["observation"]["languageCode"] = "kor"
-        kwargs["words_out"].extend(TranscriptWord(s.text, s.start, s.end, "test") for s in segments)
+        if kwargs["words_out"] is not None:
+            kwargs["words_out"].extend(
+                TranscriptWord(s.text, s.start, s.end, "test") for s in segments
+            )
         return segments
 
     worker._transcribe_source = transcribe
@@ -104,25 +102,38 @@ def test_project_translation_failure_isolated_from_other_outputs(
     monkeypatch.setattr(pipeline, "_unified_template_subtitle", lambda _: subtitle)
     compiler = MagicMock(wraps=pipeline.compile_caption_render_spec)
     monkeypatch.setattr(pipeline, "compile_caption_render_spec", compiler)
-    translated = "こんにちは。" if language == "ja" else "Hello."
-    if money:
-        translated = "価格は17万円です。" if language == "ja" else "It costs $1,133.33."
-    monkeypatch.setattr(
-        SubtitleTranslator,
-        "_request",
-        lambda self, texts, *_: {
-            "segments": [
-                {"id": i, "text": "번역되지 않은 문장입니다." if text == "오류" else translated}
-                for i, text in texts.items()
-            ],
-        },
-    )
     worker.renderer = MagicMock()
     worker.storage = MagicMock()
     worker.storage.upload.return_value = 100
     worker.repository.add_pending_short.return_value = True
     worker._render_project_outputs = MagicMock(return_value={"succeededCount": 3})
     worker._capture_project_timelines = MagicMock(return_value={"succeededCount": 3})
+    return worker, segments, compiler
+
+
+@pytest.mark.parametrize("bad_start", [50, 20])
+@pytest.mark.parametrize("language,enabled", [("en", True), ("ja", True), ("en", False)])
+@pytest.mark.parametrize("money", [False, True])
+def test_project_translation_failure_isolated_from_other_outputs(
+    tmp_path, monkeypatch, bad_start, language, enabled, money,
+):
+    worker, segments, compiler = setup_worker(
+        tmp_path, monkeypatch, language=language, enabled=enabled, money=money, bad_start=bad_start,
+    )
+    translated = "こんにちは。" if language == "ja" else "Hello."
+    if money:
+        translated = "価格は17万円です。" if language == "ja" else "It costs $1,133.33."
+    def request(self, texts, *_):
+        if money:
+            self.currency_converter.calculate({"amount": "1700000", "sourceCurrency": "KRW"})
+        return {
+            "segments": [
+                {"id": i, "text": "" if text == "오류" else translated}
+                for i, text in texts.items()
+            ],
+        }
+
+    monkeypatch.setattr(SubtitleTranslator, "_request", request)
     worker.project("job")
     worker.repository.fail_open_project_attempts.assert_not_called()
     worker.repository.finalize_project_job.assert_called_once_with("job")
@@ -133,8 +144,8 @@ def test_project_translation_failure_isolated_from_other_outputs(
     if money:
         worker.repository.pin_currency_snapshot.assert_called_once()
         selected_input = worker.selector.select.call_args.kwargs
-        assert selected_input["ground_money"] is True
-        assert "170만 원" not in " ".join(s.text for s in selected_input["transcript"])
+        assert selected_input["currency_converter"] is not None
+        assert "170만 원" in " ".join(s.text for s in selected_input["transcript"])
         assert "170만 원" in " ".join(s.text for s in segments)
         # The promoted web editor accepts exactly this translation contract.
         # The project's pinned rates stay in video_jobs.performance_metrics.
@@ -158,11 +169,13 @@ def test_project_translation_failure_isolated_from_other_outputs(
     first = stored[1]
     outcome = first["job"]["subtitle_template_snapshot"]["translationOutcome"]
     if bad_start == 50:
-        assert outcome["status"] == "unavailable"
-        assert first["subtitles_enabled"] is False
-        assert first["subtitles"] == []
-        assert first["caption_render_spec"] is None
-        assert first["job"]["subtitle_template_id"] is None
+        assert outcome["status"] == "ready"
+        assert outcome["partial"] is True
+        assert outcome["contextLimited"] is False
+        assert first["subtitles_enabled"] is enabled
+        assert first["subtitles"]
+        assert first["caption_render_spec"] is not None
+        assert first["job"]["subtitle_template_id"] == "highlight"
     else:
         assert outcome == {
             "policy": "translated-basic-v1",
@@ -175,8 +188,84 @@ def test_project_translation_failure_isolated_from_other_outputs(
         for t in worker._capture_project_timelines.call_args.kwargs["targets"]
         if t.slot_index == 1
     )
-    assert (target.clip.start_seconds, target.clip.end_seconds) == (50, 90)
+    expected_window = (50, 90) if bad_start == 20 else (20, 120)
+    assert (target.clip.start_seconds, target.clip.end_seconds) == expected_window
     assert all(
         "한국어" not in str(c.kwargs["subtitles"])
         for c in worker.repository.add_pending_short.call_args_list
     )
+
+
+@pytest.mark.parametrize("language,text", [
+    ("ko", "이유로 이 십칠엔1 컬러를 골랐어요. 가격은 170만 원입니다."),
+    ("ja", "この理由で27N1を選びました。価格は15000円です。"),
+    ("en", "I chose shade 27N1 for this reason. It costs 150 dollars."),
+])
+@pytest.mark.parametrize("auto", [False, True])
+@pytest.mark.parametrize("caption_template", [None, "pop"])
+def test_same_language_skips_translation_and_currency_and_preserves_source(
+    tmp_path, monkeypatch, language, text, auto, caption_template,
+):
+    worker, segments, _ = setup_worker(tmp_path, monkeypatch, language=language)
+    job = worker.repository.get_job.return_value
+    job.update(source_language_hint="auto" if auto else language, template_id="comment-capture",
+               subtitle_template_id="pop", subtitle_template_snapshot={"subtitleTemplateId": "pop"})
+    if caption_template is None:
+        job.update(subtitle_template_id=None, subtitle_template_snapshot=None)
+        monkeypatch.setattr(pipeline, "_unified_template_subtitle", lambda _: None)
+    segments[:] = [s.model_copy(update={"text": text}) for s in segments]
+    original = [s.model_dump() for s in segments]
+    transcribe = worker._transcribe_source
+
+    def detected(**kwargs):
+        result = transcribe(**kwargs)
+        kwargs["observation"]["languageCode"] = {"ko": "kor", "ja": "jpn", "en": "eng"}[language]
+        return result
+
+    worker._transcribe_source = detected
+    worker.comment_generator = MagicMock()
+    worker.comment_generator.generate.return_value = {1: [], 2: [], 3: []}
+    translate = MagicMock(side_effect=AssertionError("same language must not translate"))
+    fetch = MagicMock(side_effect=AssertionError("same language must not request rates"))
+    monkeypatch.setattr(SubtitleTranslator, "translate_partial", translate)
+    monkeypatch.setattr(fx, "fetch_snapshot", fetch)
+    worker.project("job")
+    translate.assert_not_called()
+    fetch.assert_not_called()
+    worker.repository.pin_currency_snapshot.assert_not_called()
+    worker.repository.fail_open_project_attempts.assert_not_called()
+    worker.repository.finalize_project_job.assert_called_once()
+    selected = worker.selector.select.call_args.kwargs
+    assert "currency_converter" not in selected
+    assert [s.model_dump() for s in selected["transcript"]] == original
+    assert [s.model_dump() for s in segments] == original
+    worker.comment_generator.generate.assert_called_once()
+    assert "currency_converter" not in worker.comment_generator.generate.call_args.kwargs
+    stored = [c.kwargs for c in worker.repository.add_pending_short.call_args_list]
+    assert len(stored) == 3
+    for short in stored:
+        assert short["job"]["subtitle_template_snapshot"] == job["subtitle_template_snapshot"]
+        if caption_template is None:
+            assert short["caption_render_spec"] is None
+            assert short["job"]["subtitle_template_id"] is None
+        else:
+            assert "translation" not in short["caption_render_spec"]
+            assert short["caption_render_spec"]["templateId"] == caption_template
+            assert short["subtitles_enabled"] is True
+        assert all(s["text"] == text for s in short["subtitles"])
+
+
+def test_caption_layout_failure_keeps_video_and_source_script(tmp_path, monkeypatch):
+    from shorts_worker.caption_templates import CaptionCompileError
+
+    worker, _, compiler = setup_worker(tmp_path, monkeypatch, language="ko")
+    compiler.side_effect = CaptionCompileError("caption does not fit")
+    worker.project("job")
+    worker.repository.fail_open_project_attempts.assert_not_called()
+    worker.repository.finalize_project_job.assert_called_once()
+    stored = [c.kwargs for c in worker.repository.add_pending_short.call_args_list]
+    assert len(stored) == 3
+    for short in stored:
+        assert short["subtitles_enabled"] is False
+        assert short["caption_render_spec"] is None
+        assert short["subtitles"]

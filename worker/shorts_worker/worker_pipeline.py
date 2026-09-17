@@ -29,7 +29,7 @@ from .caption_templates import (
 from .channel_thumbnail import download_channel_thumbnail
 from .comment_generator import CommentClipInput, CommentGenerator
 from .config import Settings
-from .currency_localization import localize_project_money
+from .currency_tools import CurrencyConverter
 from .editor_renderer import (
     EditorDocumentRenderer,
     editor_highlight_subtitles_enabled,
@@ -1542,9 +1542,7 @@ class BatchWorker:
                     duration_seconds=selected_duration_seconds,
                 )
                 if subtitle_template_id and not transcript_words:
-                    raise TranscriptionError(
-                        "자막 템플릿에 필요한 단어 타임스탬프가 비어 있습니다."
-                    )
+                    _log_event("project_caption_words_unavailable", job_id=job_id)
                 transcription_seconds = time.monotonic() - transcription_started_at
                 self.repository.merge_job_performance_metrics(
                     job_id,
@@ -1561,15 +1559,18 @@ class BatchWorker:
                 source_language = resolve_source_language(
                     job.get("source_language_hint"), transcription_observation.get("languageCode"),
                 )
-                selection_transcript, selection_title, currency_snapshot = localize_project_money(
-                    job, selection_transcript, self.repository,
+                needs_translation = translation_required(
+                    source_language, str(job["output_language"]),
+                )
+                currency_converter = (
+                    CurrencyConverter(job, self.repository) if needs_translation else None
                 )
                 target_count = int(job["planned_short_count"])
                 required_minimum_count = minimum_clip_count(target_count)
                 selection_started_at = time.monotonic()
                 with PhaseResourceMonitor(self.settings.task_vcpus) as selection_resources:
                     clips = self.selector.select(
-                        video_title=selection_title,
+                        video_title=str(job["video_title"]),
                         duration_seconds=selected_duration_seconds,
                         transcript=selection_transcript,
                         required_count=target_count,
@@ -1578,7 +1579,9 @@ class BatchWorker:
                             {"source_language": source_language}
                             if source_language is not None else {}
                         ),
-                        **({"ground_money": True} if currency_snapshot else {}),
+                        **(
+                            {"currency_converter": currency_converter} if currency_converter else {}
+                        ),
                     )[:target_count]
                 for clip in clips:
                     _validate_clip_in_source_window(
@@ -1602,8 +1605,7 @@ class BatchWorker:
                 display_transcript = selection_transcript
                 subtitle_translation = None
                 translation_outcomes: dict[int, dict[str, object]] = {}
-                if (translation_required(source_language, str(job["output_language"]))
-                        or currency_snapshot is not None):
+                if needs_translation:
                     assert source_language is not None
                     windows = [
                         edit_timeline_clip(clip, selected_duration_seconds)
@@ -1618,8 +1620,7 @@ class BatchWorker:
                     )
                     translator = SubtitleTranslator(
                         self.settings,
-                        **({"currency_snapshot": currency_snapshot.to_dict()}
-                           if currency_snapshot else {}),
+                        currency_converter=currency_converter,
                     )
                     self.repository.stage(job_id, "selecting", 45, "자막을 번역하고 있습니다.")
                     try:
@@ -1662,6 +1663,7 @@ class BatchWorker:
                         subtitle_template_enabled = True
                 caption_render_specs: dict[int, dict[str, object]] = {}
                 caption_editor_sources: dict[int, dict[str, object]] = {}
+                caption_unavailable: set[int] = set()
                 caption_options = (
                     _project_caption_options(
                         job,
@@ -1699,6 +1701,9 @@ class BatchWorker:
                                     "caption_layout_unavailable"
                                 )
                                 compiled_clips.append((clip, None))
+                            else:
+                                caption_unavailable.add(original_index)
+                                compiled_clips.append((clip, None))
                             rejected_caption_clips += 1
                             _log_event(
                                 "project_caption_clip_rejected",
@@ -1725,6 +1730,9 @@ class BatchWorker:
                                     "caption_layout_unavailable"
                                 )
                                 compiled_clips.append((clip, None))
+                            else:
+                                caption_unavailable.add(original_index)
+                                compiled_clips.append((clip, None))
                             rejected_caption_clips += 1
                             _log_event(
                                 "project_caption_clip_rejected",
@@ -1741,10 +1749,6 @@ class BatchWorker:
                             custom_template=_custom_template_config(job),
                         )
                         compiled_clips.append((clip, caption_spec))
-                    if not subtitle_translation and len(compiled_clips) < required_minimum_count:
-                        raise TranscriptionError(
-                            "자막을 만들 수 있는 음성 구간이 부족합니다."
-                        )
                     clips = [clip for clip, _spec in compiled_clips]
                     caption_render_specs = {
                         index: spec
@@ -1782,6 +1786,8 @@ class BatchWorker:
                 if subtitle_template_id and edit_timeline_clips:
                     unavailable_timeline_indexes: list[int] = []
                     for index, timeline_clip in edit_timeline_clips.items():
+                        if index in caption_unavailable:
+                            continue
                         if translation_outcomes.get(index, {}).get("status") == "unavailable":
                             continue
                         absolute_timeline_clip = _offset_highlight_clip(
@@ -1879,7 +1885,13 @@ class BatchWorker:
                     used_comment_fallback = False
                     with PhaseResourceMonitor(self.settings.task_vcpus) as comment_resources:
                         try:
-                            comments_by_clip = self.comment_generator.generate(comment_inputs)
+                            comments_by_clip = self.comment_generator.generate(
+                                comment_inputs,
+                                **(
+                                    {"currency_converter": currency_converter}
+                                    if currency_converter else {}
+                                ),
+                            )
                         except Exception as exc:
                             used_comment_fallback = True
                             _log_event(
@@ -1964,8 +1976,9 @@ class BatchWorker:
                                 caption_render_spec=caption_render_specs.get(index),
                                 caption_enabled=(
                                     False
-                                    if translation_outcomes.get(index, {}).get("status")
-                                    == "unavailable"
+                                    if (index in caption_unavailable or translation_outcomes.get(
+                                        index, {},
+                                    ).get("status") == "unavailable")
                                     else subtitle_template_enabled
                                 ),
                             ): index

@@ -40,11 +40,8 @@ def test_equivalent_calendar_dates_pass(source, text, language):
     ("5월 1일입니다.", "It may take 1 hour."),
     ("10월 16일입니다.", "The dates are October 16 and 23."),
 ])
-def test_dates_and_numbers_warn_but_money_still_blocks(source, text):
+def test_date_and_number_differences_are_advisory(source, text):
     payload = {"segments": [{"id": 0, "text": text}]}
-    if "$148.56" in source:
-        with pytest.raises(ValueError):
-            validate_translation(payload, {0: source}, "en")
-    else:
-        assert validate_translation(payload, {0: source}, "en") == {0: text}
+    assert validate_translation(payload, {0: source}, "en") == {0: text}
+    if "$148.56" not in source:
         assert _text_warnings(text, source)

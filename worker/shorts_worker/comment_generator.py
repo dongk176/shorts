@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .config import Settings
 from .content_language import CONTENT_LANGUAGES, comment_key, text_matches_language
+from .currency_tools import CurrencyConverter, complete_chat
 from .fallback_comments import select_fallback_comment_texts
 from .language_context import language_context, mentioned_currencies
 from .prompt_language import (
@@ -86,6 +87,7 @@ def _duplicate_key(text: str) -> str:
 class CommentGenerator:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
+        self.currency_converter: CurrencyConverter | None = None
 
     @staticmethod
     def _messages(
@@ -170,8 +172,10 @@ class CommentGenerator:
     @staticmethod
     def _parse_response(
         client: Any, model: str, messages: list[dict[str, str]], *, max_tokens: int | None = None,
+        currency_converter: CurrencyConverter | None = None,
     ) -> object:
-        response = client.chat.completions.create(
+        response = complete_chat(
+            client, currency_converter=currency_converter,
             model=model,
             messages=messages,
             **({"max_tokens": max_tokens} if max_tokens is not None else {}),
@@ -210,7 +214,8 @@ class CommentGenerator:
             if self.settings.gemini_max_output_tokens is not None else {}
         )
         return self._parse_response(
-            client, model or self.settings.gemini_comment_model, messages, **limits,
+            client, model or self.settings.gemini_comment_model, messages,
+            currency_converter=self.currency_converter, **limits,
         )
 
     def _generate_with_openai(self, messages: list[dict[str, str]]) -> object:
@@ -225,6 +230,7 @@ class CommentGenerator:
             client,
             self.settings.openai_comment_fallback_model,
             messages,
+            currency_converter=self.currency_converter,
         )
 
     @staticmethod
@@ -273,13 +279,17 @@ class CommentGenerator:
                 else:
                     rejection_counts["invalid_text"] += 1
                     continue
-                if not MIN_COMMENT_CHARS <= len(text) <= MAX_COMMENT_CHARS:
+                relaxed = expected[clip_index].source_language is not None
+                minimum, maximum = (1, 200) if relaxed else (MIN_COMMENT_CHARS, MAX_COMMENT_CHARS)
+                if not minimum <= len(text) <= maximum:
                     rejection_counts["length"] += 1
                     continue
-                if not text_matches_language(text, expected[clip_index].output_language):
+                if not relaxed and not text_matches_language(
+                    text, expected[clip_index].output_language,
+                ):
                     rejection_counts["language"] += 1
                     continue
-                if (source_currencies[clip_index]
+                if (not relaxed and source_currencies[clip_index]
                         and mentioned_currencies(text) - source_currencies[clip_index]):
                     rejection_counts["currency"] += 1
                     continue
@@ -346,7 +356,10 @@ class CommentGenerator:
             ]
         return result, fallback_counts
 
-    def generate(self, clips: list[CommentClipInput]) -> dict[int, list[dict[str, object]]]:
+    def generate(
+        self, clips: list[CommentClipInput], *, currency_converter: CurrencyConverter | None = None,
+    ) -> dict[int, list[dict[str, object]]]:
+        self.currency_converter = currency_converter
         if not clips:
             return {}
         languages = {clip.output_language for clip in clips}
