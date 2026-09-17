@@ -1,5 +1,6 @@
 "use client";
 
+import reviewStyles from "./customer-reviews.module.css";
 import { customerReviews } from "@/lib/i18n/customer-reviews";
 import { sourceLanguages, type SourceLanguage } from "@/lib/language-context";
 import { Fragment, FormEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -818,7 +819,7 @@ function CustomerReviews() {
   };
 
   return (
-    <section className="customer-reviews-section" aria-labelledby="customer-reviews-title">
+    <section className={`customer-reviews-section ${reviewStyles.root}`} aria-labelledby="customer-reviews-title">
       <div className="customer-reviews-inner">
         <div className="customer-reviews-heading">
           <h2 id="customer-reviews-title">{localizedValue(locale, { ko: "사용자 후기", en: "Customer reviews", ja: "ユーザーレビュー" })}</h2>
