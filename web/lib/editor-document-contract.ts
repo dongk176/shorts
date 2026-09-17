@@ -740,7 +740,7 @@ function validateEditorDocumentSnapshot(
           line !== canonicalTitleLines[index]
         ))
         || v4.channel.visible !== document.overlays.visible.channel
-        || Boolean(v4.subtitles) !== document.subtitles.enabled
+        || (document.subtitles.enabled && !v4.subtitles)
         || !editorJsonValuesEqual(v4.title.font, expectedTitleFont)
         || !editorJsonValuesEqual(v4.channel.font, expectedChannelFont)
         || v4.textOverlays.length !== exactTextFonts.length

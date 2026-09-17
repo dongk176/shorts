@@ -189,12 +189,41 @@ def test_project_translation_failure_isolated_from_other_outputs(
         for t in worker._capture_project_timelines.call_args.kwargs["targets"]
         if t.slot_index == 1
     )
-    expected_window = (50, 90) if bad_start == 20 else (20, 120)
-    assert (target.clip.start_seconds, target.clip.end_seconds) == expected_window
+    assert (target.clip.start_seconds, target.clip.end_seconds) == (20, 120)
     assert all(
         "한국어" not in str(c.kwargs["subtitles"])
         for c in worker.repository.add_pending_short.call_args_list
     )
+
+
+@pytest.mark.parametrize("language", ["en", "ja"])
+def test_comment_template_keeps_padded_video_when_margin_translation_is_missing(
+    tmp_path, monkeypatch, language,
+):
+    worker, _, compiler = setup_worker(
+        tmp_path, monkeypatch, language=language, bad_start=20,
+    )
+    job = worker.repository.get_job.return_value
+    job.update(template_id="comment-capture", subtitle_template_id=None,
+               subtitle_template_snapshot=None, template_snapshot={"presetVersion": 3})
+    monkeypatch.setattr(pipeline, "_unified_template_subtitle", lambda _: None)
+    translated = "Hello." if language == "en" else "こんにちは。"
+    monkeypatch.setattr(SubtitleTranslator, "_request", lambda self, texts, *_: {
+        "segments": [{"id": i, "text": "" if text == "오류" else translated}
+                     for i, text in texts.items()],
+    })
+    worker.project("job")
+    worker.repository.fail_open_project_attempts.assert_not_called()
+    compiler.assert_not_called()
+    target = next(t for t in worker._capture_project_timelines.call_args.kwargs["targets"]
+                  if t.slot_index == 1)
+    assert (target.clip.start_seconds, target.clip.end_seconds) == (20, 120)
+    assert target.subtitles
+    assert all(s.text == translated for s in target.subtitles)
+    assert target.caption_editor_source is None
+    for call in worker.repository.add_pending_short.call_args_list:
+        assert call.kwargs["subtitles_enabled"] is False
+        assert call.kwargs["subtitles"]
 
 
 @pytest.mark.parametrize("language,text", [
@@ -270,6 +299,65 @@ def test_caption_layout_failure_keeps_video_and_source_script(tmp_path, monkeypa
         assert short["subtitles_enabled"] is False
         assert short["caption_render_spec"] is None
         assert short["subtitles"]
+
+
+@pytest.mark.parametrize("language", ["ko", "en", "ja"])
+@pytest.mark.parametrize("enabled", [True, False])
+def test_caption_failure_preserves_script_and_full_video_timeline(
+    tmp_path, monkeypatch, language, enabled,
+):
+    from shorts_worker.caption_templates import CaptionCompileError
+
+    worker, _, compiler = setup_worker(tmp_path, monkeypatch, language=language, enabled=enabled)
+    monkeypatch.setattr(SubtitleTranslator, "_request", lambda self, texts, *_: {
+        "segments": [{"id": i, "text": "Translated text."} for i in texts],
+    })
+    compiler.side_effect = CaptionCompileError("layout failed")
+    worker.project("job")
+    worker.repository.fail_open_project_attempts.assert_not_called()
+    worker.repository.finalize_project_job.assert_called_once()
+    for call in worker.repository.add_pending_short.call_args_list:
+        short = call.kwargs
+        assert short["subtitles"]
+        assert short["subtitles_enabled"] is False
+        assert short["caption_render_spec"] is None
+        if language != "ko":
+            outcome = short["job"]["subtitle_template_snapshot"]["translationOutcome"]
+            assert outcome["status"] == "ready"
+    first = next(t for t in worker._capture_project_timelines.call_args.kwargs["targets"]
+                 if t.slot_index == 1)
+    assert (first.clip.start_seconds, first.clip.end_seconds) == (20, 120)
+    assert first.subtitles
+
+
+def test_failed_margin_caption_compile_keeps_video_and_valid_clip_captions(tmp_path, monkeypatch):
+    from shorts_worker.caption_templates import CaptionCompileError
+    from shorts_worker.editor_renderer import project_caption_render_spec_v4
+
+    worker, _, compiler = setup_worker(tmp_path, monkeypatch, language="en")
+    monkeypatch.setattr(SubtitleTranslator, "_request", lambda self, texts, *_: {
+        "segments": [{"id": i, "text": "Translated text."} for i in texts],
+    })
+    compile_caption = compiler._mock_wraps
+
+    def compile_selected(words, **options):
+        if options["clip_start"] == 20:
+            raise CaptionCompileError("margin layout failed")
+        return compile_caption(words, **options)
+
+    compiler.side_effect = compile_selected
+    worker.project("job")
+    first = next(c.kwargs for c in worker.repository.add_pending_short.call_args_list
+                 if c.kwargs["clip_index"] == 1)
+    target = next(t for t in worker._capture_project_timelines.call_args.kwargs["targets"]
+                  if t.slot_index == 1)
+    assert (target.clip.start_seconds, target.clip.end_seconds) == (20, 120)
+    assert first["subtitles_enabled"] is True
+    assert first["subtitles"]
+    projected = project_caption_render_spec_v4(
+        target.caption_editor_source["spec"], clip_start_seconds=30, clip_end_seconds=70,
+    )
+    assert projected == first["caption_render_spec"]
 
 
 @pytest.mark.parametrize("source_language,output_language", [

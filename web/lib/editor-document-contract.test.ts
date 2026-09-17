@@ -286,6 +286,19 @@ describe("editor document v3 render specification", () => {
     );
   });
 
+  it("keeps caption edits in the existing v4 layout while captions are switched off", () => {
+    const value = validV4Document();
+    value.subtitles.enabled = false;
+    const edits = [{ cueIndex: 0, text: "수정한 자막" }];
+    Object.assign(value.renderSpec.subtitles, { cueEdits: edits });
+    const parsed = editorDocumentSnapshotSchema.parse(value);
+    const reopened = cloneEditorDocumentSnapshot(parsed as EditorDocumentSnapshot);
+    expect(reopened.subtitles.enabled).toBe(false);
+    expect(reopened.subtitles).not.toHaveProperty("cueEdits");
+    expect(reopened.version === 3 && "subtitles" in reopened.renderSpec
+      && reopened.renderSpec.subtitles?.cueEdits).toEqual(edits);
+  });
+
   it("reads an existing fractional-position draft but rejects it for submission", () => {
     const value = validV4Document(12.34567);
     expect(value.renderSpec.title.offsetY).toBe(12.346);

@@ -14,12 +14,12 @@ describe("subtitle translation outcome", () => {
     const value = subtitleTranslationOutcome(JSON.parse(JSON.stringify(snapshot)));
     expect(value?.status).toBe("unavailable");
     for (const locale of ["ko", "en", "ja"]) expect(subtitleTranslationNotice(value, locale)).toBeTruthy();
-    expect(subtitleTranslationNotice(value, "ko")).toContain("자막 없이 재생·다운로드");
+    expect(subtitleTranslationNotice(value, "ko")).toContain("영상 재생·다운로드");
   });
   it("distinguishes unavailable margins from missing clip captions", () => {
     const ready = { policy: "translated-basic-v1", status: "ready", contextLimited: false } as const;
     expect(subtitleTranslationNotice(ready, "ko")).toBeNull();
-    expect(subtitleTranslationNotice({ ...ready, contextLimited: true }, "ko")).toContain("현재 쇼츠의 자막은 번역됐습니다");
+    expect(subtitleTranslationNotice({ ...ready, contextLimited: true }, "ko")).toContain("번역된 내용은 유지");
   });
 });
 
@@ -33,5 +33,5 @@ it("preserves partial subtitles and their notice across reloads in every UI lang
   for (const locale of ["ko", "en", "ja"]) {
     expect(subtitleTranslationNotice(outcome, locale)).toBeTruthy();
   }
-  expect(subtitleTranslationNotice(outcome, "ko")).toContain("완료된 자막은 유지");
+  expect(subtitleTranslationNotice(outcome, "ko")).toContain("번역된 내용은 유지");
 });

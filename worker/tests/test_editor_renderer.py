@@ -1697,6 +1697,26 @@ def test_editor_subtitles_are_retimed_across_deleted_video_gaps() -> None:
     ]
 
 
+def test_edited_caption_script_keeps_uncompiled_translated_context(monkeypatch) -> None:
+    document = _document_v3_with_subtitle_layout(
+        cue_edits=[{"cueIndex": 0, "text": "Edited text"}],
+    )
+    segment_type = type(document.subtitles.segments[0])
+    document.subtitles.segments = [
+        segment_type(start=1, end=2.5, text="Original text"),
+        segment_type(start=4, end=6, text="Translated context"),
+    ]
+    monkeypatch.setattr("shorts_worker.editor_renderer.retime_editor_caption_spec", lambda *_: {
+        "fps": 30, "cues": [{"startFrame": 0, "endFrame": 45,
+                             "words": [{"text": "Edited text"}]}],
+    })
+    assert [s.model_dump() for s in retime_editor_subtitles(document, {})] == [
+        {"start": 0, "end": 1.5, "text": "Edited text"},
+        {"start": 1.5, "end": 3.5, "text": "Translated context"},
+    ]
+    assert document.subtitles.segments[0].text == "Original text"
+
+
 def test_every_bundled_editor_font_and_text_effect_loads(tmp_path: Path) -> None:
     verify_editor_fonts()
     for effect in ("none", "outline", "shadow"):

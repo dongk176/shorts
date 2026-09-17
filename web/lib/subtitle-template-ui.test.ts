@@ -87,7 +87,7 @@ describe("subtitle template UI isolation", () => {
       "const subtitleEditorUnavailable = Boolean(",
     );
     expect(shortsAppSource).toContain(
-      "!adminSubtitleLayoutEnabled\n                  || !item.captionRenderSpec",
+      "!adminSubtitleLayoutEnabled\n                  || (!item.captionRenderSpec && item.subtitlesEnabled)",
     );
     expect(shortsAppSource).not.toContain(
       "!item.captionRenderSpec\n                  && (",
@@ -106,13 +106,13 @@ describe("subtitle template UI isolation", () => {
   it("fails closed when a non-canary user opens a generated caption edit URL", () => {
     expect(editPageSource).toContain("!uuidPattern.test(shortId)");
     expect(editPageSource).toContain("s.caption_render_spec");
-    expect(editPageSource).toContain("|| !storedCaptionRenderSpec");
+    expect(editPageSource).toContain("|| (!storedCaptionRenderSpec && subtitleTemplateShort.subtitlesEnabled !== false)");
     expect(editPageSource).toContain(
       "isUnifiedTemplateSubtitleSnapshot(",
     );
     expect(editPageSource).toContain("&& !unifiedTemplateSubtitleCanaryEnabled");
     expect(applyEditRouteSource).toContain(
-      "if (existing.subtitleTemplateId && !captionRenderSpec)",
+      "if (existing.subtitleTemplateId && !captionRenderSpec && requestedDocument.subtitles.enabled)",
     );
     expect(applyEditRouteSource).toContain('"CAPTION_RENDER_SPEC_MISSING"');
   });

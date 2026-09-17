@@ -28,6 +28,14 @@ const COMMENT_REGENERATION_USAGE_SECONDS = 60;
 const requestSchema = z.object({
   requestId: z.string().uuid(),
   commentCount: z.number().int().min(1).max(20),
+  context: z.object({
+    title: z.string().max(500),
+    transcript: z.array(z.object({
+      start: z.number().finite().nonnegative(),
+      end: z.number().finite().nonnegative(),
+      text: z.string().max(5_000),
+    })).max(2_000),
+  }).optional(),
 });
 
 type TranscriptSegment = {
@@ -203,11 +211,11 @@ export async function POST(
     let comments: string[];
     try {
       comments = await generateCommentsWithGemini({
-        title: generatedShort.hookTitle,
+        title: input.context?.title ?? generatedShort.hookTitle,
         highlightReason: generatedShort.highlightReason || "",
-        transcript: Array.isArray(generatedShort.subtitleSegments)
+        transcript: input.context?.transcript ?? (Array.isArray(generatedShort.subtitleSegments)
           ? generatedShort.subtitleSegments
-          : [],
+          : []),
         targetCount: input.commentCount,
         commentProfile,
         languageTest: Boolean(generatedShort.languageTestReleaseId),

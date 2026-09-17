@@ -42,7 +42,7 @@ describe("admin editor subtitle layout", () => {
       "const subtitleEditorUnavailable = Boolean(",
     );
     expect(editorSource).toContain(
-      "!adminSubtitleLayoutEnabled\n                  || !item.captionRenderSpec",
+      "!adminSubtitleLayoutEnabled\n                  || (!item.captionRenderSpec && item.subtitlesEnabled)",
     );
     const editPageSource = source("./projects/[projectNumber]/edit/[shortId]/page.tsx");
     expect(editPageSource).toContain(
@@ -84,7 +84,7 @@ describe("admin editor subtitle layout", () => {
     expect(editorSource).toContain("spec.style.outlineWidth * captionScale * 2");
     expect(editorSource).toContain("min={24}");
     expect(editorSource).toContain("max={120}");
-    expect(editorSource).toContain("subtitleLayout.cueEdits");
+    expect(editorSource).toContain("editorDocumentSubtitleLayout.cueEdits");
     expect(editorSource).toContain("document.fonts.load");
     expect(editorSource).toContain(
       "const exactCaptionPreview = positionedWordsV4Enabled\n"

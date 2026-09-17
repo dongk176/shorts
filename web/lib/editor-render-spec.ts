@@ -861,7 +861,9 @@ export async function createEditorRenderSpecV4(
       ...overlay,
       font: textOverlayFonts[index],
     })),
-    ...(document.subtitles.enabled
+    // Retain edited text in the existing layout record when captions are hidden.
+    // subtitles.enabled remains the renderer's visibility switch.
+    ...(document.subtitles.enabled || normalizedSubtitleLayout.cueEdits?.length
       ? {
           subtitles: {
             centerX: 540 as const,

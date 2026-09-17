@@ -31,6 +31,7 @@ from .comment_generator import CommentClipInput, CommentGenerator
 from .config import Settings
 from .editor_renderer import (
     EditorDocumentRenderer,
+    caption_spec_for_padded_timeline,
     editor_highlight_subtitles_enabled,
     editor_subtitle_render_mode,
     project_caption_render_spec_v4,
@@ -1686,15 +1687,8 @@ class BatchWorker:
                             for unavailable_start, unavailable_end
                             in transcription_unavailable_ranges
                         ):
-                            if subtitle_translation:
-                                translation_outcomes[original_index]["status"] = "unavailable"
-                                translation_outcomes[original_index]["reason"] = (
-                                    "caption_layout_unavailable"
-                                )
-                                compiled_clips.append((clip, None))
-                            else:
-                                caption_unavailable.add(original_index)
-                                compiled_clips.append((clip, None))
+                            caption_unavailable.add(original_index)
+                            compiled_clips.append((clip, None))
                             rejected_caption_clips += 1
                             _log_event(
                                 "project_caption_clip_rejected",
@@ -1715,15 +1709,8 @@ class BatchWorker:
                             RenderError,
                             TranscriptionError,
                         ) as exc:
-                            if subtitle_translation:
-                                translation_outcomes[original_index]["status"] = "unavailable"
-                                translation_outcomes[original_index]["reason"] = (
-                                    "caption_layout_unavailable"
-                                )
-                                compiled_clips.append((clip, None))
-                            else:
-                                caption_unavailable.add(original_index)
-                                compiled_clips.append((clip, None))
+                            caption_unavailable.add(original_index)
+                            compiled_clips.append((clip, None))
                             rejected_caption_clips += 1
                             _log_event(
                                 "project_caption_clip_rejected",
@@ -1757,25 +1744,18 @@ class BatchWorker:
                         },
                     )
                 clip_subtitles = {
-                    index: [] if translation_outcomes.get(index, {}).get("status") == "unavailable"
-                    else self._relative_subtitles(display_transcript, clip)
+                    index: self._relative_subtitles(display_transcript, clip)
                     for index, clip in enumerate(clips, start=1)
                 }
                 edit_timeline_clips = (
                     {
-                        index: clip
-                        if (
-                            translation_outcomes.get(index, {}).get("contextLimited")
-                            or translation_outcomes.get(index, {}).get("status") == "unavailable"
-                        )
-                        else edit_timeline_clip(clip, selected_duration_seconds)
+                        index: edit_timeline_clip(clip, selected_duration_seconds)
                         for index, clip in enumerate(clips, start=1)
                     }
                     if (getattr(self.settings, "edit_timeline_capture_enabled", False))
                     else {}
                 )
                 if subtitle_template_id and edit_timeline_clips:
-                    unavailable_timeline_indexes: list[int] = []
                     for index, timeline_clip in edit_timeline_clips.items():
                         if index in caption_unavailable:
                             continue
@@ -1828,16 +1808,20 @@ class BatchWorker:
                             RenderError,
                             TranscriptionError,
                         ) as exc:
-                            unavailable_timeline_indexes.append(index)
-                            if subtitle_translation:
-                                translation_outcomes[index]["contextLimited"] = True
                             _log_event(
                                 "caption_edit_timeline_rejected",
                                 job_id=job_id,
                                 clip_index=index,
                                 error_type=type(exc).__name__,
                             )
-                            continue
+                            selected_spec = caption_render_specs.get(index)
+                            if selected_spec is None:
+                                continue
+                            timeline_spec = caption_spec_for_padded_timeline(
+                                selected_spec,
+                                start_seconds=absolute_timeline_clip.start_seconds,
+                                end_seconds=absolute_timeline_clip.end_seconds,
+                            )
                         caption_editor_sources[index] = {
                             "timelineStartSeconds": round(
                                 absolute_timeline_clip.start_seconds,
@@ -1849,11 +1833,8 @@ class BatchWorker:
                             ),
                             "spec": timeline_spec,
                         }
-                    for index in unavailable_timeline_indexes:
-                        edit_timeline_clips.pop(index, None)
                 edit_timeline_subtitles = {
-                    index: [] if translation_outcomes.get(index, {}).get("status") == "unavailable"
-                    else self._relative_subtitles(display_transcript, timeline_clip)
+                    index: self._relative_subtitles(display_transcript, timeline_clip)
                     for index, timeline_clip in edit_timeline_clips.items()
                 }
                 comments_by_clip: dict[int, list[dict[str, object]]] = {
@@ -3913,7 +3894,7 @@ class BatchWorker:
                 duration_seconds=document.video.output_duration_seconds,
                 subtitle_segments=[
                     segment.model_dump(by_alias=True)
-                    for segment in retime_editor_subtitles(document)
+                    for segment in retime_editor_subtitles(document, resolved_caption_render_spec)
                 ],
             )
             if old_keys is None:

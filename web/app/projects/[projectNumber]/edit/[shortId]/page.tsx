@@ -56,7 +56,7 @@ export default async function EditShortPage({ params }: { params: Promise<{ proj
   );
   const subtitleTemplateShortRows = await db`
     select s.id,s.subtitle_template_id,s.subtitle_template_snapshot,
-      s.caption_render_spec
+      s.caption_render_spec,s.subtitles_enabled
     from shorts_mvp.generated_shorts s
     join shorts_mvp.video_jobs j on j.id=s.job_id
     where s.id=${shortId}
@@ -74,7 +74,7 @@ export default async function EditShortPage({ params }: { params: Promise<{ proj
     subtitleTemplateShort?.subtitleTemplateId
     && (
       !adminSubtitleLayoutEnabled
-      || !storedCaptionRenderSpec
+      || (!storedCaptionRenderSpec && subtitleTemplateShort.subtitlesEnabled !== false)
     )
   ) notFound();
   if (

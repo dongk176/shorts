@@ -345,7 +345,9 @@ def _editor_video_input_filter(
     return f"{prefix}{geometry}format=rgba[video_layer]"
 
 
-def retime_editor_subtitles(document: EditorDocument) -> list[SubtitleSegment]:
+def retime_editor_subtitles(
+    document: EditorDocument, caption_render_spec: dict[str, object] | None = None,
+) -> list[SubtitleSegment]:
     retimed: list[SubtitleSegment] = []
     output_cursor = 0.0
     for clip in document.video.clips:
@@ -360,6 +362,30 @@ def retime_editor_subtitles(document: EditorDocument) -> list[SubtitleSegment]:
                 text=segment.text,
             ))
         output_cursor += clip.source_end_seconds - clip.source_start_seconds
+    caption_layout = getattr(document.render_spec, "subtitles", None)
+    cue_edits = getattr(caption_layout, "cue_edits", None)
+    if caption_render_spec is not None and cue_edits:
+        # The original segments and caption source remain immutable. Use the same
+        # edited, cut caption text as the renderer for the current project script.
+        edited = retime_editor_caption_spec(document, caption_render_spec)
+        edited_segments = [
+            SubtitleSegment(
+                start=round(cue["startFrame"] / edited["fps"], 3),
+                end=round(cue["endFrame"] / edited["fps"], 3),
+                text="".join(
+                    (" " if index and word.get("spaceBefore") else "") + word["text"]
+                    for index, word in enumerate(cue["words"])
+                ),
+            )
+            for cue in (edited["cues"] if edited else [])
+        ]
+        # Valid translated context may have no compiled caption (for example
+        # when only the padded margin layout failed). Keep that script too.
+        uncovered = [segment for segment in retimed if not any(
+            segment.start < caption.end and segment.end > caption.start
+            for caption in edited_segments
+        )]
+        return sorted(edited_segments + uncovered, key=lambda segment: segment.start)
     return retimed
 
 
@@ -526,6 +552,21 @@ def _shift_caption_cue_frames(
                 if key in event:
                     event[key] = int(event[key]) + frame_offset
     return shifted
+
+
+def caption_spec_for_padded_timeline(
+    caption_render_spec: dict[str, object], *, start_seconds: float, end_seconds: float,
+) -> dict[str, object]:
+    """Keep valid clip captions when compiling captions outside the clip fails."""
+    spec = deepcopy(caption_render_spec)
+    offset = floor((float(spec["clipStartSeconds"]) - start_seconds) * int(spec["fps"]) + 0.5)
+    spec["cues"] = [
+        _shift_caption_cue_frames(cue, frame_offset=offset) for cue in spec["cues"]
+    ]
+    spec["clipStartSeconds"] = round(start_seconds, 3)
+    spec["clipEndSeconds"] = round(end_seconds, 3)
+    spec.pop("editorSource", None)
+    return spec
 
 
 def project_caption_render_spec_v4(

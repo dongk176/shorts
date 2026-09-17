@@ -401,10 +401,14 @@ async function applyEditorDocument({
     throw new HttpError(409, "번역이 완료되지 않아 자막을 켤 수 없습니다.", "SUBTITLE_TRANSLATION_UNAVAILABLE");
   }
   const storedCaptionRenderSpec = parseCaptionRenderSpec(existing.captionRenderSpec);
+  const cueEdits = (
+    requestedDocument.version === 3 && "subtitles" in requestedDocument.renderSpec
+      ? requestedDocument.renderSpec.subtitles?.cueEdits : undefined
+  ) ?? [];
   const captionRenderSpec = storedCaptionRenderSpec
     ? captionRenderSpecForEditor(storedCaptionRenderSpec)
     : null;
-  if (existing.subtitleTemplateId && !captionRenderSpec) {
+  if (existing.subtitleTemplateId && !captionRenderSpec && requestedDocument.subtitles.enabled) {
     throw new HttpError(
       409,
       "이전 자막 형식은 새 편집기에서 지원하지 않습니다.",
@@ -442,7 +446,7 @@ async function applyEditorDocument({
       || requestedDocument.renderSpec.version === EDITOR_RENDER_SPEC_V4_VERSION
     )
     && !captionRenderSpec
-    && (requestedDocument.renderSpec.subtitles?.cueEdits?.length || 0) > 0
+    && cueEdits.length > 0
   ) {
     throw new HttpError(
       400,
@@ -466,7 +470,6 @@ async function applyEditorDocument({
     if (
       requestedDocument.version === 3
       && requestedDocument.renderSpec.version !== EDITOR_RENDER_SPEC_LEGACY_VERSION
-      && requestedDocument.renderSpec.subtitles
       && (() => {
         const sourceCueCounts = new Map<number, number>();
         captionRenderSpec.cues.forEach((cue, cueIndex) => {
@@ -476,7 +479,7 @@ async function applyEditorDocument({
             (sourceCueCounts.get(sourceCueIndex) || 0) + 1,
           );
         });
-        return (requestedDocument.renderSpec.subtitles.cueEdits || []).some(
+        return cueEdits.some(
           (edit) => sourceCueCounts.get(edit.cueIndex) !== 1,
         );
       })()

@@ -11,7 +11,11 @@ from PIL import Image, ImageChops, ImageStat
 from shorts_worker.caption_composition import with_caption_comment_layout
 from shorts_worker.caption_templates import compile_caption_render_spec
 from shorts_worker.config import Settings
-from shorts_worker.editor_renderer import EditorDocumentRenderer, retime_editor_caption_spec
+from shorts_worker.editor_renderer import (
+    EditorDocumentRenderer,
+    retime_editor_caption_spec,
+    retime_editor_subtitles,
+)
 from shorts_worker.render_spec_v4 import compile_initial_editor_render_spec_v4
 from shorts_worker.renderer import VideoRenderer
 from shorts_worker.schemas import (
@@ -92,6 +96,11 @@ def test_basic_caption_edit_preserves_comment_position(
     edited_caption = retime_editor_caption_spec(document, caption)
     rendered_text = "".join(w["text"] for c in edited_caption["cues"] for w in c["words"])
     assert rendered_text.replace(" ", "") == after.replace(" ", "")
+    stored_script = retime_editor_subtitles(document, caption)
+    assert "".join(s.text for s in stored_script).replace(" ", "") == after.replace(" ", "")
+    assert document.subtitles.segments[0].text == before
+    reopened = EditorDocument.model_validate_json(document.model_dump_json(by_alias=True))
+    assert retime_editor_subtitles(reopened, caption) == stored_script
     settings = Settings(ffmpeg_threads=2, ffmpeg_timeout_seconds=120,
                         clean_clip_preset="ultrafast", clean_clip_crf=18)
     first = VideoRenderer(settings).render_clean_clip(
@@ -151,10 +160,11 @@ def test_basic_caption_edit_preserves_comment_position(
         assert max(ImageStat.Stat(ImageChops.difference(*channel_frames)).mean) < 1
         # Switching subtitles off keeps the video, title, comment and channel.
         value["subtitles"]["enabled"] = False
-        value["renderSpec"].pop("subtitles", None)
+        hidden_document = EditorDocument.model_validate(value)
+        assert retime_editor_subtitles(hidden_document, caption) == stored_script
         without = EditorDocumentRenderer(settings).render(
             clean_path=clean, output_path=tmp_path / "without-captions.mp4",
-            document=EditorDocument.model_validate(value), work_dir=tmp_path / "off-work",
+            document=hidden_document, work_dir=tmp_path / "off-work",
             channel_thumbnail_path=None,
             caption_render_spec=None, caption_composition_spec=caption,
             comment_output_language=language,

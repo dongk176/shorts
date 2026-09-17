@@ -1714,11 +1714,20 @@ describe("subtitle template edit isolation", () => {
       expectedStatus: 400,
       expectedCode: "EDITOR_DYNAMIC_CAPTION_TEXT_EDIT_UNSUPPORTED",
     },
+    {
+      label: "allows video and title editing after a caption-only failure",
+      cueIndex: 0,
+      sourceCueIndexes: null,
+      expectedStatus: 202,
+      expectedCode: null,
+      captionsMissingAndOff: true,
+    },
   ])("$label", async ({
     cueIndex,
     sourceCueIndexes,
     expectedStatus,
     expectedCode,
+    captionsMissingAndOff = false,
   }) => {
     process.env.EDITOR_RENDERING_V2_ENABLED = "true";
     process.env.SUBTITLE_TEMPLATES_ENABLED = "true";
@@ -1762,6 +1771,11 @@ describe("subtitle template edit isolation", () => {
         }],
       },
     };
+    if (captionsMissingAndOff) {
+      document.subtitles.enabled = false;
+      delete document.renderSpec.subtitles.cueEdits;
+      document.renderSpec = createEditorRenderSpec(document, document.renderSpec.subtitles, 3);
+    }
     const db = dbWithRows(
       [adminV3Release],
       [{
@@ -1781,14 +1795,14 @@ describe("subtitle template edit isolation", () => {
         cleanClipS3Key: "edit-sources/clean.mp4",
         startSeconds: 11,
         endSeconds: 16,
-        subtitleTemplateId: sourceCueIndexes ? "pop" : null,
+        subtitleTemplateId: sourceCueIndexes || captionsMissingAndOff ? "pop" : null,
         subtitleTemplateSnapshot: sourceCueIndexes
           ? {
               schemaVersion: 4,
               origin: "unified-template-v5",
             }
           : null,
-        subtitlesEnabled: true,
+        subtitlesEnabled: !captionsMissingAndOff,
         captionRenderSpec: sourceCueIndexes ? {
           schemaVersion: 3,
           templateId: "pop",
@@ -1867,7 +1881,7 @@ describe("subtitle template edit isolation", () => {
       { params: Promise.resolve({ shortId }) },
     );
 
-    expect(response.status).toBe(expectedStatus);
+    expect(response.status, await response.clone().text()).toBe(expectedStatus);
     if (expectedStatus === 400) {
       await expect(response.json()).resolves.toMatchObject({
         code: expectedCode,
@@ -1945,7 +1959,13 @@ describe("subtitle template edit isolation", () => {
     expect(mocks.generateComments).not.toHaveBeenCalled();
   });
 
-  it.each([false, true])("keeps ordinary regeneration unchanged with client test flag %s", async (clientTestFlag) => {
+  it.each([
+    { clientTestFlag: false, context: undefined },
+    { clientTestFlag: true, context: undefined },
+    { clientTestFlag: false, context: { title: "수정한 제목", transcript: [
+      { start: 0, end: 1, text: "수정한 200원" },
+    ] } },
+  ])("uses current script while preserving server language access: $clientTestFlag $context", async ({ clientTestFlag, context }) => {
     process.env.EDITOR_OVERLAY_PREVIEW_ENABLED = "true";
     const db = dbWithRows(
       [],
@@ -1968,6 +1988,7 @@ describe("subtitle template edit isolation", () => {
         requestId: "bda42bad-ae7c-43bb-960f-2c5984285404",
         commentCount: 1,
         languageTest: clientTestFlag,
+        context,
       }),
       { params: Promise.resolve({ shortId }) },
     );
@@ -1980,6 +2001,8 @@ describe("subtitle template edit isolation", () => {
     expect(mocks.generateComments).toHaveBeenCalledWith(expect.objectContaining({
       languageTest: false,
       sourceLanguage: undefined,
+      title: context?.title ?? "일반 영상",
+      transcript: context?.transcript ?? [],
     }));
     const queriedSql = db.mock.calls.map(([strings]) =>
       Array.from(strings as TemplateStringsArray).join(""),

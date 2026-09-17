@@ -345,6 +345,7 @@ import {
 import { CENTER_SNAP_THRESHOLD_PX } from "@/lib/template-editor-snap";
 import { billingSupportsCustomTemplates } from "@/lib/template-entitlements";
 import { SubtitleTranslationNotice } from "@/components/subtitle-translation-notice";
+import { editorScriptForComments } from "@/lib/editor-script";
 import { currentClientLocale, localizeApiError, localizeAuthError } from "@/lib/i18n/errors";
 import { messagesByLocale } from "@/lib/i18n/messages";
 import { useI18n } from "@/lib/i18n/provider";
@@ -4536,6 +4537,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
     CommentRegenerationComparison | null
   >(null);
   const commentRegenerationRequestIdRef = useRef<string | null>(null);
+  const commentRegenerationContextRef = useRef("");
   const commentRegenerationInFlightRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(
@@ -5384,7 +5386,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
     ? editorChannelAssetPreviewUrl(item.id, item.renderVersion)
     : editorDocumentSnapshot.channel.thumbnailUrl;
   const renderVideoClips = editorDocumentSnapshot.video.clips;
-  const subtitleCueEditsSignature = JSON.stringify(subtitleLayout.cueEdits || []);
+  const subtitleCueEditsSignature = JSON.stringify(editorDocumentSubtitleLayout.cueEdits || []);
   const activeCaptionFontId = subtitleLayout.fontId
     || captionTemplateEditorSpec?.font.fontId
     || DEFAULT_EDITOR_FONT_ID;
@@ -6587,6 +6589,18 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
       return;
     }
 
+    const context = {
+      title,
+      transcript: editorScriptForComments(
+        segments, renderVideoClips,
+        editorDocumentSubtitleLayout.cueEdits?.length ? captionTemplatePreviewSpec : null,
+      ),
+    };
+    const contextKey = JSON.stringify({ context, count: before.length });
+    if (commentRegenerationContextRef.current !== contextKey) {
+      commentRegenerationRequestIdRef.current = null;
+      commentRegenerationContextRef.current = contextKey;
+    }
     const requestId = commentRegenerationRequestIdRef.current
       || globalThis.crypto.randomUUID();
     commentRegenerationRequestIdRef.current = requestId;
@@ -6605,6 +6619,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
           body: JSON.stringify({
             requestId,
             commentCount: before.length,
+            context,
           }),
         },
         75_000,
@@ -6645,6 +6660,11 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
   }, [
     item.id,
     overlayPreviewEnabled,
+    title,
+    segments,
+    renderVideoClips,
+    editorDocumentSubtitleLayout.cueEdits,
+    captionTemplatePreviewSpec,
   ]);
 
   const beginEditorOverlayHistoryInteraction = useCallback(() => {
@@ -12766,7 +12786,7 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
                 item.subtitleTemplateId
                 && (
                   !adminSubtitleLayoutEnabled
-                  || !item.captionRenderSpec
+                  || (!item.captionRenderSpec && item.subtitlesEnabled)
                 )
               ),
             );
