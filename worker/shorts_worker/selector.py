@@ -30,6 +30,8 @@ from .schemas import (
     SelectionResponse,
     SubtitleSegment,
 )
+from .subtitle_translation import MODEL as TRANSLATION_MODEL
+from .subtitle_translation import translation_required
 from .title_wrapping import manual_title_lines
 
 
@@ -413,6 +415,13 @@ class TranscriptSelector:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
 
+    def _gemini_selection_model(
+        self, source_language: str | None, output_language: OutputLanguage,
+    ) -> str:
+        if translation_required(source_language, output_language):
+            return TRANSLATION_MODEL
+        return self.settings.gemini_text_model
+
     @staticmethod
     def _transcript_text(segments: list[SubtitleSegment]) -> str:
         lines: list[str] = []
@@ -589,10 +598,11 @@ class TranscriptSelector:
             {"max_tokens": self.settings.gemini_max_output_tokens}
             if self.settings.gemini_max_output_tokens is not None else {}
         )
+        model = self._gemini_selection_model(source_language, output_language)
         if source_language is not None and output_language in LOCALIZED_TITLE_LANGUAGES:
             try:
                 return self._parse_selection(
-                    client, self.settings.gemini_text_model, messages,
+                    client, model, messages,
                     output_language, source_language,
                     **limits,
                 )
@@ -608,7 +618,7 @@ class TranscriptSelector:
                 _log_selection_event("highlight_selection_repair", provider="gemini", attempt=1)
                 try:
                     repaired = self._parse_selection(
-                        client, self.settings.gemini_text_model,
+                        client, model,
                         [*messages, {"role": "user", "content": repair_instruction(
                             output_language, error,
                         )}], output_language, source_language,
@@ -634,7 +644,7 @@ class TranscriptSelector:
                 )][:len(error.attempt.rejected) or len(repaired)]
                 return [*accepted, *repaired]
         return self._parse_selection(
-            client, self.settings.gemini_text_model, messages, output_language, source_language,
+            client, model, messages, output_language, source_language,
             **limits,
         )
 
@@ -684,7 +694,7 @@ class TranscriptSelector:
         providers = (
             (
                 "gemini",
-                self.settings.gemini_text_model,
+                self._gemini_selection_model(source_language, output_language),
                 self.settings.gemini_enabled,
                 self._select_with_gemini,
             ),

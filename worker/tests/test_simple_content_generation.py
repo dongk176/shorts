@@ -8,7 +8,7 @@ import pytest
 from shorts_worker.comment_generator import CommentClipInput, CommentGenerator
 from shorts_worker.config import Settings
 from shorts_worker.localized_selection import request_candidates
-from shorts_worker.schemas import OutputLanguage, SubtitleSegment
+from shorts_worker.schemas import HighlightClip, OutputLanguage, SubtitleSegment
 from shorts_worker.selector import TranscriptSelector
 from shorts_worker.subtitle_translation import SubtitleTranslator
 
@@ -92,11 +92,47 @@ def test_translation_uses_one_call_without_currency_processing(source, target, t
     assert "tools" not in kwargs and "tool_choice" not in kwargs
 
 
-def test_title_model_respects_existing_settings_for_language_projects():
+@pytest.mark.parametrize("enabled", [True, False])
+@pytest.mark.parametrize("source,target", [
+    (source, target)
+    for source in (None, "ko", "en", "ja")
+    for target in (OutputLanguage.KO, OutputLanguage.EN, OutputLanguage.JA)
+] + [("kor", OutputLanguage.KO), ("jpn", OutputLanguage.JA),
+     ("eng", OutputLanguage.KO), ("und", OutputLanguage.EN)])
+def test_title_model_changes_only_for_translation_requests(monkeypatch, enabled, source, target):
+    monkeypatch.setenv("EASYCUT_LANGUAGE_TEST_WORKER", str(enabled).lower())
     selector = TranscriptSelector(Settings(
         gemini_text_model="configured-model", gemini_api_key="test",
     ))
     with patch.object(selector, "_parse_selection", return_value=[]) as request:
-        selector._select_with_gemini(messages=[], output_language=OutputLanguage.JA,
-                                     source_language="ko")
-    assert request.call_args.args[1] == "configured-model"
+        selector._select_with_gemini(messages=[], output_language=target, source_language=source)
+    same_language = (source == target or (source, target) in {
+        ("kor", OutputLanguage.KO), ("jpn", OutputLanguage.JA),
+    })
+    expected = ("gemini-3.8-flash" if enabled and source is not None and not same_language
+                else "configured-model")
+    request.assert_called_once()
+    assert request.call_args.args[1] == expected
+
+
+def test_selected_clip_metadata_records_the_model_actually_used(monkeypatch, capsys):
+    monkeypatch.setenv("EASYCUT_LANGUAGE_TEST_WORKER", "true")
+    selector = TranscriptSelector(Settings(
+        gemini_text_model="configured-model", gemini_api_key="test",
+        gemini_paid_data_processing_confirmed=True, openai_api_key=None,
+    ))
+    candidates = [HighlightClip(start_seconds=start, end_seconds=start + 60,
+                                hook_title="100万ウォン\n毎日使う理由", reason="毎日使っています。",
+                                viral_score=85) for start in (0, 100, 200)]
+    with patch.object(selector, "_parse_selection", return_value=candidates) as request:
+        clips = selector.select(
+            video_title="사용기", duration_seconds=300, required_count=3,
+            transcript=[SubtitleSegment(start=0, end=300, text="100만 원에 샀어요.")],
+            source_language="ko", output_language=OutputLanguage.JA,
+        )
+    request.assert_called_once()
+    assert len(clips) == 3
+    assert {clip.selection_model for clip in clips} == {"gemini-3.8-flash"}
+    events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    started = next(event for event in events if event.get("status") == "started")
+    assert started["model"] == "gemini-3.8-flash"
