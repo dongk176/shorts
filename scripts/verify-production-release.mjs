@@ -42,6 +42,9 @@ export const PROTECTED_APP_ROUTES = [
 // These routes are the only intentional additions relative to the currently
 // promoted production manifest. Everything else must still fail closed.
 export const ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE = [
+  "/api/admin/expenses/route",
+  "/api/admin/expenses/[id]/route",
+  "/api/admin/expenses/[id]/receipts/[receiptId]/route",
   "/blog/page",
   "/blog/[slug]/page",
   "/api/site-metrics/route",
