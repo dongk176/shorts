@@ -824,59 +824,6 @@ def _fit_display_words(
     return fitted
 
 
-def _without_display_periods(words: Sequence[_CaptionWord]) -> list[_CaptionWord]:
-    """Remove ASCII full stops only from rendered caption text.
-
-    This runs after sentence partitioning, so punctuation still controls cue
-    boundaries. Period-only provider tokens are folded into an adjacent word
-    to retain the original source indexes and spoken timing without reserving
-    an invisible pop-caption slot.
-    """
-    cleaned: list[_CaptionWord] = []
-    pending_start_frame: int | None = None
-    pending_source_indexes: tuple[int, ...] = ()
-    for word in words:
-        text = word.text.replace(".", "")
-        if text:
-            cleaned.append(
-                _CaptionWord(
-                    text=text,
-                    start_frame=(
-                        min(pending_start_frame, word.start_frame)
-                        if pending_start_frame is not None
-                        else word.start_frame
-                    ),
-                    end_frame=word.end_frame,
-                    space_before=bool(cleaned) and word.space_before,
-                    source_indexes=pending_source_indexes + word.source_indexes,
-                    speech_start_frame=word.speech_start_frame,
-                    speech_end_frame=word.speech_end_frame,
-                )
-            )
-            pending_start_frame = None
-            pending_source_indexes = ()
-            continue
-        if cleaned:
-            previous = cleaned[-1]
-            cleaned[-1] = _CaptionWord(
-                text=previous.text,
-                start_frame=previous.start_frame,
-                end_frame=max(previous.end_frame, word.end_frame),
-                space_before=previous.space_before,
-                source_indexes=previous.source_indexes + word.source_indexes,
-                speech_start_frame=previous.speech_start_frame,
-                speech_end_frame=word.speech_end_frame,
-            )
-        else:
-            pending_start_frame = (
-                min(pending_start_frame, word.start_frame)
-                if pending_start_frame is not None
-                else word.start_frame
-            )
-            pending_source_indexes += word.source_indexes
-    return cleaned
-
-
 def _wrap_word_indexes(
     words: Sequence[_CaptionWord],
     *,
@@ -1180,21 +1127,17 @@ def _basic_or_highlight_cues(
     word_separator = (
         CAPTION_HIGHLIGHT_WORD_SEPARATOR if highlighted else CAPTION_WORD_SEPARATOR
     )
-    groups = [
-        cleaned
-        for group in _partition_words(
-            words,
-            gap_frames=round(0.42 * fps),
-            max_words=None,
-            font_size=font_size,
-            max_width=measured_max_width,
-            max_duration_frames=round(3.2 * fps),
-            max_lines=1,
-            require_word_frames=highlighted,
-            word_separator=word_separator,
-        )
-        if (cleaned := (_without_display_periods(group) if highlighted else group))
-    ]
+    groups = _partition_words(
+        words,
+        gap_frames=round(0.42 * fps),
+        max_words=None,
+        font_size=font_size,
+        max_width=measured_max_width,
+        max_duration_frames=round(3.2 * fps),
+        max_lines=1,
+        require_word_frames=highlighted,
+        word_separator=word_separator,
+    )
     cues: list[dict[str, object]] = []
     previous_end_frame = 0
     for index, group in enumerate(groups):
@@ -1387,21 +1330,17 @@ def _pop_cues(
     # Japanese speech providers can return one character per timed word.
     # Prefer readable phrase boundaries within the existing display limits.
     japanese = any(_KANA_RE.search(word.text) for word in words)
-    groups = [
-        cleaned
-        for group in _partition_words(
-            words,
-            gap_frames=round(0.25 * fps),
-            max_words=None if japanese else 3,
-            font_size=font_size,
-            max_width=round(max_width / 1.12),
-            max_duration_frames=round(2.0 * fps),
-            max_lines=1,
-            require_word_frames=True,
-            preferred_breaks=_japanese_phrase_breaks(words) if japanese else None,
-        )
-        if (cleaned := _without_display_periods(group))
-    ]
+    groups = _partition_words(
+        words,
+        gap_frames=round(0.25 * fps),
+        max_words=None if japanese else 3,
+        font_size=font_size,
+        max_width=round(max_width / 1.12),
+        max_duration_frames=round(2.0 * fps),
+        max_lines=1,
+        require_word_frames=True,
+        preferred_breaks=_japanese_phrase_breaks(words) if japanese else None,
+    )
     center_x = safe_area["x"] + safe_area["width"] / 2
     center_y = safe_area["y"] + safe_area["height"] / 2
     cues: list[dict[str, object]] = []
@@ -1507,7 +1446,7 @@ def rebuild_caption_cue_text(
     font_size: int | None = None,
     schema_version: int = 3,
 ) -> list[dict[str, object]]:
-    """Reflow one trusted cue while preserving its compiled frame window."""
+    """Reflow edited text with punctuation; an empty edit hides only this cue."""
     if template_id not in CAPTION_TEMPLATE_IDS:
         raise CaptionCompileError("편집할 수 없는 자막 템플릿입니다.")
     if fps != CAPTION_FPS:
@@ -1519,7 +1458,7 @@ def rebuild_caption_cue_text(
         raise CaptionCompileError("편집 자막 표시 구간이 올바르지 않습니다.")
     tokens = text.strip().split()
     if not tokens:
-        raise CaptionCompileError("편집 자막 내용이 비어 있습니다.")
+        return []
 
     # Caption specs cap a cue at twenty words and animated templates require at
     # least one output frame per word. Keep arbitrary user copy renderable by
@@ -1564,7 +1503,7 @@ def rebuild_caption_cue_text(
         safe_area=safe_area,
         font_size=font_size,
     )
-    rebuilt = (
+    return (
         _pop_cues(
             words,
             safe_area=safe_area,
@@ -1582,9 +1521,6 @@ def rebuild_caption_cue_text(
             schema_version=schema_version,
         )
     )
-    if not rebuilt:
-        raise CaptionCompileError("편집 자막을 다시 배치하지 못했습니다.")
-    return rebuilt
 
 
 def _reflow_caption_cues_for_clips(

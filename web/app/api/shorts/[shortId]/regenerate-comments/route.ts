@@ -24,7 +24,6 @@ import { getUsageSnapshot } from "@/lib/usage";
 
 export const maxDuration = 60;
 
-const COMMENT_REGENERATION_USAGE_SECONDS = 60;
 const requestSchema = z.object({
   requestId: z.string().uuid(),
   commentCount: z.number().int().min(1).max(20),
@@ -87,6 +86,7 @@ export async function POST(
         "PAID_GEMINI_NOT_CONFIGURED",
       );
     }
+    // Keep stale usage released even if the subsequent reservation fails.
     await db`
       update shorts_mvp.ai_comment_regeneration_requests
       set status='released',failure_code='stale_request'
@@ -94,7 +94,7 @@ export async function POST(
         and status='reserved'
         and created_at<clock_timestamp()-interval '5 minutes'
     `;
-    const [billing, shortRows, usageBefore] = await Promise.all([
+    const [billing, shortRows] = await Promise.all([
       getBillingSummary(db, session.userId),
       db`
         select
@@ -121,7 +121,6 @@ export async function POST(
           and generated_short.status='ready'
         limit 1
       `,
-      getUsageSnapshot(db, session),
     ]);
     assertPaidProjectActionAccess(billing, "edit");
     const generatedShort = shortRows[0] as {
@@ -156,14 +155,6 @@ export async function POST(
       }
       assertUnifiedTemplateSubtitleCanaryAccess(
         await getEffectiveSubtitleTemplateAccess(db, session.userId),
-      );
-    }
-
-    if (usageBefore.remainingSeconds < COMMENT_REGENERATION_USAGE_SECONDS) {
-      throw new HttpError(
-        402,
-        "댓글 재생성에 사용할 수 있는 시간이 부족합니다.",
-        "COMMENT_REGENERATION_USAGE_REQUIRED",
       );
     }
 

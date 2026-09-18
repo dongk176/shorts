@@ -132,6 +132,110 @@ function v4CaptionFixture(
 }
 
 describe("editor caption preview timing", () => {
+  it("preserves decimals, versions and punctuation when creating highlight captions", () => {
+    const result = createEditorHighlightCaptionSpec(
+      [{ start: 0, end: 3, text: "3.14 v1.2 ... Hello." }],
+      "16:9", "#35E6E3", "pretendard",
+      (text, size) => Array.from(text).length * size * 0.4,
+    );
+    expect(result?.cues.flatMap((cue) => cue.words).map((word) => word.text))
+      .toEqual(["3.14", "v1.2", "...", "Hello."]);
+  });
+
+  it("keeps spoken words outside an early cue handoff when changing font size", () => {
+    const source = v4CaptionFixture("pop");
+    source.cues[0].endFrame = 20;
+    source.cues[0].events = source.cues[0].events.map((event, index) => ({
+      ...event, startFrame: index * 6, endFrame: index === 2 ? 20 : (index + 1) * 6,
+    }));
+    const result = retimeCaptionRenderSpecForEditor(source, [
+      { id: "all", sourceStartSeconds: 0, sourceEndSeconds: 3 },
+    ], [], (text, size) => Array.from(text).length * size * 0.4, {
+      layout: { fontSize: 84, scale: 1, offsetY: 0 },
+    });
+    expect(result?.cues.flatMap((cue) => cue.words).map((word) => word.text))
+      .toEqual(["한글", "English", "123"]);
+
+    const trimmed = retimeCaptionRenderSpecForEditor(source, [
+      { id: "cut", sourceStartSeconds: 0, sourceEndSeconds: 1 },
+    ], [], (text, size) => Array.from(text).length * size * 0.4, {
+      layout: { fontSize: 84, scale: 1, offsetY: 0 },
+    });
+    expect(trimmed?.cues.flatMap((cue) => cue.words).map((word) => word.text))
+      .toEqual(["한글"]);
+  });
+
+  it("uses Japanese phrase boundaries for pop captions after resizing", () => {
+    const source = v4CaptionFixture("pop");
+    const text = "今日は東京でおいしいご飯を食べます";
+    const words = Array.from(text).map((text, index) => ({
+      text, startFrame: index * 4, endFrame: (index + 1) * 4, spaceBefore: false,
+    }));
+    const cue = source.cues[0];
+    cue.words = words;
+    cue.endFrame = words.length * 4;
+    cue.events = words.map((word, activeWordIndex) => ({
+      startFrame: word.startFrame, endFrame: word.endFrame, activeWordIndex,
+      positions: words.map(() => ({ centerX: 540, centerY: 1095, advanceWidth: 92, gapBefore: 0 })),
+    }));
+    const result = retimeCaptionRenderSpecForEditor(source, [
+      { id: "all", sourceStartSeconds: 0, sourceEndSeconds: 3 },
+    ], [], (text, size) => Array.from(text).length * size, {
+      layout: { fontSize: 84, scale: 1, offsetY: 0 },
+    });
+    expect(result?.cues.map((cue) => cue.words.map((word) => word.text).join("")))
+      .toEqual(["今日は東京で", "おいしいご飯を", "食べます"]);
+    expect(result?.cues.flatMap((cue) => cue.words).map((word) => word.text).join(""))
+      .toBe(text);
+  });
+
+  it.each(["highlight", "pop"] as const)(
+    "preserves edited punctuation through %s preview cuts and reopening",
+    (templateId) => {
+      const measure = (text: string, fontSize: number) => Array.from(text).length * fontSize * 0.4;
+      for (const text of [".", "...", "3.14 . 좋아요.", "Hello... そうです。"]) {
+        const original = v4CaptionFixture(templateId);
+        const edited = retimeCaptionRenderSpecForEditor(original, [
+          { id: "trim", sourceStartSeconds: 0.2, sourceEndSeconds: 2.8 },
+        ], [{ cueIndex: 0, text }], measure);
+        expect(edited).not.toBeNull();
+        // A further cut forces recompilation of the saved text without cue edits.
+        const reopened = retimeCaptionRenderSpecForEditor(edited!, [
+          { id: "reopen-trim", sourceStartSeconds: 0.1, sourceEndSeconds: 2.6 },
+        ], [], measure);
+        for (const result of [edited, reopened]) {
+          expect(result?.cues.flatMap((cue) => cue.words).map((word) => word.text).join(""))
+            .toBe(text.replaceAll(" ", ""));
+        }
+        expect(original.cues[0].words[0].text).toBe("한글");
+      }
+    },
+  );
+
+  it.each(["highlight", "pop"] as const)(
+    "omits an empty %s edit without losing the next caption",
+    (templateId) => {
+      const original = v4CaptionFixture(templateId);
+      const second = structuredClone(original.cues[0]);
+      second.sourceCueIndex = 1;
+      second.startFrame += 90;
+      second.endFrame += 90;
+      for (const word of second.words) {
+        word.startFrame! += 90;
+        word.endFrame! += 90;
+      }
+      for (const event of second.events) {
+        event.startFrame += 90;
+        event.endFrame += 90;
+      }
+      original.cues.push(second);
+      const result = retimeCaptionRenderSpecForEditor(original, [
+        { id: "all", sourceStartSeconds: 0, sourceEndSeconds: 6 },
+      ], [{ cueIndex: 0, text: " \n " }]);
+      expect(result?.cues).toEqual([second]);
+    },
+  );
+
   it("compiles ordinary transcript segments into deterministic highlight cues", () => {
     const highlighted = createEditorHighlightCaptionSpec(
       [

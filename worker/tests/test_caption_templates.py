@@ -413,8 +413,8 @@ def test_korean_sentence_punctuation_prevents_cross_sentence_merge() -> None:
     assert rendered_words == ["안녕!", "하세요"]
 
 
-@pytest.mark.parametrize("template_id", ["highlight", "pop"])
-def test_ascii_periods_are_removed_only_from_rendered_caption_text(
+@pytest.mark.parametrize("template_id", ["basic", "highlight", "pop"])
+def test_new_captions_preserve_punctuation_and_decimal_text(
     template_id: str,
 ) -> None:
     spec = _compile(
@@ -423,17 +423,15 @@ def test_ascii_periods_are_removed_only_from_rendered_caption_text(
             _word(".", 0.2, 0.3),
             _word("둘째.", 0.3, 0.6, space_before=True),
             _word("3.14", 0.6, 0.9, space_before=True),
+            _word("v1.2", 0.9, 1.2, space_before=True),
         ],
         template_id,
-        clip_end=1.0,
+        clip_end=1.3,
     )
     rendered_words = [word for cue in spec["cues"] for word in cue["words"]]
 
-    assert all("." not in word["text"] for word in rendered_words)
-    assert [word["text"] for word in rendered_words] == ["첫째", "둘째", "314"]
-    first = rendered_words[0]
-    assert first["sourceWordIndexes"] == [0, 1]
-    assert first["endFrame"] == round(0.3 * 30)
+    assert [word["text"] for word in rendered_words] == ["첫째", ".", "둘째.", "3.14", "v1.2"]
+    assert [word["sourceWordIndexes"] for word in rendered_words] == [[0], [1], [2], [3], [4]]
 
 
 @pytest.mark.parametrize("template_id", ["basic", "highlight"])
@@ -1587,6 +1585,61 @@ def test_plain_split_does_not_duplicate_a_caption_word() -> None:
     assert [word["text"] for cue in cues for word in cue["words"]] == [
         "경계단어"
     ]
+
+
+@pytest.mark.parametrize("template_id", ["basic", "highlight", "pop"])
+@pytest.mark.parametrize("schema_version", [3, 4])
+@pytest.mark.parametrize("text", [".", "...", "3.14 . 좋아요.", "Hello... そうです。"])
+def test_edited_caption_preserves_punctuation_after_cuts_and_reflow(
+    template_id: str, schema_version: int, text: str,
+) -> None:
+    source = _editable_caption_cue(
+        start_frame=0, end_frame=60, word_ranges=[("원본", 0, 60)],
+    )
+    arguments = {
+        "template_id": template_id,
+        "safe_area": {"x": 120, "y": 1080, "width": 840, "height": 140},
+        "schema_version": schema_version,
+    }
+    edited = reflow_caption_cues_for_clips(
+        [source], clip_windows=[(5, 55, 0)], cue_edits={2: text}, **arguments,
+    )
+    # A saved result may be reflowed again for a later cut or layout change.
+    reopened = reflow_caption_cues_for_clips(
+        edited, clip_windows=[(0, 50, 0)], **arguments,
+    )
+    for cues in (edited, reopened):
+        rendered_text = "".join(word["text"] for cue in cues for word in cue["words"])
+        assert rendered_text == text.replace(" ", "")
+        assert all(0 <= cue["startFrame"] < cue["endFrame"] <= 50 for cue in cues)
+    assert source["words"][0]["text"] == "원본"
+
+
+@pytest.mark.parametrize("template_id", ["basic", "highlight", "pop"])
+@pytest.mark.parametrize("text", ["", " \n\t "])
+def test_empty_caption_edit_omits_only_its_cue(template_id: str, text: str) -> None:
+    source = [
+        _editable_caption_cue(
+            source_cue_index=0, start_frame=0, end_frame=30,
+            word_ranges=[("삭제", 0, 30)],
+        ),
+        _editable_caption_cue(
+            source_cue_index=1, start_frame=60, end_frame=90,
+            word_ranges=[("유지", 60, 90)],
+        ),
+    ]
+    arguments = {
+        "template_id": template_id,
+        "safe_area": {"x": 120, "y": 1080, "width": 840, "height": 140},
+        "clip_windows": [(0, 90, 0)],
+    }
+    cues = reflow_caption_cues_for_clips(source, cue_edits={0: text}, **arguments)
+    assert [word["text"] for cue in cues for word in cue["words"]] == ["유지"]
+    assert cues[0]["sourceCueIndex"] == 1
+    assert (cues[0]["startFrame"], cues[0]["endFrame"]) == (60, 90)
+    assert reflow_caption_cues_for_clips(
+        source, cue_edits={0: text, 1: text}, **arguments,
+    ) == []
 
 
 def test_edited_caption_adjacent_split_matches_unsplit_output() -> None:

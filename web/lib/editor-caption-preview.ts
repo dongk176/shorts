@@ -1,3 +1,4 @@
+import { jaModel, Parser } from "budoux";
 import type {
   CaptionRenderSpec,
   CaptionRenderSpecV4,
@@ -493,32 +494,41 @@ function partitionCaptionWords(
     maxDurationFrames: number;
     requireWordFrames: boolean;
     wordSeparator: string;
+    preferredBreaks?: Set<number>;
   },
   measure: CaptionTextMeasurer,
 ) {
   const groups: CaptionWord[][] = [];
   let current: CaptionWord[] = [];
-  for (const word of words) {
-    const previous = current.at(-1);
-    const shouldBreak = Boolean(previous) && (
-      (word.startFrame || 0) - (previous?.endFrame || 0) >= options.gapFrames
-      || SENTENCE_END.test(previous?.text || "")
-      || (options.maxWords != null && current.length >= options.maxWords)
-      || (word.endFrame || 0) - (current[0]?.startFrame || 0) > options.maxDurationFrames
-      || (options.requireWordFrames
-        && (word.endFrame || 0) - (current[0]?.startFrame || 0) < current.length + 1)
-      || !phraseFits(
+  for (const [wordIndex, word] of words.entries()) {
+    while (current.length > 0) {
+      const previous = current[current.length - 1];
+      const separated = (word.startFrame || 0) - (previous.endFrame || 0) >= options.gapFrames
+        || SENTENCE_END.test(previous.text);
+      const tooMany = options.maxWords != null && current.length >= options.maxWords;
+      const tooLong = (word.endFrame || 0) - (current[0].startFrame || 0) > options.maxDurationFrames;
+      const tooFast = options.requireWordFrames
+        && (word.endFrame || 0) - (current[0].startFrame || 0) < current.length + 1;
+      const tooWide = !phraseFits(
         [...current, word],
         options.fontSize,
         options.maxWidth,
         1,
         options.wordSeparator,
         measure,
-      )
-    );
-    if (shouldBreak) {
-      groups.push(current);
-      current = [];
+      );
+      if (!(separated || tooMany || tooLong || tooFast || tooWide)) break;
+      let splitAt = current.length;
+      if (options.preferredBreaks && !separated && !tooMany) {
+        const groupStart = wordIndex - current.length;
+        let boundary = wordIndex;
+        while (boundary > groupStart && !options.preferredBreaks.has(boundary)) boundary -= 1;
+        if (boundary > groupStart) splitAt = boundary - groupStart;
+        // Match the worker: finish an intact phrase when width and timing fit.
+        else if (!tooWide && !tooFast) break;
+      }
+      groups.push(current.slice(0, splitAt));
+      current = current.slice(splitAt);
     }
     current.push(word);
     if (SENTENCE_END.test(word.text)) {
@@ -530,26 +540,23 @@ function partitionCaptionWords(
   return groups;
 }
 
-function withoutDisplayPeriods(words: CaptionWord[]) {
-  const cleaned: CaptionWord[] = [];
-  for (const word of words) {
-    const text = word.text.replaceAll(".", "");
-    if (text) {
-      cleaned.push({
-        ...word,
-        text,
-        spaceBefore: cleaned.length > 0 && word.spaceBefore,
-      });
-    } else if (cleaned.length > 0) {
-      const previous = cleaned[cleaned.length - 1];
-      cleaned[cleaned.length - 1] = {
-        ...previous,
-        endFrame: Math.max(previous.endFrame || 0, word.endFrame || 0),
-        speechEndFrame: word.speechEndFrame ?? word.endFrame,
-      };
-    }
+let japanesePhraseParser: Parser | undefined;
+
+function japanesePhraseBreaks(words: CaptionWord[]) {
+  japanesePhraseParser ??= new Parser(jaModel);
+  const offsets = new Set<number>();
+  let offset = 0;
+  for (const phrase of japanesePhraseParser.parse(words.map((word) => word.text).join(""))) {
+    offset += phrase.length;
+    offsets.add(offset);
   }
-  return cleaned;
+  const boundaries = new Set<number>();
+  offset = 0;
+  words.forEach((word, index) => {
+    if (offsets.has(offset)) boundaries.add(index);
+    offset += word.text.length;
+  });
+  return boundaries;
 }
 
 function captionEventRanges(words: CaptionWord[], cueStart: number, cueEnd: number) {
@@ -617,15 +624,17 @@ function compilePopCaptionWords(
 ) {
   const maxWidth = safeArea.width - 16;
   const minimumFontSize = Math.min(fontSize, 64);
+  const japanese = words.some((word) => /[\u3041-\u3096\u30a1-\u30fa\uff66-\uff9d]/u.test(word.text));
   const groups = partitionCaptionWords(words, {
     gapFrames: pythonRound(0.25 * fps),
-    maxWords: 3,
+    maxWords: japanese ? null : 3,
     fontSize,
     maxWidth: pythonRound(maxWidth / POP_SCALE),
     maxDurationFrames: pythonRound(2 * fps),
     requireWordFrames: true,
     wordSeparator: "\u2009",
-  }, measure).map(withoutDisplayPeriods).filter((group) => group.length > 0);
+    preferredBreaks: japanese ? japanesePhraseBreaks(words) : undefined,
+  }, measure);
   let previousEndFrame = 0;
   return groups.map((group, index): CaptionCue => {
     let sizes = group.map((word) => {
@@ -728,8 +737,7 @@ function compileHighlightCaptionWords(
     maxDurationFrames: pythonRound(3.2 * fps),
     requireWordFrames: highlighted,
     wordSeparator,
-  }, measure).map((group) => highlighted ? withoutDisplayPeriods(group) : group)
-    .filter((group) => group.length > 0);
+  }, measure);
   let previousEndFrame = 0;
   return groups.map((group, index): CaptionCue => {
     const startFrame = Math.max(group[0].startFrame || 0, previousEndFrame);
@@ -790,6 +798,7 @@ function compileCaptionWords(
   spec: CaptionRenderSpec,
   measure: CaptionTextMeasurer,
 ) {
+  // Reflow stored or edited text as shown in the editor, including punctuation.
   return spec.templateId === "pop"
     ? compilePopCaptionWords(
         words,
@@ -1032,6 +1041,7 @@ function rebuildEditedCaptionCue(
 function retainCaptionCueWordsByClip(
   cue: CaptionCue,
   clipWindows: CaptionClipWindow[],
+  preserveCueWindow = false,
 ) {
   const retainedByClip = clipWindows.map(() => [] as CaptionWord[]);
   for (let wordIndex = 0; wordIndex < cue.words.length; wordIndex += 1) {
@@ -1064,22 +1074,20 @@ function retainCaptionCueWordsByClip(
       const clip = clipWindows[clipIndex];
       const spokenStart = Math.max(
         speechStartFrame,
-        cue.startFrame,
         clip.startFrame,
       );
       const spokenEnd = Math.min(
         speechEndFrame,
-        cue.endFrame,
         clip.endFrame,
       );
       const visibleStart = Math.max(
         wordStartFrame,
-        cue.startFrame,
+        preserveCueWindow ? cue.startFrame : clip.startFrame,
         clip.startFrame,
       );
       const visibleEnd = Math.min(
         wordEndFrame,
-        cue.endFrame,
+        preserveCueWindow ? cue.endFrame : clip.endFrame,
         clip.endFrame,
       );
       const candidate = {
@@ -1331,7 +1339,7 @@ export function retimeCaptionRenderSpecForEditor(
     const sourceCueIndex = cue.sourceCueIndex ?? cueIndex;
     const editedText = edits.get(sourceCueIndex);
     if (editedText != null) {
-      const retainedByClip = retainCaptionCueWordsByClip(cue, clipWindows);
+      const retainedByClip = retainCaptionCueWordsByClip(cue, clipWindows, true);
       const retainedWords = retainedByClip.flat();
       if (retainedWords.length === 0) continue;
       const retainedStartFrame = Math.min(

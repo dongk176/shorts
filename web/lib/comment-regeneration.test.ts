@@ -107,17 +107,17 @@ describe("AI comment regeneration", () => {
     expect(usageMigration).toContain("remaining integer := 60");
     expect(usageMigration).toContain("status='consumed'");
     expect(usageMigration).toContain("status='released'");
-    expect(routeSource).toContain("COMMENT_REGENERATION_USAGE_SECONDS = 60");
+    expect(routeSource).toContain("reserve_ai_comment_regeneration_usage(");
     expect(routeSource).toContain("failure_code='gemini_generation_failed'");
   });
 
-  it("releases stale reservations before checking remaining usage", () => {
-    const staleRelease = routeSource.indexOf("failure_code='stale_request'");
-    const usageCheck = routeSource.indexOf(
-      "usageBefore.remainingSeconds < COMMENT_REGENERATION_USAGE_SECONDS",
-    );
+  it("uses the reservation function to release stale requests and return completed ones", () => {
+    const staleRelease = usageMigration.indexOf("failure_code='stale_request'");
+    const completedReturn = usageMigration.indexOf("return existing_request.id;");
+    const newReservation = usageMigration.indexOf("insert into shorts_mvp.ai_comment_regeneration_requests");
     expect(staleRelease).toBeGreaterThan(-1);
-    expect(usageCheck).toBeGreaterThan(staleRelease);
+    expect(completedReturn).toBeGreaterThan(staleRelease);
+    expect(newReservation).toBeGreaterThan(completedReturn);
     expect(usageMigration).toContain(
       "created_at<clock_timestamp()-interval '5 minutes'",
     );

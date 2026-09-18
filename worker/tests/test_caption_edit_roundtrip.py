@@ -26,6 +26,7 @@ from shorts_worker.schemas import (
     VideoAspectRatio,
 )
 from shorts_worker.subtitle_translation import translated_words
+from shorts_worker.subtitles import TranscriptWord
 
 pytestmark = [pytest.mark.render, pytest.mark.skipif(
     shutil.which("ffmpeg") is None, reason="ffmpeg is required",
@@ -34,6 +35,68 @@ pytestmark = [pytest.mark.render, pytest.mark.skipif(
 
 def run(*args):
     return subprocess.run(args, check=True, capture_output=True, timeout=120)
+
+
+@pytest.mark.parametrize("template_id", ["highlight", "pop"])
+def test_punctuation_only_edit_renders_and_keeps_the_next_caption(tmp_path, template_id):
+    clean = tmp_path / "clean.mp4"
+    run("ffmpeg", "-v", "error", "-f", "lavfi", "-i",
+        "color=c=0x204060:s=640x360:r=30:d=2", "-c:v", "libx264",
+        "-pix_fmt", "yuv420p", str(clean))
+    segments = [SubtitleSegment(start=0, end=0.6, text="Original"),
+                SubtitleSegment(start=1.5, end=1.9, text="Keep")]
+    caption = compile_caption_render_spec(
+        [TranscriptWord(text=segment.text, start=segment.start, end=segment.end, provider="test")
+         for segment in segments],
+        template_id=template_id, clip_start=0, clip_end=2,
+        video_aspect_ratio=VideoAspectRatio.LANDSCAPE, schema_version=4,
+    )
+    initial = compile_initial_editor_render_spec_v4(
+        title="Title", template_id=TemplateId.DARK_MINIMAL,
+        video_aspect_ratio=VideoAspectRatio.LANDSCAPE, font_scale=1,
+        comments=[], caption_render_spec=caption,
+    )
+    fixture = Path(__file__).parents[2] / "test-fixtures/editor-document-v3.json"
+    value = json.loads(fixture.read_text())
+    value["template"] = {"id": "dark-minimal", "customTemplateId": None,
+                         "presetVersion": 3, "snapshot": {"presetVersion": 3}}
+    value["title"]["text"] = "Title"
+    value["comments"] = []
+    value["subtitles"].update(enabled=True, segments=[s.model_dump() for s in segments])
+    value["overlays"].update(
+        textOverlays=[], layerOrder=["video", "title", "comment", "channel"], background=None,
+    )
+    value["video"].update(
+        clips=[{"id": "clip-1", "sourceStartSeconds": 0, "sourceEndSeconds": 2}],
+        aspectRatio="16:9", timelineStartSeconds=0, timelineEndSeconds=2,
+        selectionStartSeconds=0, selectionEndSeconds=2,
+    )
+    value["renderSpec"] = initial
+    value["renderSpec"]["subtitles"]["cueEdits"] = [{"cueIndex": 0, "text": "..."}]
+    document = EditorDocument.model_validate(value)
+    reopened = EditorDocument.model_validate_json(document.model_dump_json(by_alias=True))
+    edited = retime_editor_caption_spec(reopened, caption)
+    assert [w["text"] for cue in edited["cues"] for w in cue["words"]] == ["...", "Keep"]
+    assert [s.text for s in retime_editor_subtitles(reopened, caption)] == ["...", "Keep"]
+    settings = Settings(ffmpeg_threads=2, ffmpeg_timeout_seconds=120,
+                        clean_clip_preset="ultrafast", clean_clip_crf=18)
+    output = EditorDocumentRenderer(settings).render(
+        clean_path=clean, output_path=tmp_path / "edited.mp4", document=reopened,
+        work_dir=tmp_path / "edit-work", channel_thumbnail_path=None,
+        caption_render_spec=caption,
+    )
+    probe = json.loads(run(
+        "ffprobe", "-v", "error", "-show_format", "-of", "json", str(output),
+    ).stdout)
+    assert float(probe["format"]["duration"]) == pytest.approx(2, abs=0.05)
+    area = edited["safeArea"]
+    box = (area["x"], area["y"], area["x"] + area["width"], area["y"] + area["height"])
+    for index, time in enumerate((0.2, 1.7)):
+        frame = tmp_path / f"caption-{index}.png"
+        run("ffmpeg", "-v", "error", "-ss", str(time), "-i", str(output),
+            "-frames:v", "1", str(frame))
+        with Image.open(frame) as image:
+            assert sum(image.crop(box).convert("L").histogram()[150:]) > 10
 
 
 @pytest.mark.parametrize("language,before,after", [
