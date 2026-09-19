@@ -6,9 +6,15 @@ import {
   type EditorLaunchAnnouncement,
 } from "@/lib/editor-launch-announcement";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
+import { HttpError } from "@/lib/http";
 
 export async function claimEditorLaunchAnnouncement(): Promise<EditorLaunchAnnouncement | null> {
-  const session = await requireAuthenticatedMvpSession();
+  const session = await requireAuthenticatedMvpSession().catch((error) => {
+    // An expired login simply has no optional announcement to claim.
+    if (error instanceof HttpError && error.status === 401) return null;
+    throw error;
+  });
+  if (!session) return null;
   const rows = await getDb()`
     update shorts_mvp.member_campaign_announcements
     set presented_at=clock_timestamp()

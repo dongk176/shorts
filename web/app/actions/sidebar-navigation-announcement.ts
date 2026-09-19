@@ -6,10 +6,16 @@ import {
   type SidebarNavigationAnnouncement,
 } from "@/lib/sidebar-navigation-announcement";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
+import { HttpError } from "@/lib/http";
 
 export async function claimSidebarNavigationAnnouncement():
 Promise<SidebarNavigationAnnouncement | null> {
-  const session = await requireAuthenticatedMvpSession();
+  const session = await requireAuthenticatedMvpSession().catch((error) => {
+    // An expired login simply has no optional announcement to claim.
+    if (error instanceof HttpError && error.status === 401) return null;
+    throw error;
+  });
+  if (!session) return null;
   const rows = await getDb()`
     insert into shorts_mvp.member_ui_announcement_receipts (
       user_id,

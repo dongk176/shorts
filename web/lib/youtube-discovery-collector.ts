@@ -325,8 +325,10 @@ export async function refreshCatalogBatch(
   if (!runId) return { skipped: true };
   let pages = 0;
   let failed = false;
+  // Leave time for finishing the run and the route's cleanup within 300s.
+  const deadline = Date.now() + 180_000;
   await withYoutubePurpose("refresh", db, async () => {
-    for (let page = 0; page < Math.min(options.maxPages || 12, 25); page++) {
+    for (let page = 0; page < Math.min(options.maxPages || 8, 25) && Date.now() < deadline; page++) {
       const batch = await db.begin(async (tx) => {
         const rows =
           await tx`select id,video_id,first_discovered_at::text as first_discovered_at from shorts_mvp.youtube_catalog c
@@ -356,14 +358,15 @@ export async function refreshCatalogBatch(
         );
         const now = new Date();
         await db.begin(async (tx) => {
+          await saveCatalogPage(tx, verified.items, {
+            observedAt: now,
+            firstDiscoveredAtByVideoId: new Map(batch.map((row) => [
+              String(row.videoId), String(row.firstDiscoveredAt),
+            ])),
+          });
           for (const row of batch) {
-            const item = byId.get(String(row.videoId));
-            if (item)
-              await saveCatalogPage(tx, [item], {
-                observedAt: now,
-                firstDiscoveredAt: String(row.firstDiscoveredAt),
-              });
-            else if (verified.pendingIds.includes(String(row.videoId)))
+            if (byId.has(String(row.videoId))) continue;
+            if (verified.pendingIds.includes(String(row.videoId)))
               await markCatalogMetadataPending(tx, [String(row.videoId)], String(row.firstDiscoveredAt), now);
             else await markCatalogUnavailable(tx, [String(row.videoId)], now);
           }

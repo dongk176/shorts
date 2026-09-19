@@ -3399,6 +3399,7 @@ describe("job API security and idempotency", () => {
       12,
       { includeExactWordTimingAvailability: false },
     );
+    expect(mocks.authenticatedSession).toHaveBeenCalledWith({ readOnly: true });
   });
 
   it("loads a public example project without requiring login", async () => {

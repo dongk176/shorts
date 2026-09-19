@@ -134,7 +134,9 @@ async function readMvpState(
     usage,
     capabilities: {
       languageTest: session.userId !== null
-        ? await languageTestStatus(db).then((s) => languageFeatureAllowed(s, session.isAdmin === true)).catch(() => false)
+        ? await stage("language_access", () => languageTestStatus(db)
+          .then((state) => languageFeatureAllowed(state, session.isAdmin === true))
+          .catch(() => false))
         : false,
       fileUpload: fileUploadAccess.enabled,
       customTemplateDesign: customTemplateDesignAccess.enabled,

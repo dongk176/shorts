@@ -42,6 +42,7 @@ export async function saveCatalogPage(
     trending?: boolean;
     observedAt: CatalogTimestamp;
     firstDiscoveredAt?: CatalogTimestamp;
+    firstDiscoveredAtByVideoId?: ReadonlyMap<string, CatalogTimestamp>;
     verifiedAt?: CatalogTimestamp;
   },
 ) {
@@ -53,6 +54,8 @@ export async function saveCatalogPage(
     id: catalogId(item.videoId),
     video_id: item.videoId,
     rank: item.categoryRank || 1,
+    first_discovered_at: input.firstDiscoveredAtByVideoId?.get(item.videoId)
+      || input.firstDiscoveredAt || input.observedAt,
     metadata: {
       videoId: item.videoId,
       title: item.title,
@@ -69,9 +72,9 @@ export async function saveCatalogPage(
   }));
   await db`insert into shorts_mvp.youtube_catalog
     (id,video_id,metadata,first_discovered_at,verified_at,refresh_after,last_trending_at,trending_rank)
-    select r.id,r.video_id,r.metadata,${catalogTimestamp(db,input.firstDiscoveredAt || input.observedAt)}::timestamptz,${catalogTimestamp(db,verifiedAt)}::timestamptz,
+    select r.id,r.video_id,r.metadata,r.first_discovered_at,${catalogTimestamp(db,verifiedAt)}::timestamptz,
       ${catalogTimestamp(db,verifiedAt)}::timestamptz+interval '1 day',case when ${Boolean(input.trending)} then ${catalogTimestamp(db,input.observedAt)}::timestamptz end,case when ${Boolean(input.trending)} then r.rank end
-    from jsonb_to_recordset(${db.json(records)}) as r(id text,video_id text,metadata jsonb,rank integer)
+    from jsonb_to_recordset(${db.json(records)}) as r(id text,video_id text,metadata jsonb,rank integer,first_discovered_at timestamptz)
     on conflict(id) do update set
       first_discovered_at=least(youtube_catalog.first_discovered_at,excluded.first_discovered_at),
       video_id=case when excluded.verified_at>=greatest(youtube_catalog.verified_at,youtube_catalog.metadata_pending_at) then excluded.video_id else youtube_catalog.video_id end,
@@ -88,11 +91,11 @@ export async function saveCatalogPage(
   // Refresh verifies shared metadata; it must not assign a Japanese-only video to Korea.
   await db`insert into shorts_mvp.youtube_catalog_regions
     (catalog_id,region_code,first_discovered_at,last_collected_at,last_trending_at,trending_rank)
-    select r.id,${region},${catalogTimestamp(db,input.firstDiscoveredAt || input.observedAt)}::timestamptz,
+    select r.id,${region},r.first_discovered_at,
       case when ${isCollection} then ${catalogTimestamp(db,input.observedAt)}::timestamptz end,
       case when ${Boolean(input.trending)} then ${catalogTimestamp(db,input.observedAt)}::timestamptz end,
       case when ${Boolean(input.trending)} then r.rank end
-    from jsonb_to_recordset(${db.json(records)}) r(id text,rank integer)
+    from jsonb_to_recordset(${db.json(records)}) r(id text,rank integer,first_discovered_at timestamptz)
     where ${isCollection} or ${Boolean(input.trending)} or not exists(select 1 from shorts_mvp.youtube_catalog_regions existing where existing.catalog_id=r.id)
     on conflict(catalog_id,region_code) do update set
       first_discovered_at=least(youtube_catalog_regions.first_discovered_at,excluded.first_discovered_at),

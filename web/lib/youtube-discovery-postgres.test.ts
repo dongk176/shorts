@@ -397,6 +397,34 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
     expect(day.last).toBe(source.original);
   });
 
+  it("refreshes a bounded batch and leaves remaining videos for the next run", async () => {
+    const now = new Date();
+    const videos = Array.from({ length: 405 }, (_, i) => fixture(`batch${String(i).padStart(6, "0")}`));
+    const dates = new Map(videos.map((item, i) => [
+      item.videoId, `2026-01-01 00:00:00.${String(i + 1).padStart(6, "0")}+00`,
+    ]));
+    await saveCatalogPage(db, videos, {
+      observedAt: now, firstDiscoveredAtByVideoId: dates,
+    });
+    await db`update shorts_mvp.youtube_catalog set refresh_after=now()-interval '1 minute'`;
+    const before = await db`select id,first_discovered_at::text as first from shorts_mvp.youtube_catalog order by id`;
+    const fetchImpl = vi.fn<typeof fetch>(async (input) => {
+      const ids = new URL(String(input)).searchParams.get("id")!.split(",");
+      return new Response(JSON.stringify({ items: ids.map((id) => youtubeItem(id)) }));
+    });
+    const first = await refreshCatalogBatch({ db, fetchImpl, scheduledAt: now });
+    expect(first).toMatchObject({ pages: 8, failed: false });
+    expect(fetchImpl).toHaveBeenCalledTimes(8);
+    expect((await db`select count(*)::int as n from shorts_mvp.youtube_catalog where refresh_after<=now()`)[0].n).toBe(5);
+    expect((await db`select status,finished_at from shorts_mvp.youtube_collection_runs where id=${first.runId!}`)[0])
+      .toMatchObject({ status: "success", finishedAt: expect.any(Date) });
+    await expect(refreshCatalogBatch({
+      db, fetchImpl, scheduledAt: new Date(now.getTime() + 900_000),
+    })).resolves.toMatchObject({ pages: 1, failed: false });
+    expect(await db`select id,first_discovered_at::text as first from shorts_mvp.youtube_catalog order by id`).toEqual(before);
+    expect((await db`select count(*)::int as n from shorts_mvp.youtube_catalog where refresh_after<=now()`)[0].n).toBe(0);
+  });
+
   it.each([undefined, "false", "true"])(
     "keeps expired legacy free history unless cleanup is explicitly released (%s)",
     async (cleanup) => {

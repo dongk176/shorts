@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getBillingSummary } from "@/lib/billing";
 import { getProjectByNumber, getPublicExampleProjectByNumber } from "@/lib/data";
 import { getDb } from "@/lib/db";
+import { withReadRequest } from "@/lib/read-request";
 import { assertEnterpriseSessionServiceAccess } from "@/lib/enterprise-access";
 import { apiError, HttpError } from "@/lib/http";
 import { billingSupportsPaidProjectActions } from "@/lib/project-action-entitlements";
@@ -24,52 +25,44 @@ function parseProjectNumber(rawProjectNumber: string) {
 }
 
 export async function GET(
-  _: Request,
+  request: Request,
   context: { params: Promise<{ projectNumber: string }> },
 ) {
   try {
     const { projectNumber: rawProjectNumber } = await context.params;
     const projectNumber = parseProjectNumber(rawProjectNumber);
 
-    const db = getDb();
-    const publicExample = await getPublicExampleProjectByNumber(db, projectNumber);
-    if (publicExample) {
+    return await withReadRequest("project", async (stage) => {
+      const db = getDb();
+      const publicExample = await stage("public_example", () => getPublicExampleProjectByNumber(db, projectNumber));
+      if (publicExample) {
+        const response = NextResponse.json({
+          project: publicExample,
+          access: { canEdit: false, canDownload: false },
+        });
+        response.headers.set("Cache-Control", "no-store");
+        return response;
+      }
+
+      const session = await stage("session", () => requireAuthenticatedMvpSession({ readOnly: true }));
+      await stage("enterprise_access", () => assertEnterpriseSessionServiceAccess(db, session));
+      const [billing, subtitleTemplateAccess] = await Promise.all([
+        stage("billing", () => getBillingSummary(db, session.userId)),
+        stage("subtitle_access", () => getEffectiveSubtitleTemplateAccess(db, session.userId)),
+      ]);
+      const project = await stage("project", () => getProjectByNumber(db, session, projectNumber, {
+        includeExactWordTimingAvailability: subtitleTemplateAccess.unifiedEnabled,
+      }));
+      if (!project) throw new HttpError(404, "프로젝트를 찾을 수 없습니다.");
+      const hasPaidAccess = billingSupportsPaidProjectActions(billing);
+
       const response = NextResponse.json({
-        project: publicExample,
-        access: { canEdit: false, canDownload: false },
+        project,
+        access: { canEdit: hasPaidAccess, canDownload: hasPaidAccess },
       });
-      response.headers.set("Cache-Control", "no-store");
+      response.headers.set("Cache-Control", "private, no-store");
       return response;
-    }
-
-    const session = await requireAuthenticatedMvpSession();
-    await assertEnterpriseSessionServiceAccess(db, session);
-    const billingPromise = getBillingSummary(db, session.userId);
-    const subtitleTemplateAccess = await getEffectiveSubtitleTemplateAccess(
-      db,
-      session.userId,
-    );
-    const unifiedTemplateSubtitleCanaryEnabled =
-      subtitleTemplateAccess.unifiedEnabled;
-    const [project, billing] = await Promise.all([
-      getProjectByNumber(db, session, projectNumber, {
-        includeExactWordTimingAvailability:
-          unifiedTemplateSubtitleCanaryEnabled,
-      }),
-      billingPromise,
-    ]);
-    if (!project) throw new HttpError(404, "프로젝트를 찾을 수 없습니다.");
-    const hasPaidAccess = billingSupportsPaidProjectActions(billing);
-
-    const response = NextResponse.json({
-      project,
-      access: {
-        canEdit: hasPaidAccess,
-        canDownload: hasPaidAccess,
-      },
-    });
-    response.headers.set("Cache-Control", "private, no-store");
-    return response;
+    }, request.signal);
   } catch (error) {
     return apiError(error);
   }
