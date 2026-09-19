@@ -4,6 +4,7 @@ import { LegalDocument, LegalSection } from "@/components/legal-document";
 import { createPageMetadata } from "@/lib/seo";
 import { getRequestLocale } from "@/lib/i18n/server";
 import { termsTranslations } from "@/lib/i18n/legal-translations";
+import { YoutubePublishingNotice } from "@/components/youtube-publishing-notice";
 
 export async function generateMetadata(): Promise<Metadata> {
   const locale = await getRequestLocale();
@@ -17,7 +18,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default function TermsPage() {
   return (
-    <LegalDocument eyebrow="Terms of Service" title="서비스 이용약관" description="본 약관은 Easy Cut이 제공하는 YouTube 영상 기반 쇼츠 제작 서비스의 이용 조건과 운영팀 및 이용자의 권리·의무를 정합니다." effectiveDate="2026년 7월 26일" translations={termsTranslations}>
+    <LegalDocument eyebrow="Terms of Service" title="서비스 이용약관" description="본 약관은 Easy Cut이 제공하는 YouTube 영상 기반 쇼츠 제작 서비스의 이용 조건과 운영팀 및 이용자의 권리·의무를 정합니다." effectiveDate="2026년 9월 20일" translations={termsTranslations} supplement={<YoutubePublishingNotice kind="terms" />}>
       <LegalSection title="제1조 목적 및 적용"><p>본 약관은 Easy Cut 운영팀(이하 “운영팀”)이 제공하는 웹사이트, 영상 분석, 쇼츠 생성·편집·저장 및 이에 부수되는 서비스(이하 “서비스”)에 적용됩니다. 이용자가 서비스를 이용하거나 계정을 생성하면 본 약관에 동의한 것으로 봅니다.</p></LegalSection>
       <LegalSection title="제2조 계정 및 로그인"><p>이용자는 정확한 정보를 사용하여 본인의 소셜 계정으로 로그인해야 하며 자신의 계정과 로그인 수단을 안전하게 관리할 책임이 있습니다. 계정의 무단 사용이 의심되는 경우 즉시 고객 지원에 알려야 합니다.</p></LegalSection>
       <LegalSection title="제3조 서비스 이용 조건">

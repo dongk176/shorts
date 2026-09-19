@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { Children, type ReactNode } from "react";
 import { SiteFooter } from "@/components/site-footer";
 import { useI18n } from "@/lib/i18n/provider";
 import { formatLocale } from "@/lib/i18n/config";
@@ -31,7 +31,7 @@ function localizedEffectiveDate(value: string, locale: "ko" | "en" | "ja") {
     .format(new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))));
 }
 
-export function LegalDocument({ eyebrow, title, description, effectiveDate, children, translations, sectionIds, showTranslationNotice = true, preventTextSelection = true }: {
+export function LegalDocument({ eyebrow, title, description, effectiveDate, children, translations, sectionIds, supplement, showTranslationNotice = true, preventTextSelection = true }: {
   eyebrow: string;
   title: string;
   description: string;
@@ -39,6 +39,7 @@ export function LegalDocument({ eyebrow, title, description, effectiveDate, chil
   children: ReactNode;
   translations?: Partial<Record<SiteLocale, LegalTranslation>>;
   sectionIds?: Partial<Record<number, string>>;
+  supplement?: ReactNode;
   showTranslationNotice?: boolean;
   preventTextSelection?: boolean;
 }) {
@@ -77,7 +78,8 @@ export function LegalDocument({ eyebrow, title, description, effectiveDate, chil
                   {section.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
                 </LegalSection>
               ))
-            : children}
+            : Children.toArray(children)}
+          {supplement}
         </article>
       </main>
       <SiteFooter />

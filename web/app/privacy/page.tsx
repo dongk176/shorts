@@ -3,6 +3,7 @@ import { LegalDocument, LegalSection } from "@/components/legal-document";
 import { createPageMetadata } from "@/lib/seo";
 import { getRequestLocale } from "@/lib/i18n/server";
 import { privacyTranslations } from "@/lib/i18n/legal-translations";
+import { YoutubePublishingNotice } from "@/components/youtube-publishing-notice";
 
 export async function generateMetadata(): Promise<Metadata> {
   const locale = await getRequestLocale();
@@ -16,7 +17,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default function PrivacyPage() {
   return (
-    <LegalDocument eyebrow="Privacy Policy" title="개인정보처리방침" description="아티룸(이하 “회사”라 한다)은 Easy Cut을 운영하며, 이용자의 개인정보를 필요한 범위에서만 처리하고 안전하게 보호하기 위해 다음과 같이 개인정보처리방침을 공개합니다." effectiveDate="2026년 8월 24일" translations={privacyTranslations} sectionIds={{ 5: "international-transfers" }}>
+    <LegalDocument eyebrow="Privacy Policy" title="개인정보처리방침" description="아티룸(이하 “회사”라 한다)은 Easy Cut을 운영하며, 이용자의 개인정보를 필요한 범위에서만 처리하고 안전하게 보호하기 위해 다음과 같이 개인정보처리방침을 공개합니다." effectiveDate="2026년 9월 20일" translations={privacyTranslations} sectionIds={{ 5: "international-transfers" }} supplement={<YoutubePublishingNotice kind="privacy" />}>
       <LegalSection title="1. 개인정보의 처리 목적">
         <p>회사는 다음 목적을 위해 개인정보를 처리합니다.</p>
         <ul><li>• Google 등 소셜 로그인, 이용자 식별 및 계정 관리</li><li>• YouTube 영상 분석, 쇼츠 생성·편집·다운로드 및 프로젝트 관리</li><li>• 프로젝트 완료 등 서비스 운영 알림 발송 및 선택 동의 시 이벤트·할인 등 광고성 정보 제공</li><li>• 구독·추가 상품 결제, 정기결제, 결제 취소 및 거래 대사</li><li>• 레퍼럴 링크 유입 확인, 신규 회원의 추천인 자동 귀속, 파트너 수익 및 정산 관리</li><li>• 서비스 이용량 산정, 요금제 한도 적용 및 부정 이용 방지</li><li>• 방문·이용 통계 분석 및 서비스 개선</li><li>• 오류 대응, 보안 유지, 서비스 품질 개선 및 이용자 문의 처리</li></ul>
