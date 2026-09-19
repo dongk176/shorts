@@ -62,6 +62,21 @@ describe("refreshSupabaseSession", () => {
     expect(response.headers.get("cache-control")).toBe("private, no-store");
   });
 
+  it("preserves the locale rewrite and request headers while refreshing auth", async () => {
+    mocks.getClaims.mockImplementation(async () => {
+      adapter.cookies.setAll([{ name: "sb-test-auth-token", value: "fresh", options: { path: "/" } }], { "Cache-Control": "private, no-store" });
+    });
+    const request = new NextRequest("https://www.easycut.co.kr/jp/pricing", { headers: { cookie: "sb-test-auth-token=old" } });
+    const headers = new Headers(request.headers);
+    headers.set("x-easycut-site-locale", "ja");
+    const response = await refreshSupabaseSession(request, new URL("https://www.easycut.co.kr/pricing"), headers);
+    expect(response.headers.get("x-middleware-rewrite")).toBe("https://www.easycut.co.kr/pricing");
+    expect(response.headers.get("x-middleware-request-x-easycut-site-locale")).toBe("ja");
+    expect(response.headers.get("x-middleware-request-cookie")).toContain("sb-test-auth-token=fresh");
+    expect(response.cookies.get("sb-test-auth-token")?.value).toBe("fresh");
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+  });
+
   it("skips Supabase when auth is not configured", async () => {
     mocks.getConfig.mockReturnValue(null);
 

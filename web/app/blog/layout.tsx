@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import Link from "next/link";
+import Link from "@/lib/i18n/navigation";
 import { AuthControls } from "@/components/auth-controls";
 import { SiteHeader } from "@/components/site-header";
 import { getAuthenticatedUser } from "@/lib/supabase/server";

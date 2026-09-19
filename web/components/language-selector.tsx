@@ -3,7 +3,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { siteLocales, type SiteLocale } from "@/lib/i18n/config";
-import { BEFORE_LOCALE_REFRESH } from "@/lib/creation-locale-draft";
+import { isLocalizedPage, localePath, localizedHref } from "@/lib/i18n/routing";
 import { useI18n } from "@/lib/i18n/provider";
 import { userFacingErrorMessage } from "@/lib/public-error";
 
@@ -15,7 +15,7 @@ const languageLabels: Record<SiteLocale, string> = {
 
 export function LanguageSelector() {
   const router = useRouter();
-  const pathname = usePathname();
+  const pathname = localePath(usePathname()).pathname;
   const { locale, t } = useI18n();
   const menuId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -40,6 +40,7 @@ export function LanguageSelector() {
     return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
   }, [open, selectedLocale]);
 
+  if (!isLocalizedPage(pathname)) return null;
   if (/^\/admin(?:\/|$)/.test(pathname)) return null;
   if (pathname === "/creator-support") return null;
   if (/^\/creator-project(?:\/|$)/.test(pathname)) return null;
@@ -56,9 +57,9 @@ export function LanguageSelector() {
         body: JSON.stringify({ locale: nextLocale }),
       });
       if (!response.ok) throw new Error(t("common.languageError"));
-      window.dispatchEvent(new CustomEvent(BEFORE_LOCALE_REFRESH, { detail: { locale: nextLocale } }));
-      document.documentElement.lang = nextLocale;
-      router.refresh();
+      const target = localizedHref(`${window.location.pathname}${window.location.search}${window.location.hash}`, nextLocale);
+      router.push(target, { scroll: false });
+      setPendingLocale(null);
     } catch (cause) {
       setPendingLocale(null);
       setError(userFacingErrorMessage(cause, t("common.languageError")));

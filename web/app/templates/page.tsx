@@ -1,6 +1,6 @@
-import type { Metadata } from "next";
+import { createLocalizedPageMetadata } from "@/lib/i18n/metadata";
 import { authProfile } from "@/lib/session";
-import { createPageMetadata } from "@/lib/seo";
+
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 import { requireMvpSession } from "@/lib/session";
 import { getDb } from "@/lib/db";
@@ -24,11 +24,13 @@ import { TemplatesPageShell } from "./templates-page-shell";
 
 const PAGE_PATH = "/templates";
 
-export const metadata: Metadata = createPageMetadata({
-  title: "AI 쇼츠 템플릿 라이브러리 | 이지컷",
-  description: "댓글 캡처, 다크 레드, 화이트 옐로, 다크 미니멀, 페이퍼까지 이지컷 쇼츠 템플릿을 한곳에서 둘러보세요.",
-  path: PAGE_PATH,
-});
+export async function generateMetadata() {
+  return createLocalizedPageMetadata({
+    title: "AI 쇼츠 템플릿 라이브러리 | 이지컷",
+    description: "댓글 캡처, 다크 레드, 화이트 옐로, 다크 미니멀, 페이퍼까지 이지컷 쇼츠 템플릿을 한곳에서 둘러보세요.",
+    path: PAGE_PATH,
+  });
+}
 
 export default async function TemplatesPage() {
   const user = await getAuthenticatedUser();

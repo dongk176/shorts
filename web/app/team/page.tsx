@@ -1,3 +1,4 @@
+import { createLocalizedPageMetadata } from "@/lib/i18n/metadata";
 import type { Metadata } from "next";
 import Image from "next/image";
 import { notFound } from "next/navigation";
@@ -9,7 +10,7 @@ import type { SiteLocale } from "@/lib/i18n/config";
 import { getRequestLocale } from "@/lib/i18n/server";
 import { authProfile } from "@/lib/session";
 import { TEAM_PAGE_VISIBLE } from "@/lib/site-visibility";
-import { createPageMetadata, SITE_URL } from "@/lib/seo";
+import { SITE_URL } from "@/lib/seo";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 import codexPhoto from "@/public/team/codex.webp";
 import kimDongMinPhoto from "@/public/team/kim-dong-min.webp";
@@ -124,7 +125,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const locale = await getRequestLocale();
   const copy = copyByLocale[locale];
 
-  return createPageMetadata({
+  return createLocalizedPageMetadata({
     title: copy.metadataTitle,
     description: copy.metadataDescription,
     path: PAGE_PATH,

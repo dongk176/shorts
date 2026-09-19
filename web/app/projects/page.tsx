@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/lib/i18n/navigation";
 import { ProjectAuthControls } from "@/components/project-login-gate";
 import { ProjectList } from "@/components/project-list";
 import { SiteFooter } from "@/components/site-footer";

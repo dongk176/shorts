@@ -1,8 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import Link from "@/lib/i18n/navigation";
+import { usePathname } from "@/lib/i18n/navigation";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { HeaderUsageIndicator } from "@/components/header-usage-indicator";

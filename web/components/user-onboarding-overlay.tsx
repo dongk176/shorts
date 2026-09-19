@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/lib/i18n/navigation";
 import { claimOnboardingWelcomeAnnouncement } from "@/app/actions/onboarding-welcome";
 import { useUsageState } from "@/components/usage-provider";
 import { useWelcomeOverlayStage } from "@/components/welcome-overlay-queue";

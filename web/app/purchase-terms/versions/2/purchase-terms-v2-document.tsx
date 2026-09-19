@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/lib/i18n/navigation";
 import { LegalDocument, LegalSection } from "@/components/legal-document";
 import { purchaseTermsV7Translations, purchaseTermsV8Translations } from "@/lib/i18n/legal-translations";
 

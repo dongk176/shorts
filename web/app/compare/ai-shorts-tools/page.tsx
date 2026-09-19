@@ -1,5 +1,5 @@
-import type { Metadata } from "next";
-import Link from "next/link";
+import { createLocalizedPageMetadata } from "@/lib/i18n/metadata";
+import Link from "@/lib/i18n/navigation";
 import { AuthControls } from "@/components/auth-controls";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
@@ -13,7 +13,7 @@ import {
   type PricingV2PlanCode,
 } from "@/lib/pricing-v2";
 import { authProfile } from "@/lib/session";
-import { createPageMetadata, SITE_URL } from "@/lib/seo";
+import { SITE_URL } from "@/lib/seo";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 
 const PAGE_PATH = "/compare/ai-shorts-tools";
@@ -21,12 +21,14 @@ const PUBLISHED_DATE = "2026-07-19";
 const REVIEWED_DATE = "2026-07-26";
 const priceFormatter = new Intl.NumberFormat("ko-KR");
 
-export const metadata: Metadata = createPageMetadata({
-  title: "AI 쇼츠 제작 툴 비교: 이지컷·알파컷·피카클립",
-  description: "이지컷의 리뉴얼 요금제와 알파컷, 피카클립의 이용량 기준, AI 하이라이트, 자막, 템플릿과 편집 기능을 공식 공개정보 기준으로 정리합니다.",
-  path: PAGE_PATH,
-  type: "article",
-});
+export async function generateMetadata() {
+  return createLocalizedPageMetadata({
+    title: "AI 쇼츠 제작 툴 비교: 이지컷·알파컷·피카클립",
+    description: "이지컷의 리뉴얼 요금제와 알파컷, 피카클립의 이용량 기준, AI 하이라이트, 자막, 템플릿과 편집 기능을 공식 공개정보 기준으로 정리합니다.",
+    path: PAGE_PATH,
+    type: "article",
+  });
+}
 
 function requirePricingPlan(code: PricingV2PlanCode) {
   const plan = getPricingV2Plan(code);

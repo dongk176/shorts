@@ -1,8 +1,10 @@
 "use client";
 
+import { browserLocalizedHref } from "@/lib/i18n/routing";
+
 import { clearCompletedProjectViewedForFeedback } from "@/lib/project-feedback-client";
 
-import Link from "next/link";
+import Link from "@/lib/i18n/navigation";
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { AuthControls } from "@/components/auth-controls";
 import { SiteFooter } from "@/components/site-footer";
@@ -96,7 +98,7 @@ function WithdrawalDialog({ onClose }: { onClose: () => void }) {
         }
         throw new Error(result.detail || t("settings.withdrawError"));
       }
-      window.location.assign("/");
+      window.location.assign(browserLocalizedHref("/"));
     } catch (withdrawalError) {
       setError(userFacingErrorMessage(withdrawalError, t("settings.withdrawError")));
       setSubmitting(false);
@@ -287,7 +289,7 @@ export function SettingsPageContent({ user }: { user: AuthProfile | null }) {
         body: new URLSearchParams({ next: "/" }),
       });
       if (!response.ok) throw new Error(`LOGOUT_FAILED_${response.status}`);
-      window.location.replace("/");
+      window.location.replace(browserLocalizedHref("/"));
     } catch {
       form.submit();
     }

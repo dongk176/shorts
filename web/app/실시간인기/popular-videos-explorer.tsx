@@ -1,5 +1,7 @@
 "use client";
 
+import { browserLocalizedHref } from "@/lib/i18n/routing";
+
 import { discoveryCopy } from "./trending-date-filter";
 import { reconcileCatalogVisibility, type CatalogVisibility } from "@/lib/youtube-catalog-visibility";
 
@@ -862,7 +864,7 @@ function VideoCard({ video, rank, active, onOpen, onClose }: {
     setCopyError(null);
     try {
       await navigator.clipboard.writeText(youtubeUrl);
-      window.location.assign("/");
+      window.location.assign(browserLocalizedHref("/"));
     } catch (cause) {
       setCopyError(userFacingErrorMessage(cause, uiCopy.copyError));
       setCopying(false);

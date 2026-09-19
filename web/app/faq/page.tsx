@@ -1,11 +1,12 @@
+import { createLocalizedPageMetadata } from "@/lib/i18n/metadata";
 import type { Metadata } from "next";
-import Link from "next/link";
+import Link from "@/lib/i18n/navigation";
 import { AuthControls } from "@/components/auth-controls";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { StructuredData } from "@/components/structured-data";
 import { authProfile } from "@/lib/session";
-import { createPageMetadata, SITE_URL } from "@/lib/seo";
+import { SITE_URL } from "@/lib/seo";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 import { getRequestLocale } from "@/lib/i18n/server";
 import type { SiteLocale } from "@/lib/i18n/config";
@@ -41,7 +42,7 @@ const faqsByLocale: Record<SiteLocale, ReadonlyArray<readonly [string, string]>>
 
 export async function generateMetadata(): Promise<Metadata> {
   const locale = await getRequestLocale();
-  return createPageMetadata({
+  return createLocalizedPageMetadata({
     title: locale === "ko" ? "AI 쇼츠 제작 자주 묻는 질문 | 이지컷" : locale === "en" ? "AI Shorts FAQ | Easy Cut" : "AIショート動画作成 よくある質問 | Easy Cut",
     description: locale === "ko" ? "쇼츠 AI 기능, 생성 개수, 사용 가능한 YouTube 영상, 제목·자막 편집, 영상 길이 제한과 AI 쇼츠 툴의 차이를 확인하세요." : locale === "en" ? "Answers about Easy Cut's AI features, output count, supported videos, editing, length limits, and tool differences." : "Easy CutのAI機能、生成数、対応動画、編集、長さ制限、他ツールとの違いをご案内します。",
     path: PAGE_PATH,

@@ -6,11 +6,11 @@ describe("requestThePayOnePayment", () => {
     vi.unstubAllGlobals();
   });
 
-  it("opens TPO.pay without trusting or logging the browser result", async () => {
+  it.each([["/pricing", "/billing/success"], ["/jp/pricing", "/jp/billing/success"], ["/en/pricing", "/en/billing/success"]])("opens TPO.pay and returns to the same site language from %s", async (pathname, resultPath) => {
     const pay = vi.fn();
     const debug = vi.fn();
     const assign = vi.fn();
-    vi.stubGlobal("window", { TPO: { pay, debug }, location: { assign } });
+    vi.stubGlobal("window", { TPO: { pay, debug }, location: { assign, pathname, origin: "https://example.com" } });
 
     await requestThePayOnePayment({
       checkoutId: "7eb5f6d5-2cf4-45a9-86f1-b7e96a11741a",
@@ -38,7 +38,7 @@ describe("requestThePayOnePayment", () => {
     }));
     const input = pay.mock.calls[0]?.[0] as { responseFunction: () => void };
     input.responseFunction();
-    expect(assign).toHaveBeenCalledWith("/billing/success?status=pending");
+    expect(assign).toHaveBeenCalledWith(`https://example.com${resultPath}?status=pending`);
   });
 
   it("rejects an unexpected SDK origin", async () => {

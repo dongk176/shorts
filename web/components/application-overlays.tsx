@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { usePathname } from "@/lib/i18n/navigation";
 import type { ReactNode } from "react";
 
 // Keep the queue mounted, but do not mount notices during the application.

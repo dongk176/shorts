@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/lib/i18n/navigation";
 import { Children, type ReactNode } from "react";
 import { SiteFooter } from "@/components/site-footer";
 import { useI18n } from "@/lib/i18n/provider";

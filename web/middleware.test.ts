@@ -153,3 +153,36 @@ describe("canonical URL middleware", () => {
     expect(mocks.refreshSession).toHaveBeenCalledOnce();
   });
 });
+
+
+describe("locale routing boundaries", () => {
+  beforeEach(() => {
+    mocks.refreshSession.mockReset();
+    mocks.refreshSession.mockImplementation(async (request: NextRequest, rewriteUrl?: URL, headers = request.headers) => rewriteUrl
+      ? NextResponse.rewrite(rewriteUrl, { request: { headers } })
+      : NextResponse.next({ request: { headers } }));
+  });
+  it.each([["/jp/pricing?cycle=yearly", "ja", "/pricing?cycle=yearly"], ["/en", "en", "/"]])("rewrites %s with a validated locale", async (path, locale, target) => {
+    const response = await middleware(new NextRequest(`https://www.easycut.co.kr${path}`, { headers: { "x-easycut-site-locale": "ko", cookie: "easycut_locale=ko" } }));
+    expect(response.headers.get("x-middleware-rewrite")).toBe(`https://www.easycut.co.kr${target}`);
+    expect(response.headers.get("x-middleware-request-x-easycut-site-locale")).toBe(locale);
+  });
+  it("keeps root Korean even with a foreign cookie or spoofed locale header", async () => {
+    const response = await middleware(new NextRequest("https://www.easycut.co.kr/", { headers: { "x-easycut-site-locale": "ja", cookie: "easycut_locale=en" } }));
+    expect(response.headers.get("x-middleware-request-x-easycut-site-locale")).toBe("ko");
+  });
+  it.each(["/jp/api/jobs", "/en/admin/easycutcutcutcutcutcut", "/jp/auth/callback", "/jp/content-calendar", "/jp/east-cut-logo.png"])("rejects prefixed shared route %s", async (path) => {
+    const response = await middleware(new NextRequest(`https://www.easycut.co.kr${path}`));
+    expect(response.status).toBe(404);
+    expect(mocks.refreshSession).not.toHaveBeenCalled();
+  });
+  it("keeps legacy project redirects in the same language", async () => {
+    const response = await middleware(new NextRequest("https://www.easycut.co.kr/jp/123/edit/abc?preview=1"));
+    expect(response.headers.get("location")).toBe("https://www.easycut.co.kr/jp/projects/123/edit/abc?preview=1");
+  });
+  it("retains database prefetch protection for localized project pages", async () => {
+    const response = await middleware(new NextRequest("https://www.easycut.co.kr/jp/projects/123", { headers: { "next-router-prefetch": "1" } }));
+    expect(response.status).toBe(204);
+    expect(mocks.refreshSession).not.toHaveBeenCalled();
+  });
+});

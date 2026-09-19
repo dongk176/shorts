@@ -1,5 +1,7 @@
 "use client";
 
+import { browserLocalizedHref } from "@/lib/i18n/routing";
+
 import { PaymentMessageOverlay } from "@/components/payment-message-overlay";
 import { CardIssuerSelect } from "@/components/card-issuer-select";
 import { InstallmentBenefitsAccordion } from "@/components/installment-benefits-accordion";
@@ -767,7 +769,7 @@ export function PlanCheckoutOverlay({
             : null,
         });
       cardVerificationIdRef.current = null;
-      const success = new URL("/billing/success", window.location.origin);
+      const success = new URL(browserLocalizedHref("/billing/success"), window.location.origin);
       success.searchParams.set("flow", product.kind === "addon" ? "addon" : "subscription");
       success.searchParams.set(
         "status",
@@ -900,7 +902,7 @@ export function PlanCheckoutOverlay({
           ? {}
           : { payerTel: digits(form.payerTel, 11) }),
       });
-      const success = new URL("/billing/success", window.location.origin);
+      const success = new URL(browserLocalizedHref("/billing/success"), window.location.origin);
       success.searchParams.set("flow", "subscription");
       success.searchParams.set("status", "activated");
       success.searchParams.set("source", "pricing");

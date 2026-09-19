@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import { createLocalizedPageMetadata } from "@/lib/i18n/metadata";
 import Image from "next/image";
 import { getRequestLocale } from "@/lib/i18n/server";
 import { localizedValue } from "@/lib/i18n/config";
@@ -7,7 +7,7 @@ import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { StructuredData } from "@/components/structured-data";
 import { authProfile } from "@/lib/session";
-import { createPageMetadata, SITE_URL } from "@/lib/seo";
+import { SITE_URL } from "@/lib/seo";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 
 const PAGE_PATH = "/guidebook";
@@ -16,13 +16,15 @@ const GUIDEBOOK_PAGES = Array.from({ length: 8 }, (_, index) => ({
   src: `/guidebook/pages/page-${index + 1}.jpg`,
 }));
 
-export const metadata: Metadata = createPageMetadata({
-  title: "어떤 영상을 쇼츠로 만들어야 할까? | 이지컷 가이드북",
-  description:
-    "한 채널을 한 카테고리, 한 주제, 한 크리에이터로 좁히는 쇼츠 채널 운영 가이드를 온라인에서 읽어보세요.",
-  path: PAGE_PATH,
-  type: "article",
-});
+export async function generateMetadata() {
+  return createLocalizedPageMetadata({
+    title: "어떤 영상을 쇼츠로 만들어야 할까? | 이지컷 가이드북",
+    description:
+      "한 채널을 한 카테고리, 한 주제, 한 크리에이터로 좁히는 쇼츠 채널 운영 가이드를 온라인에서 읽어보세요.",
+    path: PAGE_PATH,
+    type: "article",
+  });
+}
 
 export default async function GuidebookPage() {
   const [user, locale] = await Promise.all([getAuthenticatedUser(), getRequestLocale()]);

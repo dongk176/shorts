@@ -1,7 +1,8 @@
+import { createLocalizedPageMetadata } from "@/lib/i18n/metadata";
 import type { Metadata } from "next";
 import { StructuredData } from "@/components/structured-data";
 import { EnterpriseServiceGate } from "@/components/enterprise-service-gate";
-import { createPageMetadata, DEFAULT_DESCRIPTION, SITE_NAME, SITE_URL } from "@/lib/seo";
+import { DEFAULT_DESCRIPTION, SITE_NAME, SITE_URL } from "@/lib/seo";
 import { getRequestLocale } from "@/lib/i18n/server";
 import { localizedValue } from "@/lib/i18n/config";
 import { loadMvpState } from "@/lib/mvp-state";
@@ -10,7 +11,7 @@ import { ShortsApp } from "./shorts-app";
 
 export async function generateMetadata(): Promise<Metadata> {
   const locale = await getRequestLocale();
-  return createPageMetadata({
+  return createLocalizedPageMetadata({
     title: localizedValue(locale, {
       ko: "이지컷 | AI 쇼츠 자동 제작·유튜브 영상 편집",
       en: "Easy Cut | AI YouTube Shorts Maker & Video Editor",

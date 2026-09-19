@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/lib/i18n/navigation";
 import { useEffect, useId, useRef, type ReactNode } from "react";
 
 export type PaymentMessageTone = "success" | "error" | "info";

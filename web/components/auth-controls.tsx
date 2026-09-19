@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
-import Link from "next/link";
+import Link from "@/lib/i18n/navigation";
 import type { AuthProfile } from "@/lib/session";
+import { localizedHref } from "@/lib/i18n/routing";
 import { useI18n } from "@/lib/i18n/provider";
 import { SocialLoginButtons } from "@/components/social-login-buttons";
 
@@ -28,7 +29,8 @@ export function AuthControls({
   triggerClassName?: string;
   onLoginTrigger?: () => void;
 }) {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
+  const localizedNext = localizedHref(next, locale);
   const [internalLoginOpen, setInternalLoginOpen] = useState(false);
   const [loginMethod, setLoginMethod] = useState<"social" | "password">("social");
   const [loginId, setLoginId] = useState("");
@@ -64,7 +66,7 @@ export function AuthControls({
       const response = await fetch("/auth/password/sign-in", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ loginId, password, next }),
+        body: JSON.stringify({ loginId, password, next: localizedNext }),
       });
       const payload = await response.json().catch(() => ({})) as {
         detail?: string;
@@ -73,7 +75,7 @@ export function AuthControls({
       if (!response.ok) {
         throw new Error(payload.detail || t("auth.passwordError"));
       }
-      window.location.assign(payload.next || "/");
+      window.location.assign(payload.next || localizedNext);
     } catch (error) {
       setPasswordLoginError(
         error instanceof Error ? error.message : t("auth.passwordError"),
@@ -136,7 +138,7 @@ export function AuthControls({
                 </p>
                 {loginMethod === "social" ? (
                   <div className="mt-8 space-y-4">
-                    <SocialLoginButtons next={next} />
+                    <SocialLoginButtons next={localizedNext} />
                     <div className="flex items-center gap-3 py-1 text-[11px] font-bold text-neutral-500">
                       <span className="h-px flex-1 bg-white/10" />
                       {t("auth.or")}

@@ -1,5 +1,7 @@
 "use client";
 
+import { localePath, localizedReturnUrl } from "./i18n/routing";
+
 export type ThePayOneCheckout = {
   checkoutId: string;
   sdkUrl: string;
@@ -100,7 +102,7 @@ export async function requestThePayOnePayment(checkout: ThePayOneCheckout) {
     products: checkout.products,
     trackId: checkout.trackId,
     responseFunction: () => {
-      window.location.assign(checkout.pendingUrl);
+      window.location.assign(localizedReturnUrl(checkout.pendingUrl, localePath(window.location.pathname).locale, window.location.origin));
     },
     webhookUrl: checkout.webhookUrl,
     udf1: checkout.udf1,

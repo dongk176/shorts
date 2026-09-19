@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { type SiteLocale, siteLocales } from "./i18n/config";
+import { localizedHref, isLocalizedPage, localePath } from "./i18n/routing";
 
 export const SITE_URL = "https://www.easycut.co.kr";
 export const SITE_NAME = "이지컷";
@@ -10,6 +12,7 @@ type PageMetadataOptions = {
   description: string;
   path: string;
   type?: "website" | "article";
+  locale?: SiteLocale;
 };
 
 export function absoluteUrl(path: string) {
@@ -21,15 +24,22 @@ export function createPageMetadata({
   description,
   path,
   type = "website",
+  locale = "ko",
 }: PageMetadataOptions): Metadata {
-  const url = absoluteUrl(path);
+  const url = absoluteUrl(localizedHref(path, locale));
   return {
     title: { absolute: title },
     description,
-    alternates: { canonical: url },
+    alternates: {
+      canonical: url,
+      ...(isLocalizedPage(localePath(path).pathname) ? { languages: {
+        ...Object.fromEntries(siteLocales.map((language) => [language, absoluteUrl(localizedHref(path, language))])),
+        "x-default": absoluteUrl(localizedHref(path, "ko")),
+      } } : {}),
+    },
     openGraph: {
       type,
-      locale: "ko_KR",
+      locale: { ko: "ko_KR", en: "en_US", ja: "ja_JP" }[locale],
       url,
       siteName: SITE_NAME,
       title,

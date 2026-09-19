@@ -1,5 +1,7 @@
 "use client";
 
+import { browserLocalizedHref } from "@/lib/i18n/routing";
+
 import reviewStyles from "./customer-reviews.module.css";
 import { customerReviews } from "@/lib/i18n/customer-reviews";
 import { sourceLanguages, type SourceLanguage } from "@/lib/language-context";
@@ -13,7 +15,7 @@ import type {
 } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
-import Link from "next/link";
+import Link from "@/lib/i18n/navigation";
 import { AuthControls } from "@/components/auth-controls";
 import { BackgroundShowcase } from "@/components/background-showcase";
 import { BackgroundAssetPicker } from "@/components/background-asset-picker";
@@ -12915,7 +12917,7 @@ export function ShortEditorPage({ projectNumber, shortId, rangeEditingEnabled = 
   const item = project?.shorts.find((value) => value.id === shortId);
   const closeEditor = () => {
     window.close();
-    window.setTimeout(() => { if (!window.closed) window.location.href = `/projects/${projectNumber}`; }, 100);
+    window.setTimeout(() => { if (!window.closed) window.location.href = browserLocalizedHref(`/projects/${projectNumber}`); }, 100);
   };
 
   if (error) return <main className="editor-page grid place-items-center p-6 text-center"><div><h1 className="text-lg font-bold">편집기를 열 수 없습니다.</h1><p className="mt-3 text-sm text-red-300">{error}</p><Link href={`/projects/${projectNumber}`} prefetch={false} className="mt-6 inline-flex rounded-xl bg-white px-5 py-3 text-sm font-bold text-black">프로젝트로 돌아가기</Link></div></main>;
@@ -12980,7 +12982,7 @@ export function ProjectPage({ projectNumber, adminSubtitleLayoutEnabled = false,
   }, [loadProject, projectHasBackgroundWork]);
 
   const returnToProjects = () => {
-    window.location.assign("/#results");
+    window.location.assign(browserLocalizedHref("/#results"));
   };
 
   if (!project) {
@@ -13950,7 +13952,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       && !state.billing.canCreateJobs
       && !shortsEventRewardAvailable
     ) {
-      window.location.href = "/pricing";
+      window.location.href = browserLocalizedHref("/pricing");
       return;
     }
     if (activeJobBlocksCreation) {
@@ -14208,7 +14210,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       await loadState().catch(() => undefined);
       if (!explicitlyAborted) {
         if (cause instanceof HttpRequestError && cause.status === 402) {
-          window.location.href = "/pricing";
+          window.location.href = browserLocalizedHref("/pricing");
         } else if (
           cause instanceof HttpRequestError
           && cause.message.includes("현재 처리 중인 작업")
@@ -14271,7 +14273,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       && !state.billing.canCreateJobs
       && !shortsEventRewardAvailable
     ) {
-      window.location.href = "/pricing";
+      window.location.href = browserLocalizedHref("/pricing");
       return;
     }
     if (activeJobBlocksCreation) {
@@ -14373,7 +14375,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         && cause.status === 402
         && state.usage.enforcementEnabled
       ) {
-        window.location.href = "/pricing";
+        window.location.href = browserLocalizedHref("/pricing");
       } else if (cause instanceof HttpRequestError && cause.message.includes("현재 처리 중인 작업")) {
         setConcurrentJobNoticeOpen(true);
       } else {
@@ -14475,7 +14477,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
                   화면을 켜둔 채 기다려 주세요.
                 </p>
                 {desktopUploadCompanionAvailable ? (
-                  <a
+                  <Link
                     href="/"
                     target="_blank"
                     rel="noopener noreferrer"
@@ -14483,7 +14485,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
                   >
                     새 창에서 더 작업하기
                     <span aria-hidden="true">↗</span>
-                  </a>
+                  </Link>
                 ) : null}
                 <button
                   type="button"

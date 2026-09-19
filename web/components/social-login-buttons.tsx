@@ -1,5 +1,6 @@
 "use client";
 
+import { localizedHref } from "@/lib/i18n/routing";
 import { useI18n } from "@/lib/i18n/provider";
 
 function GoogleIcon() {
@@ -30,10 +31,10 @@ export function SocialLoginButtons({ next, labels }: {
   next: string;
   labels?: { google: string; kakao: string };
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   return loginProviders.map((provider) => {
     const className = `flex min-h-14 w-full items-center justify-center gap-3 rounded-xl px-5 text-[15px] font-bold shadow-[0_6px_18px_rgba(0,0,0,.16)] transition duration-200 active:scale-[.98] ${provider.className}`;
     const content = <><provider.Icon />{labels?.[provider.id] ?? t(provider.labelKey)}</>;
-    return <a key={provider.id} href={`/auth/sign-in?provider=${provider.id}&next=${encodeURIComponent(next)}`} className={className}>{content}</a>;
+    return <a key={provider.id} href={`/auth/sign-in?provider=${provider.id}&next=${encodeURIComponent(localizedHref(next, locale))}`} className={className}>{content}</a>;
   });
 }

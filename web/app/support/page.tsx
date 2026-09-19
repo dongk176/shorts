@@ -1,13 +1,14 @@
+import { createLocalizedPageMetadata } from "@/lib/i18n/metadata";
 import type { Metadata } from "next";
 import { LegalDocument, LegalSection } from "@/components/legal-document";
-import { createPageMetadata } from "@/lib/seo";
+
 import { getRequestLocale } from "@/lib/i18n/server";
 import { supportTranslations } from "@/lib/i18n/legal-translations";
 
 export async function generateMetadata(): Promise<Metadata> {
   const locale = await getRequestLocale();
   const translated = locale === "ko" ? undefined : supportTranslations[locale];
-  return createPageMetadata({
+  return createLocalizedPageMetadata({
     title: `${translated?.title ?? "고객센터·사업자 정보"} | Easy Cut`,
     description: translated?.description ?? "이지컷 고객센터 운영시간, 연락처와 사업자 정보를 확인하세요.",
     path: "/support",

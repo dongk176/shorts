@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import { createLocalizedPageMetadata } from "@/lib/i18n/metadata";
 import { getBillingSummary } from "@/lib/billing";
 import { getDb } from "@/lib/db";
 import {
@@ -8,16 +8,18 @@ import {
 } from "@/lib/popular-entitlements";
 import { authProfile } from "@/lib/session";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
-import { createPageMetadata } from "@/lib/seo";
+
 import { PopularPageShell } from "./popular-page-shell";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = createPageMetadata({
-  title: "유튜브 실시간 인기 영상·쇼츠 소재 찾기 | 이지컷",
-  description: "지금 떠오르는 유튜브 인기 영상을 확인하고 재사용, 길이, 카테고리별로 쇼츠 소재를 찾아보세요.",
-  path: "/popular",
-});
+export async function generateMetadata() {
+  return createLocalizedPageMetadata({
+    title: "유튜브 실시간 인기 영상·쇼츠 소재 찾기 | 이지컷",
+    description: "지금 떠오르는 유튜브 인기 영상을 확인하고 재사용, 길이, 카테고리별로 쇼츠 소재를 찾아보세요.",
+    path: "/popular",
+  });
+}
 
 export default async function PopularVideosPage() {
   const user = await getAuthenticatedUser();

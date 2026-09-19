@@ -1,10 +1,11 @@
+import { createLocalizedPageMetadata } from "@/lib/i18n/metadata";
 import type { Metadata } from "next";
 import Image from "next/image";
-import Link from "next/link";
+import Link from "@/lib/i18n/navigation";
 import { notFound } from "next/navigation";
 import { StructuredData } from "@/components/structured-data";
 import { blogArticleData, blogBreadcrumbData, blogDate, blogPath, blogPost, publishedBlogPosts } from "@/lib/blog";
-import { absoluteUrl, createPageMetadata } from "@/lib/seo";
+import { absoluteUrl } from "@/lib/seo";
 import styles from "../blog.module.css";
 
 type Props = { params: Promise<{ slug: string }> };
@@ -13,7 +14,7 @@ export const dynamic = "force-dynamic";
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const post = blogPost((await params).slug);
   if (!post) return { title: "글을 찾을 수 없어요", robots: { index: false, follow: true } };
-  const base = createPageMetadata({ title: `${post.title} | 이지컷 블로그`, description: post.description, path: blogPath(post.slug), type: "article" });
+  const base = await createLocalizedPageMetadata({ title: `${post.title} | 이지컷 블로그`, description: post.description, path: blogPath(post.slug), type: "article" });
   return { ...base, authors: [{ name: "이지컷 운영팀", url: absoluteUrl("/blog#editorial") }], keywords: post.tags,
     openGraph: { ...base.openGraph, type: "article", publishedTime: post.publishedAt, modifiedTime: post.updatedAt, authors: [absoluteUrl("/blog#editorial")], images: [{ url: absoluteUrl(post.cover.src), width: post.cover.width, height: post.cover.height, alt: post.title }] },
     twitter: { ...base.twitter, images: [absoluteUrl(post.cover.src)] },

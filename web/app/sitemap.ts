@@ -1,4 +1,6 @@
 import type { MetadataRoute } from "next";
+import { siteLocales } from "@/lib/i18n/config";
+import { localizedHref } from "@/lib/i18n/routing";
 import { absoluteUrl } from "@/lib/seo";
 import { TEAM_PAGE_VISIBLE } from "@/lib/site-visibility";
 import { publishedBlogPosts } from "@/lib/blog";
@@ -29,11 +31,12 @@ const publicRoutes = [
 export default function sitemap(): MetadataRoute.Sitemap {
   const pages = publicRoutes
     .filter(({ path }) => TEAM_PAGE_VISIBLE || path !== "/team")
-    .map(({ path, changeFrequency, priority }) => ({
-      url: absoluteUrl(path),
+    .flatMap(({ path, changeFrequency, priority }) => siteLocales.map((locale) => ({
+      url: absoluteUrl(localizedHref(path, locale)),
+      alternates: { languages: Object.fromEntries(siteLocales.map((language) => [language, absoluteUrl(localizedHref(path, language))])) },
       changeFrequency,
       priority,
-    }));
+    })));
   return [...pages, ...publishedBlogPosts().map((post) => ({
     url: absoluteUrl(`/blog/${post.slug}`),
     lastModified: post.updatedAt,

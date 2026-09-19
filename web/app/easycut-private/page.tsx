@@ -1,20 +1,22 @@
-import type { Metadata } from "next";
+import { createLocalizedPageMetadata } from "@/lib/i18n/metadata";
 import { AuthControls } from "@/components/auth-controls";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { authProfile } from "@/lib/session";
-import { createPageMetadata } from "@/lib/seo";
+
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 
 const PAGE_PATH = "/easycut-private";
 const OPEN_CHAT_URL = "https://open.kakao.com/o/gBO91xHi";
 
-export const metadata: Metadata = createPageMetadata({
-  title: "EASYCUT PRIVATE | 이지컷",
-  description:
-    "활용하기 좋은 재사용 허용 영상과 쇼츠 제작 노하우, 이지컷의 새로운 기능과 소식을 가장 먼저 만나는 Private Channel입니다.",
-  path: PAGE_PATH,
-});
+export async function generateMetadata() {
+  return createLocalizedPageMetadata({
+    title: "EASYCUT PRIVATE | 이지컷",
+    description:
+      "활용하기 좋은 재사용 허용 영상과 쇼츠 제작 노하우, 이지컷의 새로운 기능과 소식을 가장 먼저 만나는 Private Channel입니다.",
+    path: PAGE_PATH,
+  });
+}
 
 const privateBenefits = [
   {

@@ -1,7 +1,8 @@
+import { createLocalizedPageMetadata } from "@/lib/i18n/metadata";
 import type { Metadata } from "next";
-import Link from "next/link";
+import Link from "@/lib/i18n/navigation";
 import { LegalDocument, LegalSection } from "@/components/legal-document";
-import { createPageMetadata } from "@/lib/seo";
+
 import { getRequestLocale } from "@/lib/i18n/server";
 import { termsTranslations } from "@/lib/i18n/legal-translations";
 import { YoutubePublishingNotice } from "@/components/youtube-publishing-notice";
@@ -9,7 +10,7 @@ import { YoutubePublishingNotice } from "@/components/youtube-publishing-notice"
 export async function generateMetadata(): Promise<Metadata> {
   const locale = await getRequestLocale();
   const translated = locale === "ko" ? undefined : termsTranslations[locale];
-  return createPageMetadata({
+  return createLocalizedPageMetadata({
     title: `${translated?.title ?? "서비스 이용약관"} | Easy Cut`,
     description: translated?.description ?? "이지컷 AI 쇼츠 제작 서비스 이용약관입니다.",
     path: "/terms",

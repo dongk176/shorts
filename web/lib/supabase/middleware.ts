@@ -6,8 +6,11 @@ import {
   withSupabaseAuthTimeout,
 } from "@/lib/supabase/auth-fetch";
 
-export async function refreshSupabaseSession(request: NextRequest) {
-  let response = NextResponse.next({ request });
+export async function refreshSupabaseSession(request: NextRequest, rewriteUrl?: URL, requestHeaders = new Headers(request.headers)) {
+  const nextResponse = () => rewriteUrl
+    ? NextResponse.rewrite(rewriteUrl, { request: { headers: requestHeaders } })
+    : NextResponse.next({ request: { headers: requestHeaders } });
+  let response = nextResponse();
   const config = getSupabaseAuthConfig();
   if (!config) return response;
 
@@ -19,7 +22,8 @@ export async function refreshSupabaseSession(request: NextRequest) {
         for (const { name, value } of cookiesToSet) {
           request.cookies.set(name, value);
         }
-        response = NextResponse.next({ request });
+        requestHeaders.set("cookie", request.headers.get("cookie") || "");
+        response = nextResponse();
         for (const { name, value, options } of cookiesToSet) {
           response.cookies.set(name, value, options);
         }

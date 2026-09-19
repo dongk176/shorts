@@ -1,3 +1,4 @@
+import { localizedRedirectPath } from "@/lib/i18n/server";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getBillingSummary } from "@/lib/billing";
@@ -92,9 +93,9 @@ async function getEnterpriseManagedProducts(
 
 export default async function PlanManagementPage() {
   const user = await getAuthenticatedUser();
-  if (!user) redirect("/auth/sign-in?next=/settings/plan");
+  if (!user) redirect(await localizedRedirectPath("/auth/sign-in?next=/settings/plan"));
   const session = await requireMvpSession(user, { createIfMissing: false });
-  if (!session.userId) redirect("/settings");
+  if (!session.userId) redirect(await localizedRedirectPath("/settings"));
   const db = getDb();
   if (session.isEnterprise === true) {
     return (

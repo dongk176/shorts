@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import Link from "next/link";
+import Link from "@/lib/i18n/navigation";
 import type { BlogPost } from "@/lib/blog";
 import styles from "./blog.module.css";
 

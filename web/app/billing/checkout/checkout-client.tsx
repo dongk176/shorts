@@ -1,6 +1,8 @@
 "use client";
 
-import Link from "next/link";
+import { browserLocalizedHref } from "@/lib/i18n/routing";
+
+import Link from "@/lib/i18n/navigation";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -301,7 +303,7 @@ export function BillingCheckoutClient() {
         installmentMonths: 0,
         installmentCampaignId: null,
       });
-      const success = new URL("/billing/success", window.location.origin);
+      const success = new URL(browserLocalizedHref("/billing/success"), window.location.origin);
       success.searchParams.set("flow", "subscription");
       success.searchParams.set("status", mode === "replace_payment_method" ? "payment_method_updated" : "activated");
       if (result.checkoutId) success.searchParams.set("checkoutId", result.checkoutId);

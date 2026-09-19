@@ -1,3 +1,4 @@
+import { localizedRedirectPath } from "@/lib/i18n/server";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
@@ -22,7 +23,7 @@ export default async function BillingCheckoutPage({
     mode === "renew_annual"
     || ((mode === "subscribe" || mode === "change_subscription") && !isPricingV2PlanCode(plan))
   ) {
-    redirect("/pricing");
+    redirect(await localizedRedirectPath("/pricing"));
   }
   return <Suspense fallback={<main className="app-shell grid min-h-screen place-items-center text-neutral-400">결제 화면을 준비하고 있습니다...</main>}><BillingCheckoutClient /></Suspense>;
 }

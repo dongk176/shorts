@@ -1,8 +1,10 @@
 "use client";
 
-import Link from "next/link";
+import { localePath, localizedReturnUrl } from "@/lib/i18n/routing";
+
+import Link from "@/lib/i18n/navigation";
 import Script from "next/script";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/lib/i18n/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useUsageState } from "@/components/usage-provider";
 import type { TossBillingState } from "@/lib/toss-billing-state";
@@ -193,8 +195,8 @@ export function TossPricingClient({
         }>("/api/billing/toss/checkout/prepare", { targetPlanCode: selection.plan.code });
         await window.TossPayments(prepared.clientKey).payment({ customerKey: prepared.customerKey }).requestBillingAuth({
           method: "CARD",
-          successUrl: prepared.successUrl,
-          failUrl: prepared.failUrl,
+          successUrl: localizedReturnUrl(prepared.successUrl, localePath(window.location.pathname).locale, window.location.origin),
+          failUrl: localizedReturnUrl(prepared.failUrl, localePath(window.location.pathname).locale, window.location.origin),
           customerName: "이지컷",
         });
         return;

@@ -1,23 +1,25 @@
-import type { Metadata } from "next";
-import Link from "next/link";
+import { createLocalizedPageMetadata } from "@/lib/i18n/metadata";
+import Link from "@/lib/i18n/navigation";
 import { AuthControls } from "@/components/auth-controls";
 import { AiShortsGuideContent } from "@/components/home-seo-content";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { StructuredData } from "@/components/structured-data";
 import { authProfile } from "@/lib/session";
-import { createPageMetadata, SITE_URL } from "@/lib/seo";
+import { SITE_URL } from "@/lib/seo";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 
 const PAGE_PATH = "/ai-shorts-maker";
 const PUBLISHED_DATE = "2026-07-19";
 
-export const metadata: Metadata = createPageMetadata({
-  title: "AI 쇼츠 만들기: 유튜브 영상으로 쇼츠 자동 제작 | 이지컷",
-  description: "유튜브 링크를 입력해 AI 하이라이트를 찾고, 30~60초 쇼츠와 제목·자막을 자동 제작하는 방법과 이지컷의 주요 기능을 확인하세요.",
-  path: PAGE_PATH,
-  type: "article",
-});
+export async function generateMetadata() {
+  return createLocalizedPageMetadata({
+    title: "AI 쇼츠 만들기: 유튜브 영상으로 쇼츠 자동 제작 | 이지컷",
+    description: "유튜브 링크를 입력해 AI 하이라이트를 찾고, 30~60초 쇼츠와 제목·자막을 자동 제작하는 방법과 이지컷의 주요 기능을 확인하세요.",
+    path: PAGE_PATH,
+    type: "article",
+  });
+}
 
 export default async function AiShortsMakerPage() {
   const user = await getAuthenticatedUser();

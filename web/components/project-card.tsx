@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/lib/i18n/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { ProjectDeleteOverlay } from "@/components/project-delete-overlay";
 import { YoutubeThumbnail } from "@/components/youtube-thumbnail";

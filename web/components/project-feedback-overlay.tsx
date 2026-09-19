@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname } from "@/lib/i18n/navigation";
 import { useUsageState } from "@/components/usage-provider";
 import { useWelcomeOverlayStage } from "@/components/welcome-overlay-queue";
 import type { UsageSnapshot } from "@/lib/contracts";

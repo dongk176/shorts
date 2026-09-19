@@ -1,6 +1,8 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { refreshSupabaseSession } from "@/lib/supabase/middleware";
 
+import { isLocalizedPage, localePath, localizedHref, SITE_LOCALE_HEADER } from "@/lib/i18n/routing";
+
 const CANONICAL_HOST = "www.easycut.co.kr";
 const LEGACY_PRODUCTION_HOSTS = new Set([
   "easycut.co.kr",
@@ -40,16 +42,24 @@ export async function middleware(request: NextRequest) {
   } catch {
     return refreshSupabaseSession(request);
   }
+  const route = localePath(pathname);
+  if (route.prefixed && !isLocalizedPage(route.pathname)) {
+    return new NextResponse(null, { status: 404 });
+  }
+  pathname = route.pathname;
+  // Always overwrite a supplied header; the page URL decides its language.
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set(SITE_LOCALE_HEADER, route.locale);
   if (pathname === "/실시간인기") {
     const destination = request.nextUrl.clone();
-    destination.pathname = "/popular";
+    destination.pathname = localizedHref("/popular", route.locale);
     return NextResponse.redirect(destination, 308);
   }
 
   const legacyProjectPath = pathname.match(/^\/([1-9]\d*)(\/edit\/[^/]+)?\/?$/);
   if (legacyProjectPath) {
     const destination = request.nextUrl.clone();
-    destination.pathname = `/projects/${legacyProjectPath[1]}${legacyProjectPath[2] || ""}`;
+    destination.pathname = localizedHref(`/projects/${legacyProjectPath[1]}${legacyProjectPath[2] || ""}`, route.locale);
     return NextResponse.redirect(destination, 308);
   }
 
@@ -75,7 +85,9 @@ export async function middleware(request: NextRequest) {
     });
   }
 
-  return refreshSupabaseSession(request);
+  const destination = request.nextUrl.clone();
+  destination.pathname = pathname;
+  return refreshSupabaseSession(request, route.prefixed ? destination : undefined, requestHeaders);
 }
 
 export const config = {

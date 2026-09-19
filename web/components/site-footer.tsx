@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/lib/i18n/navigation";
 import { useI18n } from "@/lib/i18n/provider";
 import {
   SITE_FOOTER_VISIBLE,

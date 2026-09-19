@@ -1,3 +1,4 @@
+import { localizedRedirectPath } from "@/lib/i18n/server";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { authProfile } from "@/lib/session";
@@ -10,7 +11,7 @@ export const metadata: Metadata = createNoIndexMetadata("설정", "Easy Cut 계�
 
 export default async function SettingsPage() {
   const user = await getAuthenticatedUser();
-  if (!user) redirect("/auth/sign-in?next=/settings");
+  if (!user) redirect(await localizedRedirectPath("/auth/sign-in?next=/settings"));
 
   return <SettingsPageContent user={authProfile(user)} />;
 }

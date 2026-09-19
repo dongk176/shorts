@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/lib/i18n/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CustomTemplateCanvasPreview } from "@/components/custom-template-canvas-preview";
 import { TemplateTitleV4Preview } from "@/components/template-title-v4-preview";

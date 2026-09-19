@@ -131,7 +131,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
         </Script>
       ) : null}
       <body>
-        <I18nProvider key={locale} locale={locale} messages={messages}>
+        <I18nProvider locale={locale} messages={messages}>
           <StructuredData data={websiteData} />
           <UsageProvider
             key={initialUsageState.accountId || "guest"}

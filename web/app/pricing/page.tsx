@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import { createLocalizedPageMetadata } from "@/lib/i18n/metadata";
 import { getBillingSummary } from "@/lib/billing";
 import {
   resolveBillingCustomerCohort,
@@ -14,14 +14,16 @@ import {
   type TossBillingState,
 } from "@/lib/toss-billing-state";
 import type { TossCatalogPlan } from "@/lib/toss-subscription";
-import { createPageMetadata } from "@/lib/seo";
+
 import { PricingPageShell } from "./pricing-page-shell";
 
-export const metadata: Metadata = createPageMetadata({
-  title: "AI 쇼츠 제작 요금제·가격 | 이지컷",
-  description: "이지컷 프로 월간 구독과 3·6·12개월 패키지, 얼리버드 추가시간을 확인하고 결제하세요.",
-  path: "/pricing",
-});
+export async function generateMetadata() {
+  return createLocalizedPageMetadata({
+    title: "AI 쇼츠 제작 요금제·가격 | 이지컷",
+    description: "이지컷 프로 월간 구독과 3·6·12개월 패키지, 얼리버드 추가시간을 확인하고 결제하세요.",
+    path: "/pricing",
+  });
+}
 
 export default async function PricingPage() {
   const user = await getAuthenticatedUser();
