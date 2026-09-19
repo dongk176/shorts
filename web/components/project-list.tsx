@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ProjectCard } from "@/components/project-card";
 import type { ProjectListPage } from "@/lib/contracts";
@@ -11,6 +13,7 @@ export function ProjectList({
   authenticated: boolean;
   initialPage: ProjectListPage;
 }) {
+  const ui = useUiText();
   const [projects, setProjects] = useState(initialPage.projects);
   const [hasMore, setHasMore] = useState(initialPage.hasMore);
   const [nextCursor, setNextCursor] = useState(initialPage.nextCursor);
@@ -78,7 +81,7 @@ export function ProjectList({
     <section className="mt-10" aria-labelledby="project-list-title">
       <div className="mb-5 flex items-center gap-2">
         <h2 id="project-list-title" className="text-lg font-extrabold text-white">
-          {authenticated ? "전체 프로젝트" : "예시 작업"}
+          {ui(authenticated ? "전체 프로젝트" : "예시 작업")}
         </h2>
         <span className="text-sm text-neutral-500">({initialPage.totalCount})</span>
       </div>
@@ -87,16 +90,15 @@ export function ProjectList({
       </div>
       {authenticated && (hasMore || error) ? (
         <div ref={sentinelRef} className="mt-8 flex min-h-16 flex-col items-center justify-center gap-3 text-center">
-          {error ? <p role="alert" className="text-sm font-bold text-[#ff9b8d]">{error}</p> : null}
+          {error ? <p role="alert" className="text-sm font-bold text-[#ff9b8d]">{ui(error)}</p> : null}
           {error ? (
             <button
               type="button"
               onClick={() => void loadMore()}
               className="min-h-11 rounded-xl border border-white/15 bg-white/[.04] px-6 text-sm font-extrabold text-white hover:bg-white/[.08]"
             >
-              다시 시도
-            </button>
-          ) : loading ? <p className="text-sm text-neutral-500">프로젝트를 더 불러오는 중…</p> : null}
+              {ui("다시 시도")}</button>
+          ) : loading ? <p className="text-sm text-neutral-500">{ui("프로젝트를 더 불러오는 중…")}</p> : null}
         </div>
       ) : null}
     </section>

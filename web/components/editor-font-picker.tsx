@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import { useEffect, useId, useRef, useState } from "react";
 import { editorFontOptions, stableEditorFontOptions, type EditorFontId } from "@/lib/editor-fonts";
 
@@ -13,6 +15,7 @@ export function EditorFontPicker({
   onChange: (fontId: EditorFontId) => void;
   options?: readonly (typeof editorFontOptions)[number][];
 }) {
+  const ui = useUiText();
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(() => Math.max(0, options.findIndex((font) => font.id === value)));
   const rootRef = useRef<HTMLDivElement>(null);
@@ -49,7 +52,7 @@ export function EditorFontPicker({
   }, [open]);
 
   return <div className="editor-font-setting">
-    <span id={labelId}>폰트</span>
+    <span id={labelId}>{ui("폰트")}</span>
     <div
       ref={rootRef}
       onBlur={(event) => {
@@ -80,7 +83,7 @@ export function EditorFontPicker({
         }}
         style={{ fontFamily: selectedFont.family }}
       >
-        <span>{selectedFont.label}</span>
+        <span>{ui(selectedFont.label)}</span>
         <svg aria-hidden="true" viewBox="0 0 20 20" fill="none"><path d="m6 8 4 4 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
       </button>
       {open && <div id={listboxId} role="listbox" aria-labelledby={labelId} className="editor-font-picker-menu">
@@ -103,7 +106,7 @@ export function EditorFontPicker({
           }}
           style={{ fontFamily: font.family }}
         >
-          <span>{font.label}</span>
+          <span>{ui(font.label)}</span>
           <svg aria-hidden="true" viewBox="0 0 20 20" fill="none"><path d="m5 10 3 3 7-7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
         </button>)}
       </div>}

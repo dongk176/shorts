@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import { browserLocalizedHref } from "@/lib/i18n/routing";
 
 import { discoveryCopy } from "./trending-date-filter";
@@ -275,6 +277,7 @@ function ReusableLicenseGuide({
   onConfirm: () => void;
   onDismiss: () => void;
 }) {
+  const ui = useUiText();
   const confirmButton = useRef<HTMLButtonElement>(null);
   const creativeCommonsTrigger = useRef<HTMLButtonElement>(null);
   const creativeCommonsExplainer = useRef<HTMLDivElement>(null);
@@ -373,15 +376,14 @@ function ReusableLicenseGuide({
               </svg>
             </span>
             <div>
-              <p className="text-xs font-black uppercase tracking-[.14em] text-violet-300">필터 이용 전 확인</p>
+              <p className="text-xs font-black uppercase tracking-[.14em] text-violet-300">{ui("필터 이용 전 확인")}</p>
               <h2 id="reusable-guide-title" className="mt-1.5 text-xl font-black tracking-[-.035em] text-white sm:text-2xl">
-                영상의 라이선스를 직접 확인해 주세요
-              </h2>
+                {ui("영상의 라이선스를 직접 확인해 주세요")}</h2>
             </div>
           </div>
           <div className="mt-5">
             <p id="reusable-guide-description" className="text-sm font-medium leading-6 text-neutral-300">
-              재사용 허용 필터는 YouTube에서{" "}
+              {ui("재사용 허용 필터는 YouTube에서")}{" "}
               <button
                 ref={creativeCommonsTrigger}
                 type="button"
@@ -392,30 +394,26 @@ function ReusableLicenseGuide({
                 onClick={openCreativeCommonsExplainer}
                 className="rounded-sm font-extrabold text-[#3ea6ff] underline decoration-[#3ea6ff]/45 underline-offset-2 transition hover:text-[#70bdff] hover:decoration-[#70bdff] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#70bdff]"
               >
-                크리에이티브 커먼즈
-              </button>
-              로 표시된 영상을 선별합니다. 게시자가 라이선스를 변경하거나 제3자 권리가 포함될 수 있으므로, 사용 직전에 원본 영상에서 최신 표시를 다시 확인하세요.
-              정확한 라이선스 확인은 데스크톱에서 진행해 주세요.
-            </p>
+                {ui("크리에이티브 커먼즈")}</button>
+              {ui("로 표시된 영상을 선별합니다. 게시자가 라이선스를 변경하거나 제3자 권리가 포함될 수 있으므로, 사용 직전에 원본 영상에서 최신 표시를 다시 확인하세요. 정확한 라이선스 확인은 데스크톱에서 진행해 주세요.")}</p>
           </div>
         </div>
 
         <div className="px-6 py-6 sm:px-8">
           <ol className="space-y-3 text-sm font-semibold leading-6 text-neutral-200">
-            <li className="flex gap-3"><span className="text-violet-300">1.</span><span>원본 영상을 YouTube에서 엽니다.</span></li>
-            <li className="flex gap-3"><span className="text-violet-300">2.</span><span>영상 설명의 <strong className="font-black text-white">더보기</strong>를 선택합니다.</span></li>
-            <li className="flex gap-3"><span className="text-violet-300">3.</span><span>설명 최하단의 <strong className="font-black text-white">라이선스</strong> 항목을 확인합니다.</span></li>
+            <li className="flex gap-3"><span className="text-violet-300">1.</span><span>{ui("원본 영상을 YouTube에서 엽니다.")}</span></li>
+            <li className="flex gap-3"><span className="text-violet-300">2.</span><span>{ui("영상 설명의 ")}<strong className="font-black text-white">{ui("더보기")}</strong>{ui("를 선택합니다.")}</span></li>
+            <li className="flex gap-3"><span className="text-violet-300">3.</span><span>{ui("설명 최하단의 ")}<strong className="font-black text-white">{ui("라이선스")}</strong> {ui(" 항목을 확인합니다.")}</span></li>
           </ol>
 
-          <div className="mt-5 overflow-hidden rounded-2xl border border-white/10 bg-[#242424]" aria-label="YouTube 라이선스 표시 예시">
+          <div className="mt-5 overflow-hidden rounded-2xl border border-white/10 bg-[#242424]" aria-label={ui("YouTube 라이선스 표시 예시")}>
             <div className="flex items-center gap-4 px-4 py-4 sm:px-5">
-              <span className="w-20 shrink-0 text-xs font-semibold text-neutral-400">라이선스</span>
-              <span className="text-xs font-bold leading-5 text-[#3ea6ff] sm:text-sm">크리에이티브 커먼즈 저작자 표시 라이선스 (재사용 허용)</span>
+              <span className="w-20 shrink-0 text-xs font-semibold text-neutral-400">{ui("라이선스")}</span>
+              <span className="text-xs font-bold leading-5 text-[#3ea6ff] sm:text-sm">{ui("크리에이티브 커먼즈 저작자 표시 라이선스 (재사용 허용)")}</span>
             </div>
           </div>
           <p className="mt-3 text-xs font-medium leading-5 text-neutral-500">
-            위 화면은 확인 위치를 설명하기 위해 재구성한 예시이며 실제 YouTube 화면이 아닙니다. 음악, 방송 화면, 인물·상표 등 별도 권리는 직접 확인해야 합니다.
-          </p>
+            {ui("위 화면은 확인 위치를 설명하기 위해 재구성한 예시이며 실제 YouTube 화면이 아닙니다. 음악, 방송 화면, 인물·상표 등 별도 권리는 직접 확인해야 합니다.")}</p>
         </div>
 
         <div className="flex flex-col-reverse gap-2 border-t border-white/[.07] bg-black/10 px-6 py-5 sm:flex-row sm:justify-end sm:px-8">
@@ -423,14 +421,12 @@ function ReusableLicenseGuide({
             setCreativeCommonsExplainerOpen(false);
             onDismiss();
           }} className="min-h-11 rounded-xl border border-white/15 px-5 text-sm font-extrabold text-neutral-200 transition hover:border-white/30 hover:bg-white/[.06] hover:text-white">
-            다시 보지 않기
-          </button>
+            {ui("다시 보지 않기")}</button>
           <button ref={confirmButton} type="button" onClick={() => {
             setCreativeCommonsExplainerOpen(false);
             onConfirm();
           }} className="min-h-11 rounded-xl bg-[#ff715e] px-6 text-sm font-black text-white shadow-[0_10px_28px_rgba(255,85,64,.22)] transition hover:bg-[#ff806f] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ff9b8d]">
-            확인
-          </button>
+            {ui("확인")}</button>
         </div>
       </section>
       {creativeCommonsExplainerOpen && createPortal(
@@ -446,16 +442,13 @@ function ReusableLicenseGuide({
           className={`fixed z-[120] max-h-[calc(100vh-2rem)] overflow-y-auto rounded-2xl border border-[#3ea6ff]/35 bg-[#172431] p-4 text-left shadow-[0_24px_70px_rgba(0,0,0,.65)] sm:p-5 ${creativeCommonsExplainerPosition.above ? "-translate-y-full" : ""}`}
         >
           <strong className="block text-sm font-black text-white sm:text-base">
-            크리에이티브 커먼즈(CC BY) 영상이란?
-          </strong>
+            {ui("크리에이티브 커먼즈(CC BY) 영상이란?")}</strong>
           <div className="mt-3 space-y-3 text-xs font-semibold leading-5 text-neutral-200 sm:text-sm sm:leading-6">
-            <p>원작자가 다른 사람이 영상을 사용할 수 있도록 허용한 콘텐츠입니다.</p>
+            <p>{ui("원작자가 다른 사람이 영상을 사용할 수 있도록 허용한 콘텐츠입니다.")}</p>
             <p>
-              출처와 저작자를 표시하면
-              <br />
-              영상을 편집하거나 재사용할 수 있습니다.
-            </p>
-            <p>단, 영상 제목, 저작자, 원본 링크, 라이선스 정보를 반드시 표시해야 합니다.</p>
+              {ui("출처와 저작자를 표시하면")}<br />
+              {ui("영상을 편집하거나 재사용할 수 있습니다.")}</p>
+            <p>{ui("단, 영상 제목, 저작자, 원본 링크, 라이선스 정보를 반드시 표시해야 합니다.")}</p>
           </div>
         </div>,
         document.body,
@@ -483,6 +476,7 @@ function MobilePopularFiltersSheet({
   onReset: () => void;
   onApply: () => void;
 }) {
+  const ui = useUiText();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const copy = mobileFilterCopy[locale];
@@ -525,10 +519,10 @@ function MobilePopularFiltersSheet({
       <header className="flex items-start justify-between gap-5 px-5 pb-5 pt-5">
         <div>
           <h2 id="mobile-popular-filters-title" className="text-xl font-black tracking-[-.035em] text-white">
-            {copy.title}
+            {ui(copy.title)}
           </h2>
           <p id="mobile-popular-filters-description" className="mt-1.5 text-xs font-semibold leading-5 text-neutral-400">
-            {copy.description}
+            {ui(copy.description)}
           </p>
         </div>
         <button
@@ -580,8 +574,8 @@ function MobilePopularFiltersSheet({
                   className={`flex min-h-[74px] w-full items-center justify-between gap-4 px-4 py-3 text-left transition active:bg-white/[.055] ${index ? "border-t border-white/[.07]" : ""}`}
                 >
                   <span className="min-w-0">
-                    <strong className="block text-sm font-extrabold text-neutral-100">{option.label}</strong>
-                    <span className="mt-1 block text-[11px] font-semibold leading-[1.55] text-neutral-500">{option.description}</span>
+                    <strong className="block text-sm font-extrabold text-neutral-100">{ui(option.label)}</strong>
+                    <span className="mt-1 block text-[11px] font-semibold leading-[1.55] text-neutral-500">{ui(option.description)}</span>
                   </span>
                   <span className={`relative h-6 w-11 shrink-0 rounded-full transition ${checked ? "bg-[#ff715e]" : "bg-white/15"}`} aria-hidden="true">
                     <span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${checked ? "translate-x-6" : "translate-x-1"}`} />
@@ -938,6 +932,7 @@ export function PopularVideosExplorer({
   isAuthenticated: boolean;
   onRequireLogin: () => void;
 }) {
+  const ui = useUiText();
   const { locale } = useI18n();
   const uiCopy = popularUiCopy[locale];
   const filterCopy = mobileFilterCopy[locale];
@@ -1221,11 +1216,11 @@ export function PopularVideosExplorer({
       <section className="hero relative isolate mx-auto flex max-w-4xl flex-col items-center px-4 pb-2 text-center sm:pb-3">
         <span className="pointer-events-none absolute left-[8%] top-5 -z-10 h-40 w-40 rounded-full bg-[#ff5540]/20 blur-[70px] sm:h-56 sm:w-56" aria-hidden="true" />
         <span className="pointer-events-none absolute right-[7%] top-14 -z-10 h-44 w-44 rounded-full bg-[#a078ff]/20 blur-[80px] sm:h-60 sm:w-60" aria-hidden="true" />
-        <h1 className="hero-title"><span>실시간 인기</span></h1>
+        <h1 className="hero-title"><span>{ui("실시간 인기")}</span></h1>
         <p className="mt-3 text-xs font-semibold text-neutral-500" aria-live="polite"><span className="mr-2 inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,.7)]" aria-hidden="true" /><span className="text-neutral-400">{uiCopy.lastUpdated}</span> {formatUpdatedAt(response?.updatedAt || null, locale)}</p>
       </section>
 
-      <section className="relative z-30 mt-4 !rounded-none !border-0 !bg-transparent !p-0 !shadow-none !backdrop-blur-none md:mt-2 md:!rounded-2xl md:!border md:!border-white/10 md:!bg-[#15191a]/90 md:!p-5 md:!shadow-[0_16px_50px_rgba(0,0,0,.22)] md:!backdrop-blur-2xl" aria-label="인기 영상 필터">
+      <section className="relative z-30 mt-4 !rounded-none !border-0 !bg-transparent !p-0 !shadow-none !backdrop-blur-none md:mt-2 md:!rounded-2xl md:!border md:!border-white/10 md:!bg-[#15191a]/90 md:!p-5 md:!shadow-[0_16px_50px_rgba(0,0,0,.22)] md:!backdrop-blur-2xl" aria-label={ui("인기 영상 필터")}>
         <div className={`${canUseFilters ? "hidden md:flex" : "mb-4 flex"} items-center justify-end gap-3 md:mb-4 md:justify-between`}>
           <h2 className="hidden text-base font-black text-white md:block">{uiCopy.filters}</h2>
           {!canUseFilters && (
@@ -1287,11 +1282,11 @@ export function PopularVideosExplorer({
               </svg>
             </span>
             <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
-              <strong className="shrink-0 text-sm font-black text-neutral-400">{filterCopy.title}</strong>
+              <strong className="shrink-0 text-sm font-black text-neutral-400">{ui(filterCopy.title)}</strong>
               <span className="min-w-0 truncate text-right text-sm font-bold tracking-[-.025em] text-neutral-500">
-                {activeMobileFilterCount
+                {ui(activeMobileFilterCount
                   ? (locale === "ko" ? `${filterCopy.categories[category]} · ${activeMobileFilterCount}개 적용` : locale === "ja" ? `${filterCopy.categories[category]} · ${activeMobileFilterCount}件適用` : `${filterCopy.categories[category]} · ${activeMobileFilterCount} active`)
-                  : (locale === "ko" ? "전체 · 선택한 조건 없음" : locale === "ja" ? "すべて · 選択条件なし" : "All · No filters selected")}
+                  : (locale === "ko" ? "전체 · 선택한 조건 없음" : locale === "ja" ? "すべて · 選択条件なし" : "All · No filters selected"))}
               </span>
             </span>
             <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 text-neutral-500" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -1326,10 +1321,9 @@ export function PopularVideosExplorer({
                         role="tooltip"
                         className="pointer-events-none invisible absolute left-1/2 top-full z-50 mt-3 w-[min(24rem,calc(100vw-3rem))] -translate-x-1/2 rounded-xl border border-violet-300/25 bg-[#25212d] p-4 text-left text-xs font-semibold leading-5 text-violet-50 opacity-0 shadow-[0_20px_55px_rgba(0,0,0,.5)] transition group-hover/reusable:visible group-hover/reusable:opacity-100 group-focus-within/reusable:visible group-focus-within/reusable:opacity-100"
                       >
-                        <strong className="block text-sm font-black text-white">YouTube의 CC BY 표시 영상</strong>
+                        <strong className="block text-sm font-black text-white">{ui("YouTube의 CC BY 표시 영상")}</strong>
                         <span className="mt-2 block">
-                          실제 의미는 “YouTube에서 CC BY로 표시됨”입니다. 이용자는 제목·저작자·URL·CC BY 라이선스를 표시해야 하며, 제3자 음악·방송 화면 등의 권리도 별도로 확인해야 합니다.
-                        </span>
+                          {ui("실제 의미는 “YouTube에서 CC BY로 표시됨”입니다. 이용자는 제목·저작자·URL·CC BY 라이선스를 표시해야 하며, 제3자 음악·방송 화면 등의 권리도 별도로 확인해야 합니다.")}</span>
                       </div>
                     )}
                   </div>
@@ -1423,7 +1417,7 @@ export function PopularVideosExplorer({
       <div ref={listStart} className="mb-5 mt-8 scroll-mt-5 flex flex-wrap items-center justify-between gap-3">
         <div className="shrink-0">
           <h2 className="text-xl font-black tracking-[-.025em] text-white">{selectedTypeLabel}</h2>
-          <p className="mt-1 text-xs font-bold tabular-nums text-neutral-500" aria-live="polite">{!loading && response && displayedTotalCount !== undefined ? (locale === "ko" ? `${formatNumber(displayedTotalCount, locale)}개` : locale === "en" ? formatNumber(displayedTotalCount, locale) : `${formatNumber(displayedTotalCount, locale)}件`) : uiCopy.countLoading}</p>
+          <p className="mt-1 text-xs font-bold tabular-nums text-neutral-500" aria-live="polite">{ui(!loading && response && displayedTotalCount !== undefined ? (locale === "ko" ? `${formatNumber(displayedTotalCount, locale)}개` : locale === "en" ? formatNumber(displayedTotalCount, locale) : `${formatNumber(displayedTotalCount, locale)}件`) : uiCopy.countLoading)}</p>
         </div>
         <div className="flex flex-col items-end gap-2">
           <DiscoveryPeriodDropdown
@@ -1446,7 +1440,7 @@ export function PopularVideosExplorer({
       </div>}
       {loading ? <LoadingSkeleton /> : error ? (
         <section role="alert" className="grid min-h-64 place-items-center rounded-2xl border border-red-400/20 bg-red-950/15 px-6 py-12 text-center">
-          <div><div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-red-400/10 text-xl text-red-300" aria-hidden="true">!</div><h2 className="mt-4 text-lg font-extrabold">{uiCopy.loadFailed}</h2><p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-red-200/75">{error}</p><button type="button" onClick={() => setRetryCount((value) => value + 1)} className="mt-6 rounded-xl bg-white px-5 py-3 text-sm font-extrabold text-black transition hover:bg-neutral-200">{uiCopy.retry}</button></div>
+          <div><div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-red-400/10 text-xl text-red-300" aria-hidden="true">!</div><h2 className="mt-4 text-lg font-extrabold">{uiCopy.loadFailed}</h2><p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-red-200/75">{ui(error)}</p><button type="button" onClick={() => setRetryCount((value) => value + 1)} className="mt-6 rounded-xl bg-white px-5 py-3 text-sm font-extrabold text-black transition hover:bg-neutral-200">{uiCopy.retry}</button></div>
         </section>
       ) : response?.items.length ? (
         <div>

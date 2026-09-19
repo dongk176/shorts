@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import { useI18n } from "@/lib/i18n/provider";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "@/lib/i18n/navigation";
@@ -25,7 +27,8 @@ async function responseBody<T>(response: Response): Promise<T> {
 }
 
 export function UserOnboardingOverlay() {
-  const { t } = useI18n();
+  const ui = useUiText();
+  const { locale, t } = useI18n();
   const router = useRouter();
   const { accountId, authenticated, refreshUsage } = useUsageState();
   const {
@@ -205,7 +208,7 @@ export function UserOnboardingOverlay() {
         >
           {typeof step === "number" && (
             <div className="flex items-center justify-between gap-4">
-              <div className="flex flex-1 gap-2" aria-label={`온보딩 ${step}단계 중 3단계`}>
+              <div className="flex flex-1 gap-2" aria-label={locale === "ko" ? `온보딩 3단계 중 ${step}단계` : locale === "en" ? `Setup step ${step} of 3` : `初期設定：3ステップ中の${step}ステップ目`}>
                 {[1, 2, 3].map((item) => (
                   <span
                     key={item}
@@ -228,13 +231,13 @@ export function UserOnboardingOverlay() {
                 : "mt-4 text-xl sm:text-2xl"
             }`}
           >
-            {step === "welcome"
+            {ui(step === "welcome"
               ? "원본 영상 처리시간이 충전됐어요"
               : step === 1
                 ? "어떤 일을 하고 계신가요?"
                 : step === 2
                   ? "이지컷을 어떤 목적으로 사용하시나요?"
-                  : "이지컷을 어떻게 알게 되었나요?"}
+                  : "이지컷을 어떻게 알게 되었나요?")}
           </h2>
         </header>
 
@@ -255,8 +258,8 @@ export function UserOnboardingOverlay() {
             </div>
           )}
           {step === 1 && <fieldset disabled={submitting}>
-            <legend className="sr-only">직업 선택</legend>
-            <p className="text-xs text-neutral-500">하나만 선택해 주세요.</p>
+            <legend className="sr-only">{ui("직업 선택")}</legend>
+            <p className="text-xs text-neutral-500">{ui("하나만 선택해 주세요.")}</p>
             <div className="mt-3 grid grid-cols-2 gap-1.5">
               {userOccupationOptions.map((option) => (
                 <label
@@ -275,7 +278,7 @@ export function UserOnboardingOverlay() {
                     onChange={() => setOccupation(option.value)}
                     className="h-4 w-4 accent-[#ff8c7c]"
                   />
-                  {option.label}
+                  {ui(option.label)}
                 </label>
               ))}
             </div>
@@ -284,7 +287,7 @@ export function UserOnboardingOverlay() {
                 value={occupationOther}
                 onChange={(event) => setOccupationOther(event.target.value)}
                 maxLength={100}
-                placeholder="직업을 직접 입력해 주세요."
+                placeholder={ui("직업을 직접 입력해 주세요.")}
                 autoFocus
                 className="mt-2.5 h-10 w-full rounded-lg border border-white/10 bg-black/20 px-3 text-[13px] outline-none placeholder:text-neutral-600 focus:border-[#ff8c7c]"
               />
@@ -292,8 +295,8 @@ export function UserOnboardingOverlay() {
           </fieldset>}
 
           {step === 2 && <fieldset disabled={submitting}>
-            <legend className="sr-only">이용 목적 선택</legend>
-            <p className="text-xs text-neutral-500">여러 개 선택할 수 있어요.</p>
+            <legend className="sr-only">{ui("이용 목적 선택")}</legend>
+            <p className="text-xs text-neutral-500">{ui("여러 개 선택할 수 있어요.")}</p>
             <div className="mt-3 grid grid-cols-2 gap-1.5">
               {userUsagePurposeOptions.map((option) => {
                 const selected = purposes.includes(option.value);
@@ -314,7 +317,7 @@ export function UserOnboardingOverlay() {
                       onChange={() => togglePurpose(option.value)}
                       className="h-4 w-4 rounded accent-[#ff8c7c]"
                     />
-                    {option.label}
+                    {ui(option.label)}
                   </label>
                 );
               })}
@@ -324,15 +327,15 @@ export function UserOnboardingOverlay() {
                 value={purposeOther}
                 onChange={(event) => setPurposeOther(event.target.value)}
                 maxLength={100}
-                placeholder="이용 목적을 직접 입력해 주세요."
+                placeholder={ui("이용 목적을 직접 입력해 주세요.")}
                 className="mt-2.5 h-10 w-full rounded-lg border border-white/10 bg-black/20 px-3 text-[13px] outline-none placeholder:text-neutral-600 focus:border-[#ff8c7c]"
               />
             )}
           </fieldset>}
 
           {step === 3 && <fieldset disabled={submitting}>
-            <legend className="sr-only">이지컷을 알게 된 경로 선택</legend>
-            <p className="text-xs text-neutral-500">하나만 선택해 주세요.</p>
+            <legend className="sr-only">{ui("이지컷을 알게 된 경로 선택")}</legend>
+            <p className="text-xs text-neutral-500">{ui("하나만 선택해 주세요.")}</p>
             <div className="mt-3 grid grid-cols-2 gap-1.5">
               {userDiscoverySourceOptions.map((option) => (
                 <label
@@ -351,7 +354,7 @@ export function UserOnboardingOverlay() {
                     onChange={() => setDiscoverySource(option.value)}
                     className="h-4 w-4 accent-[#ff8c7c]"
                   />
-                  {option.label}
+                  {ui(option.label)}
                 </label>
               ))}
             </div>
@@ -360,7 +363,7 @@ export function UserOnboardingOverlay() {
                 value={discoverySourceOther}
                 onChange={(event) => setDiscoverySourceOther(event.target.value)}
                 maxLength={100}
-                placeholder="알게 된 경로를 직접 입력해 주세요."
+                placeholder={ui("알게 된 경로를 직접 입력해 주세요.")}
                 autoFocus
                 className="mt-2.5 h-10 w-full rounded-lg border border-white/10 bg-black/20 px-3 text-[13px] outline-none placeholder:text-neutral-600 focus:border-[#ff8c7c]"
               />
@@ -369,7 +372,7 @@ export function UserOnboardingOverlay() {
 
           {error && (
             <p role="alert" className="rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-              {error}
+              {ui(error)}
             </p>
           )}
         </div>
@@ -384,8 +387,7 @@ export function UserOnboardingOverlay() {
               onClick={() => void continueAfterWelcome()}
               className="min-h-11 w-full rounded-lg bg-white px-5 text-[13px] font-black text-black transition hover:bg-neutral-200"
             >
-              계속하기
-            </button>
+              {ui("계속하기")}</button>
           ) : step === 1 ? (
             <button
               type="button"
@@ -393,8 +395,7 @@ export function UserOnboardingOverlay() {
               onClick={() => setStep(2)}
               className="min-h-10 w-full rounded-lg bg-white px-5 text-[13px] font-black text-black transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"
             >
-              다음
-            </button>
+              {ui("다음")}</button>
           ) : step === 2 ? (
             <div className="grid grid-cols-[auto_1fr] gap-1.5">
               <button
@@ -403,16 +404,14 @@ export function UserOnboardingOverlay() {
                 onClick={() => setStep(1)}
                 className="min-h-10 rounded-lg border border-white/10 px-4 text-[13px] font-bold text-neutral-300 transition hover:border-white/25 hover:bg-white/[.05] disabled:cursor-not-allowed disabled:opacity-50"
               >
-                이전
-              </button>
+                {ui("이전")}</button>
               <button
                 type="button"
                 disabled={!purposesReady || submitting}
                 onClick={() => setStep(3)}
                 className="min-h-10 rounded-lg bg-white px-5 text-[13px] font-black text-black transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"
               >
-                다음
-              </button>
+                {ui("다음")}</button>
             </div>
           ) : (
             <div className="grid grid-cols-[auto_1fr] gap-1.5">
@@ -422,14 +421,13 @@ export function UserOnboardingOverlay() {
                 onClick={() => setStep(2)}
                 className="min-h-10 rounded-lg border border-white/10 px-4 text-[13px] font-bold text-neutral-300 transition hover:border-white/25 hover:bg-white/[.05] disabled:cursor-not-allowed disabled:opacity-50"
               >
-                이전
-              </button>
+                {ui("이전")}</button>
               <button
                 type="submit"
                 disabled={!ready || submitting}
                 className="min-h-10 rounded-lg bg-white px-5 text-[13px] font-black text-black transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"
               >
-                {submitting ? "저장 중..." : "시작하기"}
+                {ui(submitting ? "저장 중..." : "시작하기")}
               </button>
             </div>
           )}

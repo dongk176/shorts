@@ -1,3 +1,5 @@
+import { createUiText } from "@/lib/i18n/ui-text";
+import { getRequestLocale } from "@/lib/i18n/server";
 import { createLocalizedPageMetadata } from "@/lib/i18n/metadata";
 import { AuthControls } from "@/components/auth-controls";
 import { SiteFooter } from "@/components/site-footer";
@@ -75,6 +77,7 @@ function PrivateBenefitIcon({ type }: { type: PrivateBenefitKey }) {
 }
 
 export default async function EasycutPrivatePage() {
+  const ui = createUiText(await getRequestLocale());
   const user = await getAuthenticatedUser();
 
   return (
@@ -87,20 +90,16 @@ export default async function EasycutPrivatePage() {
         <section className="hero mx-auto w-full max-w-[1080px]">
           <div className="max-w-[760px]">
             <h1 className="text-[clamp(1.85rem,3.3vw,2.5rem)] font-black leading-[1.2] tracking-[-.05em] text-white">
-              이지컷의 좋은 것들을<br />
-              조금 먼저 공유합니다.
-            </h1>
+              {ui("이지컷의 좋은 것들을")}<br />
+              {ui("조금 먼저 공유합니다.")}</h1>
 
             <div className="mt-7 space-y-5 text-[15px] leading-7 text-[#aeb2b5] sm:text-base sm:leading-8">
               <p>
-                EASYCUT PRIVATE에서는 활용하기 좋은 재사용 허용 영상부터 쇼츠 제작에 도움 되는 팁과 노하우까지 공유합니다.
-              </p>
+                {ui("EASYCUT PRIVATE에서는 활용하기 좋은 재사용 허용 영상부터 쇼츠 제작에 도움 되는 팁과 노하우까지 공유합니다.")}</p>
               <p>
-                새로운 기능, 업데이트, 주요 소식도 일반 공개 전에 가장 먼저 받아보실 수 있어요.
-              </p>
+                {ui("새로운 기능, 업데이트, 주요 소식도 일반 공개 전에 가장 먼저 받아보실 수 있어요.")}</p>
               <p>
-                이지컷을 제대로 활용하고 싶다면, 여기서 먼저 확인해보세요.
-              </p>
+                {ui("이지컷을 제대로 활용하고 싶다면, 여기서 먼저 확인해보세요.")}</p>
             </div>
 
             <a
@@ -109,14 +108,13 @@ export default async function EasycutPrivatePage() {
               rel="noopener noreferrer"
               className="easycut-private-entry mt-9 inline-flex min-h-[52px] items-center justify-center rounded-xl px-7 text-base font-black tracking-[.02em] text-white"
             >
-              채팅방 입장
-            </a>
+              {ui("채팅방 입장")}</a>
           </div>
 
           <div className="easycut-private-board">
             <div className="easycut-private-board-heading">
-              <h2>PRIVATE에서 먼저 받아보는 것</h2>
-              <p>필요한 정보만 골라, 일반 공개보다 조금 먼저 전해드립니다.</p>
+              <h2>{ui("PRIVATE에서 먼저 받아보는 것")}</h2>
+              <p>{ui("필요한 정보만 골라, 일반 공개보다 조금 먼저 전해드립니다.")}</p>
             </div>
 
             <div className="easycut-private-board-grid">
@@ -136,9 +134,9 @@ export default async function EasycutPrivatePage() {
                     </div>
                   ) : null}
                   <div className="easycut-private-benefit-copy">
-                    <span>{benefit.label}</span>
-                    <h3>{benefit.title}</h3>
-                    <p>{benefit.description}</p>
+                    <span>{ui(benefit.label)}</span>
+                    <h3>{ui(benefit.title)}</h3>
+                    <p>{ui(benefit.description)}</p>
                   </div>
                 </article>
               ))}

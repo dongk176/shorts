@@ -1,3 +1,5 @@
+import { createUiText } from "@/lib/i18n/ui-text";
+import { getRequestLocale } from "@/lib/i18n/server";
 import { localizedRedirectPath } from "@/lib/i18n/server";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
@@ -16,6 +18,7 @@ export default async function BillingCheckoutPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const ui = createUiText(await getRequestLocale());
   const params = await searchParams;
   const mode = Array.isArray(params.mode) ? params.mode[0] : params.mode;
   const plan = Array.isArray(params.plan) ? params.plan[0] : params.plan;
@@ -25,5 +28,5 @@ export default async function BillingCheckoutPage({
   ) {
     redirect(await localizedRedirectPath("/pricing"));
   }
-  return <Suspense fallback={<main className="app-shell grid min-h-screen place-items-center text-neutral-400">결제 화면을 준비하고 있습니다...</main>}><BillingCheckoutClient /></Suspense>;
+  return <Suspense fallback={<main className="app-shell grid min-h-screen place-items-center text-neutral-400">{ui("결제 화면을 준비하고 있습니다...")}</main>}><BillingCheckoutClient /></Suspense>;
 }

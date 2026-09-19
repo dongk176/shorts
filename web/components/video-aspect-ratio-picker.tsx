@@ -1,3 +1,6 @@
+"use client";
+
+import { useUiText } from "@/lib/i18n/use-ui-text";
 import { useNavigationLocale } from "@/lib/i18n/provider";
 import { aspectRatioName } from "@/lib/i18n/product";
 import { videoAspectRatioOptions, type VideoAspectRatio } from "@/lib/contracts";
@@ -16,6 +19,7 @@ export function VideoAspectRatioPicker({
   disabledReason?: string;
   onChange: (value: VideoAspectRatio) => void;
 }) {
+  const ui = useUiText();
   const locale = useNavigationLocale();
   const { locked, displayedValue } = videoAspectRatioSelection(value, lockedValue);
   const descriptionId = locked
@@ -26,9 +30,9 @@ export function VideoAspectRatioPicker({
 
   return (
     <fieldset className="min-w-0" aria-describedby={descriptionId}>
-      <legend className="sr-only">영상 비율</legend>
+      <legend className="sr-only">{ui("영상 비율")}</legend>
       <div className="flex min-w-0 items-center gap-3">
-        <span className="w-[72px] shrink-0 text-xs font-semibold text-neutral-400">영상 비율</span>
+        <span className="w-[72px] shrink-0 text-xs font-semibold text-neutral-400">{ui("영상 비율")}</span>
         <div className="flex min-w-0 flex-nowrap gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {videoAspectRatioOptions.map((option) => {
             const selected = displayedValue === option.value;
@@ -48,7 +52,7 @@ export function VideoAspectRatioPicker({
             );
           })}
         </div>
-        {locked && <span className="shrink-0 rounded-full border border-[#ff715e]/25 bg-[#ff715e]/10 px-2 py-0.5 text-[10px] font-bold text-[#ff9b8d]">템플릿에 고정</span>}
+        {locked && <span className="shrink-0 rounded-full border border-[#ff715e]/25 bg-[#ff715e]/10 px-2 py-0.5 text-[10px] font-bold text-[#ff9b8d]">{ui("템플릿에 고정")}</span>}
       </div>
       {locked && <p id={descriptionId} className="mt-2 text-[11px] leading-5 text-neutral-500">{locale === "ko" ? `내 템플릿에 저장된 ${lockedValue} 비율로 생성됩니다.` : locale === "en" ? `Your template uses the saved ${lockedValue} aspect ratio.` : `マイテンプレートに保存された${lockedValue}の比率で作成されます。`}</p>}
       {!locked && disabledReason && <p id={descriptionId} className="mt-2 text-[11px] leading-5 text-neutral-500">{disabledReason}</p>}

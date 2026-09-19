@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 
@@ -26,6 +28,7 @@ export function ProjectDeleteOverlay({
   onAction?: () => void;
   onClose: () => void;
 }) {
+  const ui = useUiText();
   const titleId = useId();
   const messageId = useId();
   const dialogRef = useRef<HTMLElement>(null);
@@ -133,14 +136,14 @@ export function ProjectDeleteOverlay({
           <p className={`mt-5 text-[11px] font-black tracking-[.18em] ${
             state === "success" ? "text-emerald-300" : "text-[#ff9b8d]"
           }`}>
-            {statusLabel}
+            {ui(statusLabel)}
           </p>
           <h2 id={titleId} className="mt-2 text-xl font-black text-white sm:text-2xl">
-            {title}
+            {ui(title)}
           </h2>
           {message ? (
             <p id={messageId} className="mt-4 whitespace-pre-line text-sm leading-6 text-neutral-400">
-              {message}
+              {ui(message)}
             </p>
           ) : null}
         </div>
@@ -154,7 +157,7 @@ export function ProjectDeleteOverlay({
             onClick={onClose}
             className="min-h-12 rounded-xl border border-white/10 px-5 text-sm font-extrabold text-neutral-300 transition hover:bg-white/[.06] disabled:opacity-40"
           >
-            {closeLabel}
+            {ui(closeLabel)}
           </button>
           {actionLabel && onAction ? (
             <button
@@ -163,7 +166,7 @@ export function ProjectDeleteOverlay({
               onClick={onAction}
               className="min-h-12 rounded-xl bg-[#ff715e] px-5 text-sm font-black text-white transition hover:bg-[#ff5f4a] disabled:cursor-wait disabled:opacity-55"
             >
-              {actionPending ? "삭제 처리 중..." : actionLabel}
+              {ui(actionPending ? "삭제 처리 중..." : actionLabel)}
             </button>
           ) : null}
         </div>

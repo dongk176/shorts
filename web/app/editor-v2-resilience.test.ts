@@ -51,7 +51,7 @@ describe("editor v2 resilience", () => {
     );
     expect(editorSource).toContain("writeEditorDraft(record)");
     expect(editorSource).toContain("}, 800)");
-    expect(editorSource).toContain('이어서 <span className="text-[#ff715e]">편집</span>할까요?');
+    expect(editorSource).toContain('{ui("이어서 ")}<span className="text-[#ff715e]">{ui("편집")}</span>{ui("할까요?")}');
     expect(editorSource).toContain("마지막으로 저장했어요.");
     expect(editorSource).not.toContain("편집하던 내용을 이어갈까요?");
     expect(editorSource).toContain("editorDraftSavedAgoLabel(");

@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import Link from "@/lib/i18n/navigation";
 import { usePathname } from "@/lib/i18n/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -45,6 +47,7 @@ export function PaymentMethodRemediationGate({
   initialAction: PaymentMethodAction;
   authenticated: boolean;
 }) {
+  const ui = useUiText();
   const pathname = usePathname();
   const [action, setAction] = useState(initialAction);
   const [form, setForm] = useState<FormState>(emptyForm);
@@ -232,46 +235,37 @@ export function PaymentMethodRemediationGate({
             <div className="py-12 text-center" aria-live="polite">
               <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-emerald-400/15 text-2xl text-emerald-300">✓</div>
               <h2 id="payment-method-remediation-title" className="mt-5 text-2xl font-black tracking-[-.04em] text-white">
-                결제수단이 추가됐어요.
-              </h2>
+                {ui("결제수단이 추가됐어요.")}</h2>
               <p id="payment-method-remediation-description" className="mt-3 text-sm text-neutral-400">
-                이지컷 프로를 계속 이용할 수 있어요.
-              </p>
+                {ui("이지컷 프로를 계속 이용할 수 있어요.")}</p>
             </div>
           ) : expired ? (
             <div className="py-6 text-center">
               <h2 id="payment-method-remediation-title" className="text-2xl font-black tracking-[-.04em] text-white">
-                이지컷 프로 구독이 만료되었어요
-              </h2>
+                {ui("이지컷 프로 구독이 만료되었어요")}</h2>
               <p id="payment-method-remediation-description" className="mt-3 text-sm leading-6 text-neutral-400">
-                계속 이용하려면 이지컷 프로를 다시 시작해 주세요.
-              </p>
+                {ui("계속 이용하려면 이지컷 프로를 다시 시작해 주세요.")}</p>
               <Link
                 data-remediation-autofocus
                 href="/pricing?plan=easycut_pro_v2"
                 className="mt-7 inline-flex min-h-13 w-full items-center justify-center rounded-xl bg-gradient-to-r from-[#ef4939] to-[#ff715e] px-5 text-sm font-black text-white"
               >
-                이지컷 프로 다시 시작하기
-              </Link>
+                {ui("이지컷 프로 다시 시작하기")}</Link>
             </div>
           ) : waiting ? (
             <div className="py-12 text-center" aria-live="polite">
               <span className="mx-auto block h-9 w-9 animate-spin rounded-full border-2 border-white/20 border-t-[#ff8f80]" aria-hidden="true" />
               <h2 id="payment-method-remediation-title" className="mt-6 text-2xl font-black tracking-[-.04em] text-white">
-                구독 상태를 확인하고 있어요.
-              </h2>
+                {ui("구독 상태를 확인하고 있어요.")}</h2>
               <p id="payment-method-remediation-description" className="mt-3 text-sm leading-6 text-neutral-400">
-                확인이 끝나면 자동으로 화면이 바뀝니다.
-              </p>
+                {ui("확인이 끝나면 자동으로 화면이 바뀝니다.")}</p>
             </div>
           ) : (
             <>
               <h2 id="payment-method-remediation-title" className="text-[26px] font-black tracking-[-.04em] text-white sm:text-3xl">
-                결제수단 확인이 필요해요
-              </h2>
+                {ui("결제수단 확인이 필요해요")}</h2>
               <p id="payment-method-remediation-description" className="mt-3 text-sm leading-6 text-neutral-400">
-                안전한 정기결제 이용을 위해 카드 정보를 다시 확인해 주세요. 지금 별도 결제는 진행되지 않으며, 이지컷 프로 이용 상태도 그대로 유지됩니다.
-              </p>
+                {ui("안전한 정기결제 이용을 위해 카드 정보를 다시 확인해 주세요. 지금 별도 결제는 진행되지 않으며, 이지컷 프로 이용 상태도 그대로 유지됩니다.")}</p>
 
               <form
                 className="mt-7 grid gap-4"
@@ -281,50 +275,44 @@ export function PaymentMethodRemediationGate({
                 }}
               >
                 <label className="text-xs font-bold text-neutral-300">
-                  카드번호
-                  <input
+                  {ui("카드번호")}<input
                     data-remediation-autofocus
                     required
                     inputMode="numeric"
                     autoComplete="cc-number"
                     value={form.cardNumber}
                     onChange={(event) => update("cardNumber", digits(event.target.value, 19))}
-                    placeholder="숫자만 입력"
+                    placeholder={ui("숫자만 입력")}
                     className="mt-2 min-h-13 w-full rounded-xl border border-white/10 bg-[#101315] px-4 text-base text-white outline-none placeholder:text-neutral-600 focus:border-[#ff8f80]/70 focus:ring-4 focus:ring-[#ff715e]/10"
                   />
                 </label>
                 <div className="grid grid-cols-2 gap-3">
                   <label className="text-xs font-bold text-neutral-300">
-                    유효기간 월
-                    <input required inputMode="numeric" autoComplete="cc-exp-month" value={form.expiryMonth} onChange={(event) => update("expiryMonth", digits(event.target.value, 2))} placeholder="MM" className="mt-2 min-h-13 w-full rounded-xl border border-white/10 bg-[#101315] px-4 text-base text-white outline-none placeholder:text-neutral-600 focus:border-[#ff8f80]/70" />
+                    {ui("유효기간 월")}<input required inputMode="numeric" autoComplete="cc-exp-month" value={form.expiryMonth} onChange={(event) => update("expiryMonth", digits(event.target.value, 2))} placeholder="MM" className="mt-2 min-h-13 w-full rounded-xl border border-white/10 bg-[#101315] px-4 text-base text-white outline-none placeholder:text-neutral-600 focus:border-[#ff8f80]/70" />
                   </label>
                   <label className="text-xs font-bold text-neutral-300">
-                    유효기간 연도
-                    <input required inputMode="numeric" autoComplete="cc-exp-year" value={form.expiryYear} onChange={(event) => update("expiryYear", digits(event.target.value, 2))} placeholder="YY" className="mt-2 min-h-13 w-full rounded-xl border border-white/10 bg-[#101315] px-4 text-base text-white outline-none placeholder:text-neutral-600 focus:border-[#ff8f80]/70" />
+                    {ui("유효기간 연도")}<input required inputMode="numeric" autoComplete="cc-exp-year" value={form.expiryYear} onChange={(event) => update("expiryYear", digits(event.target.value, 2))} placeholder="YY" className="mt-2 min-h-13 w-full rounded-xl border border-white/10 bg-[#101315] px-4 text-base text-white outline-none placeholder:text-neutral-600 focus:border-[#ff8f80]/70" />
                   </label>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <label className="min-w-0 text-xs font-bold text-neutral-300">
-                    카드 비밀번호 앞 2자리
-                    <input required type="password" inputMode="numeric" autoComplete="off" value={form.cardPassword} onChange={(event) => update("cardPassword", digits(event.target.value, 2))} placeholder="••" className="mt-2 min-h-13 w-full rounded-xl border border-white/10 bg-[#101315] px-4 text-base text-white outline-none placeholder:text-neutral-600 focus:border-[#ff8f80]/70" />
+                    {ui("카드 비밀번호 앞 2자리")}<input required type="password" inputMode="numeric" autoComplete="off" value={form.cardPassword} onChange={(event) => update("cardPassword", digits(event.target.value, 2))} placeholder="••" className="mt-2 min-h-13 w-full rounded-xl border border-white/10 bg-[#101315] px-4 text-base text-white outline-none placeholder:text-neutral-600 focus:border-[#ff8f80]/70" />
                   </label>
                   <label className="min-w-0 text-xs font-bold text-neutral-300">
-                    생년월일 또는 사업자번호
-                    <input required inputMode="numeric" autoComplete="off" value={form.identityNumber} onChange={(event) => update("identityNumber", digits(event.target.value, 10))} placeholder="6자리 또는 10자리" className="mt-2 min-h-13 w-full rounded-xl border border-white/10 bg-[#101315] px-3 text-sm text-white outline-none placeholder:text-neutral-600 focus:border-[#ff8f80]/70" />
+                    {ui("생년월일 또는 사업자번호")}<input required inputMode="numeric" autoComplete="off" value={form.identityNumber} onChange={(event) => update("identityNumber", digits(event.target.value, 10))} placeholder={ui("6자리 또는 10자리")} className="mt-2 min-h-13 w-full rounded-xl border border-white/10 bg-[#101315] px-3 text-sm text-white outline-none placeholder:text-neutral-600 focus:border-[#ff8f80]/70" />
                   </label>
                 </div>
                 <label className="text-xs font-bold text-neutral-300">
-                  휴대전화 번호
-                  <input required inputMode="numeric" autoComplete="tel" value={form.payerTel} onChange={(event) => update("payerTel", digits(event.target.value, 11))} placeholder="01012345678" className="mt-2 min-h-13 w-full rounded-xl border border-white/10 bg-[#101315] px-4 text-base text-white outline-none placeholder:text-neutral-600 focus:border-[#ff8f80]/70" />
+                  {ui("휴대전화 번호")}<input required inputMode="numeric" autoComplete="tel" value={form.payerTel} onChange={(event) => update("payerTel", digits(event.target.value, 11))} placeholder="01012345678" className="mt-2 min-h-13 w-full rounded-xl border border-white/10 bg-[#101315] px-4 text-base text-white outline-none placeholder:text-neutral-600 focus:border-[#ff8f80]/70" />
                 </label>
 
-                {error && <p role="alert" className="rounded-xl bg-red-400/10 px-4 py-3 text-sm font-bold text-red-200">{error}</p>}
+                {error && <p role="alert" className="rounded-xl bg-red-400/10 px-4 py-3 text-sm font-bold text-red-200">{ui(error)}</p>}
                 <button
                   type="submit"
                   disabled={busy || !formIsValid(form)}
                   className="mt-2 min-h-13 w-full rounded-xl bg-gradient-to-r from-[#ef4939] to-[#ff715e] px-5 text-sm font-black text-white shadow-[0_12px_30px_rgba(239,73,57,.22)] disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  {busy ? "추가하고 있어요..." : "결제수단 추가"}
+                  {ui(busy ? "추가하고 있어요..." : "결제수단 추가")}
                 </button>
               </form>
             </>

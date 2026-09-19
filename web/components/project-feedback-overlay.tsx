@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { usePathname } from "@/lib/i18n/navigation";
 import { useUsageState } from "@/components/usage-provider";
@@ -45,6 +47,7 @@ export function ProjectFeedbackOverlay() {
 }
 
 function AccountProjectFeedbackOverlay({ accountId }: { accountId: string }) {
+  const ui = useUiText();
   const pathname = usePathname();
   const { usage } = useUsageState();
   const { active: queueActive, complete: completeQueueStage } = useWelcomeOverlayStage("feedback");
@@ -226,45 +229,38 @@ function AccountProjectFeedbackOverlay({ accountId }: { accountId: string }) {
               ✓
             </div>
             <h2 id="project-feedback-title" className="mt-5 text-2xl font-black tracking-[-0.03em] text-white">
-              처리시간 30분을 드렸어요
-            </h2>
+              {ui("처리시간 30분을 드렸어요")}</h2>
             <p className="mt-3 text-sm leading-6 text-neutral-400">
-              솔직한 의견 감사합니다. 지급된 원본 영상 처리시간은 {success.rewardValidityDays}일 동안 사용할 수 있어요.
-            </p>
+              {ui("솔직한 의견 감사합니다. 지급된 원본 영상 처리시간은 ")}{success.rewardValidityDays}{ui("일 동안 사용할 수 있어요.")}</p>
             <button
               type="button"
               onClick={closeFeedback}
               className="mt-7 min-h-12 rounded-xl bg-white px-7 text-sm font-black text-black transition hover:bg-neutral-200"
             >
-              확인
-            </button>
+              {ui("확인")}</button>
           </div>
         ) : (
           <form onSubmit={submitFeedback}>
             <header className="relative border-b border-white/10 px-6 pb-6 pt-7 sm:px-9 sm:pt-9">
               <button
                 type="button"
-                aria-label="피드백 닫기"
+                aria-label={ui("피드백 닫기")}
                 disabled={submitting}
                 onClick={closeFeedback}
                 className="absolute right-3 top-3 flex h-10 w-10 items-center justify-center rounded-full text-xl text-neutral-400 hover:bg-white/10 hover:text-white disabled:opacity-40"
               >×</button>
               <span className="inline-flex rounded-full bg-[#ff7d69]/15 px-3 py-1.5 text-xs font-extrabold text-[#ff9b8d]">
-                30초 피드백 · 처리시간 30분
-              </span>
+                {ui("30초 피드백 · 처리시간 30분")}</span>
               <h2 id="project-feedback-title" className="mt-4 text-2xl font-black tracking-[-0.04em] text-white sm:text-3xl">
-                완성된 프로젝트, 어떠셨나요?
-              </h2>
+                {ui("완성된 프로젝트, 어떠셨나요?")}</h2>
               <p className="mt-2 text-sm leading-6 text-neutral-400">
-                좋은 이야기보다 솔직한 의견이 더 도움이 됩니다. 제출 즉시 원본 영상 처리시간 30분을 드려요.
-              </p>
+                {ui("좋은 이야기보다 솔직한 의견이 더 도움이 됩니다. 제출 즉시 원본 영상 처리시간 30분을 드려요.")}</p>
             </header>
 
             <div className="space-y-8 px-6 py-7 sm:px-9">
               <fieldset>
                 <legend className="text-base font-extrabold text-white">
-                  완성된 결과물에 얼마나 만족하셨나요?
-                </legend>
+                  {ui("완성된 결과물에 얼마나 만족하셨나요?")}</legend>
                 <div className="mt-4 grid grid-cols-5 gap-2">
                   {[1, 2, 3, 4, 5].map((rating) => (
                     <button
@@ -283,16 +279,15 @@ function AccountProjectFeedbackOverlay({ accountId }: { accountId: string }) {
                   ))}
                 </div>
                 <div className="mt-2 flex justify-between text-xs text-neutral-500">
-                  <span>매우 불만족</span>
-                  <span>매우 만족</span>
+                  <span>{ui("매우 불만족")}</span>
+                  <span>{ui("매우 만족")}</span>
                 </div>
               </fieldset>
 
               <fieldset>
                 <legend className="text-base font-extrabold text-white">
-                  가장 아쉬웠던 점은 무엇인가요?
-                </legend>
-                <p className="mt-1 text-xs text-neutral-500">하나만 선택해 주세요.</p>
+                  {ui("가장 아쉬웠던 점은 무엇인가요?")}</legend>
+                <p className="mt-1 text-xs text-neutral-500">{ui("하나만 선택해 주세요.")}</p>
                 <div className="mt-4 grid gap-2 sm:grid-cols-2">
                   {projectFeedbackDisappointmentReasons.map((reason) => (
                     <label
@@ -319,15 +314,14 @@ function AccountProjectFeedbackOverlay({ accountId }: { accountId: string }) {
 
               <label className="block">
                 <span className="text-base font-extrabold text-white">
-                  리뷰 한 마디
-                </span>
-                <span className="ml-2 text-xs font-medium text-neutral-500">선택 사항</span>
+                  {ui("리뷰 한 마디")}</span>
+                <span className="ml-2 text-xs font-medium text-neutral-500">{ui("선택 사항")}</span>
                 <textarea
                   value={improvementText}
                   onChange={(event) => setImprovementText(event.target.value)}
                   maxLength={1000}
                   rows={4}
-                  placeholder="자유롭게 적어주세요."
+                  placeholder={ui("자유롭게 적어주세요.")}
                   className="mt-4 w-full resize-none rounded-xl border border-white/10 bg-black/20 p-4 text-sm leading-6 text-white outline-none placeholder:text-neutral-600 focus:border-[#ff8c7c]"
                 />
                 <span className="mt-1 block text-right text-xs text-neutral-600">
@@ -337,7 +331,7 @@ function AccountProjectFeedbackOverlay({ accountId }: { accountId: string }) {
 
               {error && (
                 <p role="alert" className="rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-                  {error}
+                  {ui(error)}
                 </p>
               )}
             </div>
@@ -348,14 +342,14 @@ function AccountProjectFeedbackOverlay({ accountId }: { accountId: string }) {
                 disabled={submitting || satisfactionRating === null || disappointmentReason === null}
                 className="min-h-12 w-full rounded-xl bg-white px-6 text-sm font-black text-black transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                {submitting ? "보내는 중..." : "피드백 보내고 30분 받기"}
+                {ui(submitting ? "보내는 중..." : "피드백 보내고 30분 받기")}
               </button>
               <button
                 type="button"
                 disabled={submitting}
                 onClick={closeFeedback}
                 className="min-h-11 w-full rounded-xl px-6 text-sm font-semibold text-neutral-400 hover:bg-white/5 hover:text-white disabled:opacity-40"
-              >나중에 할게요</button>
+              >{ui("나중에 할게요")}</button>
             </footer>
           </form>
         )}

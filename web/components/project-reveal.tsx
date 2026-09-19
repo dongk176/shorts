@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { YoutubeThumbnail } from "@/components/youtube-thumbnail";
@@ -341,6 +343,7 @@ function AssemblyDetails({
   count: number;
   progress: number;
 }) {
+  const ui = useUiText();
   const { locale } = useI18n();
   const copy = projectRevealCopy[locale];
   const commentRowRef = useRef<HTMLDivElement>(null);
@@ -415,7 +418,7 @@ function AssemblyDetails({
           return (
             <div key={checkpoint.label} className={checkpoint.complete ? "is-reached" : ""}>
               <span>{checkpoint.complete ? "✓" : ""}</span>
-              <p>{checkpoint.label}</p>
+              <p>{ui(checkpoint.label)}</p>
             </div>
           );
         })}

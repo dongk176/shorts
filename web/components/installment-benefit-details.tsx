@@ -1,3 +1,6 @@
+"use client";
+
+import { useUiText } from "@/lib/i18n/use-ui-text";
 import type { InstallmentOffer } from "@/lib/installments";
 import {
   compactInstallmentMonths,
@@ -13,6 +16,7 @@ export function InstallmentBenefitDetails({
   formatAmount: (amountKrw: number) => string;
   emptyMessage: string;
 }) {
+  const ui = useUiText();
   if (!offer?.campaignId) {
     return (
       <p className="mt-6 rounded-xl bg-amber-300/10 p-4 text-sm text-amber-100">
@@ -26,7 +30,7 @@ export function InstallmentBenefitDetails({
   return (
     <>
       {offer.notice && (
-        <p className="mt-4 text-sm leading-6 text-neutral-400">{offer.notice}</p>
+        <p className="mt-4 text-sm leading-6 text-neutral-400">{ui(offer.notice)}</p>
       )}
       <div className="mt-5 grid items-start gap-3 sm:grid-cols-2">
         {issuerGroups.map((issuer) => (
@@ -47,17 +51,15 @@ export function InstallmentBenefitDetails({
                         ? "text-emerald-200"
                         : "text-neutral-200"
                     }`}>
-                      {line.benefitType === "interest_free" ? "무이자" : "부분 무이자"}
+                      {ui(line.benefitType === "interest_free" ? "무이자" : "부분 무이자")}
                     </span>
                     {line.benefitType === "partial_interest_free" && (
                       <span className="mt-1 block text-xs leading-5 text-neutral-400">
-                        1~{line.customerPaidInstallments}회차 고객 부담
-                      </span>
+                        1~{line.customerPaidInstallments}{ui("회차 고객 부담")}</span>
                     )}
                     {line.minAmountKrw !== offer.defaultMinAmountKrw && (
                       <span className="mt-1 block text-[11px] text-neutral-500">
-                        {formatAmount(line.minAmountKrw)} 이상
-                      </span>
+                        {formatAmount(line.minAmountKrw)} {ui(" 이상")}</span>
                     )}
                   </div>
                   <div className="text-right text-sm font-black leading-6">
@@ -69,7 +71,7 @@ export function InstallmentBenefitDetails({
                     {line.pendingMonths.length > 0 && (
                       <span className="block text-amber-300">
                         {compactInstallmentMonths(line.pendingMonths)}
-                        <small className="block text-[11px] font-bold">현재 결제창 미지원</small>
+                        <small className="block text-[11px] font-bold">{ui("현재 결제창 미지원")}</small>
                       </span>
                     )}
                     {line.note && (

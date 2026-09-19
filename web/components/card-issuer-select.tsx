@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import { useEffect, useId, useRef, useState } from "react";
 
 export type CardIssuerOption = {
@@ -24,6 +26,7 @@ export function CardIssuerSelect({
   disabled?: boolean;
   className?: string;
 }) {
+  const ui = useUiText();
   const listboxId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -74,7 +77,7 @@ export function CardIssuerSelect({
         <div
           id={listboxId}
           role="listbox"
-          aria-label="카드사"
+          aria-label={ui("카드사")}
           className="absolute isolate inset-x-0 top-[calc(100%+0.5rem)] z-[90] max-h-64 overflow-y-auto rounded-2xl border border-white/12 bg-[#25282a] p-1.5 shadow-[0_20px_50px_rgba(0,0,0,.72)] ring-1 ring-black/50 sm:bottom-[calc(100%+0.5rem)] sm:top-auto sm:shadow-[0_-20px_50px_rgba(0,0,0,.72)]"
         >
           {options.map((option, index) => (
@@ -105,7 +108,7 @@ export function CardIssuerSelect({
                   : "text-neutral-200 hover:bg-white/[.07] hover:text-white"
               }`}
             >
-              <span>{option.label}</span>
+              <span>{ui(option.label)}</span>
               {option.value === value && (
                 <svg
                   aria-hidden="true"
@@ -153,7 +156,7 @@ export function CardIssuerSelect({
               : "border-white/10 bg-[#202325] text-white hover:border-white/20 hover:bg-[#25282a]"
         }`}
       >
-        <span>{selectedOption?.label || "카드사를 선택해 주세요"}</span>
+        <span>{ui(selectedOption?.label || "카드사를 선택해 주세요")}</span>
         <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-white/[.06] text-neutral-300">
           <svg
             aria-hidden="true"

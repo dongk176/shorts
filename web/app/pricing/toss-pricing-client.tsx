@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import { formatSeoulDate } from "@/lib/i18n/format";
 import { translateLegacyText } from "@/lib/i18n/legacy-phrases";
 import { useI18n } from "@/lib/i18n/provider";
@@ -104,6 +106,7 @@ export function TossPricingClient({
   guestCatalog: TossCatalogPlan[] | null;
   onRequireLogin: () => void;
 }) {
+  const ui = useUiText();
   const { locale, t } = useI18n();
   const date = (value: string) => formatSeoulDate(value, locale);
   const router = useRouter();
@@ -262,14 +265,14 @@ export function TossPricingClient({
       ) : null}
 
       <section className={`hero pricing-hero ${styles.hero}`}>
-        <h1><span>필요한 만큼 선택하세요</span></h1>
+        <h1><span>{ui("필요한 만큼 선택하세요")}</span></h1>
       </section>
 
-      {error ? <div className={styles.localError} role="alert">{error}</div> : null}
+      {error ? <div className={styles.localError} role="alert">{ui(error)}</div> : null}
 
       {state?.subscription?.plan.tier === "easycut_pro"
       && state.subscription.plan.contractMonths !== 1 ? (
-        <section className={styles.localLegacyNotice} aria-label="기존 이지컷 프로 계약 안내">
+        <section className={styles.localLegacyNotice} aria-label={ui("기존 이지컷 프로 계약 안내")}>
           <strong>{t("pricing.legacyContract", { months: state.subscription.plan.contractMonths })}</strong>
           <p>
             {t("pricing.legacyChange", { date: date(state.subscription.currentPeriodEnd) })}
@@ -278,8 +281,8 @@ export function TossPricingClient({
       ) : null}
 
       <div className={`${styles.planToolbar} ${styles.localPlanToolbar}`}>
-        <span>패키지 이용기간</span>
-        <div className={`${styles.packageTermPicker} ${styles.localTermPicker}`} role="group" aria-label="패키지 이용기간">
+        <span>{ui("패키지 이용기간")}</span>
+        <div className={`${styles.packageTermPicker} ${styles.localTermPicker}`} role="group" aria-label={ui("패키지 이용기간")}>
           {PACKAGE_TERMS.map((term) => (
             <button
               key={term}
@@ -297,7 +300,7 @@ export function TossPricingClient({
       <section
         id="pricing-plans"
         className={`pricing-grid ${styles.localPlanGrid}`}
-        aria-label="정기 구독 요금제"
+        aria-label={ui("정기 구독 요금제")}
         aria-busy={loading}
       >
         {loading && ["pro", "starter", "expert"].map((plan) => (
@@ -333,10 +336,10 @@ export function TossPricingClient({
               className={`pricing-card ${cardClass} ${styles.planCard} ${styles.localPlanCard} ${styles.packagePlanCard} ${mobileOrderClass(plan)}`}
             >
               {plan.tier === "starter" && plan.contractMonths === 6 ? (
-                <span className={`pricing-badge ${styles.localReasonableBadge}`}>가장 합리적</span>
+                <span className={`pricing-badge ${styles.localReasonableBadge}`}>{ui("가장 합리적")}</span>
               ) : null}
               {plan.tier === "starter" && plan.contractMonths === 12 ? (
-                <span className={`pricing-badge ${styles.localReasonableBadge}`}>최대 할인</span>
+                <span className={`pricing-badge ${styles.localReasonableBadge}`}>{ui("최대 할인")}</span>
               ) : null}
               {plan.discountPercent > 0 ? (
                 <span className={`${styles.planEyebrow} ${styles.discountEyebrow} ${
@@ -348,18 +351,18 @@ export function TossPricingClient({
               <div className="pricing-plan-name"><h2>{plan.displayName}</h2></div>
               <p className={styles.localPlanDescription}>{subtitle(plan)}</p>
               <div className={`pricing-price ${styles.localPlanPrice}`}>
-                <strong>₩{won(plan.monthlyEquivalentKrw)}</strong><span>/월</span>
+                <strong>₩{won(plan.monthlyEquivalentKrw)}</strong><span>{ui("/월")}</span>
               </div>
               <p className="pricing-billing">
-                {plan.tier === "easycut_pro"
+                {ui(plan.tier === "easycut_pro"
                   ? billingCycleLabel(plan.contractMonths)
-                  : `${billingCycleLabel(plan.contractMonths)} · 총 ₩${won(plan.priceKrw)}`}
+                  : `${billingCycleLabel(plan.contractMonths)} · 총 ₩${won(plan.priceKrw)}`)}
               </p>
               <ul>
                 {features(plan).map((feature, index) => (
                   <li key={feature} className={index === 5 && !plan.guidebookIncluded ? "pricing-feature-unavailable" : ""}>
                     <span>{index === 5 && !plan.guidebookIncluded ? "–" : "✓"}</span>
-                    <span>{index === 0 ? <strong>{feature.replace(" 원본 영상 처리", "")}</strong> : feature}{index === 0 ? " 원본 영상 처리" : ""}</span>
+                    <span>{index === 0 ? <strong>{ui(feature.replace(" 원본 영상 처리", ""))}</strong> : feature}{ui(index === 0 ? " 원본 영상 처리" : "")}</span>
                   </li>
                 ))}
               </ul>
@@ -374,7 +377,7 @@ export function TossPricingClient({
                   : pending ? (
                     <span className={styles.planCtaPendingContent}>
                       <span className={styles.planCtaPendingIndicator} aria-hidden="true" />
-                      <span className={styles.planCtaPendingCopy}><strong>이 플랜으로 변경 예약됨</strong></span>
+                      <span className={styles.planCtaPendingCopy}><strong>{ui("이 플랜으로 변경 예약됨")}</strong></span>
                     </span>
                   ) : state?.subscription
                     ? `${plan.displayName}로 전환하기`
@@ -392,20 +395,20 @@ export function TossPricingClient({
           <section role="dialog" aria-modal="true" aria-labelledby="plan-dialog-title" className={styles.localDialog}>
             <div className={styles.localDialogHeader}>
               <h2 id="plan-dialog-title">
-                {selection.action === "cancel_pending"
+                {ui(selection.action === "cancel_pending"
                   ? "변경 예약 취소하기"
                   : selection.action === "subscribe"
                     ? "구독 시작 확인하기"
-                    : "플랜 전환 확인하기"}
+                    : "플랜 전환 확인하기")}
               </h2>
-              <button type="button" aria-label="닫기" disabled={busy} onClick={() => setSelection(null)}>×</button>
+              <button type="button" aria-label={ui("닫기")} disabled={busy} onClick={() => setSelection(null)}>×</button>
             </div>
             <div className={styles.localDialogBody}>
               {selection.action === "cancel_pending" ? (
                 <div className={styles.localPlanSummary}>
                   <div className={styles.localPlanSummaryCopy}>
                     <strong>{selection.plan.displayName} {translateLegacyText(`${selection.plan.contractMonths}개월`, locale)}</strong>
-                    <span>예약을 취소하면 현재 플랜이 그대로 유지됩니다.</span>
+                    <span>{ui("예약을 취소하면 현재 플랜이 그대로 유지됩니다.")}</span>
                   </div>
                 </div>
               ) : (
@@ -413,14 +416,14 @@ export function TossPricingClient({
                   <div className={styles.localPlanSummaryCopy}>
                     <strong>{selection.plan.displayName}</strong>
                     {selection.action === "scheduled" && state.subscription ? (
-                      <span>현재 구독 종료 후 적용됩니다</span>
+                      <span>{ui("현재 구독 종료 후 적용됩니다")}</span>
                     ) : null}
                     <ul className={styles.localPlanSummaryFeatures}>
                       {features(selection.plan).slice(0, 5).map((feature, index) => (
                         <li key={feature}>
                           <span>✓</span>
                           <span>{index === 0
-                            ? <><strong>{feature.replace(" 원본 영상 처리", "")}</strong> 원본 영상 처리</>
+                            ? <><strong>{ui(feature.replace(" 원본 영상 처리", ""))}</strong> {ui(" 원본 영상 처리")}</>
                             : feature}</span>
                         </li>
                       ))}
@@ -429,9 +432,9 @@ export function TossPricingClient({
                 </div>
               )}
               {selection.action === "subscribe" && !state.paymentRestrictions.hanaCardAvailable ? (
-                <aside className={styles.localCardRestriction} aria-label="결제 가능 카드 안내">
-                  <strong>하나카드는 아직 결제할 수 없어요</strong>
-                  <p>카드사 심사 중으로 현재 하나카드는 등록과 결제가 완료되지 않습니다. 토스 결제창에서 다른 카드를 선택해 주세요.</p>
+                <aside className={styles.localCardRestriction} aria-label={ui("결제 가능 카드 안내")}>
+                  <strong>{ui("하나카드는 아직 결제할 수 없어요")}</strong>
+                  <p>{ui("카드사 심사 중으로 현재 하나카드는 등록과 결제가 완료되지 않습니다. 토스 결제창에서 다른 카드를 선택해 주세요.")}</p>
                 </aside>
               ) : null}
               {selection.action !== "cancel_pending" ? (
@@ -444,16 +447,16 @@ export function TossPricingClient({
                   </span>
                 </label>
               ) : null}
-              {error ? <div className={styles.localError} role="alert">{error}</div> : null}
+              {error ? <div className={styles.localError} role="alert">{ui(error)}</div> : null}
             </div>
             <div className={styles.localDialogActions}>
-              <button type="button" disabled={busy} onClick={() => setSelection(null)}>취소</button>
+              <button type="button" disabled={busy} onClick={() => setSelection(null)}>{ui("취소")}</button>
               <button
                 type="button"
                 disabled={busy || (selection.action !== "cancel_pending" && !consent)}
                 onClick={() => void confirm()}
               >
-                {busy
+                {ui(busy
                   ? "처리 중..."
                   : selection.action === "cancel_pending"
                     ? "예약 취소"
@@ -461,7 +464,7 @@ export function TossPricingClient({
                       ? "시작하기"
                       : selection.action === "scheduled"
                         ? "변경 예약"
-                        : "전환 확인"}
+                        : "전환 확인")}
               </button>
             </div>
           </section>
@@ -478,7 +481,7 @@ export function TossPricingClient({
             aria-labelledby="plan-result-title"
             className={`${styles.localDialog} ${styles.localResultDialog}`}
           >
-            <h2 id="plan-result-title">{result.title}</h2>
+            <h2 id="plan-result-title">{ui(result.title)}</h2>
             {typeof result.remainingMinutes === "number" ? (
               <p className={styles.localResultUsage}>
                 <strong>{t("common.remainingMinutes", { minutes: won(result.remainingMinutes) })}</strong>
@@ -488,7 +491,7 @@ export function TossPricingClient({
                 {result.detail.split("\n").map((line) => <span key={line}>{line}</span>)}
               </p>
             )}
-            <button type="button" className={styles.localResultConfirm} onClick={() => setResult(null)}>확인</button>
+            <button type="button" className={styles.localResultConfirm} onClick={() => setResult(null)}>{ui("확인")}</button>
           </section>
         </div>
       ) : null}

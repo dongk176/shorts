@@ -1,4 +1,6 @@
 "use client";
+
+import { useUiText } from "@/lib/i18n/use-ui-text";
 import {
   useEffect,
   useLayoutEffect,
@@ -81,6 +83,7 @@ export function TrendingDateFilter({
   onChange: (value: string | null) => void;
   onRequestAccess: () => void;
 }) {
+  const ui = useUiText();
   const copy = discoveryCopy[locale];
   const today = kstDate();
   const [open, setOpen] = useState(false);
@@ -293,7 +296,7 @@ export function TrendingDateFilter({
                   type="button"
                   key={value}
                   disabled={value > today || !days}
-                  aria-label={label}
+                  aria-label={ui(label)}
                   aria-pressed={value === date}
                   className={`relative min-h-10 rounded-lg pb-1 disabled:opacity-25 ${value === date ? "bg-violet-400/30 ring-1 ring-violet-300" : "hover:bg-white/10"}`}
                   onClick={() => {

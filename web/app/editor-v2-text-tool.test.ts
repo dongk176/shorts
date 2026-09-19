@@ -11,7 +11,7 @@ describe("editor v2 text tool", () => {
 
   it("adds a dedicated text item to the v2 tool rail", () => {
     expect(editorSource).toContain('{ id: "text", label: "텍스트" }');
-    expect(editorSource).toContain('aria-label="텍스트 설정"');
+    expect(editorSource).toContain('aria-label={ui("텍스트 설정")}');
     expect(editorSource).toContain('className="editor-v2-text-add"');
   });
 

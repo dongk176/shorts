@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import { browserLocalizedHref } from "@/lib/i18n/routing";
 
 import Link from "@/lib/i18n/navigation";
@@ -71,6 +73,7 @@ function MonthlySubscriptionConfirmation({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const ui = useUiText();
   const confirmButtonRef = useRef<HTMLButtonElement>(null);
   const cancelButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -122,14 +125,13 @@ function MonthlySubscriptionConfirmation({
       >
         <div aria-hidden="true" className="pointer-events-none absolute inset-x-16 -top-24 h-40 rounded-full bg-amber-400/10 blur-3xl" />
         <div aria-hidden="true" className="relative mx-auto grid h-12 w-12 place-items-center rounded-full border border-amber-300/25 bg-amber-300/10 text-xl font-black text-amber-200">!</div>
-        <p className="relative mt-5 text-[11px] font-black uppercase tracking-[.18em] text-amber-300">월간 구독 안내</p>
+        <p className="relative mt-5 text-[11px] font-black uppercase tracking-[.18em] text-amber-300">{ui("월간 구독 안내")}</p>
         <h2 id="monthly-subscription-confirmation-title" className="relative mt-2 text-2xl font-black tracking-[-.04em] text-white">
-          월간 구독으로 진행하시겠습니까?
-        </h2>
+          {ui("월간 구독으로 진행하시겠습니까?")}</h2>
         <div id="monthly-subscription-confirmation-description" className="relative mt-4 text-sm leading-6 text-neutral-400">
-          <p>월간 구독에는 아래 혜택이 포함되지 않습니다.</p>
+          <p>{ui("월간 구독에는 아래 혜택이 포함되지 않습니다.")}</p>
           <ul className="mx-auto mt-4 grid max-w-[300px] gap-2 text-left text-neutral-200">
-            <li className="flex items-center gap-2 rounded-xl border border-white/8 bg-black/20 px-4 py-3"><span aria-hidden="true" className="text-amber-300">!</span><span className="font-bold">전자책</span></li>
+            <li className="flex items-center gap-2 rounded-xl border border-white/8 bg-black/20 px-4 py-3"><span aria-hidden="true" className="text-amber-300">!</span><span className="font-bold">{ui("전자책")}</span></li>
           </ul>
         </div>
         <div className="relative mt-7 grid gap-2.5">
@@ -139,16 +141,14 @@ function MonthlySubscriptionConfirmation({
             onClick={onConfirm}
             className="min-h-12 rounded-xl bg-[#ff715e] px-5 text-sm font-black text-white transition hover:bg-[#ff8a78] active:scale-[.99]"
           >
-            월간 구독으로 진행
-          </button>
+            {ui("월간 구독으로 진행")}</button>
           <button
             ref={cancelButtonRef}
             type="button"
             onClick={onCancel}
             className="min-h-11 rounded-xl border border-white/10 px-5 text-sm font-bold text-neutral-300 transition hover:border-white/25 hover:text-white"
           >
-            돌아가기
-          </button>
+            {ui("돌아가기")}</button>
         </div>
       </section>
     </div>,
@@ -157,6 +157,7 @@ function MonthlySubscriptionConfirmation({
 }
 
 export function BillingCheckoutClient() {
+  const ui = useUiText();
   const params = useSearchParams();
   const rawMode = params.get("mode");
   const mode = (["subscribe", "change_subscription", "replace_payment_method", "renew_annual"] as const)
@@ -337,15 +338,15 @@ export function BillingCheckoutClient() {
         <div className="mx-auto w-full max-w-3xl">
         <header className="mb-8 flex items-center justify-between gap-4">
           <Link href="/" className="text-xl font-black tracking-[-.04em] text-white">Easy Cut</Link>
-          <Link href={pricingReturnPath} className="text-xs font-bold text-neutral-400 transition hover:text-white">요금제로 돌아가기</Link>
+          <Link href={pricingReturnPath} className="text-xs font-bold text-neutral-400 transition hover:text-white">{ui("요금제로 돌아가기")}</Link>
         </header>
 
           <section className="rounded-[28px] border border-white/10 bg-[#191c1e]/95 p-6 shadow-2xl sm:p-9">
-            <h1 className="text-[30px] font-black tracking-[-.04em] text-white">{title}</h1>
-            <p className="mt-3 max-w-xl text-sm leading-7 text-neutral-400">{description}</p>
+            <h1 className="text-[30px] font-black tracking-[-.04em] text-white">{ui(title)}</h1>
+            <p className="mt-3 max-w-xl text-sm leading-7 text-neutral-400">{ui(description)}</p>
 
             {invalidSubscribeRequest ? (
-              <Link href={pricingReturnPath} className="mt-7 flex min-h-12 items-center justify-center rounded-xl bg-[#ff715e] px-5 text-sm font-black text-white">플랜 다시 선택하기</Link>
+              <Link href={pricingReturnPath} className="mt-7 flex min-h-12 items-center justify-center rounded-xl bg-[#ff715e] px-5 text-sm font-black text-white">{ui("플랜 다시 선택하기")}</Link>
             ) : (
               <form
                 onSubmit={submit}
@@ -353,30 +354,30 @@ export function BillingCheckoutClient() {
                 className="mt-8"
               >
                 <fieldset disabled={busy} className="grid gap-5 sm:grid-cols-2 disabled:opacity-70">
-                  <legend className="sr-only">구독 결제 정보</legend>
-                  <h2 className="mb-1 border-b border-white/8 pb-4 text-sm font-black text-white sm:col-span-2">결제자 정보</h2>
-                  <label className="text-xs font-bold text-neutral-300">이름<input required value={form.payerName} onChange={(event) => update("payerName", event.target.value.slice(0, 20))} autoComplete="name" placeholder="홍길동" className="mt-2 min-h-12 w-full rounded-xl border border-white/10 bg-black/20 px-4 text-sm text-white outline-none transition placeholder:text-neutral-600 focus:border-[#ff9b8d]/60 focus:ring-2 focus:ring-[#ff715e]/10" /></label>
-                  <label className="text-xs font-bold text-neutral-300">이메일<input required type="email" value={form.payerEmail} onChange={(event) => update("payerEmail", event.target.value.slice(0, 60))} autoComplete="email" placeholder="name@example.com" className="mt-2 min-h-12 w-full rounded-xl border border-white/10 bg-black/20 px-4 text-sm text-white outline-none transition placeholder:text-neutral-600 focus:border-[#ff9b8d]/60 focus:ring-2 focus:ring-[#ff715e]/10" /></label>
-                  <label className="text-xs font-bold text-neutral-300 sm:col-span-2">휴대전화 번호<input required inputMode="numeric" value={form.payerTel} onChange={(event) => update("payerTel", digits(event.target.value, 11))} placeholder="01012345678" autoComplete="tel" data-payment-advance-at="10,11" data-payment-advance-delay="400" className="mt-2 min-h-12 w-full rounded-xl border border-white/10 bg-black/20 px-4 text-sm text-white outline-none transition placeholder:text-neutral-600 focus:border-[#ff9b8d]/60 focus:ring-2 focus:ring-[#ff715e]/10" /><span className="mt-2 block text-[11px] font-medium leading-5 text-neutral-500">결제 연락처는 암호화해 저장하며, 다음 추가 시간 결제에서 다시 입력하지 않도록 사용합니다.</span></label>
+                  <legend className="sr-only">{ui("구독 결제 정보")}</legend>
+                  <h2 className="mb-1 border-b border-white/8 pb-4 text-sm font-black text-white sm:col-span-2">{ui("결제자 정보")}</h2>
+                  <label className="text-xs font-bold text-neutral-300">{ui("이름")}<input required value={form.payerName} onChange={(event) => update("payerName", event.target.value.slice(0, 20))} autoComplete="name" placeholder={ui("홍길동")} className="mt-2 min-h-12 w-full rounded-xl border border-white/10 bg-black/20 px-4 text-sm text-white outline-none transition placeholder:text-neutral-600 focus:border-[#ff9b8d]/60 focus:ring-2 focus:ring-[#ff715e]/10" /></label>
+                  <label className="text-xs font-bold text-neutral-300">{ui("이메일")}<input required type="email" value={form.payerEmail} onChange={(event) => update("payerEmail", event.target.value.slice(0, 60))} autoComplete="email" placeholder="name@example.com" className="mt-2 min-h-12 w-full rounded-xl border border-white/10 bg-black/20 px-4 text-sm text-white outline-none transition placeholder:text-neutral-600 focus:border-[#ff9b8d]/60 focus:ring-2 focus:ring-[#ff715e]/10" /></label>
+                  <label className="text-xs font-bold text-neutral-300 sm:col-span-2">{ui("휴대전화 번호")}<input required inputMode="numeric" value={form.payerTel} onChange={(event) => update("payerTel", digits(event.target.value, 11))} placeholder="01012345678" autoComplete="tel" data-payment-advance-at="10,11" data-payment-advance-delay="400" className="mt-2 min-h-12 w-full rounded-xl border border-white/10 bg-black/20 px-4 text-sm text-white outline-none transition placeholder:text-neutral-600 focus:border-[#ff9b8d]/60 focus:ring-2 focus:ring-[#ff715e]/10" /><span className="mt-2 block text-[11px] font-medium leading-5 text-neutral-500">{ui("결제 연락처는 암호화해 저장하며, 다음 추가 시간 결제에서 다시 입력하지 않도록 사용합니다.")}</span></label>
 
-                  <h2 className="mb-1 mt-3 border-b border-white/8 pb-4 text-sm font-black text-white sm:col-span-2">카드 정보</h2>
-                  <label className="text-xs font-bold text-neutral-300 sm:col-span-2">카드번호<input required type="password" inputMode="numeric" value={formattedCardNumber(form.cardNumber)} onChange={(event) => update("cardNumber", digits(event.target.value, 19))} placeholder="•••• •••• •••• ••••" autoComplete="cc-number" data-payment-advance-at="16,19" data-payment-advance-delay="400" className="mt-2 min-h-12 w-full rounded-xl border border-white/10 bg-black/20 px-4 text-sm tracking-[.08em] text-white outline-none transition placeholder:tracking-normal placeholder:text-neutral-600 focus:border-[#ff9b8d]/60 focus:ring-2 focus:ring-[#ff715e]/10" /></label>
+                  <h2 className="mb-1 mt-3 border-b border-white/8 pb-4 text-sm font-black text-white sm:col-span-2">{ui("카드 정보")}</h2>
+                  <label className="text-xs font-bold text-neutral-300 sm:col-span-2">{ui("카드번호")}<input required type="password" inputMode="numeric" value={formattedCardNumber(form.cardNumber)} onChange={(event) => update("cardNumber", digits(event.target.value, 19))} placeholder="•••• •••• •••• ••••" autoComplete="cc-number" data-payment-advance-at="16,19" data-payment-advance-delay="400" className="mt-2 min-h-12 w-full rounded-xl border border-white/10 bg-black/20 px-4 text-sm tracking-[.08em] text-white outline-none transition placeholder:tracking-normal placeholder:text-neutral-600 focus:border-[#ff9b8d]/60 focus:ring-2 focus:ring-[#ff715e]/10" /></label>
                   <div className="grid grid-cols-2 gap-3">
-                    <label className="text-xs font-bold text-neutral-300">유효기간 월<input required inputMode="numeric" value={form.expiryMonth} onChange={(event) => update("expiryMonth", digits(event.target.value, 2))} placeholder="MM" autoComplete="cc-exp-month" data-payment-advance-at="2" className="mt-2 min-h-12 w-full rounded-xl border border-white/10 bg-black/20 px-4 text-sm text-white outline-none transition placeholder:text-neutral-600 focus:border-[#ff9b8d]/60 focus:ring-2 focus:ring-[#ff715e]/10" /></label>
-                    <label className="text-xs font-bold text-neutral-300">유효기간 연도<input required inputMode="numeric" value={form.expiryYear} onChange={(event) => update("expiryYear", digits(event.target.value, 2))} placeholder="YY" autoComplete="cc-exp-year" data-payment-advance-at="2" className="mt-2 min-h-12 w-full rounded-xl border border-white/10 bg-black/20 px-4 text-sm text-white outline-none transition placeholder:text-neutral-600 focus:border-[#ff9b8d]/60 focus:ring-2 focus:ring-[#ff715e]/10" /></label>
+                    <label className="text-xs font-bold text-neutral-300">{ui("유효기간 월")}<input required inputMode="numeric" value={form.expiryMonth} onChange={(event) => update("expiryMonth", digits(event.target.value, 2))} placeholder="MM" autoComplete="cc-exp-month" data-payment-advance-at="2" className="mt-2 min-h-12 w-full rounded-xl border border-white/10 bg-black/20 px-4 text-sm text-white outline-none transition placeholder:text-neutral-600 focus:border-[#ff9b8d]/60 focus:ring-2 focus:ring-[#ff715e]/10" /></label>
+                    <label className="text-xs font-bold text-neutral-300">{ui("유효기간 연도")}<input required inputMode="numeric" value={form.expiryYear} onChange={(event) => update("expiryYear", digits(event.target.value, 2))} placeholder="YY" autoComplete="cc-exp-year" data-payment-advance-at="2" className="mt-2 min-h-12 w-full rounded-xl border border-white/10 bg-black/20 px-4 text-sm text-white outline-none transition placeholder:text-neutral-600 focus:border-[#ff9b8d]/60 focus:ring-2 focus:ring-[#ff715e]/10" /></label>
                   </div>
-                  <label className="text-xs font-bold text-neutral-300">카드 비밀번호 앞 2자리<input required type="password" inputMode="numeric" value={form.cardPassword} onChange={(event) => update("cardPassword", digits(event.target.value, 2))} placeholder="••" autoComplete="off" data-payment-advance-at="2" className="mt-2 min-h-12 w-full rounded-xl border border-white/10 bg-black/20 px-4 text-sm text-white outline-none transition placeholder:text-neutral-600 focus:border-[#ff9b8d]/60 focus:ring-2 focus:ring-[#ff715e]/10" /></label>
-                  <label className="text-xs font-bold text-neutral-300 sm:col-span-2">생년월일 또는 사업자번호<input required inputMode="numeric" value={form.identityNumber} onChange={(event) => update("identityNumber", digits(event.target.value, 10))} placeholder="생년월일 6자리 또는 사업자번호 10자리" autoComplete="off" data-payment-advance-at="6,10" data-payment-advance-delay="400" className="mt-2 min-h-12 w-full rounded-xl border border-white/10 bg-black/20 px-4 text-sm text-white outline-none transition placeholder:text-neutral-600 focus:border-[#ff9b8d]/60 focus:ring-2 focus:ring-[#ff715e]/10" /><span className="mt-2 block text-[11px] font-medium leading-5 text-neutral-500">개인카드는 생년월일 6자리, 법인카드는 사업자번호 10자리를 입력해 주세요.</span></label>
+                  <label className="text-xs font-bold text-neutral-300">{ui("카드 비밀번호 앞 2자리")}<input required type="password" inputMode="numeric" value={form.cardPassword} onChange={(event) => update("cardPassword", digits(event.target.value, 2))} placeholder="••" autoComplete="off" data-payment-advance-at="2" className="mt-2 min-h-12 w-full rounded-xl border border-white/10 bg-black/20 px-4 text-sm text-white outline-none transition placeholder:text-neutral-600 focus:border-[#ff9b8d]/60 focus:ring-2 focus:ring-[#ff715e]/10" /></label>
+                  <label className="text-xs font-bold text-neutral-300 sm:col-span-2">{ui("생년월일 또는 사업자번호")}<input required inputMode="numeric" value={form.identityNumber} onChange={(event) => update("identityNumber", digits(event.target.value, 10))} placeholder={ui("생년월일 6자리 또는 사업자번호 10자리")} autoComplete="off" data-payment-advance-at="6,10" data-payment-advance-delay="400" className="mt-2 min-h-12 w-full rounded-xl border border-white/10 bg-black/20 px-4 text-sm text-white outline-none transition placeholder:text-neutral-600 focus:border-[#ff9b8d]/60 focus:ring-2 focus:ring-[#ff715e]/10" /><span className="mt-2 block text-[11px] font-medium leading-5 text-neutral-500">{ui("개인카드는 생년월일 6자리, 법인카드는 사업자번호 10자리를 입력해 주세요.")}</span></label>
 
                   <div className="sm:col-span-2 rounded-2xl border border-white/10 bg-black/15 p-4">
-                    <span className="text-xs font-bold text-neutral-300">결제 방식</span>
-                    <strong className="mt-2 block text-sm text-white">신용카드 일시불</strong>
+                    <span className="text-xs font-bold text-neutral-300">{ui("결제 방식")}</span>
+                    <strong className="mt-2 block text-sm text-white">{ui("신용카드 일시불")}</strong>
                   </div>
 
                   {mode === "replace_payment_method" ? (
                     <label className="sm:col-span-2 flex cursor-pointer items-start gap-3 rounded-xl border border-white/8 bg-black/15 p-4 text-xs leading-6 text-neutral-300">
                       <input type="checkbox" checked={form.consent} onChange={(event) => update("consent", event.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-[#ff715e]" />
-                      <span>새 카드를 정기결제 수단으로 등록하는 데 동의합니다.</span>
+                      <span>{ui("새 카드를 정기결제 수단으로 등록하는 데 동의합니다.")}</span>
                     </label>
                   ) : (
                     <PurchaseTermsConsent
@@ -391,8 +392,8 @@ export function BillingCheckoutClient() {
                         : undefined}
                     />
                   )}
-                  <button type="submit" disabled={!valid || busy || quoteLoading} className="sm:col-span-2 min-h-13 rounded-xl bg-[#ff715e] px-5 py-3.5 text-sm font-black text-white shadow-[0_14px_32px_rgba(255,113,94,.18)] transition hover:bg-[#ff806f] disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none">{quoteLoading ? "변경 금액 계산 중..." : submitLabel}</button>
-                  <Link href={pricingReturnPath} className="sm:col-span-2 text-center text-xs font-bold text-neutral-500 transition hover:text-neutral-300">취소</Link>
+                  <button type="submit" disabled={!valid || busy || quoteLoading} className="sm:col-span-2 min-h-13 rounded-xl bg-[#ff715e] px-5 py-3.5 text-sm font-black text-white shadow-[0_14px_32px_rgba(255,113,94,.18)] transition hover:bg-[#ff806f] disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none">{ui(quoteLoading ? "변경 금액 계산 중..." : submitLabel)}</button>
+                  <Link href={pricingReturnPath} className="sm:col-span-2 text-center text-xs font-bold text-neutral-500 transition hover:text-neutral-300">{ui("취소")}</Link>
                 </fieldset>
               </form>
             )}
@@ -407,7 +408,7 @@ export function BillingCheckoutClient() {
       <PaymentMessageOverlay
         open={Boolean(error)}
         tone="error"
-        title="결제를 확인해 주세요"
+        title={ui("결제를 확인해 주세요")}
         message={error || ""}
         onClose={() => setError(null)}
       />

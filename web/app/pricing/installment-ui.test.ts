@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { messagesByLocale } from "@/lib/i18n/messages";
 
 const pricingSource = readFileSync(
   new URL("./pricing-client.tsx", import.meta.url),
@@ -60,11 +61,11 @@ describe("package installment UI", () => {
     expect(checkoutSource).toContain("패키지 이용기간과 할부 안내");
     expect(checkoutSource).toContain("이용기간");
     expect(checkoutSource).toContain("결제 할부");
-    expect(checkoutSource).toContain("최대 {MANUAL_INSTALLMENT_MAX_MONTHS}개월");
+    expect(checkoutSource).toContain('t("checkout.maxInstallments", { months: MANUAL_INSTALLMENT_MAX_MONTHS })');
     expect(checkoutSource).toContain(
-      "일시불 또는 2~{MANUAL_INSTALLMENT_MAX_MONTHS}개월 중 선택할 수 있으며",
+      't("checkout.installmentsHint", { months: MANUAL_INSTALLMENT_MAX_MONTHS })',
     );
-    expect(checkoutSource).toContain("카드사 정책에 따라 제한될 수 있습니다.");
+    expect(messagesByLocale.ko["checkout.installmentsHint"]).toContain("카드사 정책에 따라 제한될 수 있습니다.");
   });
 
   it("selects card kind, then credit-card issuer, before showing installments", () => {
@@ -72,7 +73,7 @@ describe("package installment UI", () => {
     const issuerSelectPosition = checkoutSource.indexOf("<CardIssuerSelect");
     const installmentSelectPosition = checkoutSource.indexOf("<InstallmentSelect");
     const cardNumberPosition = checkoutSource.indexOf(
-      '<legend className="text-xs font-bold text-neutral-300">카드번호</legend>',
+      '<legend className="text-xs font-bold text-neutral-300">{ui("카드번호")}</legend>',
     );
     expect(cardKindPosition).toBeGreaterThan(-1);
     expect(issuerSelectPosition).toBeGreaterThan(cardKindPosition);

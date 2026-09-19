@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import Link from "@/lib/i18n/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { ProjectDeleteOverlay } from "@/components/project-delete-overlay";
@@ -177,6 +179,7 @@ export function EstimatedProcessingOverlay({
 }
 
 export function ProjectCard({ job }: { job: ProjectListItem }) {
+  const ui = useUiText();
   const { locale } = useI18n();
   const menuId = useId();
   const menuRef = useRef<HTMLDivElement>(null);
@@ -307,7 +310,7 @@ export function ProjectCard({ job }: { job: ProjectListItem }) {
             {job.thumbnailUrl ? <YoutubeThumbnail key={`${job.thumbnailUrl}:${job.stage}:${job.status}`} src={job.thumbnailUrl} alt="" fill unoptimized className={`object-cover transition duration-300 group-hover:scale-[1.03] ${isProcessing ? "grayscale" : ""}`} /> : null}
             <div className="absolute left-2 top-2 z-10 flex flex-col items-start gap-1.5">
               {job.isExample && <span className="rounded bg-[#ff5540] px-2.5 py-1 text-[11px] font-extrabold text-white shadow-lg">{locale === "ko" ? "예시 작업" : locale === "en" ? "Example" : "サンプル"}</span>}
-              {daysUntilExpiration !== null && <span className="rounded bg-black/75 px-2 py-1 text-[11px] font-semibold text-white backdrop-blur-sm">{projectExpired ? (locale === "ko" ? "만료됨" : locale === "en" ? "Expired" : "期限切れ") : daysUntilExpiration > 0 ? (locale === "ko" ? `${daysUntilExpiration}일 뒤 만료` : locale === "en" ? `Expires in ${daysUntilExpiration} ${daysUntilExpiration === 1 ? "day" : "days"}` : `あと${daysUntilExpiration}日で期限切れ`) : (locale === "ko" ? "오늘 만료" : locale === "en" ? "Expires today" : "本日期限切れ")}</span>}
+              {daysUntilExpiration !== null && <span className="rounded bg-black/75 px-2 py-1 text-[11px] font-semibold text-white backdrop-blur-sm">{ui(projectExpired ? (locale === "ko" ? "만료됨" : locale === "en" ? "Expired" : "期限切れ") : daysUntilExpiration > 0 ? (locale === "ko" ? `${daysUntilExpiration}일 뒤 만료` : locale === "en" ? `Expires in ${daysUntilExpiration} ${daysUntilExpiration === 1 ? "day" : "days"}` : `あと${daysUntilExpiration}日で期限切れ`) : (locale === "ko" ? "오늘 만료" : locale === "en" ? "Expires today" : "本日期限切れ"))}</span>}
             </div>
             {!isProcessing && <span className="absolute bottom-2 right-2 rounded bg-black/75 px-2 py-1 text-[11px] font-semibold">{formatDuration(job.sourceDurationSeconds, locale)}</span>}
             <span className="absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-transparent" />
@@ -318,7 +321,7 @@ export function ProjectCard({ job }: { job: ProjectListItem }) {
           <div className="p-4">
             <h3 data-i18n-skip className="line-clamp-1 text-sm font-bold text-white">{job.videoTitle}</h3>
             <div className="mt-3 flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-neutral-500">
-              <span className={`min-w-0 break-words ${projectExpired ? "text-neutral-500" : rerenderingShort ? "text-violet-300" : job.status === "completed" ? "text-emerald-400" : job.status === "failed" ? "text-red-400" : "text-neutral-400"}`}>{projectExpired ? `● ${locale === "ko" ? "만료됨" : locale === "en" ? "Expired" : "期限切れ"}` : rerenderingShort ? `● ${locale === "ko" ? "수정 반영 중" : locale === "en" ? "Applying edits" : "編集を反映中"}` : job.status === "completed" ? `● ${locale === "ko" ? "완료" : locale === "en" ? "Complete" : "完了"}` : job.status === "failed" ? `● ${locale === "ko" ? "생성 실패" : locale === "en" ? "Creation failed" : "作成に失敗"}` : job.status === "retry_waiting" ? `● ${locale === "ko" ? "원본 영상을 준비하고 있습니다" : locale === "en" ? "Preparing source video" : "元動画を準備中"}` : `● ${processingLabel(job, locale)}`}</span>
+              <span className={`min-w-0 break-words ${projectExpired ? "text-neutral-500" : rerenderingShort ? "text-violet-300" : job.status === "completed" ? "text-emerald-400" : job.status === "failed" ? "text-red-400" : "text-neutral-400"}`}>{ui(projectExpired ? `● ${locale === "ko" ? "만료됨" : locale === "en" ? "Expired" : "期限切れ"}` : rerenderingShort ? `● ${locale === "ko" ? "수정 반영 중" : locale === "en" ? "Applying edits" : "編集を反映中"}` : job.status === "completed" ? `● ${locale === "ko" ? "완료" : locale === "en" ? "Complete" : "完了"}` : job.status === "failed" ? `● ${locale === "ko" ? "생성 실패" : locale === "en" ? "Creation failed" : "作成に失敗"}` : job.status === "retry_waiting" ? `● ${locale === "ko" ? "원본 영상을 준비하고 있습니다" : locale === "en" ? "Preparing source video" : "元動画を準備中"}` : `● ${processingLabel(job, locale)}`)}</span>
               {(!isProcessing || rerenderingShort) && <span className="shrink-0">{locale === "ko" ? `쇼츠 ${readyCount || job.shorts.length}개` : locale === "en" ? `${readyCount || job.shorts.length} ${(readyCount || job.shorts.length) === 1 ? "Short" : "Shorts"}` : `ショート動画 ${readyCount || job.shorts.length}本`}</span>}
               <span className="shrink-0">{formatSeoulDate(job.createdAt, locale)}</span>
             </div>
@@ -362,7 +365,7 @@ export function ProjectCard({ job }: { job: ProjectListItem }) {
                     type="button"
                     role="menuitem"
                     disabled={!canDelete}
-                    title={!canDelete ? (locale === "ko" ? "진행 중인 작업은 완료된 뒤 삭제할 수 있습니다." : locale === "en" ? "A running project can be deleted after it finishes." : "処理中のプロジェクトは完了後に削除できます。") : undefined}
+                    title={ui(!canDelete ? (locale === "ko" ? "진행 중인 작업은 완료된 뒤 삭제할 수 있습니다." : locale === "en" ? "A running project can be deleted after it finishes." : "処理中のプロジェクトは完了後に削除できます。") : undefined)}
                     onClick={() => {
                       rememberScrollPosition();
                       setMenuOpen(false);
@@ -372,9 +375,9 @@ export function ProjectCard({ job }: { job: ProjectListItem }) {
                     className="flex min-h-10 w-full items-center gap-3 rounded-xl px-3 text-left font-bold text-red-300 transition enabled:hover:bg-red-400/10 enabled:focus-visible:bg-red-400/10 enabled:focus-visible:outline-none disabled:cursor-not-allowed disabled:text-neutral-600"
                   >
                     <span aria-hidden="true">⌫</span>
-                    {canDelete
+                    {ui(canDelete
                       ? (locale === "ko" ? "프로젝트 삭제" : locale === "en" ? "Delete project" : "プロジェクトを削除")
-                      : (locale === "ko" ? "작업 완료 후 삭제 가능" : locale === "en" ? "Delete after completion" : "完了後に削除可能")}
+                      : (locale === "ko" ? "작업 완료 후 삭제 가능" : locale === "en" ? "Delete after completion" : "完了後に削除可能"))}
                   </button>
                 </>
               ) : null}
@@ -387,9 +390,9 @@ export function ProjectCard({ job }: { job: ProjectListItem }) {
         open={deleteDialogOpen}
         state={deleteError ? "error" : "confirm"}
         statusLabel={locale === "ko" ? "확인 필요" : locale === "en" ? "Confirmation" : "確認が必要"}
-        title={deleteError
+        title={ui(deleteError
           ? (locale === "ko" ? "프로젝트를 삭제하지 못했어요" : locale === "en" ? "Could not delete the project" : "プロジェクトを削除できませんでした")
-          : (locale === "ko" ? "이 프로젝트를 삭제할까요?" : locale === "en" ? "Delete this project?" : "このプロジェクトを削除しますか？")}
+          : (locale === "ko" ? "이 프로젝트를 삭제할까요?" : locale === "en" ? "Delete this project?" : "このプロジェクトを削除しますか？"))}
         message={deleteError || undefined}
         actionLabel={deleteError ? undefined : (locale === "ko" ? "프로젝트 삭제" : locale === "en" ? "Delete project" : "プロジェクトを削除")}
         closeLabel={deleteError ? (locale === "ko" ? "확인" : locale === "en" ? "OK" : "確認") : (locale === "ko" ? "취소" : locale === "en" ? "Cancel" : "キャンセル")}

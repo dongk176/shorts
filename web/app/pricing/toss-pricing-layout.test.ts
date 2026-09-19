@@ -15,7 +15,7 @@ describe("production Toss pricing layout", () => {
     expect(clientSource).toContain("const PACKAGE_TERMS = [3, 6, 12] as const");
     expect(clientSource).toContain('plan.tier === "easycut_pro"');
     expect(clientSource).toContain("? plan.contractMonths === 1");
-    expect(clientSource).toContain('<span>패키지 이용기간</span>');
+    expect(clientSource).toContain('<span>{ui("패키지 이용기간")}</span>');
   });
 
   it("uses familiar billing-cycle labels for every selectable term", () => {

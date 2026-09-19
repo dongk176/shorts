@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import { useEffect, useRef, useState } from "react";
 import { startProjectDownload } from "@/lib/project-download-client";
 
@@ -16,6 +18,7 @@ export function ProjectDownloadButton({ projectNumber, disabled, canDownload, on
   onPaywall: () => void;
   locale: "ko" | "en" | "ja";
 }) {
+  const ui = useUiText();
   const text = labels[locale];
   const pending = useRef<AbortController | null>(null);
   const [preparing, setPreparing] = useState(false);
@@ -54,7 +57,7 @@ export function ProjectDownloadButton({ projectNumber, disabled, canDownload, on
 
   return (
     <div className="relative shrink-0">
-      <button data-project-guide="bulk-download" disabled={disabled || preparing} aria-busy={preparing} title={text.title} onClick={download} className="workspace-button workspace-button-primary disabled:cursor-not-allowed disabled:opacity-40">
+      <button data-project-guide="bulk-download" disabled={disabled || preparing} aria-busy={preparing} title={ui(text.title)} onClick={download} className="workspace-button workspace-button-primary disabled:cursor-not-allowed disabled:opacity-40">
         {preparing ? text.preparing : text.button}
       </button>
       {notice && (

@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties, PointerEventHandler } from "react";
 import { COMMENT_CAPTURE_LANDSCAPE_LIFT_PX } from "@/lib/template-config";
@@ -86,6 +88,7 @@ export function TitleOverlayPreview({
   onEditValueChange?: (value: string) => void;
   onEditEnd?: () => void;
 }) {
+  const ui = useUiText();
   const lines = useMemo(
     () => resolvedLines || wrapPreviewTitle(title),
     [resolvedLines, title],
@@ -189,7 +192,7 @@ export function TitleOverlayPreview({
               ? <textarea
                   autoFocus
                   data-editor-overlay-layer="title"
-                  aria-label="제목 직접 편집"
+                  aria-label={ui("제목 직접 편집")}
                   value={title}
                   maxLength={80}
                   rows={2}
@@ -217,7 +220,7 @@ export function TitleOverlayPreview({
               : <button
                   type="button"
                   data-editor-overlay-layer="title"
-                  aria-label="제목 오버레이 선택 및 세로 이동"
+                  aria-label={ui("제목 오버레이 선택 및 세로 이동")}
                   aria-pressed={selected}
                   onPointerDown={onPointerDown}
                   onDoubleClick={(event) => {
@@ -225,7 +228,7 @@ export function TitleOverlayPreview({
                     event.stopPropagation();
                     onEditStart?.();
                   }}
-                  title="더블클릭해서 제목 수정"
+                  title={ui("더블클릭해서 제목 수정")}
                   className={`pointer-events-auto flex cursor-ns-resize appearance-none flex-col items-center border-0 bg-transparent p-0 ${selected ? "outline outline-2 outline-[#ff715e]" : ""}`}
                   style={{
                     gap: canvasWidth(TITLE_LINE_GAP),

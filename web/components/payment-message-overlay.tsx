@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import Link from "@/lib/i18n/navigation";
 import { useEffect, useId, useRef, type ReactNode } from "react";
 
@@ -66,6 +68,7 @@ export function PaymentMessageOverlay({
   highlight,
   showStatus = true,
 }: PaymentMessageOverlayProps) {
+  const ui = useUiText();
   const titleId = useId();
   const descriptionId = useId();
   const dialogRef = useRef<HTMLElement>(null);
@@ -151,17 +154,17 @@ export function PaymentMessageOverlay({
               {styles.icon}
             </div>
             <p className={`relative mt-5 text-[11px] font-black uppercase tracking-[.18em] ${styles.eyebrowClassName}`}>
-              {styles.eyebrow}
+              {ui(styles.eyebrow)}
             </p>
           </>
         ) : null}
         <h1 id={titleId} className={`relative whitespace-pre-line text-2xl font-black tracking-[-.04em] text-white ${showStatus ? "mt-2" : ""}`}>
-          {title}
+          {ui(title)}
         </h1>
         {highlight}
         {message ? (
           <p id={descriptionId} className="relative mt-4 whitespace-pre-line text-sm leading-6 text-neutral-300">
-            {message}
+            {ui(message)}
           </p>
         ) : null}
         <div className="relative mt-7 grid gap-2.5">
@@ -171,7 +174,7 @@ export function PaymentMessageOverlay({
               tabIndex={-1}
               className="flex min-h-12 items-center justify-center rounded-xl bg-white/8 px-5 text-sm font-extrabold text-neutral-300 outline-none"
             >
-              {pendingLabel}
+              {ui(pendingLabel)}
             </span>
           ) : actionHref && actionLabel ? (
             <Link
@@ -180,7 +183,7 @@ export function PaymentMessageOverlay({
               prefetch={false}
               className="flex min-h-12 items-center justify-center rounded-xl bg-[#ff715e] px-5 text-sm font-extrabold text-white transition hover:bg-[#ff806f]"
             >
-              {actionLabel}
+              {ui(actionLabel)}
             </Link>
           ) : onAction && actionLabel ? (
             <button
@@ -189,7 +192,7 @@ export function PaymentMessageOverlay({
               onClick={onAction}
               className="min-h-12 rounded-xl bg-[#ff715e] px-5 text-sm font-extrabold text-white transition hover:bg-[#ff806f]"
             >
-              {actionLabel}
+              {ui(actionLabel)}
             </button>
           ) : onClose ? (
             <button
@@ -198,7 +201,7 @@ export function PaymentMessageOverlay({
               onClick={onClose}
               className="min-h-12 rounded-xl bg-[#ff715e] px-5 text-sm font-extrabold text-white transition hover:bg-[#ff806f]"
             >
-              {closeLabel}
+              {ui(closeLabel)}
             </button>
           ) : null}
           {!actionPending && secondaryHref && secondaryLabel && (
@@ -207,7 +210,7 @@ export function PaymentMessageOverlay({
               prefetch={false}
               className="flex min-h-11 items-center justify-center rounded-xl border border-white/10 px-5 text-xs font-bold text-white transition hover:border-white/25"
             >
-              {secondaryLabel}
+              {ui(secondaryLabel)}
             </Link>
           )}
           {!actionPending && (actionHref || onAction) && actionLabel && onClose && (
@@ -216,7 +219,7 @@ export function PaymentMessageOverlay({
               onClick={onClose}
               className="min-h-11 rounded-xl border border-white/10 px-5 text-xs font-bold text-neutral-300 transition hover:border-white/25 hover:text-white"
             >
-              {closeLabel}
+              {ui(closeLabel)}
             </button>
           )}
         </div>

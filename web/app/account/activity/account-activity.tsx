@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import { useCallback, useEffect, useState } from "react";
 import { formatLocale, type SiteLocale } from "@/lib/i18n/config";
 import { formatKrw, formatSeoulDate } from "@/lib/i18n/format";
@@ -138,6 +140,7 @@ function localizedResult(value: unknown, locale: SiteLocale) {
 }
 
 export function AccountActivity() {
+  const ui = useUiText();
   const { locale } = useI18n();
   const copy = {
     payments: label(locale, { ko: "내 결제 내역", en: "Payment history", ja: "決済履歴" }),
@@ -167,7 +170,7 @@ export function AccountActivity() {
         <button type="button" onClick={() => { setTab("payments"); setPage(1); }} className={`rounded-xl px-5 py-2.5 text-sm font-black ${tab === "payments" ? "bg-white text-black" : "text-neutral-400"}`}>{copy.payments}</button>
         <button type="button" onClick={() => { setTab("usage"); setPage(1); }} className={`rounded-xl px-5 py-2.5 text-sm font-black ${tab === "usage" ? "bg-white text-black" : "text-neutral-400"}`}>{copy.usage}</button>
       </div>
-      {error && <p className="bg-red-400/10 px-5 py-3 text-sm text-red-200">{error}</p>}
+      {error && <p className="bg-red-400/10 px-5 py-3 text-sm text-red-200">{ui(error)}</p>}
       <div className="overflow-x-auto">
         {tab === "payments" ? <table className="w-full min-w-[1400px] table-fixed text-left text-sm">
           <colgroup>
@@ -179,13 +182,13 @@ export function AccountActivity() {
             <col className="w-[190px]" />
             <col className="w-[100px]" />
           </colgroup>
-          <thead className="bg-black/20 text-xs text-neutral-500"><tr><th className="whitespace-nowrap px-5 py-3">{label(locale, { ko: "등록·결제일시", en: "Created / paid", ja: "登録・決済日時" })}</th><th className="whitespace-nowrap px-4 py-3">{label(locale, { ko: "상품", en: "Product", ja: "商品" })}</th><th className="whitespace-nowrap px-4 py-3">{label(locale, { ko: "금액 / 결제조건", en: "Amount / terms", ja: "金額 / 決済条件" })}</th><th className="whitespace-nowrap px-4 py-3">{label(locale, { ko: "상태 / 기한", en: "Status / due date", ja: "状態 / 期限" })}</th><th className="whitespace-nowrap px-4 py-3">{label(locale, { ko: "주문번호", en: "Order ID", ja: "注文番号" })}</th><th className="whitespace-nowrap px-4 py-3">{label(locale, { ko: "승인·결제수단 / PG 거래", en: "Approval or method / PG", ja: "承認・決済手段 / PG" })}</th><th className="whitespace-nowrap px-5 py-3">{label(locale, { ko: "확인서", en: "Receipt", ja: "確認書" })}</th></tr></thead>
+          <thead className="bg-black/20 text-xs text-neutral-500"><tr><th className="whitespace-nowrap px-5 py-3">{ui(label(locale, { ko: "등록·결제일시", en: "Created / paid", ja: "登録・決済日時" }))}</th><th className="whitespace-nowrap px-4 py-3">{ui(label(locale, { ko: "상품", en: "Product", ja: "商品" }))}</th><th className="whitespace-nowrap px-4 py-3">{ui(label(locale, { ko: "금액 / 결제조건", en: "Amount / terms", ja: "金額 / 決済条件" }))}</th><th className="whitespace-nowrap px-4 py-3">{ui(label(locale, { ko: "상태 / 기한", en: "Status / due date", ja: "状態 / 期限" }))}</th><th className="whitespace-nowrap px-4 py-3">{ui(label(locale, { ko: "주문번호", en: "Order ID", ja: "注文番号" }))}</th><th className="whitespace-nowrap px-4 py-3">{ui(label(locale, { ko: "승인·결제수단 / PG 거래", en: "Approval or method / PG", ja: "承認・決済手段 / PG" }))}</th><th className="whitespace-nowrap px-5 py-3">{ui(label(locale, { ko: "확인서", en: "Receipt", ja: "確認書" }))}</th></tr></thead>
           <tbody className="divide-y divide-white/[.06]">{data.items.map((item) => <tr key={String(item.id)}>
             <td className="whitespace-nowrap px-5 py-4 text-neutral-400">{date(item.approvedAt || item.createdAt, locale)}</td>
-            <td className="px-4 py-4"><p className="whitespace-nowrap font-bold">{localizedProductName(item.orderName || item.productCode, locale)}</p><p className="mt-1 whitespace-nowrap text-xs text-neutral-500">{billingCycleLabel(item.billingCycle, locale)}{item.isEnterpriseProduct ? ` · ${label(locale, { ko: `결제 순서 ${Number(item.sortOrder)}번`, en: `Payment order ${Number(item.sortOrder)}`, ja: `決済順序 ${Number(item.sortOrder)}` })}` : ""}</p>{item.isEnterpriseProduct ? <p className="mt-1 whitespace-nowrap text-xs text-neutral-400">{calendarDate(item.serviceStartDate, locale)} ~ {calendarDate(item.serviceEndDate, locale)} · {Number(item.includedMinutes || 0).toLocaleString(formatLocale(locale))}{label(locale, { ko: "분", en: " min", ja: "分" })}</p> : null}</td>
-            <td className="whitespace-nowrap px-4 py-4"><p className="font-black">{money(item.amountKrw, locale)}</p><p className="mt-1 text-xs text-neutral-500">{item.isEnterpriseProduct ? enterpriseVatLabel(item.vatTreatment, locale) : Number(item.installmentMonths || 0) > 0 ? label(locale, { ko: `${Number(item.installmentMonths)}개월 할부`, en: `${Number(item.installmentMonths)}-month installments`, ja: `${Number(item.installmentMonths)}回払い` }) : label(locale, { ko: "일시불", en: "One-time payment", ja: "一括払い" })}</p></td>
-            <td className="whitespace-nowrap px-4 py-4"><p className="font-bold">{paymentStatusLabels[String(item.status)] ? label(locale, paymentStatusLabels[String(item.status)]) : String(item.status)}</p>{item.isEnterpriseProduct ? <p className="mt-1 text-xs text-neutral-500">{label(locale, { ko: "결제 기한", en: "Due", ja: "決済期限" })} {calendarDate(item.paymentDueDate, locale)}</p> : <p className={`mt-1 text-xs ${Number(item.refundedAmountKrw || 0) > 0 || Number(item.scheduledRefundAmountKrw || 0) > 0 ? "text-[#ff9b8d]" : "text-neutral-600"}`}>{refundLabel(item, locale)}</p>}</td>
-            <td className="whitespace-nowrap px-4 py-4 font-mono text-[11px] tracking-[-.02em]">{String(item.orderId || label(locale, { ko: "결제 전", en: "Not paid", ja: "決済前" }))}</td>
+            <td className="px-4 py-4"><p className="whitespace-nowrap font-bold">{localizedProductName(item.orderName || item.productCode, locale)}</p><p className="mt-1 whitespace-nowrap text-xs text-neutral-500">{billingCycleLabel(item.billingCycle, locale)}{ui(item.isEnterpriseProduct ? ` · ${label(locale, { ko: `결제 순서 ${Number(item.sortOrder)}번`, en: `Payment order ${Number(item.sortOrder)}`, ja: `決済順序 ${Number(item.sortOrder)}` })}` : "")}</p>{item.isEnterpriseProduct ? <p className="mt-1 whitespace-nowrap text-xs text-neutral-400">{calendarDate(item.serviceStartDate, locale)} ~ {calendarDate(item.serviceEndDate, locale)} · {Number(item.includedMinutes || 0).toLocaleString(formatLocale(locale))}{ui(label(locale, { ko: "분", en: " min", ja: "分" }))}</p> : null}</td>
+            <td className="whitespace-nowrap px-4 py-4"><p className="font-black">{money(item.amountKrw, locale)}</p><p className="mt-1 text-xs text-neutral-500">{ui(item.isEnterpriseProduct ? enterpriseVatLabel(item.vatTreatment, locale) : Number(item.installmentMonths || 0) > 0 ? label(locale, { ko: `${Number(item.installmentMonths)}개월 할부`, en: `${Number(item.installmentMonths)}-month installments`, ja: `${Number(item.installmentMonths)}回払い` }) : label(locale, { ko: "일시불", en: "One-time payment", ja: "一括払い" }))}</p></td>
+            <td className="whitespace-nowrap px-4 py-4"><p className="font-bold">{paymentStatusLabels[String(item.status)] ? label(locale, paymentStatusLabels[String(item.status)]) : String(item.status)}</p>{item.isEnterpriseProduct ? <p className="mt-1 text-xs text-neutral-500">{ui(label(locale, { ko: "결제 기한", en: "Due", ja: "決済期限" }))} {calendarDate(item.paymentDueDate, locale)}</p> : <p className={`mt-1 text-xs ${Number(item.refundedAmountKrw || 0) > 0 || Number(item.scheduledRefundAmountKrw || 0) > 0 ? "text-[#ff9b8d]" : "text-neutral-600"}`}>{refundLabel(item, locale)}</p>}</td>
+            <td className="whitespace-nowrap px-4 py-4 font-mono text-[11px] tracking-[-.02em]">{ui(String(item.orderId || label(locale, { ko: "결제 전", en: "Not paid", ja: "決済前" })))}</td>
             <td className="whitespace-nowrap px-4 py-4 font-mono text-xs"><p>{String(item.isEnterpriseProduct ? item.paymentMethod || "-" : item.providerAuthCode || "-")}</p><p className="mt-1 text-neutral-600">{String(item.providerTransactionId || "-")}</p></td>
             <td className="whitespace-nowrap px-5 py-4">{item.status === "succeeded" ? <a target="_blank" rel="noreferrer" href={`/api/account/receipts/${String(item.id)}`} className="inline-flex min-h-9 items-center justify-center whitespace-nowrap rounded-lg border border-white/10 px-3 text-xs font-black transition hover:border-white/25 hover:bg-white/[.05]">{copy.receipt}</a> : <span className="text-neutral-600">-</span>}</td>
           </tr>)}</tbody>
@@ -197,11 +200,11 @@ export function AccountActivity() {
             <col className="w-[100px]" />
             <col className="w-[140px]" />
           </colgroup>
-          <thead className="bg-black/20 text-xs text-neutral-500"><tr><th className="whitespace-nowrap px-5 py-3">{label(locale, { ko: "시각", en: "Time", ja: "日時" })}</th><th className="whitespace-nowrap px-4 py-3">{label(locale, { ko: "구분", en: "Type", ja: "区分" })}</th><th className="whitespace-nowrap px-4 py-3">{label(locale, { ko: "플랜 / 작업", en: "Plan / job", ja: "プラン / 処理" })}</th><th className="whitespace-nowrap px-4 py-3">{label(locale, { ko: "시간", en: "Time", ja: "時間" })}</th><th className="whitespace-nowrap px-5 py-3">{label(locale, { ko: "결과", en: "Result", ja: "結果" })}</th></tr></thead>
+          <thead className="bg-black/20 text-xs text-neutral-500"><tr><th className="whitespace-nowrap px-5 py-3">{ui(label(locale, { ko: "시각", en: "Time", ja: "日時" }))}</th><th className="whitespace-nowrap px-4 py-3">{ui(label(locale, { ko: "구분", en: "Type", ja: "区分" }))}</th><th className="whitespace-nowrap px-4 py-3">{ui(label(locale, { ko: "플랜 / 작업", en: "Plan / job", ja: "プラン / 処理" }))}</th><th className="whitespace-nowrap px-4 py-3">{ui(label(locale, { ko: "시간", en: "Time", ja: "時間" }))}</th><th className="whitespace-nowrap px-5 py-3">{ui(label(locale, { ko: "결과", en: "Result", ja: "結果" }))}</th></tr></thead>
           <tbody className="divide-y divide-white/[.06]">{data.items.map((item) => <tr key={String(item.id)}>
             <td className="whitespace-nowrap px-5 py-4 text-neutral-400">{date(item.occurredAt, locale)}</td>
             <td className="whitespace-nowrap px-4 py-4 font-bold">{eventLabels[String(item.eventType)] ? label(locale, eventLabels[String(item.eventType)]) : String(item.eventType)}</td>
-            <td className="px-4 py-4"><p>{item.projectNumber ? label(locale, { ko: `프로젝트 #${String(item.projectNumber)}`, en: `Project #${String(item.projectNumber)}`, ja: `プロジェクト #${String(item.projectNumber)}` }) : item.productName ? localizedProductName(item.productName, locale) : productLabels[String(item.productCode)] ? label(locale, productLabels[String(item.productCode)]) : String(item.productCode || "-")}</p>{Boolean(item.videoTitle) && <p data-i18n-skip className="mt-1 max-w-md truncate text-xs text-neutral-500">{String(item.videoTitle)}</p>}</td>
+            <td className="px-4 py-4"><p>{ui(item.projectNumber ? label(locale, { ko: `프로젝트 #${String(item.projectNumber)}`, en: `Project #${String(item.projectNumber)}`, ja: `プロジェクト #${String(item.projectNumber)}` }) : item.productName ? localizedProductName(item.productName, locale) : productLabels[String(item.productCode)] ? label(locale, productLabels[String(item.productCode)]) : String(item.productCode || "-"))}</p>{Boolean(item.videoTitle) && <p data-i18n-skip className="mt-1 max-w-md truncate text-xs text-neutral-500">{String(item.videoTitle)}</p>}</td>
             <td className={`whitespace-nowrap px-4 py-4 font-black ${Number(item.seconds || 0) < 0 ? "text-[#ff9b8d]" : "text-emerald-300"}`}>{minutes(item.seconds, locale)}</td>
             <td className="whitespace-nowrap px-5 py-4 text-neutral-400">{localizedResult(item.result, locale)}</td>
           </tr>)}</tbody>
@@ -209,7 +212,7 @@ export function AccountActivity() {
         {!data.items.length && <p className="px-5 py-16 text-center text-neutral-500">{copy.empty}</p>}
       </div>
       <div className="flex items-center justify-between border-t border-white/10 p-4 text-sm">
-        <span className="text-neutral-500">{label(locale, { ko: `총 ${data.total.toLocaleString(formatLocale(locale))}건 · ${page}/${pages}페이지`, en: `${data.total.toLocaleString(formatLocale(locale))} total · Page ${page}/${pages}`, ja: `全${data.total.toLocaleString(formatLocale(locale))}件・${page}/${pages}ページ` })}</span>
+        <span className="text-neutral-500">{ui(label(locale, { ko: `총 ${data.total.toLocaleString(formatLocale(locale))}건 · ${page}/${pages}페이지`, en: `${data.total.toLocaleString(formatLocale(locale))} total · Page ${page}/${pages}`, ja: `全${data.total.toLocaleString(formatLocale(locale))}件・${page}/${pages}ページ` }))}</span>
         <div className="flex gap-2"><button type="button" disabled={page <= 1} onClick={() => setPage((value) => value - 1)} className="rounded-lg border border-white/10 px-3 py-2 disabled:opacity-30">{copy.previous}</button><button type="button" disabled={page >= pages} onClick={() => setPage((value) => value + 1)} className="rounded-lg border border-white/10 px-3 py-2 disabled:opacity-30">{copy.next}</button></div>
       </div>
     </section>

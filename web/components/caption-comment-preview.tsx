@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import { useEffect, useId, useState } from "react";
 import type { CommentOverlay, OutputLanguage } from "@/lib/contracts";
 import { commentActionLabels } from "@/lib/content-language";
@@ -10,6 +12,7 @@ export function CaptionCommentPreview({ comment, theme, outputLanguage }: {
   theme: "dark" | "light";
   outputLanguage: OutputLanguage;
 }) {
+  const ui = useUiText();
   const id = useId();
   const family = outputLanguage === "ja" ? '"Editor Noto Sans JP"' : '"Editor Noto Sans KR"';
   const actions = commentActionLabels(comment?.likeCount || 0, outputLanguage);
@@ -51,7 +54,7 @@ export function CaptionCommentPreview({ comment, theme, outputLanguage }: {
   const icon = (x: number, down = false) => <svg x={x} y={actionY} width="34" height="34" viewBox="0 0 100 100">
     <path transform={down ? "rotate(180 50 50)" : undefined} d="M8 53 25 51 31 45 43 11 47 6 55 7 61 12 63 20 58 42 81 42 91 45 97 51 98 59 94 68 92 77 86 87 78 92 36 92 25 86 13 85 7 80 7 58Z" fill="none" stroke={dark ? "#F1F1F1" : "#18181B"} strokeWidth="9" strokeLinejoin="round" />
   </svg>;
-  return <svg aria-label="댓글 미리보기" data-i18n-content="" data-caption-comment-preview viewBox="0 0 1080 285" className="block w-full" style={{ fontFamily: family }}>
+  return <svg aria-label={ui("댓글 미리보기")} data-i18n-content="" data-caption-comment-preview viewBox="0 0 1080 285" className="block w-full" style={{ fontFamily: family }}>
     <defs><filter id={`${id}-identity`} x="-30%" y="-100%" width="160%" height="300%"><feGaussianBlur stdDeviation="4.5" /></filter></defs>
     <rect width="1080" height="285" fill={dark ? "#040404" : "#FFFFFF"} fillOpacity={dark ? 244 / 255 : 1} />
     <g filter={`url(#${id}-identity)`}>

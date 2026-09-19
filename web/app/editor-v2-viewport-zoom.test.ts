@@ -72,10 +72,10 @@ describe("editor v2 viewport zoom", () => {
 
   it("shows delayed friendly tooltips for preview controls", () => {
     expect(editorSource).toContain(
-      'data-tooltip={overlayPreviewEnabled\n              ? (isPreviewPlaying ? "정지" : "재생")',
+      'data-tooltip={ui(overlayPreviewEnabled\n              ? (isPreviewPlaying ? "정지" : "재생")',
     );
     expect(editorSource).toContain(
-      'data-tooltip={isPreviewFullscreen ? "전체보기 종료" : "전체보기"}',
+      'data-tooltip={ui(isPreviewFullscreen ? "전체보기 종료" : "전체보기")}',
     );
     expect(styles).toContain(
       ".editor-v2-root .editor-preview-play-control:hover::after",

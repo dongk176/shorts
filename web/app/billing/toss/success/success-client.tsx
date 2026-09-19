@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import Link from "@/lib/i18n/navigation";
 import { useRouter } from "@/lib/i18n/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -35,6 +37,7 @@ function wait(ms: number, signal: AbortSignal) {
 }
 
 export function TossCheckoutSuccessClient() {
+  const ui = useUiText();
   const router = useRouter();
   const { refreshUsage } = useUsageState();
   const [status, setStatus] = useState<Status>({ kind: "loading" });
@@ -153,31 +156,30 @@ export function TossCheckoutSuccessClient() {
         {status.kind === "loading" || status.kind === "pending" ? (
           <>
             <div className="h-12 w-12 animate-pulse rounded-2xl bg-white/[.07]" />
-            <h1 className="mt-6 text-2xl font-black">결제 결과를 확인하고 있습니다</h1>
+            <h1 className="mt-6 text-2xl font-black">{ui("결제 결과를 확인하고 있습니다")}</h1>
             <p className="mt-3 text-sm leading-7 text-neutral-400">
-              {status.kind === "pending" ? status.message : "창을 닫지 말고 잠시만 기다려 주세요."}
+              {ui(status.kind === "pending" ? status.message : "창을 닫지 말고 잠시만 기다려 주세요.")}
             </p>
           </>
         ) : status.kind === "success" ? (
           <>
-            <h1 className="text-3xl font-black tracking-tight">구독이 시작되었습니다</h1>
-            <p className="mt-4 text-base font-bold text-neutral-200">남은 사용량 {status.remainingMinutes}분</p>
-            <Link href="/" className="mt-8 flex min-h-[56px] items-center justify-center rounded-2xl bg-gradient-to-r from-[#f84b3f] to-[#8b5cf6] px-5 text-base font-black text-white">쇼츠 만들기</Link>
+            <h1 className="text-3xl font-black tracking-tight">{ui("구독이 시작되었습니다")}</h1>
+            <p className="mt-4 text-base font-bold text-neutral-200">{ui("남은 사용량 ")}{status.remainingMinutes}{ui("분")}</p>
+            <Link href="/" className="mt-8 flex min-h-[56px] items-center justify-center rounded-2xl bg-gradient-to-r from-[#f84b3f] to-[#8b5cf6] px-5 text-base font-black text-white">{ui("쇼츠 만들기")}</Link>
           </>
         ) : status.kind === "hana_unavailable" ? (
           <>
-            <span className="inline-flex rounded-full bg-amber-300/10 px-3 py-1 text-xs font-black text-amber-200">카드사 심사 진행 중</span>
-            <h1 className="mt-5 text-3xl font-black tracking-tight">하나카드는 아직 사용할 수 없어요</h1>
+            <span className="inline-flex rounded-full bg-amber-300/10 px-3 py-1 text-xs font-black text-amber-200">{ui("카드사 심사 진행 중")}</span>
+            <h1 className="mt-5 text-3xl font-black tracking-tight">{ui("하나카드는 아직 사용할 수 없어요")}</h1>
             <p className="mt-4 text-sm leading-7 text-neutral-300">
-              카드등록은 취소되었고 결제도 승인되지 않았습니다. 다른 카드를 선택해 다시 진행해 주세요.
-            </p>
-            <Link href="/pricing" className="mt-8 flex min-h-[56px] items-center justify-center rounded-2xl bg-gradient-to-r from-[#f84b3f] to-[#8b5cf6] px-5 text-base font-black text-white">다른 카드로 결제하기</Link>
+              {ui("카드등록은 취소되었고 결제도 승인되지 않았습니다. 다른 카드를 선택해 다시 진행해 주세요.")}</p>
+            <Link href="/pricing" className="mt-8 flex min-h-[56px] items-center justify-center rounded-2xl bg-gradient-to-r from-[#f84b3f] to-[#8b5cf6] px-5 text-base font-black text-white">{ui("다른 카드로 결제하기")}</Link>
           </>
         ) : (
           <>
-            <h1 className="text-3xl font-black tracking-tight">결제를 완료하지 못했습니다</h1>
-            <p className="mt-4 text-sm leading-7 text-red-200">{status.message}</p>
-            <Link href="/pricing" className="mt-8 flex min-h-[56px] items-center justify-center rounded-2xl border border-white/12 px-5 text-base font-black text-white">요금제로 돌아가기</Link>
+            <h1 className="text-3xl font-black tracking-tight">{ui("결제를 완료하지 못했습니다")}</h1>
+            <p className="mt-4 text-sm leading-7 text-red-200">{ui(status.message)}</p>
+            <Link href="/pricing" className="mt-8 flex min-h-[56px] items-center justify-center rounded-2xl border border-white/12 px-5 text-base font-black text-white">{ui("요금제로 돌아가기")}</Link>
           </>
         )}
       </section>

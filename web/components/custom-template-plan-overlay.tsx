@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import Link from "@/lib/i18n/navigation";
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -11,6 +13,7 @@ export function CustomTemplatePlanOverlay({
   open: boolean;
   onClose: () => void;
 }) {
+  const ui = useUiText();
   const pricingRef = useRef<HTMLAnchorElement>(null);
 
   useEffect(() => {
@@ -47,26 +50,22 @@ export function CustomTemplatePlanOverlay({
       >
         <p className="text-[11px] font-black uppercase tracking-[.18em] text-[#ff9b8d]">Easy Cut Paid</p>
         <h2 id="custom-template-plan-title" className="mt-3 text-2xl font-black tracking-[-.04em] text-white">
-          커스텀 템플릿을 저장하려면<br />유료 이용권이 필요해요
-        </h2>
+          {ui("커스텀 템플릿을 저장하려면")}<br />{ui("유료 이용권이 필요해요")}</h2>
         <p id="custom-template-plan-description" className="mt-4 text-sm leading-6 text-neutral-400">
-          이지컷 프로 또는 기간 패키지를 이용하면<br />직접 만든 템플릿을 저장하고 사용할 수 있어요.
-        </p>
+          {ui("이지컷 프로 또는 기간 패키지를 이용하면")}<br />{ui("직접 만든 템플릿을 저장하고 사용할 수 있어요.")}</p>
         <div className="mt-7 grid gap-2.5">
           <Link
             ref={pricingRef}
             href="/pricing"
             className="flex min-h-12 items-center justify-center rounded-xl bg-[#ff715e] px-5 text-sm font-black text-white transition hover:bg-[#ff8a78]"
           >
-            요금제 확인하기
-          </Link>
+            {ui("요금제 확인하기")}</Link>
           <button
             type="button"
             onClick={onClose}
             className="min-h-11 rounded-xl border border-white/10 px-5 text-sm font-bold text-neutral-300 transition hover:border-white/25 hover:text-white"
           >
-            계속 편집하기
-          </button>
+            {ui("계속 편집하기")}</button>
         </div>
       </section>
     </div>,

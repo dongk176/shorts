@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
 import { localizedValue } from "@/lib/i18n/config";
 import { useI18n } from "@/lib/i18n/provider";
@@ -32,6 +34,7 @@ function TransformationExample({
   messageVisible,
   onFirstPlay,
 }: TransformationExampleProps) {
+  const ui = useUiText();
   const { locale } = useI18n();
   const horizontalRef = useRef<HTMLVideoElement>(null);
   const verticalRef = useRef<HTMLVideoElement>(null);
@@ -172,7 +175,7 @@ function TransformationExample({
     <div
       className={`transformation-stage${revealed ? " is-revealed" : ""}`}
       role="group"
-      aria-label={label}
+      aria-label={ui(label)}
       hidden={!active}
     >
         <figure className="transformation-source-panel">

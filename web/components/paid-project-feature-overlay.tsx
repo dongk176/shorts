@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import { PaymentMessageOverlay } from "@/components/payment-message-overlay";
 import {
   paidProjectActionMessages,
@@ -15,6 +17,7 @@ export function PaidProjectFeatureOverlay({
   open: boolean;
   onClose?: () => void;
 }) {
+  const ui = useUiText();
   const label = action === "edit" ? "편집" : "다운로드";
   const title = action === "download"
     ? "다운로드 기능을 이용하려면\n활성 유료 이용권이 필요합니다."
@@ -26,7 +29,7 @@ export function PaidProjectFeatureOverlay({
     <PaymentMessageOverlay
       open={open}
       tone="info"
-      title={title}
+      title={ui(title)}
       message={message}
       actionHref="/pricing"
       actionLabel="요금제 보기"

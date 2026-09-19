@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent, PointerEvent } from "react";
@@ -58,6 +60,7 @@ function shuffleShowcaseImages() {
 }
 
 export function BackgroundShowcase() {
+  const ui = useUiText();
   const { locale } = useI18n();
   const railRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef(false);
@@ -235,7 +238,7 @@ export function BackgroundShowcase() {
                 <figure className="background-showcase-item" key={`${copyIndex}-${image.src}`}>
                   <Image
                     src={image.src}
-                    alt={copyIndex === 1 ? localizedValue(locale, { ko: `완성된 쇼츠 예시 ${imageIndex + 1}`, en: `Finished Shorts example ${imageIndex + 1}`, ja: `完成したショート動画の例 ${imageIndex + 1}` }) : ""}
+                    alt={ui(copyIndex === 1 ? localizedValue(locale, { ko: `완성된 쇼츠 예시 ${imageIndex + 1}`, en: `Finished Shorts example ${imageIndex + 1}`, ja: `完成したショート動画の例 ${imageIndex + 1}` }) : "")}
                     fill
                     unoptimized
                     sizes="(max-width: 640px) 44vw, (max-width: 1200px) 20vw, 250px"

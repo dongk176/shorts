@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import { EditorFontPicker } from "@/components/editor-font-picker";
 import { DEFAULT_EDITOR_FONT_ID, editorFontOptions, type EditorFontId } from "@/lib/editor-fonts";
 import { EDITOR_TEXT_MAX_WIDTH, EDITOR_TEXT_MIN_WIDTH, type EditorTextOverlay } from "@/lib/editor-overlay-preview";
@@ -32,9 +34,10 @@ export function EditorTextOverlayControls({
     canMoveBackward: boolean;
   };
 }) {
+  const ui = useUiText();
   return <div className="editor-element-settings">
     <label className="editor-text-content-setting">
-      <span>내용</span>
+      <span>{ui("내용")}</span>
       <textarea
         value={textOverlay.text}
         maxLength={120}
@@ -46,30 +49,30 @@ export function EditorTextOverlayControls({
     </label>
     <EditorFontPicker value={textOverlay.fontId || DEFAULT_EDITOR_FONT_ID} onChange={onFontChange} options={fontOptions} />
     <fieldset className="editor-text-color-setting">
-      <legend>색상</legend>
+      <legend>{ui("색상")}</legend>
       <div>{templatePresetColorOptions.map((option) => <button
         key={option.color}
         type="button"
-        aria-label={`텍스트 색상 ${option.name}`}
-        title={option.name}
+        aria-label={ui(`텍스트 색상 ${option.name}`)}
+        title={ui(option.name)}
         aria-pressed={textOverlay.color === option.color}
         onClick={() => onChange({ color: option.color })}
         style={{ backgroundColor: option.color }}
       />)}</div>
     </fieldset>
     <fieldset className="editor-text-effect-setting">
-      <legend>효과</legend>
+      <legend>{ui("효과")}</legend>
       <div>{([['none', '없음'], ['outline', '테두리'], ['shadow', '그림자']] as const).map(([effect, label]) => <button
         key={effect}
         type="button"
         aria-pressed={(textOverlay.effect || "outline") === effect}
         onClick={() => onChange({ effect })}
-      >{label}</button>)}</div>
+      >{ui(label)}</button>)}</div>
     </fieldset>
     {geometryControls && <div className="mt-5 space-y-5 border-t border-white/10 pt-4">
-      <label className="block text-sm font-semibold text-neutral-200">글자 크기 <span className="float-right text-[#ff9b8d]">{Math.round(textOverlay.scale * 100)}%</span>
+      <label className="block text-sm font-semibold text-neutral-200">{ui("글자 크기 ")}<span className="float-right text-[#ff9b8d]">{Math.round(textOverlay.scale * 100)}%</span>
         <input
-          aria-label="추가한 텍스트 글자 크기"
+          aria-label={ui("추가한 텍스트 글자 크기")}
           type="range" min={0.5} max={2} step={0.01} value={textOverlay.scale}
           onPointerDown={onInteractionStart} onPointerUp={onInteractionEnd} onPointerCancel={onInteractionEnd}
           onKeyDown={onInteractionStart} onKeyUp={onInteractionEnd} onBlur={onInteractionEnd}
@@ -77,9 +80,9 @@ export function EditorTextOverlayControls({
           className="mt-3 w-full accent-[#ff715e]"
         />
       </label>
-      <label className="block text-sm font-semibold text-neutral-200">텍스트 폭 <span className="float-right text-[#ff9b8d]">{Math.round(textOverlay.width)}px</span>
+      <label className="block text-sm font-semibold text-neutral-200">{ui("텍스트 폭 ")}<span className="float-right text-[#ff9b8d]">{Math.round(textOverlay.width)}px</span>
         <input
-          aria-label="추가한 텍스트 폭"
+          aria-label={ui("추가한 텍스트 폭")}
           type="range" min={EDITOR_TEXT_MIN_WIDTH} max={EDITOR_TEXT_MAX_WIDTH} step={1} value={textOverlay.width}
           onPointerDown={onInteractionStart} onPointerUp={onInteractionEnd} onPointerCancel={onInteractionEnd}
           onKeyDown={onInteractionStart} onKeyUp={onInteractionEnd} onBlur={onInteractionEnd}
@@ -87,15 +90,15 @@ export function EditorTextOverlayControls({
           className="mt-3 w-full accent-[#ff715e]"
         />
       </label>
-      <div className="flex items-center justify-between gap-3" aria-label="추가한 텍스트 레이어 순서">
-        <span className="text-sm font-semibold text-neutral-200">앞뒤 순서</span>
+      <div className="flex items-center justify-between gap-3" aria-label={ui("추가한 텍스트 레이어 순서")}>
+        <span className="text-sm font-semibold text-neutral-200">{ui("앞뒤 순서")}</span>
         <div className="flex gap-2">
-          <button type="button" disabled={!geometryControls.canMoveForward} onClick={() => geometryControls.onMoveLayer("forward")} className="rounded-lg border border-white/15 px-3 py-2 text-xs font-bold disabled:opacity-30">앞으로</button>
-          <button type="button" disabled={!geometryControls.canMoveBackward} onClick={() => geometryControls.onMoveLayer("backward")} className="rounded-lg border border-white/15 px-3 py-2 text-xs font-bold disabled:opacity-30">뒤로</button>
+          <button type="button" disabled={!geometryControls.canMoveForward} onClick={() => geometryControls.onMoveLayer("forward")} className="rounded-lg border border-white/15 px-3 py-2 text-xs font-bold disabled:opacity-30">{ui("앞으로")}</button>
+          <button type="button" disabled={!geometryControls.canMoveBackward} onClick={() => geometryControls.onMoveLayer("backward")} className="rounded-lg border border-white/15 px-3 py-2 text-xs font-bold disabled:opacity-30">{ui("뒤로")}</button>
         </div>
       </div>
-      <p className="text-[11px] leading-5 text-neutral-500">미리보기에서 끌어 이동하고 양쪽 손잡이로 폭을 조절하세요. 채널명은 맨앞에 유지됩니다.</p>
+      <p className="text-[11px] leading-5 text-neutral-500">{ui("미리보기에서 끌어 이동하고 양쪽 손잡이로 폭을 조절하세요. 채널명은 맨앞에 유지됩니다.")}</p>
     </div>}
-    <button type="button" className="editor-v2-text-delete mt-5 rounded-lg border border-red-300/20 px-3 py-2 text-xs font-bold text-red-200" onClick={onDelete}>선택한 텍스트 삭제</button>
+    <button type="button" className="editor-v2-text-delete mt-5 rounded-lg border border-red-300/20 px-3 py-2 text-xs font-bold text-red-200" onClick={onDelete}>{ui("선택한 텍스트 삭제")}</button>
   </div>;
 }

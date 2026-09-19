@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import Image from "next/image";
 import Link from "@/lib/i18n/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -15,6 +17,7 @@ export function ProPaywall({
   onStepChange: (step: ProPaywallStep) => void;
   isAuthenticated: boolean;
 }) {
+  const ui = useUiText();
   const [mounted, setMounted] = useState(false);
   const confirmRef = useRef<HTMLAnchorElement | null>(null);
 
@@ -47,7 +50,7 @@ export function ProPaywall({
     <div className="fixed inset-0 z-[80] flex items-end justify-center md:items-center md:p-6">
       <button
         type="button"
-        aria-label="오버레이 닫기"
+        aria-label={ui("오버레이 닫기")}
         className="absolute inset-0 bg-black/80 backdrop-blur-sm"
         onClick={() => onStepChange("closed")}
       />
@@ -60,25 +63,21 @@ export function ProPaywall({
       >
         <Image className="mx-auto" src="/east-cut-logo.png" alt="" width={40} height={40} aria-hidden="true" />
         <h2 id="pro-notice-title" className="mt-5 text-[21px] font-black tracking-[-.035em] text-white md:text-2xl">
-          해당 기능은 유료 이용권이 필요해요
-        </h2>
+          {ui("해당 기능은 유료 이용권이 필요해요")}</h2>
         <p id="pro-notice-description" className="mx-auto mt-3 max-w-sm text-sm leading-6 text-neutral-400">
-          이지컷 프로 구독 또는 사용 목적에 맞는 패키지를 선택해 주세요.
-        </p>
+          {ui("이지컷 프로 구독 또는 사용 목적에 맞는 패키지를 선택해 주세요.")}</p>
         <Link
           ref={confirmRef}
           href="/pricing"
           className="mt-7 flex min-h-12 w-full items-center justify-center rounded-xl bg-[#f04435] px-5 text-sm font-extrabold text-white shadow-[0_12px_30px_rgba(240,68,53,.24)] transition hover:bg-[#ff5d4d]"
         >
-          요금제 보기
-        </Link>
+          {ui("요금제 보기")}</Link>
         <button
           type="button"
           onClick={() => onStepChange("closed")}
           className="mt-3 min-h-11 w-full rounded-xl border border-white/10 text-sm font-bold text-neutral-400 transition hover:bg-white/[.05] hover:text-white"
         >
-          닫기
-        </button>
+          {ui("닫기")}</button>
       </section>
     </div>,
     document.body,

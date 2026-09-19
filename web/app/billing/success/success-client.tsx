@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { BillingResult } from "./result";
@@ -10,6 +12,7 @@ import {
 } from "./success-copy";
 
 export function BillingSuccessClient() {
+  const ui = useUiText();
   const params = useSearchParams();
   const [sessionCheck, setSessionCheck] = useState<"checking" | "authenticated" | "anonymous" | "unavailable">("checking");
   const [orderState, setOrderState] = useState<"idle" | "pending" | "succeeded" | "failed" | "manual_review">(
@@ -147,7 +150,7 @@ export function BillingSuccessClient() {
   return (
     <BillingResult
       status={message}
-      title={status === "payment_method_updated" ? "결제 카드가 변경되었습니다" : undefined}
+      title={ui(status === "payment_method_updated" ? "결제 카드가 변경되었습니다" : undefined)}
       error={orderState === "failed"}
       actionPending={sessionCheck === "checking" || orderState === "pending"}
       pendingLabel={orderState === "pending" ? "결제 상태 확인 중..." : "로그인 상태 확인 중..."}

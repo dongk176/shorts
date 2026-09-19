@@ -56,7 +56,7 @@ describe("editor mobile layout", () => {
 
   it("uses a compact brand header without repeating the project title", () => {
     expect(editorSource).toContain(
-      '<span className="editor-apply-label-mobile">영상에 적용</span>',
+      '<span className="editor-apply-label-mobile">{ui("영상에 적용")}</span>',
     );
     expect(styles).toContain(".editor-v2-root .editor-header-project {");
     expect(styles).toContain("background: #ff715e;");
@@ -250,7 +250,7 @@ describe("editor mobile layout", () => {
   it("edits the double-clicked comment inside the comment bottom sheet", () => {
     expect(editorSource).toContain("const selectedTimelineComment =");
     expect(editorSource).toContain('className="editor-selected-comment-setting"');
-    expect(editorSource).toContain('aria-label="선택한 댓글 내용 수정"');
+    expect(editorSource).toContain('aria-label={ui("선택한 댓글 내용 수정")}');
     expect(editorSource).toContain("onFocus={beginEditorCommentTextInteraction}");
     expect(editorSource).toContain("onBlur={finishEditorCommentTextInteraction}");
     expect(editorSource).toContain("selectedTimelineComment.id,");

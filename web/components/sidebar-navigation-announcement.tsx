@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import { usePathname } from "@/lib/i18n/navigation";
 import { useEffect, useRef, useState } from "react";
 import { claimSidebarNavigationAnnouncement } from "@/app/actions/sidebar-navigation-announcement";
@@ -8,6 +10,7 @@ import { useWelcomeOverlayStage } from "@/components/welcome-overlay-queue";
 import { shouldClaimSidebarNavigationAnnouncement } from "@/lib/sidebar-navigation-announcement";
 
 export function SidebarNavigationAnnouncement() {
+  const ui = useUiText();
   const pathname = usePathname();
   const { authenticated } = useUsageState();
   const {
@@ -100,16 +103,13 @@ export function SidebarNavigationAnnouncement() {
         aria-labelledby="sidebar-navigation-announcement-title"
         aria-describedby="sidebar-navigation-announcement-description"
       >
-        <span className="sidebar-announcement-eyebrow">새로운 메뉴</span>
+        <span className="sidebar-announcement-eyebrow">{ui("새로운 메뉴")}</span>
         <h2 id="sidebar-navigation-announcement-title">
-          이제 메뉴를 왼쪽 사이드바에서 확인하세요
-        </h2>
+          {ui("이제 메뉴를 왼쪽 사이드바에서 확인하세요")}</h2>
         <p id="sidebar-navigation-announcement-description">
-          프로젝트, 템플릿, 요금제와 설정으로 더 빠르게 이동할 수 있어요.
-        </p>
+          {ui("프로젝트, 템플릿, 요금제와 설정으로 더 빠르게 이동할 수 있어요.")}</p>
         <button type="button" onClick={close} autoFocus>
-          확인했어요
-        </button>
+          {ui("확인했어요")}</button>
       </section>
     </div>
   );

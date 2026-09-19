@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import { browserLocalizedHref } from "@/lib/i18n/routing";
 
 import { clearCompletedProjectViewedForFeedback } from "@/lib/project-feedback-client";
@@ -29,6 +31,7 @@ function SettingLink({ href, icon, title, description }: {
   title: string;
   description: string;
 }) {
+  const ui = useUiText();
   return (
     <Link
       href={href}
@@ -38,8 +41,8 @@ function SettingLink({ href, icon, title, description }: {
         {icon}
       </span>
       <span className="min-w-0 flex-1">
-        <strong className="block text-sm font-extrabold text-neutral-100">{title}</strong>
-        <span className="mt-1 block text-xs leading-5 text-neutral-500">{description}</span>
+        <strong className="block text-sm font-extrabold text-neutral-100">{ui(title)}</strong>
+        <span className="mt-1 block text-xs leading-5 text-neutral-500">{ui(description)}</span>
       </span>
       <span className="text-neutral-600 transition group-hover:translate-x-0.5 group-hover:text-neutral-300">
         <ArrowIcon />
@@ -61,6 +64,7 @@ function PolicyLink({ href, children }: { href: string; children: ReactNode }) {
 }
 
 function WithdrawalDialog({ onClose }: { onClose: () => void }) {
+  const ui = useUiText();
   const { t } = useI18n();
   const [confirmation, setConfirmation] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -151,7 +155,7 @@ function WithdrawalDialog({ onClose }: { onClose: () => void }) {
           />
           {error ? (
             <p role="alert" className="mt-3 rounded-xl border border-red-300/15 bg-red-400/[.07] px-4 py-3 text-xs leading-5 text-red-200">
-              {error}
+              {ui(error)}
             </p>
           ) : null}
           <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
@@ -182,6 +186,7 @@ function SubscriptionCancelDialog({ onClose, onCanceled }: {
   onClose: () => void;
   onCanceled: (billing: BillingSummary) => void;
 }) {
+  const ui = useUiText();
   const { t } = useI18n();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -230,7 +235,7 @@ function SubscriptionCancelDialog({ onClose, onCanceled }: {
           <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-white/20 sm:hidden" aria-hidden="true" />
           <h2 id="cancel-subscription-title" className="text-2xl font-black text-white">{t("settings.cancelSubscriptionTitle")}</h2>
           <p className="mt-4 text-sm leading-7 text-neutral-400">{t("settings.cancelSubscriptionDialogDescription")}</p>
-          {error ? <p role="alert" className="mt-4 text-sm text-red-300">{error}</p> : null}
+          {error ? <p role="alert" className="mt-4 text-sm text-red-300">{ui(error)}</p> : null}
         </div>
         <div className="grid grid-cols-[auto_1fr] gap-3 border-t border-white/10 px-5 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-7">
           <button type="button" disabled={submitting} onClick={onClose} className="min-h-12 rounded-xl border border-white/10 px-5 text-sm font-bold text-neutral-300 disabled:opacity-40">
@@ -246,6 +251,7 @@ function SubscriptionCancelDialog({ onClose, onCanceled }: {
 }
 
 export function SettingsPageContent({ user }: { user: AuthProfile | null }) {
+  const ui = useUiText();
   const { t } = useI18n();
   const [withdrawalOpen, setWithdrawalOpen] = useState(false);
   const [cancelSubscriptionOpen, setCancelSubscriptionOpen] = useState(false);
@@ -317,7 +323,7 @@ export function SettingsPageContent({ user }: { user: AuthProfile | null }) {
                 <strong className="mt-1 block truncate text-sm font-extrabold text-neutral-100">{accountLabel}</strong>
                 {user?.displayName && (user.loginId || user.email) ? (
                   <span className="mt-1 block truncate text-xs text-neutral-500">
-                    {user.loginId ? `아이디 ${user.loginId}` : user.email}
+                    {ui(user.loginId ? `아이디 ${user.loginId}` : user.email)}
                   </span>
                 ) : null}
               </span>

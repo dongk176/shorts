@@ -13,7 +13,7 @@ const checkoutStyles = readFileSync(
 describe("ThePayOne payment overlay", () => {
   it("can hide the visible step title while retaining an accessible dialog name", () => {
     expect(source).toContain("title?: string | null");
-    expect(source).toContain('aria-label={title ? undefined : "더페이원 결제"}');
+    expect(source).toContain('aria-label={ui(title ? undefined : "더페이원 결제")}');
     expect(source).toContain("{title && (");
   });
 

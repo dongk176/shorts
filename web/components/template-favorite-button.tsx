@@ -1,3 +1,6 @@
+"use client";
+
+import { useUiText } from "@/lib/i18n/use-ui-text";
 export function TemplateFavoriteButton({
   active,
   busy,
@@ -9,10 +12,11 @@ export function TemplateFavoriteButton({
   templateName: string;
   onClick: () => void;
 }) {
+  const ui = useUiText();
   return (
     <button
       type="button"
-      aria-label={`${templateName} ${active ? "자주 쓰는 템플릿에서 해제" : "자주 쓰는 템플릿으로 저장"}`}
+      aria-label={ui(`${templateName} ${active ? "자주 쓰는 템플릿에서 해제" : "자주 쓰는 템플릿으로 저장"}`)}
       aria-pressed={active}
       disabled={busy}
       onClick={onClick}
@@ -25,7 +29,7 @@ export function TemplateFavoriteButton({
       <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill={active ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8">
         <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 4.75A1.75 1.75 0 0 1 8.5 3h7A1.75 1.75 0 0 1 17.25 4.75V21L12 17.5 6.75 21V4.75Z" />
       </svg>
-      <span>{busy ? "저장 중" : active ? "저장됨" : "저장"}</span>
+      <span>{ui(busy ? "저장 중" : active ? "저장됨" : "저장")}</span>
     </button>
   );
 }

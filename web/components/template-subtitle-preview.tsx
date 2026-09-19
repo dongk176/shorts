@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import { localizedValue, type SiteLocale } from "@/lib/i18n/config";
 import { useEffect, useMemo, useState, type PointerEventHandler } from "react";
 import {
@@ -32,6 +34,7 @@ export function TemplateSubtitlePreview({
   positionedWordsV4Enabled?: boolean;
   previewLocale?: SiteLocale;
 }) {
+  const ui = useUiText();
   if (!subtitle.visible) return null;
   const previewWords = localizedValue(previewLocale, {
     ko: subtitle.variant === "pop"
@@ -88,7 +91,7 @@ export function TemplateSubtitlePreview({
     return (
       <button
         type="button"
-        aria-label="자막 세로 위치 이동"
+        aria-label={ui("자막 세로 위치 이동")}
         aria-pressed={selected}
         onPointerDown={onPointerDown}
         className={`absolute z-[45] cursor-ns-resize rounded text-center ${selected ? "outline outline-2 outline-[#ff715e]" : ""}`}
@@ -113,6 +116,7 @@ function ExactTemplateSubtitlePreview({
   selected: boolean;
   onPointerDown?: PointerEventHandler<HTMLButtonElement>;
 }) {
+  const ui = useUiText();
   const positionedFont = useMemo(
     () => resolveEditorFontFaceV4(subtitle.fontId, "title"),
     [subtitle.fontId],
@@ -173,7 +177,7 @@ function ExactTemplateSubtitlePreview({
       {visual}
       <button
         type="button"
-        aria-label="자막 세로 위치 이동"
+        aria-label={ui("자막 세로 위치 이동")}
         aria-pressed={selected}
         onPointerDown={onPointerDown}
         className={`absolute z-[46] cursor-ns-resize rounded ${selected ? "outline outline-2 outline-[#ff715e]" : ""}`}
@@ -228,7 +232,7 @@ function ExactTemplateSubtitlePreview({
   } as const;
   if (onPointerDown) return <button
     type="button"
-    aria-label="자막 세로 위치 이동"
+    aria-label={ui("자막 세로 위치 이동")}
     aria-pressed={selected}
     onPointerDown={onPointerDown}
     className={`absolute z-[45] cursor-ns-resize whitespace-nowrap rounded text-center ${selected ? "outline outline-2 outline-[#ff715e]" : ""}`}

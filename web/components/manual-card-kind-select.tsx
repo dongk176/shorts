@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import { useRef } from "react";
 
 export type ManualCardKind = "credit" | "debit_prepaid";
@@ -32,12 +34,13 @@ export function ManualCardKindSelect({
   attention?: boolean;
   disabled?: boolean;
 }) {
+  const ui = useUiText();
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   return (
     <div
       role="radiogroup"
-      aria-label="카드 종류"
+      aria-label={ui("카드 종류")}
       aria-required="true"
       data-card-kind-select
       className={`grid grid-cols-2 gap-2 rounded-2xl border p-1.5 transition ${
@@ -77,11 +80,11 @@ export function ManualCardKindSelect({
                 : "border-transparent bg-white/[.025] text-neutral-300 hover:bg-white/[.055] hover:text-white"
             } disabled:cursor-not-allowed disabled:opacity-50`}
           >
-            <strong className="block text-base">{option.label}</strong>
+            <strong className="block text-base">{ui(option.label)}</strong>
             <span className={`mt-1 block text-sm ${
               selected ? "text-[#ffb1a5]" : "text-neutral-500"
             }`}>
-              {option.description}
+              {ui(option.description)}
             </span>
           </button>
         );

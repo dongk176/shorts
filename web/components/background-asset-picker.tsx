@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import { useI18n } from "@/lib/i18n/provider";
 import Image from "next/image";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
@@ -35,6 +37,7 @@ export function BackgroundAssetPicker({
   disabled?: boolean;
   canUpload?: boolean;
 }) {
+  const ui = useUiText();
   const { t } = useI18n();
   const [library, setLibrary] = useState<BackgroundAssetList | null>(null);
   const [loading, setLoading] = useState(true);
@@ -157,17 +160,17 @@ export function BackgroundAssetPicker({
   };
 
   const locked = disabled || busy;
-  return <section aria-label="내 배경" aria-busy={busy || loading} className="space-y-3">
+  return <section aria-label={ui("내 배경")} aria-busy={busy || loading} className="space-y-3">
     <div className="flex items-center justify-between gap-3">
-      <h3 className="text-sm font-semibold text-neutral-100">내 배경 <span className="ml-1 text-xs font-normal text-neutral-500">{library?.quota.listedCount ?? 0}/{library?.quota.maxListed ?? BACKGROUND_ASSET_MAX_LISTED}</span></h3>
-      <button type="button" disabled={locked} onClick={onRestore} className="text-[11px] font-bold text-neutral-400 hover:text-white disabled:opacity-40">기본 배경 복원</button>
+      <h3 className="text-sm font-semibold text-neutral-100">{ui("내 배경 ")}<span className="ml-1 text-xs font-normal text-neutral-500">{library?.quota.listedCount ?? 0}/{library?.quota.maxListed ?? BACKGROUND_ASSET_MAX_LISTED}</span></h3>
+      <button type="button" disabled={locked} onClick={onRestore} className="text-[11px] font-bold text-neutral-400 hover:text-white disabled:opacity-40">{ui("기본 배경 복원")}</button>
     </div>
     {canUpload && <>
       <input
         ref={fileInput}
         type="file"
         accept="image/jpeg,image/png,image/webp"
-        aria-label="내 배경 이미지 업로드"
+        aria-label={ui("내 배경 이미지 업로드")}
         className="hidden"
         disabled={locked}
         onChange={(event) => {
@@ -176,12 +179,12 @@ export function BackgroundAssetPicker({
           if (file) void upload(file);
         }}
       />
-      <button type="button" disabled={locked} onClick={() => fileInput.current?.click()} className="w-full rounded-xl border border-dashed border-white/25 bg-white/[.03] px-3 py-3 text-xs font-bold text-neutral-100 transition hover:border-[#ff715e] disabled:opacity-40">{busy && !removing ? "이미지 확인·보관 중…" : "+ 배경 이미지 업로드"}</button>
-      <p className="text-[11px] leading-5 text-neutral-500">JPG·PNG·정지 WebP · 3MB 이하. 가운데 기준으로 9:16 화면을 채우며, 업로드에 성공한 배경은 계속 보관됩니다.</p>
+      <button type="button" disabled={locked} onClick={() => fileInput.current?.click()} className="w-full rounded-xl border border-dashed border-white/25 bg-white/[.03] px-3 py-3 text-xs font-bold text-neutral-100 transition hover:border-[#ff715e] disabled:opacity-40">{ui(busy && !removing ? "이미지 확인·보관 중…" : "+ 배경 이미지 업로드")}</button>
+      <p className="text-[11px] leading-5 text-neutral-500">{ui("JPG·PNG·정지 WebP · 3MB 이하. 가운데 기준으로 9:16 화면을 채우며, 업로드에 성공한 배경은 계속 보관됩니다.")}</p>
     </>}
-    {loading ? <p className="py-3 text-xs text-neutral-400" role="status">내 배경을 불러오는 중…</p> : null}
-    {!loading && library?.assets.length === 0 ? <p className="rounded-lg bg-black/20 px-3 py-4 text-xs text-neutral-500">아직 보관한 배경이 없습니다.</p> : null}
-    {(library?.assets.length || 0) > 0 && <div className="grid max-h-[360px] grid-cols-3 gap-2 overflow-y-auto pr-1" aria-label="보관한 배경 목록">
+    {loading ? <p className="py-3 text-xs text-neutral-400" role="status">{ui("내 배경을 불러오는 중…")}</p> : null}
+    {!loading && library?.assets.length === 0 ? <p className="rounded-lg bg-black/20 px-3 py-4 text-xs text-neutral-500">{ui("아직 보관한 배경이 없습니다.")}</p> : null}
+    {(library?.assets.length || 0) > 0 && <div className="grid max-h-[360px] grid-cols-3 gap-2 overflow-y-auto pr-1" aria-label={ui("보관한 배경 목록")}>
       {library?.assets.map((asset) => {
         const selected = value?.kind === "uploaded_image" && value.assetId === asset.id;
         return <div key={asset.id} className="min-w-0">
@@ -189,16 +192,16 @@ export function BackgroundAssetPicker({
             <Image src={asset.imageUrl} alt="" fill sizes="120px" unoptimized className="object-cover" />
             <span data-i18n-skip className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/90 to-black/20 px-1 py-1.5 text-[9px] font-bold text-white">{asset.displayName}</span>
           </button>
-          <button type="button" disabled={locked} onClick={() => setRemoving(asset)} aria-label={t("background.remove", { title: asset.displayName })} className="mt-1 w-full rounded px-1 py-1 text-[10px] text-neutral-500 hover:bg-white/5 hover:text-red-200 disabled:opacity-40">목록에서 제거</button>
+          <button type="button" disabled={locked} onClick={() => setRemoving(asset)} aria-label={t("background.remove", { title: asset.displayName })} className="mt-1 w-full rounded px-1 py-1 text-[10px] text-neutral-500 hover:bg-white/5 hover:text-red-200 disabled:opacity-40">{ui("목록에서 제거")}</button>
         </div>;
       })}
     </div>}
-    {removing && <div role="alertdialog" aria-label="내 배경 목록에서 제거" aria-describedby={removalDescriptionId} className="rounded-xl border border-white/15 bg-black/30 p-3">
+    {removing && <div role="alertdialog" aria-label={ui("내 배경 목록에서 제거")} aria-describedby={removalDescriptionId} className="rounded-xl border border-white/15 bg-black/30 p-3">
       <p id={removalDescriptionId} className="text-xs leading-5 text-neutral-300">{t("background.removeConfirm", { title: removing.displayName })}</p>
-      <div className="mt-3 flex justify-end gap-2"><button type="button" disabled={locked} onClick={() => setRemoving(null)} className="rounded-lg px-3 py-2 text-xs text-neutral-400">취소</button><button type="button" disabled={locked} onClick={() => void remove(removing)} className="rounded-lg bg-white/10 px-3 py-2 text-xs font-bold text-red-200 disabled:opacity-40">{busy ? "제거 중…" : "목록에서 제거"}</button></div>
+      <div className="mt-3 flex justify-end gap-2"><button type="button" disabled={locked} onClick={() => setRemoving(null)} className="rounded-lg px-3 py-2 text-xs text-neutral-400">{ui("취소")}</button><button type="button" disabled={locked} onClick={() => void remove(removing)} className="rounded-lg bg-white/10 px-3 py-2 text-xs font-bold text-red-200 disabled:opacity-40">{ui(busy ? "제거 중…" : "목록에서 제거")}</button></div>
     </div>}
-    {error && <div role="alert" className="text-xs leading-5 text-red-200"><p>{error}</p><button type="button" disabled={locked} onClick={() => void refresh()} className="mt-1 underline">목록 다시 불러오기</button></div>}
-    {message && <p role="status" className="text-[11px] leading-5 text-emerald-200">{message}</p>}
+    {error && <div role="alert" className="text-xs leading-5 text-red-200"><p>{ui(error)}</p><button type="button" disabled={locked} onClick={() => void refresh()} className="mt-1 underline">{ui("목록 다시 불러오기")}</button></div>}
+    {message && <p role="status" className="text-[11px] leading-5 text-emerald-200">{ui(message)}</p>}
     {library && <p className="text-[10px] leading-4 text-neutral-600">{t("background.storage", { used: Math.ceil(library.quota.bytesUsed / 1024 / 1024), max: Math.round(library.quota.maxBytes / 1024 / 1024) })}</p>}
   </section>;
 }

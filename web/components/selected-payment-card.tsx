@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import {
   formatStoredCardLabel,
   resolveStoredCardIssuer,
@@ -19,17 +21,17 @@ export function SelectedPaymentCard({
   disabled?: boolean;
   onUseDifferentCard: () => void;
 }) {
+  const ui = useUiText();
   const maskedNumber = formatStoredCardLabel({ last4: card.last4 }) || "등록 카드";
   const issuer = resolveStoredCardIssuer({ issuer: card.issuer });
 
   return (
     <section
       className="rounded-2xl border border-[#ff8f80]/20 bg-[#ff715e]/[.055] p-4"
-      aria-label="선택된 카드"
+      aria-label={ui("선택된 카드")}
     >
       <p className="text-[11px] font-black tracking-[.08em] text-[#ff9b8d]">
-        선택된 카드
-      </p>
+        {ui("선택된 카드")}</p>
       <div className="mt-3 flex items-center gap-3">
         <span
           aria-hidden="true"
@@ -39,7 +41,7 @@ export function SelectedPaymentCard({
         </span>
         <div className="min-w-0 flex-1">
           <strong className="block truncate text-sm font-black text-white">
-            {issuer || "등록 카드"}
+            {ui(issuer || "등록 카드")}
           </strong>
           <span className="mt-0.5 block text-sm font-bold tracking-[.08em] text-neutral-400">
             {maskedNumber}
@@ -51,8 +53,7 @@ export function SelectedPaymentCard({
           onClick={onUseDifferentCard}
           className="min-h-10 shrink-0 rounded-xl border border-white/10 px-3 text-xs font-black text-neutral-200 transition hover:border-[#ff8f80]/45 hover:bg-white/[.05] hover:text-white disabled:opacity-40"
         >
-          다른 카드 사용
-        </button>
+          {ui("다른 카드 사용")}</button>
       </div>
     </section>
   );

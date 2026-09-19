@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import { useId, useState } from "react";
 import type { InstallmentOffer } from "@/lib/installments";
 import { InstallmentBenefitDetails } from "./installment-benefit-details";
@@ -22,6 +24,7 @@ export function InstallmentBenefitsAccordion({
   formatAmount: (amountKrw: number) => string;
   onSelect: (issuerCode: string, installmentMonths: number) => void;
 }) {
+  const ui = useUiText();
   const panelId = useId();
   const [open, setOpen] = useState(false);
   const [showAllTerms, setShowAllTerms] = useState(false);
@@ -60,15 +63,15 @@ export function InstallmentBenefitsAccordion({
         className="flex min-h-[72px] w-full items-center justify-between gap-4 px-4 py-3 text-left outline-none transition hover:bg-white/[.025] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#ff8f80]/70"
       >
         <span className="min-w-0">
-          <strong className="block text-base leading-6 text-white">이번 달 할부 혜택</strong>
+          <strong className="block text-base leading-6 text-white">{ui("이번 달 할부 혜택")}</strong>
           <small className="mt-0.5 block text-xs leading-5 text-neutral-400">
-            {offer?.campaignId
+            {ui(offer?.campaignId
               ? `${issuerCount}개 카드사${
                 maxSelectableMonths
                   ? ` · 최대 ${maxSelectableMonths}개월 선택 가능`
                   : ""
               }`
-              : "현재 진행 중인 혜택 없음"}
+              : "현재 진행 중인 혜택 없음")}
           </small>
         </span>
         <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-white/[.05] text-neutral-400">
@@ -94,9 +97,9 @@ export function InstallmentBenefitsAccordion({
                 <strong className="text-sm text-neutral-100">{offer.campaignName}</strong>
                 <p className="text-xs leading-5 text-neutral-500">
                   {offer.effectiveFrom} ~ {offer.effectiveTo}
-                  {offer.defaultMinAmountKrw > 0
+                  {ui(offer.defaultMinAmountKrw > 0
                     ? ` · ${formatAmount(offer.defaultMinAmountKrw)} 이상`
-                    : ""}
+                    : "")}
                 </p>
               </div>
               <section aria-labelledby={`${panelId}-available`}>
@@ -104,8 +107,7 @@ export function InstallmentBenefitsAccordion({
                   id={`${panelId}-available`}
                   className="border-b border-white/[.06] pb-2 text-xs font-bold text-neutral-400"
                 >
-                  현재 결제에서 선택 가능
-                </h4>
+                  {ui("현재 결제에서 선택 가능")}</h4>
                 {selectable.length > 0 ? (
                   <div className="divide-y divide-white/[.06]">
                     {selectableIssuerGroups.map((issuer) => (
@@ -123,15 +125,15 @@ export function InstallmentBenefitsAccordion({
                               type="button"
                               onClick={() => onSelect(term.issuerCode, term.installmentMonths)}
                               className="rounded-lg border border-white/[.08] bg-white/[.035] px-3 py-2 text-xs text-neutral-200 outline-none transition hover:border-[#ff8f80]/35 hover:bg-[#ff715e]/8 hover:text-white focus-visible:ring-2 focus-visible:ring-[#ff8f80]/50"
-                              aria-label={`${term.issuerName} ${term.installmentMonths}개월 ${benefitLabel(term)} 선택`}
+                              aria-label={ui(`${term.issuerName} ${term.installmentMonths}개월 ${benefitLabel(term)} 선택`)}
                             >
-                              <strong className="text-white">{term.installmentMonths}개월</strong>
+                              <strong className="text-white">{term.installmentMonths}{ui("개월")}</strong>
                               <span className={`ml-1 font-bold ${
                                 term.benefitType === "interest_free"
                                   ? "text-emerald-200"
                                   : "text-neutral-300"
                               }`}>
-                                {term.benefitType === "interest_free" ? "무이자" : "부분 무이자"}
+                                {ui(term.benefitType === "interest_free" ? "무이자" : "부분 무이자")}
                               </span>
                             </button>
                           ))}
@@ -141,11 +143,11 @@ export function InstallmentBenefitsAccordion({
                   </div>
                 ) : (
                   <p className="py-4 text-sm leading-6 text-neutral-300">
-                    {belowMinimum
+                    {ui(belowMinimum
                       ? "할부 혜택은 5만원 이상 결제부터 적용됩니다."
                       : generalInstallmentsAvailable
                         ? "현재 결제금액에 적용되는 카드사 혜택은 없습니다. 일반 할부는 결제 방식에서 선택할 수 있습니다."
-                        : "현재 이 결제에서 선택 가능한 할부가 없습니다."}
+                        : "현재 이 결제에서 선택 가능한 할부가 없습니다.")}
                   </p>
                 )}
               </section>
@@ -156,11 +158,11 @@ export function InstallmentBenefitsAccordion({
                 onClick={() => setShowAllTerms((current) => !current)}
                 className="flex w-full items-center justify-between border-t border-white/[.06] py-3 text-left text-xs font-bold text-neutral-400 outline-none transition hover:text-neutral-200 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#ff8f80]/50"
               >
-                <span>전체 카드사 혜택 조건</span>
-                <span>{showAllTerms ? "접기" : "보기"}</span>
+                <span>{ui("전체 카드사 혜택 조건")}</span>
+                <span>{ui(showAllTerms ? "접기" : "보기")}</span>
               </button>
               {showAllTerms && (
-                <section id={`${panelId}-all`} aria-label="카드사별 이번 달 전체 혜택">
+                <section id={`${panelId}-all`} aria-label={ui("카드사별 이번 달 전체 혜택")}>
                   <InstallmentBenefitDetails
                     offer={offer}
                     formatAmount={formatAmount}
@@ -169,14 +171,13 @@ export function InstallmentBenefitsAccordion({
                 </section>
               )}
               <p className="border-t border-white/[.06] pt-3 text-[11px] leading-5 text-neutral-500">
-                혜택 적용 여부는 카드 상품·회원 상태 및 카드사 정책에 따라 달라질 수 있습니다.
-              </p>
+                {ui("혜택 적용 여부는 카드 상품·회원 상태 및 카드사 정책에 따라 달라질 수 있습니다.")}</p>
             </>
           ) : (
             <p className="py-4 text-sm leading-6 text-neutral-300">
-              {generalInstallmentsAvailable
+              {ui(generalInstallmentsAvailable
                 ? "현재 진행 중인 무이자 혜택은 없습니다. 일반 할부는 선택할 수 있으며 이자는 카드사 정책에 따라 적용됩니다."
-                : "현재 진행 중인 할부 혜택이 없습니다. 일시불로 결제해 주세요."}
+                : "현재 진행 중인 할부 혜택이 없습니다. 일시불로 결제해 주세요.")}
             </p>
           )}
         </div>

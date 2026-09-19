@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import { PaymentMessageOverlay } from "@/components/payment-message-overlay";
 import { PurchaseTermsConsent } from "@/components/purchase-terms-consent";
 import { ThePayOnePaymentOverlay } from "@/components/thepayone-payment-overlay";
@@ -41,6 +43,7 @@ export function ReplacementCardPaymentOverlay({
   onUseSavedCard: () => void;
   onPaymentMethodReplaced: (auth: ReplacementCardAuth) => Promise<void>;
 }) {
+  const ui = useUiText();
   const [step, setStep] = useState<"card" | "payer">("card");
   const [form, setForm] = useState<ReplacementCardForm>({
     cardNumberParts: ["", "", "", ""],
@@ -158,7 +161,7 @@ export function ReplacementCardPaymentOverlay({
   return (
     <>
       <ThePayOnePaymentOverlay
-        title={step === "card" ? "카드 정보" : "결제자 정보"}
+        title={ui(step === "card" ? "카드 정보" : "결제자 정보")}
         busy={busy}
         primaryDisabled={step === "card" ? !cardStepValid : !payerStepValid}
         primaryLabel={busy
@@ -178,7 +181,7 @@ export function ReplacementCardPaymentOverlay({
         {step === "card" ? (
           <div className="mt-8 grid gap-5">
             <fieldset>
-              <legend className="text-xs font-bold text-neutral-300">카드번호</legend>
+              <legend className="text-xs font-bold text-neutral-300">{ui("카드번호")}</legend>
               <div className="mt-2 grid grid-cols-4 gap-2 sm:gap-3">
                 {form.cardNumberParts.map((part, index) => (
                   <input
@@ -190,7 +193,7 @@ export function ReplacementCardPaymentOverlay({
                     inputMode="numeric"
                     autoComplete={index === 0 ? "cc-number" : "off"}
                     data-payment-advance-at="4"
-                    aria-label={`카드번호 ${index + 1}번째 4자리`}
+                    aria-label={ui(`카드번호 ${index + 1}번째 4자리`)}
                     value={part}
                     onChange={(event) => updateCardNumberPart(index, event.target.value)}
                     onPaste={(event) => pasteCardNumber(index, event)}
@@ -209,8 +212,7 @@ export function ReplacementCardPaymentOverlay({
             </fieldset>
             <div className="grid grid-cols-2 gap-3">
               <label className="text-xs font-bold text-neutral-300">
-                유효기간 월
-                <input
+                {ui("유효기간 월")}<input
                   required
                   inputMode="numeric"
                   autoComplete="cc-exp-month"
@@ -222,8 +224,7 @@ export function ReplacementCardPaymentOverlay({
                 />
               </label>
               <label className="text-xs font-bold text-neutral-300">
-                유효기간 연도
-                <input
+                {ui("유효기간 연도")}<input
                   required
                   inputMode="numeric"
                   autoComplete="cc-exp-year"
@@ -237,8 +238,7 @@ export function ReplacementCardPaymentOverlay({
             </div>
             <div className="grid grid-cols-2 gap-3">
               <label className="min-w-0 text-xs font-bold text-neutral-300">
-                카드 비밀번호 앞 2자리
-                <input
+                {ui("카드 비밀번호 앞 2자리")}<input
                   required
                   type="password"
                   inputMode="numeric"
@@ -251,8 +251,7 @@ export function ReplacementCardPaymentOverlay({
                 />
               </label>
               <label className="min-w-0 text-xs font-bold text-neutral-300">
-                생년월일 또는 사업자번호
-                <input
+                {ui("생년월일 또는 사업자번호")}<input
                   required
                   inputMode="numeric"
                   autoComplete="off"
@@ -260,14 +259,13 @@ export function ReplacementCardPaymentOverlay({
                   data-payment-advance-delay="400"
                   value={form.identityNumber}
                   onChange={(event) => update("identityNumber", digits(event.target.value, 10))}
-                  placeholder="6자리 또는 10자리"
+                  placeholder={ui("6자리 또는 10자리")}
                   className="mt-2 min-h-14 w-full rounded-2xl border border-white/10 bg-[#101315] px-4 text-base text-white outline-none transition placeholder:text-neutral-600 focus:border-[#ff8f80]/70 focus:ring-4 focus:ring-[#ff715e]/10"
                 />
               </label>
             </div>
             <label className="text-xs font-bold text-neutral-300">
-              휴대전화 번호
-              <input
+              {ui("휴대전화 번호")}<input
                 required
                 inputMode="numeric"
                 autoComplete="tel"
@@ -287,20 +285,18 @@ export function ReplacementCardPaymentOverlay({
         ) : (
           <div className="mt-8 grid gap-5">
             <label className="text-xs font-bold text-neutral-300">
-              이름
-              <input
+              {ui("이름")}<input
                 data-payment-autofocus
                 required
                 autoComplete="name"
                 value={form.payerName}
                 onChange={(event) => update("payerName", event.target.value.slice(0, 20))}
-                placeholder="홍길동"
+                placeholder={ui("홍길동")}
                 className="mt-2 min-h-14 w-full rounded-2xl border border-white/10 bg-[#101315] px-4 text-base text-white outline-none transition placeholder:text-neutral-600 focus:border-[#ff8f80]/70 focus:ring-4 focus:ring-[#ff715e]/10"
               />
             </label>
             <label className="text-xs font-bold text-neutral-300">
-              이메일
-              <input
+              {ui("이메일")}<input
                 required
                 type="email"
                 autoComplete="email"
@@ -317,7 +313,7 @@ export function ReplacementCardPaymentOverlay({
       <PaymentMessageOverlay
         open={Boolean(error)}
         tone="error"
-        title="결제를 확인해 주세요"
+        title={ui("결제를 확인해 주세요")}
         message={error || ""}
         onClose={() => setError(null)}
       />

@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import {
   useEffect,
   useSyncExternalStore,
@@ -98,6 +100,7 @@ function ShortsEventParticipationCompleteDialog({
   grantedSeconds: number;
   onClose: () => void;
 }) {
+  const ui = useUiText();
   useModalBodyLock(onClose);
   const grantedMinutes = Math.floor(grantedSeconds / 60);
   return (
@@ -126,7 +129,7 @@ function ShortsEventParticipationCompleteDialog({
           type="button"
           autoFocus
           onClick={onClose}
-          aria-label="이벤트 참여 완료 안내 닫기"
+          aria-label={ui("이벤트 참여 완료 안내 닫기")}
           className="absolute right-4 top-4 z-10 grid h-9 w-9 place-items-center rounded-full border border-white/10 bg-white/[.05] text-xl text-white/65 transition hover:border-white/20 hover:bg-white/10 hover:text-white"
         >
           ×
@@ -142,21 +145,18 @@ function ShortsEventParticipationCompleteDialog({
           id="shorts-event-participation-title"
           className="relative mt-6 text-3xl font-black tracking-[-0.04em] text-white sm:text-4xl"
         >
-          이벤트 참여 완료!
-        </h2>
+          {ui("이벤트 참여 완료!")}</h2>
         <p
           id="shorts-event-participation-description"
           className="relative mt-4 text-lg font-extrabold tracking-[-0.025em] text-white/85 sm:text-xl"
         >
-          사용량 <span className="bg-gradient-to-r from-red-400 via-fuchsia-400 to-violet-400 bg-clip-text text-2xl font-black text-transparent sm:text-3xl">{grantedMinutes}분</span>이 지급되었습니다
-        </p>
+          {ui("사용량 ")}<span className="bg-gradient-to-r from-red-400 via-fuchsia-400 to-violet-400 bg-clip-text text-2xl font-black text-transparent sm:text-3xl">{grantedMinutes}{ui("분")}</span>{ui("이 지급되었습니다")}</p>
         <button
           type="button"
           onClick={onClose}
           className="relative mt-8 min-h-12 w-full rounded-xl bg-gradient-to-r from-red-500 via-fuchsia-500 to-violet-600 px-5 text-sm font-black text-white shadow-[0_10px_32px_rgba(168,85,247,.25)] transition hover:brightness-110 active:scale-[.995]"
         >
-          확인
-        </button>
+          {ui("확인")}</button>
       </section>
     </div>
   );

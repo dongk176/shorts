@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import { useEffect, useRef, useState } from "react";
 
 export function ContentLanguageSelect<Value extends string>({
@@ -19,6 +21,7 @@ export function ContentLanguageSelect<Value extends string>({
   onChange: (value: Value) => void;
   disabled?: boolean;
 }) {
+  const ui = useUiText();
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -136,7 +139,7 @@ export function ContentLanguageSelect<Value extends string>({
                   : "text-neutral-200 hover:bg-white/[.07] focus-visible:bg-white/[.07]"
               }`}
             >
-              <span>{option.label}</span>
+              <span>{ui(option.label)}</span>
               {option.value === value && (
                 <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                   <path d="m4.5 10 3.5 3.5 7.5-7.5" />

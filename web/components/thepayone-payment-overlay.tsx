@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import Image from "next/image";
 import {
   useEffect,
@@ -33,6 +35,7 @@ export function ThePayOnePaymentOverlay({
   onSubmit: () => void;
   children: ReactNode;
 }) {
+  const ui = useUiText();
   const titleId = useId();
   const dialogRef = useRef<HTMLFormElement>(null);
   const closeRef = useRef(onClose);
@@ -88,7 +91,7 @@ export function ThePayOnePaymentOverlay({
       role="dialog"
       aria-modal="true"
       aria-labelledby={title ? titleId : undefined}
-      aria-label={title ? undefined : "더페이원 결제"}
+      aria-label={ui(title ? undefined : "더페이원 결제")}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && !busy) onClose();
       }}
@@ -117,12 +120,11 @@ export function ThePayOnePaymentOverlay({
                 />
               </span>
               <strong className="text-lg font-black tracking-[-.03em] text-white sm:text-xl">
-                더페이원
-              </strong>
+                {ui("더페이원")}</strong>
             </div>
             <button
               type="button"
-              aria-label="결제창 닫기"
+              aria-label={ui("결제창 닫기")}
               disabled={busy}
               onClick={onClose}
               className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-white/10 text-xl text-neutral-400 transition hover:border-white/20 hover:bg-white/[.06] hover:text-white disabled:opacity-40"
@@ -132,7 +134,7 @@ export function ThePayOnePaymentOverlay({
           </div>
           {title && (
             <h2 id={titleId} className="mt-7 text-[28px] font-black tracking-[-.04em] text-white">
-              {title}
+              {ui(title)}
             </h2>
           )}
           {children}
@@ -148,7 +150,7 @@ export function ThePayOnePaymentOverlay({
               onClick={onSecondary || onClose}
               className="min-h-[52px] rounded-xl border border-white/10 px-5 text-sm font-bold text-neutral-300 transition hover:border-white/20 hover:text-white disabled:opacity-40"
             >
-              {secondaryLabel}
+              {ui(secondaryLabel)}
             </button>
           )}
           <button
@@ -157,7 +159,7 @@ export function ThePayOnePaymentOverlay({
             onClick={onPrimaryClick}
             className="min-h-[52px] w-full rounded-xl bg-gradient-to-r from-[#ef4939] to-[#ff715e] px-5 text-sm font-black text-white shadow-[0_12px_30px_rgba(239,73,57,.22)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {primaryLabel}
+            {ui(primaryLabel)}
           </button>
         </div>
       </form>

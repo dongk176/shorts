@@ -1,3 +1,6 @@
+"use client";
+
+import { useUiText } from "@/lib/i18n/use-ui-text";
 import Link from "@/lib/i18n/navigation";
 
 const steps = [
@@ -35,20 +38,21 @@ const useCases = [
 ] as const;
 
 export function AiShortsGuideContent() {
+  const ui = useUiText();
   return (
     <>
       <section id="how-it-works" aria-labelledby="how-it-works-title" className="scroll-mt-28">
         <div className="mx-auto max-w-3xl text-center">
           <p className="text-xs font-extrabold uppercase tracking-[.18em] text-[#ff9b8d]">YouTube to Shorts</p>
-          <h2 id="how-it-works-title" className="mt-3 text-2xl font-black tracking-[-.035em] text-white sm:text-3xl">유튜브 영상을 AI 쇼츠로 만드는 방법</h2>
-          <p className="mt-4 text-sm leading-7 text-neutral-400">복잡한 영상 편집 타임라인 없이 링크 입력부터 쇼츠 완성까지 세 단계로 진행합니다.</p>
+          <h2 id="how-it-works-title" className="mt-3 text-2xl font-black tracking-[-.035em] text-white sm:text-3xl">{ui("유튜브 영상을 AI 쇼츠로 만드는 방법")}</h2>
+          <p className="mt-4 text-sm leading-7 text-neutral-400">{ui("복잡한 영상 편집 타임라인 없이 링크 입력부터 쇼츠 완성까지 세 단계로 진행합니다.")}</p>
         </div>
         <ol className="mt-8 grid gap-4 md:grid-cols-3">
           {steps.map((step) => (
             <li key={step.number} className="rounded-2xl border border-white/10 bg-black/15 p-6">
               <span className="text-xs font-black tracking-[.16em] text-violet-300">{step.number}</span>
-              <h3 className="mt-3 text-lg font-extrabold text-white">{step.title}</h3>
-              <p className="mt-3 text-sm leading-6 text-neutral-400">{step.description}</p>
+              <h3 className="mt-3 text-lg font-extrabold text-white">{ui(step.title)}</h3>
+              <p className="mt-3 text-sm leading-6 text-neutral-400">{ui(step.description)}</p>
             </li>
           ))}
         </ol>
@@ -57,14 +61,14 @@ export function AiShortsGuideContent() {
       <section id="templates" aria-labelledby="features-title" className="scroll-mt-28">
         <div className="mx-auto max-w-3xl text-center">
           <p className="text-xs font-extrabold uppercase tracking-[.18em] text-violet-300">AI Shorts Maker</p>
-          <h2 id="features-title" className="mt-3 text-2xl font-black tracking-[-.035em] text-white sm:text-3xl">쇼츠 자동 제작에 필요한 기능을 한곳에</h2>
-          <p className="mt-4 text-sm leading-7 text-neutral-400">이지컷은 하이라이트 탐색부터 제목, 자막, 비율, 템플릿과 다운로드까지 한 흐름으로 연결합니다.</p>
+          <h2 id="features-title" className="mt-3 text-2xl font-black tracking-[-.035em] text-white sm:text-3xl">{ui("쇼츠 자동 제작에 필요한 기능을 한곳에")}</h2>
+          <p className="mt-4 text-sm leading-7 text-neutral-400">{ui("이지컷은 하이라이트 탐색부터 제목, 자막, 비율, 템플릿과 다운로드까지 한 흐름으로 연결합니다.")}</p>
         </div>
         <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {features.map(([title, description]) => (
             <article key={title} className="rounded-2xl border border-white/10 bg-white/[.025] p-5">
-              <h3 className="font-extrabold text-white">{title}</h3>
-              <p className="mt-2 text-sm leading-6 text-neutral-400">{description}</p>
+              <h3 className="font-extrabold text-white">{ui(title)}</h3>
+              <p className="mt-2 text-sm leading-6 text-neutral-400">{ui(description)}</p>
             </article>
           ))}
         </div>
@@ -74,15 +78,15 @@ export function AiShortsGuideContent() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs font-extrabold uppercase tracking-[.18em] text-[#ff9b8d]">Use cases</p>
-            <h2 id="use-cases-title" className="mt-3 text-2xl font-black tracking-[-.035em] text-white sm:text-3xl">하나의 롱폼을 여러 숏폼 콘텐츠로</h2>
+            <h2 id="use-cases-title" className="mt-3 text-2xl font-black tracking-[-.035em] text-white sm:text-3xl">{ui("하나의 롱폼을 여러 숏폼 콘텐츠로")}</h2>
           </div>
-          <Link href="/pricing" className="text-sm font-extrabold text-[#ff9b8d] hover:text-white">요금제 확인하기 →</Link>
+          <Link href="/pricing" className="text-sm font-extrabold text-[#ff9b8d] hover:text-white">{ui("요금제 확인하기 →")}</Link>
         </div>
         <div className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {useCases.map(([title, description]) => (
             <article key={title} className="rounded-2xl bg-black/15 p-5">
-              <h3 className="font-extrabold text-white">{title}</h3>
-              <p className="mt-2 text-sm leading-6 text-neutral-400">{description}</p>
+              <h3 className="font-extrabold text-white">{ui(title)}</h3>
+              <p className="mt-2 text-sm leading-6 text-neutral-400">{ui(description)}</p>
             </article>
           ))}
         </div>

@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import Link from "@/lib/i18n/navigation";
@@ -29,6 +31,7 @@ export function AuthControls({
   triggerClassName?: string;
   onLoginTrigger?: () => void;
 }) {
+  const ui = useUiText();
   const { locale, t } = useI18n();
   const localizedNext = localizedHref(next, locale);
   const [internalLoginOpen, setInternalLoginOpen] = useState(false);
@@ -234,7 +237,7 @@ export function AuthControls({
         className="hidden max-w-40 truncate px-1.5 py-1 text-xs font-semibold text-neutral-300 sm:block"
         title={user.loginId || user.email || label}
       >
-        {label}
+        {ui(label)}
       </span>
       <Link
         href="/settings"

@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import { useLayoutEffect, useRef } from "react";
 import type { PointerEvent, PointerEventHandler } from "react";
 import {
@@ -49,6 +51,7 @@ export function EditorTextOverlayPreview({
   onEditValueChange?: (id: string, value: string) => void;
   onEditEnd?: () => void;
 }) {
+  const ui = useUiText();
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const width = textOverlay.width ?? EDITOR_TEXT_DEFAULT_WIDTH;
   const positionStyle = editorTextOverlayPositionStyle(textOverlay, zIndex);
@@ -67,7 +70,7 @@ export function EditorTextOverlayPreview({
         autoFocus
         ref={editorRef}
         data-editor-text-overlay-id={textOverlay.id}
-        aria-label="추가한 텍스트 직접 편집"
+        aria-label={ui("추가한 텍스트 직접 편집")}
         value={textOverlay.text}
         maxLength={120}
         rows={1}
@@ -102,7 +105,7 @@ export function EditorTextOverlayPreview({
     >
       <button
         type="button"
-        aria-label="추가한 텍스트 선택 및 이동"
+        aria-label={ui("추가한 텍스트 선택 및 이동")}
         aria-pressed={selected}
         onPointerDown={(event) => {
           event.currentTarget.focus({ preventScroll: true });
@@ -119,7 +122,7 @@ export function EditorTextOverlayPreview({
           event.stopPropagation();
           onDelete?.(textOverlay.id);
         }}
-        title="더블클릭해서 텍스트 수정"
+        title={ui("더블클릭해서 텍스트 수정")}
         className="w-full cursor-move touch-none appearance-none whitespace-pre-wrap break-words rounded-[2cqw] border-0 bg-transparent px-[2cqw] py-[1cqw] text-center font-extrabold"
         style={textStyle}
       >
@@ -128,13 +131,13 @@ export function EditorTextOverlayPreview({
       {selected && onResizePointerDown && <>
         <button
           type="button"
-          aria-label="추가한 텍스트 왼쪽 폭 조절"
+          aria-label={ui("추가한 텍스트 왼쪽 폭 조절")}
           className="absolute left-[-1.7cqw] top-1/2 h-[13cqw] w-[3.4cqw] -translate-y-1/2 cursor-ew-resize touch-none rounded-full border-2 border-white bg-[#ff715e] shadow-[0_3px_10px_rgba(0,0,0,.45)]"
           onPointerDown={(event) => onResizePointerDown("left", event)}
         />
         <button
           type="button"
-          aria-label="추가한 텍스트 오른쪽 폭 조절"
+          aria-label={ui("추가한 텍스트 오른쪽 폭 조절")}
           className="absolute right-[-1.7cqw] top-1/2 h-[13cqw] w-[3.4cqw] -translate-y-1/2 cursor-ew-resize touch-none rounded-full border-2 border-white bg-[#ff715e] shadow-[0_3px_10px_rgba(0,0,0,.45)]"
           onPointerDown={(event) => onResizePointerDown("right", event)}
         />
@@ -187,6 +190,7 @@ export function EditorTextTimeline({
   onInteractionStart: () => void;
   onInteractionEnd: () => void;
 }) {
+  const ui = useUiText();
   const panelRef = useRef<HTMLElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<ActiveTextRangeDrag | null>(null);
@@ -341,14 +345,14 @@ export function EditorTextTimeline({
     <section
       ref={panelRef}
       className={`editor-text-timeline-panel${selected ? " is-selected" : ""}`}
-      aria-label={`${textOverlay.text || "텍스트"} 노출 구간 편집`}
+      aria-label={ui(`${textOverlay.text || "텍스트"} 노출 구간 편집`)}
       onDoubleClick={(event) => {
         event.preventDefault();
         event.stopPropagation();
         onEdit();
       }}
     >
-      <span className="editor-text-timeline-label">텍스트</span>
+      <span className="editor-text-timeline-label">{ui("텍스트")}</span>
       <div
         className="editor-text-selection-lane"
         style={{
@@ -370,7 +374,7 @@ export function EditorTextTimeline({
             <button
               type="button"
               className="editor-text-range-body"
-              aria-label="텍스트 노출 구간 이동"
+              aria-label={ui("텍스트 노출 구간 이동")}
               onPointerDown={(event) => startDrag("move", event)}
               onKeyDown={(event) => {
                 if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
@@ -386,7 +390,7 @@ export function EditorTextTimeline({
             <button
               type="button"
               className="editor-text-range-handle is-start"
-              aria-label="텍스트 시작점 조절"
+              aria-label={ui("텍스트 시작점 조절")}
               onPointerDown={(event) => startDrag("start", event)}
               onKeyDown={(event) => {
                 if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
@@ -398,7 +402,7 @@ export function EditorTextTimeline({
             <button
               type="button"
               className="editor-text-range-handle is-end"
-              aria-label="텍스트 종료점 조절"
+              aria-label={ui("텍스트 종료점 조절")}
               onPointerDown={(event) => startDrag("end", event)}
               onKeyDown={(event) => {
                 if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;

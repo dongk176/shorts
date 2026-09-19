@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import Link from "@/lib/i18n/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CustomTemplateCanvasPreview } from "@/components/custom-template-canvas-preview";
@@ -177,6 +179,7 @@ function ReactionIcon({ down = false }: { down?: boolean }) {
 }
 
 function CommentCaptureCard({ comment }: { comment: CommentOverlay }) {
+  const ui = useUiText();
   const { locale } = useI18n();
   const compactCount = new Intl.NumberFormat(formatLocale(locale), {
     notation: "compact",
@@ -194,7 +197,7 @@ function CommentCaptureCard({ comment }: { comment: CommentOverlay }) {
           <div className="mt-[2.1cqw] flex items-center gap-[1.25cqw] text-[3.4cqw] text-neutral-300/80 blur-[0.035cqw]">
             <ReactionIcon /><span>{compactCount}</span>
             <span className="ml-[2.2cqw]"><ReactionIcon down /></span>
-            <span className="ml-[3cqw] text-[3.25cqw] text-neutral-200">답글</span>
+            <span className="ml-[3cqw] text-[3.25cqw] text-neutral-200">{ui("답글")}</span>
           </div>
         </div>
       </div>
@@ -310,6 +313,7 @@ function EmptyTemplateCard({
   canUseCustomTemplates: boolean;
   onLoginRequest?: (next: string) => void;
 }) {
+  const ui = useUiText();
   const next = "/templates/new";
   const href = !authenticated
     ? `/auth/sign-in?next=${encodeURIComponent(next)}`
@@ -326,8 +330,8 @@ function EmptyTemplateCard({
       className="flex min-h-[456px] flex-col items-center justify-center rounded-2xl border border-dashed border-white/15 bg-white/[.018] px-6 text-center transition duration-300 hover:border-[#ff715e]/50 hover:bg-[#ff715e]/[.035]"
     >
       <span className="grid h-16 w-16 place-items-center rounded-full border border-white/10 bg-[#1f1f22] text-3xl font-light text-neutral-400 shadow-inner" aria-hidden="true">+</span>
-      <h2 className="mt-5 text-lg font-bold tracking-[-.025em] text-neutral-200">새 템플릿</h2>
-      <p className="mt-2 text-xs font-semibold text-neutral-500">{canUseCustomTemplates ? "빈 화면에서 직접 디자인하기" : "유료 플랜에서 직접 디자인하기"}</p>
+      <h2 className="mt-5 text-lg font-bold tracking-[-.025em] text-neutral-200">{ui("새 템플릿")}</h2>
+      <p className="mt-2 text-xs font-semibold text-neutral-500">{ui(canUseCustomTemplates ? "빈 화면에서 직접 디자인하기" : "유료 플랜에서 직접 디자인하기")}</p>
     </Link>
   );
 }
@@ -393,6 +397,7 @@ export function TemplateLibrary({
   initialFavoriteTemplateKeys: TemplateFavoriteKey[];
   onLoginRequest?: (next: string) => void;
 }) {
+  const ui = useUiText();
   const { locale } = useI18n();
   const positionedWordsV4Enabled = isEditorRenderSpecV4Enabled();
   const [query, setQuery] = useState("");
@@ -541,7 +546,7 @@ export function TemplateLibrary({
             <article key={template.id} className="relative flex min-h-[456px] min-w-0 flex-col rounded-2xl border border-[#ff715e]/25 bg-[rgba(26,26,30,.72)] p-4 shadow-[0_16px_48px_rgba(0,0,0,.18)] backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:border-[#ff715e]/50 hover:shadow-[0_20px_55px_rgba(255,113,94,.09)]">
               <Link href={canUseCustomTemplates ? `/templates/${template.id}/edit` : "/pricing"} prefetch={false} className="flex flex-1 flex-col">
                 <div className="flex flex-1 items-center justify-center px-2 py-4"><CustomTemplatePreview template={template} showUnifiedSubtitle={unifiedSubtitleCanaryEnabled} positionedWordsV4Enabled={positionedWordsV4Enabled} /></div>
-                <div className="flex flex-col items-start gap-2 px-2 pb-1 pt-4"><div className="min-w-0"><h2 data-i18n-skip className="break-words text-base font-bold leading-snug tracking-[-.025em] text-[#e4e1e6]">{template.name}</h2><p className="mt-1 text-xs leading-relaxed text-[#9999a2]">내가 저장한 템플릿</p></div><span className="shrink-0 rounded-full border border-[#ff715e]/20 bg-[#ff715e]/10 px-2.5 py-1 text-[10px] font-bold text-[#ff9b8d]">내 템플릿</span></div>
+                <div className="flex flex-col items-start gap-2 px-2 pb-1 pt-4"><div className="min-w-0"><h2 data-i18n-skip className="break-words text-base font-bold leading-snug tracking-[-.025em] text-[#e4e1e6]">{template.name}</h2><p className="mt-1 text-xs leading-relaxed text-[#9999a2]">{ui("내가 저장한 템플릿")}</p></div><span className="shrink-0 rounded-full border border-[#ff715e]/20 bg-[#ff715e]/10 px-2.5 py-1 text-[10px] font-bold text-[#ff9b8d]">{ui("내 템플릿")}</span></div>
               </Link>
               <TemplateFavoriteButton
                 active={favoriteTemplateKeySet.has(templateKey)}
@@ -572,7 +577,7 @@ export function TemplateLibrary({
               >
                 <div className="flex flex-1 items-center justify-center px-2 py-4"><UnifiedSubtitlePresetPreview preset={preset} positionedWordsV4Enabled={positionedWordsV4Enabled} /></div>
                 <div className="flex flex-col items-start gap-2 px-2 pb-1 pt-4">
-                  <div className="min-w-0"><h2 className="break-words text-base font-bold leading-snug tracking-[-.025em] text-[#e4e1e6]">{preset.name}</h2><p className="mt-1 text-xs leading-relaxed text-[#9999a2]">{preset.description}</p></div>
+                  <div className="min-w-0"><h2 className="break-words text-base font-bold leading-snug tracking-[-.025em] text-[#e4e1e6]">{ui(preset.name)}</h2><p className="mt-1 text-xs leading-relaxed text-[#9999a2]">{ui(preset.description)}</p></div>
                   <span className="shrink-0 rounded-full border border-[#35e6e3]/20 bg-[#35e6e3]/10 px-2.5 py-1 text-[10px] font-bold text-[#74efec]">{translateLegacyText("자막 템플릿", locale)}</span>
                 </div>
               </Link>
@@ -623,8 +628,8 @@ export function TemplateLibrary({
 
       {visibleTemplates.length === 0 && visiblePersonalTemplates.length === 0 && visibleUnifiedSubtitlePresets.length === 0 && (
         <div className="rounded-2xl border border-white/[.08] bg-white/[.02] px-6 py-16 text-center">
-          <p className="font-bold text-neutral-300">검색 결과가 없습니다.</p>
-          <button type="button" onClick={() => setQuery("")} className="mt-3 text-sm font-bold text-[#ff9b8d] hover:text-[#ffb4a8]">전체 템플릿 보기</button>
+          <p className="font-bold text-neutral-300">{ui("검색 결과가 없습니다.")}</p>
+          <button type="button" onClick={() => setQuery("")} className="mt-3 text-sm font-bold text-[#ff9b8d] hover:text-[#ffb4a8]">{ui("전체 템플릿 보기")}</button>
         </div>
       )}
       <TemplateFavoriteToast message={toastMessage} />

@@ -1,3 +1,6 @@
+"use client";
+
+import { useUiText } from "@/lib/i18n/use-ui-text";
 import type { CSSProperties, PointerEventHandler } from "react";
 import {
   customCanvasWidth,
@@ -53,6 +56,7 @@ export function CustomTemplateTitlePreview({
   onEditValueChange?: (value: string) => void;
   onEditEnd?: () => void;
 }) {
+  const ui = useUiText();
   if (!title.visible) return null;
   const fontSize = resolvedFontSize ?? title.fontSize * fontScale;
   const visibleLines = resolvedLines
@@ -111,7 +115,7 @@ export function CustomTemplateTitlePreview({
       return <textarea
         autoFocus
         data-editor-overlay-layer="title"
-        aria-label="제목 직접 편집"
+        aria-label={ui("제목 직접 편집")}
         value={editValue}
         maxLength={80}
         rows={2}
@@ -137,7 +141,7 @@ export function CustomTemplateTitlePreview({
         }}
       />;
     }
-    return <button type="button" data-editor-overlay-layer="title" aria-label="제목 세로 위치 이동" aria-pressed={selected} onPointerDown={onPointerDown} onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); onEditStart?.(); }} title="더블클릭해서 제목 수정" className={`absolute z-20 flex cursor-ns-resize flex-col items-center text-center font-bold ${selected ? "outline outline-2 outline-[#ff715e]" : ""}`} style={wrapperStyle}>{lines}</button>;
+    return <button type="button" data-editor-overlay-layer="title" aria-label={ui("제목 세로 위치 이동")} aria-pressed={selected} onPointerDown={onPointerDown} onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); onEditStart?.(); }} title={ui("더블클릭해서 제목 수정")} className={`absolute z-20 flex cursor-ns-resize flex-col items-center text-center font-bold ${selected ? "outline outline-2 outline-[#ff715e]" : ""}`} style={wrapperStyle}>{lines}</button>;
   }
   return <div className="absolute z-20 flex flex-col items-center text-center font-bold" style={wrapperStyle}>{lines}</div>;
 }

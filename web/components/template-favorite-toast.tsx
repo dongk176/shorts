@@ -1,4 +1,8 @@
+"use client";
+
+import { useUiText } from "@/lib/i18n/use-ui-text";
 export function TemplateFavoriteToast({ message }: { message: string | null }) {
+  const ui = useUiText();
   if (!message) return null;
   return (
     <div
@@ -9,7 +13,7 @@ export function TemplateFavoriteToast({ message }: { message: string | null }) {
       <span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-[#ff715e]/15 text-[#ff8c7c]" aria-hidden="true">
         <svg viewBox="0 0 24 24" className="h-6 w-6 fill-current"><path d="M9.55 17.65 4.9 13l1.4-1.4 3.25 3.25 8.15-8.15L19.1 8.1l-9.55 9.55Z" /></svg>
       </span>
-      <p className="mt-4 text-lg font-extrabold tracking-[-.02em] text-white sm:text-xl">{message}</p>
+      <p className="mt-4 text-lg font-extrabold tracking-[-.02em] text-white sm:text-xl">{ui(message)}</p>
     </div>
   );
 }

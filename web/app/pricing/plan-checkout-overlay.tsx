@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import { useI18n } from "@/lib/i18n/provider";
 import { translateLegacyText } from "@/lib/i18n/legacy-phrases";
 
@@ -140,6 +142,7 @@ export function PlanCheckoutOverlay({
   preferredInstallmentMonths?: number;
   onClose: () => void;
 }) {
+  const ui = useUiText();
   const { locale, t } = useI18n();
   const isOneTimeProduct = product.kind === "package" || product.kind === "addon";
   const defaultInstallmentMonths = preferredInstallmentMonths
@@ -953,9 +956,9 @@ export function PlanCheckoutOverlay({
   return (
     <>
       <ThePayOnePaymentOverlay
-        title={isOneTimeProduct && paymentFlow !== "legacy"
+        title={ui(isOneTimeProduct && paymentFlow !== "legacy"
           ? null
-          : usesSavedPaymentMethod || step === "card" ? "카드 정보" : "결제자 정보"}
+          : usesSavedPaymentMethod || step === "card" ? "카드 정보" : "결제자 정보")}
         busy={busy}
         primaryDisabled={isOneTimeFlowLoading || isOneTimeFlowDisabled
           ? true
@@ -1034,17 +1037,15 @@ export function PlanCheckoutOverlay({
               className="mx-auto block size-6 animate-spin rounded-full border-2 border-white/15 border-t-[#ff8f80]"
               aria-hidden="true"
             />
-            <strong className="mt-4 block text-sm text-white">결제 옵션을 확인하고 있습니다</strong>
+            <strong className="mt-4 block text-sm text-white">{ui("결제 옵션을 확인하고 있습니다")}</strong>
             <p className="mt-2 text-xs leading-5 text-neutral-500">
-              확인이 끝나면 카드 종류부터 선택할 수 있습니다.
-            </p>
+              {ui("확인이 끝나면 카드 종류부터 선택할 수 있습니다.")}</p>
           </section>
         ) : isOneTimeFlowDisabled ? (
           <section className="mt-8 rounded-2xl border border-[#ff7868]/20 bg-[#ff7868]/5 px-5 py-7 text-center">
-            <strong className="block text-sm text-white">현재 결제를 진행할 수 없습니다</strong>
+            <strong className="block text-sm text-white">{ui("현재 결제를 진행할 수 없습니다")}</strong>
             <p className="mt-2 text-xs leading-5 text-neutral-400">
-              결제 옵션을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.
-            </p>
+              {ui("결제 옵션을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.")}</p>
             <button
               type="button"
               onClick={() => {
@@ -1055,8 +1056,7 @@ export function PlanCheckoutOverlay({
               }}
               className="mt-5 min-h-11 rounded-xl border border-[#ff8f80]/45 bg-[#ff7868]/10 px-5 text-sm font-extrabold text-[#ffb0a6] transition hover:border-[#ff8f80]/75 hover:bg-[#ff7868]/15 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#ff715e]/20"
             >
-              다시 불러오기
-            </button>
+              {ui("다시 불러오기")}</button>
           </section>
         ) : usesSavedPaymentMethod ? (
           <div className="mt-8 grid gap-5">
@@ -1070,8 +1070,7 @@ export function PlanCheckoutOverlay({
             />
             <div className="grid grid-cols-2 gap-3">
               <label className="min-w-0 text-xs font-bold text-neutral-300">
-                생년월일 또는 사업자번호
-                <input
+                {ui("생년월일 또는 사업자번호")}<input
                   data-payment-autofocus
                   data-saved-card-autofocus
                   required
@@ -1081,13 +1080,12 @@ export function PlanCheckoutOverlay({
                   data-payment-advance-delay="400"
                   value={form.identityNumber}
                   onChange={(event) => update("identityNumber", digits(event.target.value, 10))}
-                  placeholder="6자리 또는 10자리"
+                  placeholder={ui("6자리 또는 10자리")}
                   className="mt-2 min-h-14 w-full rounded-2xl border border-white/10 bg-[#101315] px-4 text-base text-white outline-none transition placeholder:text-neutral-600 focus:border-[#ff8f80]/70 focus:ring-4 focus:ring-[#ff715e]/10"
                 />
               </label>
               <label className="min-w-0 text-xs font-bold text-neutral-300">
-                카드 비밀번호 앞 2자리
-                <input
+                {ui("카드 비밀번호 앞 2자리")}<input
                   required
                   type="password"
                   inputMode="numeric"
@@ -1102,8 +1100,7 @@ export function PlanCheckoutOverlay({
             </div>
             {!savedPaymentMethod?.hasStoredPayerTel && (
               <label className="text-xs font-bold text-neutral-300">
-                휴대전화 번호
-                <input
+                {ui("휴대전화 번호")}<input
                   required
                   inputMode="numeric"
                   autoComplete="tel"
@@ -1127,21 +1124,19 @@ export function PlanCheckoutOverlay({
             {isManualOneTime && product.kind === "package" && (
               <section
                 className="rounded-2xl border border-[#ff9b8d]/25 bg-[#ff715e]/[.07] p-4"
-                aria-label="패키지 이용기간과 할부 안내"
+                aria-label={ui("패키지 이용기간과 할부 안내")}
               >
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <span className="block text-[11px] font-bold text-neutral-500">
-                      이용기간
-                    </span>
+                      {ui("이용기간")}</span>
                     <strong className="mt-1 block text-base font-black text-white">
                       {t("pricing.months", { count: product.durationMonths })}
                     </strong>
                   </div>
                   <div className="border-l border-white/10 pl-3">
                     <span className="block text-[11px] font-bold text-neutral-500">
-                      결제 할부
-                    </span>
+                      {ui("결제 할부")}</span>
                     <strong className="mt-1 block text-base font-black text-[#ffad9f]">
                       {t("checkout.maxInstallments", { months: MANUAL_INSTALLMENT_MAX_MONTHS })}
                     </strong>
@@ -1155,8 +1150,7 @@ export function PlanCheckoutOverlay({
                   && changeQuote.refund.amountKrw > 0 && (
                   <div className="mt-4 rounded-xl border border-emerald-400/20 bg-emerald-400/[.07] px-3 py-3">
                     <strong className="block text-xs font-black text-emerald-300">
-                      패키지 결제 완료 즉시 전환
-                    </strong>
+                      {ui("패키지 결제 완료 즉시 전환")}</strong>
                     <p className="mt-1 text-xs font-medium leading-5 text-neutral-300">
                       {t("checkout.switchRefund", { plan: translateLegacyText(changeQuote.currentPlanDisplayName || "이지컷 프로", locale), amount: priceFormatter.format(changeQuote.refund.amountKrw) })}
                     </p>
@@ -1166,7 +1160,7 @@ export function PlanCheckoutOverlay({
             )}
             {isManualOneTime && (
               <div className="text-xs font-bold text-neutral-300">
-                <span className="block">카드 종류</span>
+                <span className="block">{ui("카드 종류")}</span>
                 <div className="mt-2">
                   <ManualCardKindSelect
                     value={manualCardKind}
@@ -1182,7 +1176,7 @@ export function PlanCheckoutOverlay({
             )}
             {requiresInstallmentIssuer && (
               <div className="manual-checkout-field-enter relative z-[70] text-xs font-bold text-neutral-300">
-                <span className="block">카드사</span>
+                <span className="block">{ui("카드사")}</span>
                 <CardIssuerSelect
                   attention={installmentIssuerAttention}
                   className="mt-2"
@@ -1195,8 +1189,7 @@ export function PlanCheckoutOverlay({
                   disabled={busy || installmentLoading}
                 />
                 <p className="mt-2 text-[11px] font-medium leading-5 text-neutral-500">
-                  카드사 선택은 할부 혜택 안내용입니다. 실제 적용 여부는 결제 카드와 카드사 정책에 따라 결정됩니다.
-                </p>
+                  {ui("카드사 선택은 할부 혜택 안내용입니다. 실제 적용 여부는 결제 카드와 카드사 정책에 따라 결정됩니다.")}</p>
               </div>
             )}
             {showManualCardNumber && (
@@ -1207,7 +1200,7 @@ export function PlanCheckoutOverlay({
                   : ""
               }`}
             >
-              <legend className="text-xs font-bold text-neutral-300">카드번호</legend>
+              <legend className="text-xs font-bold text-neutral-300">{ui("카드번호")}</legend>
               <div className="mt-2 grid grid-cols-4 gap-2 sm:gap-3">
                 {form.cardNumberParts.map((part, index) => (
                   <input
@@ -1224,7 +1217,7 @@ export function PlanCheckoutOverlay({
                     inputMode="numeric"
                     autoComplete={index === 0 ? "cc-number" : "off"}
                     data-payment-advance-at="4"
-                    aria-label={`카드번호 ${index + 1}번째 4자리`}
+                    aria-label={ui(`카드번호 ${index + 1}번째 4자리`)}
                     value={part}
                     onChange={(event) => {
                       clearManualCardValidationField("cardNumber");
@@ -1256,8 +1249,7 @@ export function PlanCheckoutOverlay({
             {showManualExpiry && (
             <div className={`${isManualOneTime ? "manual-checkout-field-enter" : ""} grid grid-cols-2 gap-3`}>
               <label className="text-xs font-bold text-neutral-300">
-                유효기간 월
-                <input
+                {ui("유효기간 월")}<input
                   data-manual-card-field="expiryMonth"
                   required
                   inputMode="numeric"
@@ -1277,8 +1269,7 @@ export function PlanCheckoutOverlay({
                 />
               </label>
               <label className="text-xs font-bold text-neutral-300">
-                유효기간 연도
-                <input
+                {ui("유효기간 연도")}<input
                   data-manual-card-field="expiryYear"
                   required
                   inputMode="numeric"
@@ -1302,8 +1293,7 @@ export function PlanCheckoutOverlay({
             {showManualCardCredentials && (
             <div className={`${isManualOneTime ? "manual-checkout-field-enter" : ""} grid grid-cols-2 gap-3`}>
               <label className="min-w-0 text-xs font-bold text-neutral-300">
-                카드 비밀번호 앞 2자리
-                <input
+                {ui("카드 비밀번호 앞 2자리")}<input
                   data-manual-card-field="cardPassword"
                   required
                   type="password"
@@ -1324,8 +1314,7 @@ export function PlanCheckoutOverlay({
                 />
               </label>
               <label className="min-w-0 text-xs font-bold text-neutral-300">
-                생년월일 또는 사업자번호
-                <input
+                {ui("생년월일 또는 사업자번호")}<input
                   data-manual-card-field="identityNumber"
                   required
                   inputMode="numeric"
@@ -1337,7 +1326,7 @@ export function PlanCheckoutOverlay({
                     clearManualCardValidationField("identityNumber");
                     update("identityNumber", digits(event.target.value, 10));
                   }}
-                  placeholder="6자리 또는 10자리"
+                  placeholder={ui("6자리 또는 10자리")}
                   className={`mt-2 min-h-14 w-full rounded-2xl border bg-[#101315] px-4 text-base text-white outline-none transition placeholder:text-neutral-600 focus:border-[#ff8f80]/70 focus:ring-4 focus:ring-[#ff715e]/10 ${
                     manualCardValidationField === "identityNumber"
                       ? "border-[#ff8f7f]/80 ring-4 ring-[#ff715e]/15"
@@ -1349,8 +1338,7 @@ export function PlanCheckoutOverlay({
             )}
             {showManualPayerTel && (
             <label className={`${isManualOneTime ? "manual-checkout-field-enter" : ""} text-xs font-bold text-neutral-300`}>
-              휴대전화 번호
-              <input
+              {ui("휴대전화 번호")}<input
                 data-manual-card-field="payerTel"
                 required
                 inputMode="numeric"
@@ -1398,20 +1386,18 @@ export function PlanCheckoutOverlay({
         ) : (
           <div className="mt-8 grid gap-5">
             <label className="text-xs font-bold text-neutral-300">
-              이름
-              <input
+              {ui("이름")}<input
                 data-payment-autofocus
                 required
                 autoComplete="name"
                 value={form.payerName}
                 onChange={(event) => update("payerName", event.target.value.slice(0, 20))}
-                placeholder="홍길동"
+                placeholder={ui("홍길동")}
                 className="mt-2 min-h-14 w-full rounded-2xl border border-white/10 bg-[#101315] px-4 text-base text-white outline-none transition placeholder:text-neutral-600 focus:border-[#ff8f80]/70 focus:ring-4 focus:ring-[#ff715e]/10"
               />
             </label>
             <label className="text-xs font-bold text-neutral-300">
-              이메일
-              <input
+              {ui("이메일")}<input
                 required
                 type="email"
                 autoComplete="email"
@@ -1426,8 +1412,7 @@ export function PlanCheckoutOverlay({
                 <section className="flex min-h-[54px] items-center rounded-2xl border border-white/10 bg-[#101315] px-4 py-2">
                   <div className="flex w-full items-center justify-between gap-4">
                     <span className="shrink-0 text-xs font-bold text-neutral-500">
-                      구매 상품
-                    </span>
+                      {ui("구매 상품")}</span>
                     <strong className="min-w-0 text-right text-base font-black leading-5 text-[#ffad9f]">
                       {product.displayName}
                     </strong>
@@ -1437,14 +1422,13 @@ export function PlanCheckoutOverlay({
                 <section className="rounded-2xl border border-white/10 bg-[#101315] p-4">
                   {manualCardKind === "debit_prepaid" ? (
                     <div className="rounded-xl border border-white/8 bg-black/15 p-3">
-                      <strong className="text-sm text-white">일시불</strong>
+                      <strong className="text-sm text-white">{ui("일시불")}</strong>
                       <p className="mt-1 text-xs leading-5 text-neutral-400">
-                        체크·선불카드는 일시불로 결제됩니다.
-                      </p>
+                        {ui("체크·선불카드는 일시불로 결제됩니다.")}</p>
                     </div>
                   ) : chargeAmount >= 50_000 ? (
                     <div className="text-xs font-bold text-neutral-300">
-                        <span className="block">결제 방식</span>
+                        <span className="block">{ui("결제 방식")}</span>
                         {providerMaxInstallmentMonths !== null && (
                           <p
                             className="mt-2 rounded-xl border border-[#ff9b8d]/25 bg-[#ff715e]/8 px-3 py-2 text-sm font-bold leading-5 text-[#ffb0a6]"
@@ -1471,10 +1455,9 @@ export function PlanCheckoutOverlay({
                     </div>
                   ) : (
                     <div className="rounded-xl border border-white/8 bg-black/15 p-3">
-                      <strong className="text-sm text-white">일시불</strong>
+                      <strong className="text-sm text-white">{ui("일시불")}</strong>
                       <p className="mt-1 text-[11px] text-neutral-500">
-                        할부 혜택은 5만원 이상 결제부터 적용됩니다.
-                      </p>
+                        {ui("할부 혜택은 5만원 이상 결제부터 적용됩니다.")}</p>
                     </div>
                   )}
                 </section>

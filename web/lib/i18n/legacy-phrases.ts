@@ -889,6 +889,7 @@ const phrases: readonly Phrase[] = [
   ["크게", "Larger", "大きく"],
   ["다크 모드", "Dark mode", "ダークモード"],
   ["화이트 모드", "Light mode", "ライトモード"],
+  ["더블클릭해서 제목 수정", "Double-click to edit the title", "ダブルクリックしてタイトルを編集"],
   ["내 템플릿으로 저장", "Save as my template", "マイテンプレートとして保存"],
   ["← 라이브러리", "← Library", "← ライブラリ"],
   ["↶ 되돌리기", "↶ Undo", "↶ 元に戻す"],

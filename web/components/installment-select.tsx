@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import { useEffect, useId, useRef, useState } from "react";
 
 function installmentLabel(months: number) {
@@ -25,6 +27,7 @@ export function InstallmentSelect({
   disabledLabel?: string;
   className?: string;
 }) {
+  const ui = useUiText();
   const listboxId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -69,7 +72,7 @@ export function InstallmentSelect({
         <div
           id={listboxId}
           role="listbox"
-          aria-label="결제 방식"
+          aria-label={ui("결제 방식")}
           className="absolute inset-x-0 bottom-[calc(100%+0.5rem)] z-50 max-h-60 overflow-y-auto rounded-2xl border border-white/12 bg-[#25282a]/98 p-1.5 shadow-[0_20px_50px_rgba(0,0,0,.55)] backdrop-blur-xl"
         >
           {options.map((option, index) => (

@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import Link from "@/lib/i18n/navigation";
 import {
   type FormEvent,
@@ -96,6 +98,7 @@ export function SupportInquiryWidget({
   user: MvpState["user"];
   onLoginRequest?: () => void;
 }) {
+  const ui = useUiText();
   const { locale, t } = useI18n();
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<WidgetView>("menu");
@@ -425,7 +428,7 @@ export function SupportInquiryWidget({
 
                 {error && (
                   <p role="alert" className="mt-4 rounded-xl border border-red-400/20 bg-red-500/[.08] px-3.5 py-3 text-xs leading-5 text-red-200">
-                    {error}
+                    {ui(error)}
                   </p>
                 )}
 

@@ -1,3 +1,4 @@
+import { createUiText } from "@/lib/i18n/ui-text";
 import { createLocalizedPageMetadata } from "@/lib/i18n/metadata";
 import type { Metadata } from "next";
 import Image from "next/image";
@@ -133,6 +134,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function TeamPage() {
+  const ui = createUiText(await getRequestLocale());
   if (!TEAM_PAGE_VISIBLE) {
     notFound();
   }
@@ -179,7 +181,7 @@ export default async function TeamPage() {
               id="representative-name"
               className="mt-8 text-3xl font-black tracking-[-.05em] text-white"
             >
-              {copy.name}
+              {ui(copy.name)}
             </h1>
             <p className="mt-2 text-sm font-bold text-neutral-400">
               {copy.role}
@@ -187,7 +189,7 @@ export default async function TeamPage() {
             {copy.profileGroups.map((group) => (
               <ul
                 key={group.label}
-                aria-label={group.label}
+                aria-label={ui(group.label)}
                 className="mt-9 w-full space-y-5 text-left"
               >
                 {group.items.map((item) => (

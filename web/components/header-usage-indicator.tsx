@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import Link from "@/lib/i18n/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useUsageState } from "@/components/usage-provider";
@@ -10,6 +12,7 @@ function wholeMinutes(seconds: number) {
 }
 
 export function HeaderUsageIndicator({ mobile = false }: { mobile?: boolean } = {}) {
+  const ui = useUiText();
   const usageState = useUsageState();
   const { locale, t } = useI18n();
   const targetMinutes = usageState.usage
@@ -60,8 +63,8 @@ export function HeaderUsageIndicator({ mobile = false }: { mobile?: boolean } = 
   return (
     <Link
       href={usageState.isEnterprise ? "/account/activity" : "/pricing"}
-      aria-label={label}
-      title={label}
+      aria-label={ui(label)}
+      title={ui(label)}
       className={`header-usage-indicator inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/[.035] px-2.5 text-xs font-extrabold tabular-nums text-neutral-200 transition hover:border-[#ff8c7c]/45 hover:bg-[#ff8c7c]/10 hover:text-white${mobile ? " site-header-mobile-usage md:hidden" : ""}`}
     >
       <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4 text-[#ff9b8d]" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">

@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import {
   useCallback,
   useEffect,
@@ -114,6 +116,7 @@ export function FeatureGuideOverlay({
   lastStepPrimaryLabel?: string;
   onLastStepPrimaryAction?: () => void;
 }) {
+  const ui = useUiText();
   const guideId = useId();
   const [mounted, setMounted] = useState(false);
   const [open, setOpen] = useState(false);
@@ -404,7 +407,7 @@ export function FeatureGuideOverlay({
           <div className="mb-5 flex items-start justify-between gap-4">
             <div>
               <span className={`text-[11px] font-extrabold tracking-[0.14em] ${toneStyles.eyebrowClassName}`}>
-                {step.eyebrow}
+                {ui(step.eyebrow)}
               </span>
               <p className="mt-1 text-xs font-semibold text-neutral-500">
                 {activeStepIndex + 1} / {steps.length}
@@ -423,10 +426,10 @@ export function FeatureGuideOverlay({
           </div>
 
           <h2 id={`${guideId}-title`} className="text-xl font-extrabold leading-snug">
-            {step.title}
+            {ui(step.title)}
           </h2>
           <p id={`${guideId}-description`} className="mt-3 text-sm leading-6 text-neutral-300">
-            {step.description}
+            {ui(step.description)}
           </p>
 
           {isLastStep
@@ -463,7 +466,7 @@ export function FeatureGuideOverlay({
                     activeStepIndex + 1,
                   ))}
                 >
-                  {nextLabel}
+                  {ui(nextLabel)}
                 </button>
               </div>}
         </div>

@@ -47,8 +47,8 @@ describe("unified template subtitle access", () => {
 
   it("offers the agreed saveable subtitle controls while fixing horizontal position", () => {
     expect(editorSource).toContain('{ id: "subtitle", label: "자막" }');
-    expect(editorSource).toContain('aria-label="자막 폰트"');
-    expect(editorSource).toContain('aria-label="후킹 제목 폰트"');
+    expect(editorSource).toContain('aria-label={ui("자막 폰트")}');
+    expect(editorSource).toContain('aria-label={ui("후킹 제목 폰트")}');
     expect(editorSource).toContain("max={120}");
     expect(editorSource).toContain("next.subtitle.x = TEMPLATE_CANVAS.width / 2");
     expect(editorSource).toContain("next.subtitle.accentColor = color");

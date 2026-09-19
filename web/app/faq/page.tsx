@@ -1,3 +1,4 @@
+import { createUiText } from "@/lib/i18n/ui-text";
 import { createLocalizedPageMetadata } from "@/lib/i18n/metadata";
 import type { Metadata } from "next";
 import Link from "@/lib/i18n/navigation";
@@ -51,6 +52,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function FaqPage() {
   const locale = await getRequestLocale();
+  const ui = createUiText(locale);
   const faqs = faqsByLocale[locale];
   const user = await getAuthenticatedUser();
   const faqData = {
@@ -79,28 +81,28 @@ export default async function FaqPage() {
       <main className="mx-auto w-full max-w-5xl px-5 pb-24 pt-10 sm:px-8 sm:pt-14">
         <header className="mx-auto max-w-3xl py-12 text-center sm:py-16">
           <p className="text-xs font-black uppercase tracking-[.2em] text-[#ff9b8d]">FAQ</p>
-          <h1 className="mt-5 text-[28px] font-black leading-tight tracking-[-.05em] text-white sm:text-[42px]">AI 쇼츠 제작<br /><span className="bg-gradient-to-r from-[#ff8c7c] to-violet-400 bg-clip-text text-transparent">자주 묻는 질문</span></h1>
-          <p className="mx-auto mt-6 max-w-2xl text-sm leading-7 text-neutral-400 sm:text-base">이지컷의 쇼츠 AI 기능, 사용할 수 있는 영상과 생성 결과 편집에 관한 주요 답변을 확인하세요.</p>
+          <h1 className="mt-5 text-[28px] font-black leading-tight tracking-[-.05em] text-white sm:text-[42px]">{ui("AI 쇼츠 제작")}<br /><span className="bg-gradient-to-r from-[#ff8c7c] to-violet-400 bg-clip-text text-transparent">{ui("자주 묻는 질문")}</span></h1>
+          <p className="mx-auto mt-6 max-w-2xl text-sm leading-7 text-neutral-400 sm:text-base">{ui("이지컷의 쇼츠 AI 기능, 사용할 수 있는 영상과 생성 결과 편집에 관한 주요 답변을 확인하세요.")}</p>
         </header>
 
         <section aria-labelledby="faq-list-title">
-          <h2 id="faq-list-title" className="sr-only">이지컷 AI 쇼츠 제작 질문과 답변</h2>
+          <h2 id="faq-list-title" className="sr-only">{ui("이지컷 AI 쇼츠 제작 질문과 답변")}</h2>
           <div className="mx-auto grid max-w-4xl gap-3">
             {faqs.map(([question, answer]) => (
               <details key={question} className="group rounded-2xl border border-white/10 bg-black/15 px-5 py-5 open:bg-white/[.035] sm:px-6">
-                <summary className="cursor-pointer list-none pr-8 text-base font-extrabold text-white marker:hidden sm:text-lg">{question}</summary>
-                <p className="mt-4 text-sm leading-7 text-neutral-400">{answer}</p>
+                <summary className="cursor-pointer list-none pr-8 text-base font-extrabold text-white marker:hidden sm:text-lg">{ui(question)}</summary>
+                <p className="mt-4 text-sm leading-7 text-neutral-400">{ui(answer)}</p>
               </details>
             ))}
           </div>
         </section>
 
         <section aria-labelledby="faq-next-title" className="mt-10 text-center">
-          <h2 id="faq-next-title" className="text-2xl font-black tracking-[-.035em] text-white">더 확인하고 싶은 내용이 있나요?</h2>
-          <p className="mx-auto mt-4 max-w-2xl text-sm leading-7 text-neutral-400">서비스별 기능과 제공량은 비교 페이지에서 확인하고, 계정·결제 관련 문의는 고객센터로 보내주세요.</p>
+          <h2 id="faq-next-title" className="text-2xl font-black tracking-[-.035em] text-white">{ui("더 확인하고 싶은 내용이 있나요?")}</h2>
+          <p className="mx-auto mt-4 max-w-2xl text-sm leading-7 text-neutral-400">{ui("서비스별 기능과 제공량은 비교 페이지에서 확인하고, 계정·결제 관련 문의는 고객센터로 보내주세요.")}</p>
           <div className="mt-7 flex flex-wrap justify-center gap-3">
-            <Link href="/compare/ai-shorts-tools" className="inline-flex min-h-12 items-center rounded-xl bg-white px-6 text-sm font-black text-black hover:bg-neutral-200">AI 쇼츠 툴 비교</Link>
-            <Link href="/support" className="inline-flex min-h-12 items-center rounded-xl border border-white/15 px-6 text-sm font-black text-white hover:border-white/30">고객센터</Link>
+            <Link href="/compare/ai-shorts-tools" className="inline-flex min-h-12 items-center rounded-xl bg-white px-6 text-sm font-black text-black hover:bg-neutral-200">{ui("AI 쇼츠 툴 비교")}</Link>
+            <Link href="/support" className="inline-flex min-h-12 items-center rounded-xl border border-white/15 px-6 text-sm font-black text-white hover:border-white/30">{ui("고객센터")}</Link>
           </div>
         </section>
       </main>

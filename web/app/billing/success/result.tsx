@@ -1,3 +1,6 @@
+"use client";
+
+import { useUiText } from "@/lib/i18n/use-ui-text";
 import { PaymentMessageOverlay, type PaymentMessageTone } from "@/components/payment-message-overlay";
 
 export function BillingResult({
@@ -21,6 +24,7 @@ export function BillingResult({
   secondaryHref?: string;
   secondaryLabel?: string;
 }) {
+  const ui = useUiText();
   const href = actionHref || (error ? "/pricing" : "/#workspace");
   const label = actionLabel || (error ? "가격 페이지로 돌아가기" : "Easy Cut으로 이동");
   const tone: PaymentMessageTone = actionPending ? "info" : error ? "error" : "success";
@@ -29,7 +33,7 @@ export function BillingResult({
       <PaymentMessageOverlay
         open
         tone={tone}
-        title={title || (error ? "결제를 완료하지 못했습니다" : actionPending ? "결제 결과를 확인하고 있습니다" : "결제가 완료되었습니다")}
+        title={ui(title || (error ? "결제를 완료하지 못했습니다" : actionPending ? "결제 결과를 확인하고 있습니다" : "결제가 완료되었습니다"))}
         message={status}
         actionHref={href}
         actionLabel={label}

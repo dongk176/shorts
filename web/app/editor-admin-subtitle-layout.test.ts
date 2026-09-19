@@ -26,7 +26,7 @@ describe("admin editor subtitle layout", () => {
     expect(editorSource).toContain(
       "if (!subtitlesEnabledRef.current && !editableCaptionSourceSpec) return;",
     );
-    expect(editorSource).toContain('aria-label={subtitlesEnabled ? "자막 끄기" : "자막 켜기"}');
+    expect(editorSource).toContain('aria-label={ui(subtitlesEnabled ? "자막 끄기" : "자막 켜기")}');
     expect(editorSource).toContain(
       "disabled={translationUnavailable || (unifiedSubtitleLayoutEnabled",
     );
@@ -51,11 +51,11 @@ describe("admin editor subtitle layout", () => {
   });
 
   it("offers caption copy, color, vertical drag and size controls with a live preview", () => {
-    expect(editorSource).toContain('aria-label="자막 세로 위치"');
-    expect(editorSource).toContain('aria-label="자막 크기"');
+    expect(editorSource).toContain('aria-label={ui("자막 세로 위치")}');
+    expect(editorSource).toContain('aria-label={ui("자막 크기")}');
     expect(editorSource).toContain("data-editor-caption-template-preview");
-    expect(editorSource).toContain('aria-label={`자막 포인트 색상 ${option.name}`}');
-    expect(editorSource).toContain('aria-label={`자막 일반 글자색 ${option.name}`}');
+    expect(editorSource).toContain('aria-label={ui(`자막 포인트 색상 ${option.name}`)}');
+    expect(editorSource).toContain('aria-label={ui(`자막 일반 글자색 ${option.name}`)}');
     expect(editorSource).toContain('"드래그해서 이동 · 더블클릭해서 자막 수정"');
     expect(editorSource).toContain("onEditStart={beginEditorCaptionTextEdit}");
     expect(editorSource).toContain(
@@ -77,7 +77,7 @@ describe("admin editor subtitle layout", () => {
     expect(editorSource).toContain('spec.templateId === "pop"');
     expect(editorSource).toContain("retimeCaptionRenderSpecForEditor");
     expect(editorSource).toContain(
-      "음성보다 {editableCaptionSourceSpec.timingLeadFrames ?? SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES}프레임 먼저 표시",
+      't("editor.captionTimingHint", { frames: editableCaptionSourceSpec.timingLeadFrames ?? SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES })',
     );
     expect(editorSource).toContain("? spec.font.metrics.cssToAssScale");
     expect(editorSource).toContain(": CAPTION_ASS_PREVIEW_FONT_SCALE;");

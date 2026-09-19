@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import { browserLocalizedHref } from "@/lib/i18n/routing";
 
 import reviewStyles from "./customer-reviews.module.css";
@@ -918,6 +920,7 @@ const processSteps: ReadonlyArray<{
 ];
 
 function ThreeStepProcess() {
+  const ui = useUiText();
   const { locale } = useI18n();
   const localizedSteps = localizedValue(locale, {
     ko: processSteps,
@@ -948,7 +951,7 @@ function ThreeStepProcess() {
                 <span className="process-step-icon">{step.icon}</span>
               </div>
               <div className="process-step-copy">
-                <h3>{step.title}</h3>
+                <h3>{ui(step.title)}</h3>
                 <p>
                   {step.descriptionLines.map((line) => <span key={line} className="block">{line}</span>)}
                 </p>
@@ -1059,6 +1062,7 @@ function CommentCaptureChannel({
   movementStyle?: CSSProperties;
   onPointerDown?: PointerEventHandler<HTMLButtonElement>;
 }) {
+  const ui = useUiText();
   const content = <>
     <ChannelAvatar
       url={channelThumbnailUrl}
@@ -1086,7 +1090,7 @@ function CommentCaptureChannel({
         ? <button
             type="button"
             data-editor-overlay-layer="channel"
-            aria-label="채널명 오버레이 선택 및 이동"
+            aria-label={ui("채널명 오버레이 선택 및 이동")}
             aria-pressed={selected}
             onPointerDown={onPointerDown}
             className={`pointer-events-auto flex cursor-move touch-none appearance-none items-center justify-center gap-[2.4cqw] border-0 bg-transparent px-[4.9cqw] text-inherit ${selected ? "outline outline-2 outline-[#ff715e]" : ""}`}
@@ -1120,6 +1124,7 @@ function FixedPresetChannel({
   movementStyle?: CSSProperties;
   onPointerDown?: PointerEventHandler<HTMLButtonElement>;
 }) {
+  const ui = useUiText();
   const content = <>
     <ChannelAvatar
       url={channelThumbnailUrl}
@@ -1146,7 +1151,7 @@ function FixedPresetChannel({
         ? <button
             type="button"
             data-editor-overlay-layer="channel"
-            aria-label="채널명 오버레이 선택 및 이동"
+            aria-label={ui("채널명 오버레이 선택 및 이동")}
             aria-pressed={selected}
             onPointerDown={onPointerDown}
             className={`pointer-events-auto flex cursor-move touch-none appearance-none items-center justify-center gap-[2.4cqw] border-0 bg-transparent px-[4.9cqw] text-inherit ${selected ? "outline outline-2 outline-[#ff715e]" : ""}`}
@@ -1188,6 +1193,7 @@ function CaptionTemplateEditorChannel({
   onPointerDown?: PointerEventHandler<HTMLButtonElement>;
   fitSavedCommentChannel?: boolean;
 }) {
+  const ui = useUiText();
   const [fitted, setFitted] = useState<ReturnType<typeof fitCaptionChannel> | null>(null);
   useEffect(() => {
     if (!fitSavedCommentChannel) return;
@@ -1246,7 +1252,7 @@ function CaptionTemplateEditorChannel({
       ? <button
           type="button"
           data-editor-overlay-layer="channel"
-          aria-label="채널명 오버레이 선택 및 이동"
+          aria-label={ui("채널명 오버레이 선택 및 이동")}
           aria-pressed={selected}
           onPointerDown={onPointerDown}
           className={`pointer-events-auto flex cursor-move touch-none appearance-none items-center justify-center border-0 bg-transparent p-0 text-inherit ${selected ? "outline outline-2 outline-[#ff715e]" : ""}`}
@@ -1281,6 +1287,7 @@ function CustomEditorChannel({
   movementStyle?: CSSProperties;
   onPointerDown?: PointerEventHandler<HTMLButtonElement>;
 }) {
+  const ui = useUiText();
   const channel = template.config.channel;
   if (!channel.visible && !forceVisible) return null;
   const style = {
@@ -1307,7 +1314,7 @@ function CustomEditorChannel({
       <button
         type="button"
         data-editor-overlay-layer="channel"
-        aria-label="채널명 오버레이 선택 및 이동"
+        aria-label={ui("채널명 오버레이 선택 및 이동")}
         aria-pressed={selected}
         onPointerDown={onPointerDown}
         className={`absolute z-30 flex cursor-move touch-none appearance-none items-center justify-center gap-[2cqw] truncate rounded border-0 px-[1.5cqw] py-[.7cqw] text-center font-bold ${selected ? "outline outline-2 outline-[#ff715e]" : ""}`}
@@ -1348,6 +1355,7 @@ function PresetInlineEditorChannel({
   movementStyle?: CSSProperties;
   onPointerDown?: PointerEventHandler<HTMLButtonElement>;
 }) {
+  const ui = useUiText();
   const content = <>
     <ChannelAvatar
       url={channelThumbnailUrl}
@@ -1365,7 +1373,7 @@ function PresetInlineEditorChannel({
     <button
       type="button"
       data-editor-overlay-layer="channel"
-      aria-label="채널명 오버레이 선택 및 이동"
+      aria-label={ui("채널명 오버레이 선택 및 이동")}
       aria-pressed={selected}
       onPointerDown={onPointerDown}
       className={`relative mx-auto flex w-fit cursor-move touch-none appearance-none items-start justify-center gap-2 border-0 bg-transparent p-0 text-inherit ${selected ? "outline outline-2 outline-[#ff715e]" : ""}`}
@@ -1698,6 +1706,7 @@ function CaptionTemplateEditorPreview({
   onEditingCancel: () => void;
   textEditingEnabled: boolean;
 }) {
+  const ui = useUiText();
   const currentFrameFloat = Math.max(0, currentTimeSeconds * spec.fps);
   const currentFrame = Math.floor(currentFrameFloat + 0.0001);
   const active = spec.cues
@@ -1818,7 +1827,7 @@ function CaptionTemplateEditorPreview({
     >
       <textarea
         autoFocus
-        aria-label="현재 자막 수정"
+        aria-label={ui("현재 자막 수정")}
         aria-invalid={editing.text.trim().length === 0}
         value={editing.text}
         maxLength={200}
@@ -1874,12 +1883,12 @@ function CaptionTemplateEditorPreview({
         />
         <button
           type="button"
-          aria-label={textEditingEnabled
+          aria-label={ui(textEditingEnabled
             ? "팝형 자막 위치·크기·텍스트 편집"
-            : "팝형 자막 위치·크기 설정"}
-          title={textEditingEnabled
+            : "팝형 자막 위치·크기 설정")}
+          title={ui(textEditingEnabled
             ? "드래그해서 이동 · 더블클릭해서 자막 수정"
-            : "드래그해서 자막 위치 이동"}
+            : "드래그해서 자막 위치 이동")}
           className="pointer-events-auto absolute cursor-ns-resize touch-none outline-offset-2 hover:outline hover:outline-1 hover:outline-white/55"
           onPointerDown={(pointerEvent) => onPointerDown(
             pointerEvent,
@@ -1899,12 +1908,12 @@ function CaptionTemplateEditorPreview({
       ? <span
         role="button"
         tabIndex={0}
-        aria-label={textEditingEnabled
+        aria-label={ui(textEditingEnabled
           ? "팝형 자막 위치·크기·텍스트 편집"
-          : "팝형 자막 위치·크기 설정"}
-        title={textEditingEnabled
+          : "팝형 자막 위치·크기 설정")}
+        title={ui(textEditingEnabled
           ? "드래그해서 이동 · 더블클릭해서 자막 수정"
-          : "드래그해서 자막 위치 이동"}
+          : "드래그해서 자막 위치 이동")}
         className="pointer-events-auto absolute cursor-ns-resize touch-none whitespace-pre outline-offset-2 hover:outline hover:outline-1 hover:outline-white/55"
         onPointerDown={(pointerEvent) => onPointerDown(
           pointerEvent,
@@ -1966,12 +1975,12 @@ function CaptionTemplateEditorPreview({
       : <span
         role="button"
         tabIndex={0}
-        aria-label={textEditingEnabled
+        aria-label={ui(textEditingEnabled
           ? `${spec.templateId === "basic" ? "기본형" : "강조형"} 자막 위치·크기·텍스트 편집`
-          : `${spec.templateId === "basic" ? "기본형" : "강조형"} 자막 위치·크기 설정`}
-        title={textEditingEnabled
+          : `${spec.templateId === "basic" ? "기본형" : "강조형"} 자막 위치·크기 설정`)}
+        title={ui(textEditingEnabled
           ? "드래그해서 이동 · 더블클릭해서 자막 수정"
-          : "드래그해서 자막 위치 이동"}
+          : "드래그해서 자막 위치 이동")}
         className="pointer-events-auto absolute cursor-ns-resize touch-none whitespace-nowrap text-center outline-offset-2 hover:outline hover:outline-1 hover:outline-white/55"
         onPointerDown={(pointerEvent) => onPointerDown(
           pointerEvent,
@@ -2094,6 +2103,7 @@ function TemplatePicker({
   settingsBelowRail: boolean;
   translationNotice?: string | null;
 }) {
+  const ui = useUiText();
   const positionedWordsV4Enabled = isEditorRenderSpecV4Enabled();
   const usablePersonalTemplates = canUseCustomTemplates ? personalTemplates : [];
   const selectedCustom = usablePersonalTemplates.find((template) => template.id === customTemplateId);
@@ -2130,7 +2140,7 @@ function TemplatePicker({
   const renderFavoriteCard = (card: FavoriteTemplateCard) => {
     if (card.kind === "custom") {
       const selected = !subtitleTemplateId && customTemplateId === card.template.id;
-      return <button key={`favorite-custom-${card.template.id}`} type="button" aria-pressed={selected} onClick={() => onCustomTemplateChange(card.template)} className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition sm:w-[220px] ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}><CustomHomeTemplatePreview template={card.template} showUnifiedSubtitle={unifiedTemplateSubtitleCanaryEnabled} positionedWordsV4Enabled={positionedWordsV4Enabled} /><span data-i18n-skip className="mt-2.5 block truncate text-center text-sm font-semibold">{card.template.name}</span><span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">자주 쓰는 내 템플릿</span></button>;
+      return <button key={`favorite-custom-${card.template.id}`} type="button" aria-pressed={selected} onClick={() => onCustomTemplateChange(card.template)} className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition sm:w-[220px] ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}><CustomHomeTemplatePreview template={card.template} showUnifiedSubtitle={unifiedTemplateSubtitleCanaryEnabled} positionedWordsV4Enabled={positionedWordsV4Enabled} /><span data-i18n-skip className="mt-2.5 block truncate text-center text-sm font-semibold">{card.template.name}</span><span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">{ui("자주 쓰는 내 템플릿")}</span></button>;
     }
     const selected = !subtitleTemplateId && !customTemplateId && value === card.template.id;
     return (
@@ -2174,7 +2184,7 @@ function TemplatePicker({
   return (
     <div id="template-picker">
       <div className="flex items-center gap-3">
-        <h2 className="text-xl font-bold">템플릿</h2>
+        <h2 className="text-xl font-bold">{ui("템플릿")}</h2>
         <span data-i18n-skip={!selectedSubtitleTemplate && Boolean(selectedCustom) || undefined} className="text-xs font-semibold text-red-300">{selectedSubtitleTemplate?.name || selectedCustom?.name || selectedPresetDisplayName}</span>
       </div>
       {translationNotice && (
@@ -2184,7 +2194,7 @@ function TemplatePicker({
       )}
       {!settingsBelowRail && templateSettings}
       <div
-        aria-label="템플릿 선택 레일"
+        aria-label={ui("템플릿 선택 레일")}
         className="template-picker-rail mt-4 flex snap-x snap-mandatory gap-3 overflow-x-auto overscroll-x-contain pb-4 pr-2 [&::-webkit-scrollbar]:h-3 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-[rgba(255,255,255,.05)] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border-2 [&::-webkit-scrollbar-thumb]:border-[rgba(0,0,0,.34)] [&::-webkit-scrollbar-thumb]:bg-[rgba(255,255,255,.34)] [&::-webkit-scrollbar-thumb:hover]:bg-[rgba(255,255,255,.5)]"
         style={{ scrollbarColor: "rgba(255,255,255,.34) rgba(255,255,255,.05)", scrollbarWidth: "auto" }}
       >
@@ -2214,9 +2224,9 @@ function TemplatePicker({
                     fullVerticalTitleBackgroundEnabled={brandColorSelectionEnabled}
                     fontId={DEFAULT_EDITOR_FONT_ID}
                   />
-                  <span className="mt-2.5 block text-center text-sm font-extrabold text-white">{option.name}</span>
-                  <span className="mt-1 block text-center text-[11px] leading-4 text-neutral-400">{option.description}</span>
-                  <span className="mt-1.5 block text-center text-[10px] font-black text-[#ff9b8d]">자막</span>
+                  <span className="mt-2.5 block text-center text-sm font-extrabold text-white">{ui(option.name)}</span>
+                  <span className="mt-1 block text-center text-[11px] leading-4 text-neutral-400">{ui(option.description)}</span>
+                  <span className="mt-1.5 block text-center text-[10px] font-black text-[#ff9b8d]">{ui("자막")}</span>
                 </button>
               );
             })}
@@ -2225,17 +2235,17 @@ function TemplatePicker({
         {remainingFavoriteCards.map(renderFavoriteCard)}
         {remainingPersonalTemplates.map((template) => {
           const selected = !subtitleTemplateId && customTemplateId === template.id;
-          return <button key={template.id} type="button" aria-pressed={selected} onClick={() => onCustomTemplateChange(template)} className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition sm:w-[220px] ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}><CustomHomeTemplatePreview template={template} showUnifiedSubtitle={unifiedTemplateSubtitleCanaryEnabled} positionedWordsV4Enabled={positionedWordsV4Enabled} /><span data-i18n-skip className="mt-2.5 block truncate text-center text-sm font-semibold">{template.name}</span><span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">내 템플릿</span></button>;
+          return <button key={template.id} type="button" aria-pressed={selected} onClick={() => onCustomTemplateChange(template)} className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition sm:w-[220px] ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}><CustomHomeTemplatePreview template={template} showUnifiedSubtitle={unifiedTemplateSubtitleCanaryEnabled} positionedWordsV4Enabled={positionedWordsV4Enabled} /><span data-i18n-skip className="mt-2.5 block truncate text-center text-sm font-semibold">{template.name}</span><span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">{ui("내 템플릿")}</span></button>;
         })}
       </div>
       {settingsBelowRail && templateSettings}
       {subtitleTemplateSelectionEnabled && subtitleTemplateId && (
-        <section aria-label="자막 위치" className="mt-4 rounded-xl border border-white/[.09] bg-white/[.025] p-3">
+        <section aria-label={ui("자막 위치")} className="mt-4 rounded-xl border border-white/[.09] bg-white/[.025] p-3">
           <div>
-            <h3 className="text-sm font-extrabold text-white">자막 위치</h3>
-            <p className="mt-1 text-[11px] text-neutral-400">영상에 맞는 위치를 고르면 미리보기에 바로 반영돼요.</p>
+            <h3 className="text-sm font-extrabold text-white">{ui("자막 위치")}</h3>
+            <p className="mt-1 text-[11px] text-neutral-400">{ui("영상에 맞는 위치를 고르면 미리보기에 바로 반영돼요.")}</p>
           </div>
-          <div className="mt-3 grid grid-cols-2 gap-2" role="group" aria-label="자막 위치 선택">
+          <div className="mt-3 grid grid-cols-2 gap-2" role="group" aria-label={ui("자막 위치 선택")}>
             {subtitleCaptionPositionOptions.map((position) => {
               const selected = subtitleCaptionPlacement === position.value;
               return (
@@ -2248,13 +2258,13 @@ function TemplatePicker({
                   className={`min-w-0 rounded-xl border p-3 text-left transition ${selected ? "border-[#38bdf8] bg-[#38bdf8]/10 shadow-[0_0_0_2px_rgba(56,189,248,.12)]" : "border-white/10 bg-black/20 hover:border-white/25"}`}
                 >
                   <span className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-black text-white">{position.name}</span>
+                    <span className="text-sm font-black text-white">{ui(position.name)}</span>
                     <span className={`relative h-8 w-5 shrink-0 rounded border ${selected ? "border-sky-300/60 bg-sky-300/10" : "border-white/20 bg-black/30"}`} aria-hidden="true">
                       <span className={`absolute inset-x-1 h-0.5 rounded-full ${selected ? "bg-sky-300" : "bg-white/45"} ${position.value === "lower" ? "bottom-1" : "top-1/2 -translate-y-1/2"}`} />
                     </span>
                   </span>
                   <span className="mt-2 block text-[11px] font-bold leading-4 text-sky-100">{position.useCase}</span>
-                  <span className="mt-1 block text-[10px] leading-[1.45] text-neutral-400">{position.description}</span>
+                  <span className="mt-1 block text-[10px] leading-[1.45] text-neutral-400">{ui(position.description)}</span>
                 </button>
               );
             })}
@@ -2266,12 +2276,11 @@ function TemplatePicker({
       />
       {!subtitleTemplateId && !customTemplateId && value === "comment-capture" && (
         <p className="mt-3 rounded-xl border border-cyan-300/15 bg-cyan-300/[.06] px-4 py-3 text-sm text-cyan-100">
-          AI가 실제 사람이 작성한 것처럼 자연스러운 댓글을 만들어줘요.
-        </p>
+          {ui("AI가 실제 사람이 작성한 것처럼 자연스러운 댓글을 만들어줘요.")}</p>
       )}
       {!canUseCustomTemplates && personalTemplates.length > 0 && (
         <p className="mt-3 rounded-xl border border-[#ff9b8d]/15 bg-[#ff715e]/[.05] px-4 py-3 text-sm text-[#ffc0b7]">
-          저장한 커스텀 템플릿은 유료 이용권에서 사용할 수 있어요. <Link href="/pricing" className="font-black underline underline-offset-2">요금제 보기</Link>
+          {ui("저장한 커스텀 템플릿은 유료 이용권에서 사용할 수 있어요. ")}<Link href="/pricing" className="font-black underline underline-offset-2">{ui("요금제 보기")}</Link>
         </p>
       )}
     </div>
@@ -2337,6 +2346,7 @@ function NoticeDialog({
   confirmLabel?: string;
   onClose: () => void;
 }) {
+  const ui = useUiText();
   useEffect(() => {
     if (!open) return;
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -2370,10 +2380,10 @@ function NoticeDialog({
         <div aria-hidden="true" className={`pointer-events-none absolute inset-x-16 -top-24 h-40 rounded-full blur-3xl ${info ? "bg-violet-500/15" : "bg-red-500/15"}`} />
         <div aria-hidden="true" className={`relative mx-auto grid h-12 w-12 place-items-center rounded-full border text-2xl ${info ? "border-violet-300/20 bg-violet-500/10 text-violet-200" : "border-red-300/20 bg-red-500/10 text-red-200"}`}>{info ? "i" : "!"}</div>
         <h2 id={`${dialogId}-title`} className="relative mt-5 whitespace-pre-line text-2xl font-extrabold tracking-[-0.025em] text-white">
-          {title}
+          {ui(title)}
         </h2>
         {description && <p id={`${dialogId}-description`} className={`relative mt-4 text-sm leading-6 ${info ? "text-violet-100/80" : "text-red-100/80"}`}>
-          {description}
+          {ui(description)}
         </p>}
         <button
           type="button"
@@ -2472,6 +2482,7 @@ function EditorDraftEntryDialog({
   onStartNew: () => void;
   onClose: () => void;
 }) {
+  const ui = useUiText();
   const { locale } = useI18n();
   useEffect(() => {
     if (!draft) return;
@@ -2513,19 +2524,18 @@ function EditorDraftEntryDialog({
           onClick={onClose}
           className="absolute right-5 top-5 z-10 rounded-md px-2 py-1 text-[12px] font-bold text-white/40 transition hover:bg-white/[.06] hover:text-white/75"
         >
-          닫기
-        </button>
+          {ui("닫기")}</button>
         <div className="relative text-center">
           <h2 id="editor-draft-entry-title" className="text-[25px] font-extrabold tracking-[-0.04em]">
             {localizedValue(locale, {
-              ko: <>이어서 <span className="text-[#ff715e]">편집</span>할까요?</>,
+              ko: <>{ui("이어서 ")}<span className="text-[#ff715e]">{ui("편집")}</span>{ui("할까요?")}</>,
               en: <>Continue <span className="text-[#ff715e]">editing</span>?</>,
               ja: <><span className="text-[#ff715e]">編集</span>を再開しますか？</>,
             })}
           </h2>
           <p id="editor-draft-entry-description" className="mt-2 text-[13px] font-medium leading-6 text-white/45">
             {localizedValue(locale, {
-              ko: <><strong className="font-bold text-white/70">{updatedAt}</strong>에 마지막으로 저장했어요.</>,
+              ko: <><strong className="font-bold text-white/70">{updatedAt}</strong>{ui("에 마지막으로 저장했어요.")}</>,
               en: <>Last saved <strong className="font-bold text-white/70">{updatedAt}</strong>.</>,
               ja: <>最終保存：<strong className="font-bold text-white/70">{updatedAt}</strong></>,
             })}
@@ -2538,8 +2548,7 @@ function EditorDraftEntryDialog({
           onClick={onContinue}
           className="relative mt-8 min-h-[54px] w-full rounded-[15px] border border-[#ff715e]/70 bg-[#ff715e]/[.08] px-5 text-[15px] font-extrabold text-white shadow-[0_0_28px_rgba(255,113,94,.08)] transition hover:border-[#ff715e] hover:bg-[#ff715e]/[.14] active:scale-[.99]"
         >
-          이어서 편집
-        </button>
+          {ui("이어서 편집")}</button>
 
         <div className="relative my-5 flex items-center gap-3">
           <span aria-hidden="true" className="h-px flex-1 bg-white/[.08]" />
@@ -2548,13 +2557,11 @@ function EditorDraftEntryDialog({
             onClick={onStartNew}
             className="min-h-9 rounded-lg px-2 text-[12px] font-bold text-white/42 transition hover:bg-white/[.05] hover:text-white/75"
           >
-            새로 시작
-          </button>
+            {ui("새로 시작")}</button>
           <span aria-hidden="true" className="h-px flex-1 bg-white/[.08]" />
         </div>
         <p className="text-center text-[11px] font-semibold leading-5 text-red-300/75">
-          새로 시작하면 저장된 편집 내용이 삭제돼요.
-        </p>
+          {ui("새로 시작하면 저장된 편집 내용이 삭제돼요.")}</p>
       </section>
     </div>,
     document.body,
@@ -2570,6 +2577,7 @@ function EditorDraftDiscardConfirmDialog({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const ui = useUiText();
   useEffect(() => {
     if (!open) return;
     const previousOverflow = document.body.style.overflow;
@@ -2601,11 +2609,9 @@ function EditorDraftDiscardConfirmDialog({
       >
         <div aria-hidden="true" className="grid h-10 w-10 place-items-center rounded-full bg-red-400/10 text-lg font-black text-red-200">!</div>
         <h2 id="editor-draft-discard-title" className="mt-5 text-[22px] font-extrabold tracking-[-0.035em]">
-          새로 시작할까요?
-        </h2>
+          {ui("새로 시작할까요?")}</h2>
         <p id="editor-draft-discard-description" className="mt-2 text-[13px] font-medium leading-6 text-red-100/60">
-          지금까지 저장한 편집 내용이 삭제되며 되돌릴 수 없어요.
-        </p>
+          {ui("지금까지 저장한 편집 내용이 삭제되며 되돌릴 수 없어요.")}</p>
         <div className="mt-7 grid grid-cols-2 gap-2.5">
           <button
             type="button"
@@ -2613,15 +2619,13 @@ function EditorDraftDiscardConfirmDialog({
             onClick={onCancel}
             className="min-h-12 rounded-[13px] border border-white/10 bg-white/[.04] px-4 text-[13px] font-extrabold text-white/70 transition hover:bg-white/[.08] hover:text-white"
           >
-            취소
-          </button>
+            {ui("취소")}</button>
           <button
             type="button"
             onClick={onConfirm}
             className="min-h-12 rounded-[13px] bg-red-500 px-4 text-[13px] font-extrabold text-white transition hover:bg-red-400 active:scale-[.99]"
           >
-            삭제하고 시작
-          </button>
+            {ui("삭제하고 시작")}</button>
         </div>
       </section>
     </div>,
@@ -2640,6 +2644,7 @@ function ApplyEditConfirmDialog({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const ui = useUiText();
   useEffect(() => {
     if (!open) return;
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -2672,11 +2677,9 @@ function ApplyEditConfirmDialog({
         <div aria-hidden="true" className="pointer-events-none absolute inset-x-16 -top-24 h-40 rounded-full bg-cyan-400/15 blur-3xl" />
         <div aria-hidden="true" className="relative mx-auto grid h-12 w-12 place-items-center rounded-full border border-cyan-200/20 bg-cyan-400/10 text-xl text-cyan-100">✓</div>
         <h2 id="apply-edit-confirm-title" className="relative mt-5 text-2xl font-extrabold tracking-[-0.025em] text-white">
-          편집 내용을 영상에 적용할까요?
-        </h2>
+          {ui("편집 내용을 영상에 적용할까요?")}</h2>
         <p id="apply-edit-confirm-description" className="relative mt-4 text-sm leading-6 text-cyan-50/75">
-          적용하면 영상 재렌더링이 시작됩니다. 완료될 때까지 프로젝트에서 편집과 다운로드가 잠시 제한됩니다.
-        </p>
+          {ui("적용하면 영상 재렌더링이 시작됩니다. 완료될 때까지 프로젝트에서 편집과 다운로드가 잠시 제한됩니다.")}</p>
         <div className="relative mt-8 grid grid-cols-2 gap-3">
           <button
             type="button"
@@ -2685,15 +2688,14 @@ function ApplyEditConfirmDialog({
             onClick={onCancel}
             className="min-h-12 rounded-xl border border-white/15 bg-white/[.04] px-4 py-3 text-sm font-bold text-white transition hover:bg-white/[.08] disabled:opacity-50"
           >
-            계속 편집
-          </button>
+            {ui("계속 편집")}</button>
           <button
             type="button"
             disabled={saving}
             onClick={onConfirm}
             className="min-h-12 rounded-xl bg-white px-4 py-3 text-sm font-extrabold text-black transition hover:bg-cyan-50 active:scale-[.99] disabled:opacity-50"
           >
-            {saving ? "적용 중..." : "영상에 적용"}
+            {ui(saving ? "적용 중..." : "영상에 적용")}
           </button>
         </div>
       </section>
@@ -2711,6 +2713,7 @@ function EditorFontApplyDialog({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const ui = useUiText();
   const open = fontId !== null;
   const font = editorFontOptions.find((option) => option.id === fontId)
     || editorFontOptions[0];
@@ -2745,14 +2748,12 @@ function EditorFontApplyDialog({
         className="w-full max-w-[420px] rounded-[24px] border border-[#ff8c7c]/25 bg-[#211d20] p-7 text-white shadow-[0_30px_100px_rgba(0,0,0,.75)] sm:p-8"
       >
         <p className="text-[12px] font-extrabold text-[#ff9b8d]" style={{ fontFamily: font.family }}>
-          {font.label}
+          {ui(font.label)}
         </p>
         <h2 id="editor-font-apply-title" className="mt-3 text-[23px] font-extrabold tracking-[-0.035em]">
-          모든 텍스트에 적용할까요?
-        </h2>
+          {ui("모든 텍스트에 적용할까요?")}</h2>
         <p id="editor-font-apply-description" className="mt-3 text-[13px] font-medium leading-6 text-white/60">
-          후킹 제목, 채널명과 추가한 텍스트의 폰트를 한 번에 맞출 수 있어요.
-        </p>
+          {ui("후킹 제목, 채널명과 추가한 텍스트의 폰트를 한 번에 맞출 수 있어요.")}</p>
         <div className="mt-7 grid grid-cols-2 gap-2.5">
           <button
             type="button"
@@ -2760,15 +2761,13 @@ function EditorFontApplyDialog({
             onClick={onCancel}
             className="min-h-12 rounded-[13px] border border-white/12 bg-white/[.045] px-4 text-[13px] font-extrabold text-white/75 transition hover:bg-white/[.09] hover:text-white"
           >
-            현재 텍스트만
-          </button>
+            {ui("현재 텍스트만")}</button>
           <button
             type="button"
             onClick={onConfirm}
             className="min-h-12 rounded-[13px] bg-[#ff715e] px-4 text-[13px] font-extrabold text-white transition hover:bg-[#ff8878] active:scale-[.99]"
           >
-            모두 적용
-          </button>
+            {ui("모두 적용")}</button>
         </div>
       </section>
     </div>,
@@ -2785,6 +2784,7 @@ function ResetTimelineConfirmDialog({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const ui = useUiText();
   useEffect(() => {
     if (!open) return;
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -2816,11 +2816,9 @@ function ResetTimelineConfirmDialog({
       >
         <div aria-hidden="true" className="relative mx-auto grid h-12 w-12 place-items-center rounded-full border border-white/15 bg-white/[.06] text-2xl text-white">↺</div>
         <h2 id="reset-timeline-confirm-title" className="relative mt-5 text-2xl font-extrabold tracking-[-0.025em] text-white">
-          영상 구간을 초기화할까요?
-        </h2>
+          {ui("영상 구간을 초기화할까요?")}</h2>
         <p id="reset-timeline-confirm-description" className="relative mt-4 text-sm leading-6 text-white/65">
-          영상의 시작점과 종료점이 처음 편집기에 들어왔을 때의 구간으로 돌아갑니다. 오버레이 배치는 유지됩니다.
-        </p>
+          {ui("영상의 시작점과 종료점이 처음 편집기에 들어왔을 때의 구간으로 돌아갑니다. 오버레이 배치는 유지됩니다.")}</p>
         <div className="relative mt-8 grid grid-cols-2 gap-3">
           <button
             type="button"
@@ -2828,15 +2826,13 @@ function ResetTimelineConfirmDialog({
             onClick={onCancel}
             className="min-h-12 rounded-xl border border-white/15 bg-white/[.04] px-4 py-3 text-sm font-bold text-white transition hover:bg-white/[.08]"
           >
-            취소
-          </button>
+            {ui("취소")}</button>
           <button
             type="button"
             onClick={onConfirm}
             className="min-h-12 rounded-xl bg-white px-4 py-3 text-sm font-extrabold text-black transition hover:bg-neutral-100 active:scale-[.99]"
           >
-            초기화
-          </button>
+            {ui("초기화")}</button>
         </div>
       </section>
     </div>,
@@ -2857,6 +2853,7 @@ function CommentRegenerationConfirmDialog({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const ui = useUiText();
   useEffect(() => {
     if (!open) return;
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -2893,13 +2890,11 @@ function CommentRegenerationConfirmDialog({
           </svg>
         </div>
         <h2 id="comment-regeneration-confirm-title" className="relative mt-5 text-2xl font-extrabold tracking-[-0.025em] text-white">
-          AI로 댓글을 재생성할까요?
-        </h2>
+          {ui("AI로 댓글을 재생성할까요?")}</h2>
         <p id="comment-regeneration-confirm-description" className="relative mt-4 text-sm leading-6 text-white/70">
-          댓글 재생성은 사용량 1분을 소모합니다.
-        </p>
+          {ui("댓글 재생성은 사용량 1분을 소모합니다.")}</p>
         {error && <p role="alert" className="relative mt-3 rounded-xl border border-red-300/20 bg-red-400/[.07] px-4 py-3 text-sm leading-5 text-red-100">
-          {error}
+          {ui(error)}
         </p>}
         <div className="relative mt-8 grid grid-cols-2 gap-3">
           <button
@@ -2909,15 +2904,14 @@ function CommentRegenerationConfirmDialog({
             onClick={onCancel}
             className="min-h-12 rounded-xl border border-white/15 bg-white/[.04] px-4 py-3 text-sm font-bold text-white transition hover:bg-white/[.08] disabled:cursor-not-allowed disabled:opacity-45"
           >
-            취소
-          </button>
+            {ui("취소")}</button>
           <button
             type="button"
             disabled={generating}
             onClick={onConfirm}
             className="min-h-12 rounded-xl bg-white px-4 py-3 text-sm font-extrabold text-black transition hover:bg-neutral-100 active:scale-[.99] disabled:cursor-wait disabled:opacity-60"
           >
-            {generating ? "댓글 생성 중..." : "확인"}
+            {ui(generating ? "댓글 생성 중..." : "확인")}
           </button>
         </div>
       </section>
@@ -2954,6 +2948,7 @@ function CommentRegenerationComparisonDialog({
   onCancel: () => void;
   onApply: () => void;
 }) {
+  const ui = useUiText();
   const { locale } = useI18n();
   const [editingTarget, setEditingTarget] = useState<{
     index: number;
@@ -3000,15 +2995,13 @@ function CommentRegenerationComparisonDialog({
         <header className="flex flex-none items-start justify-between gap-5 border-b border-white/10 px-6 py-5 sm:px-8 sm:py-6">
           <div className="min-w-0">
             <h2 id="comment-regeneration-comparison-title" className="text-2xl font-extrabold tracking-[-0.03em] sm:text-[28px]">
-              어떤 댓글을 사용할까요?
-            </h2>
+              {ui("어떤 댓글을 사용할까요?")}</h2>
             <p id="comment-regeneration-comparison-description" className="mt-2 text-sm leading-6 text-white/58">
-              사용할 문구를 고르거나, 댓글을 더블클릭해서 직접 수정하세요.
-            </p>
+              {ui("사용할 문구를 고르거나, 댓글을 더블클릭해서 직접 수정하세요.")}</p>
           </div>
           <button
             type="button"
-            aria-label="댓글 비교 닫기"
+            aria-label={ui("댓글 비교 닫기")}
             onClick={onCancel}
             className="grid h-10 w-10 flex-none place-items-center rounded-full border border-white/12 bg-white/[.05] text-xl text-white/70 transition hover:bg-white/[.11] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
           >
@@ -3019,7 +3012,7 @@ function CommentRegenerationComparisonDialog({
         <div className="flex flex-none flex-wrap items-center justify-between gap-3 border-b border-white/[.08] bg-white/[.025] px-6 py-3.5 sm:px-8">
           <p className="text-sm font-bold text-white/60">
             {localizedValue(locale, {
-              ko: <>{comparison.before.length}개 중 <strong className="text-white">{generatedChoiceCount}개</strong> 새 댓글 선택</>,
+              ko: <>{comparison.before.length}{ui("개 중 ")}<strong className="text-white">{generatedChoiceCount}{ui("개")}</strong> {ui(" 새 댓글 선택")}</>,
               en: <><strong className="text-white">{generatedChoiceCount}</strong> of {comparison.before.length} new comments selected</>,
               ja: <>新しいコメントを <strong className="text-white">{generatedChoiceCount}</strong> / {comparison.before.length} 件選択</>,
             })}
@@ -3030,15 +3023,13 @@ function CommentRegenerationComparisonDialog({
               onClick={() => onChooseAll("existing")}
               className="min-h-10 rounded-lg border border-white/12 bg-white/[.04] px-3.5 text-sm font-extrabold text-white/75 transition hover:bg-white/[.09] hover:text-white"
             >
-              모두 기존 댓글
-            </button>
+              {ui("모두 기존 댓글")}</button>
             <button
               type="button"
               onClick={() => onChooseAll("generated")}
               className="min-h-10 rounded-lg border border-white/20 bg-white px-3.5 text-sm font-extrabold text-black transition hover:bg-neutral-100"
             >
-              모두 새 댓글
-            </button>
+              {ui("모두 새 댓글")}</button>
           </div>
         </div>
 
@@ -3054,8 +3045,8 @@ function CommentRegenerationComparisonDialog({
                 && editingTarget.choice === "generated";
               return <article key={comment.id} className="py-4 first:pt-0 last:pb-0">
                 <div className="mb-2.5 flex items-center justify-between gap-3">
-                  <strong className="text-[15px] font-extrabold text-white/85">댓글 {index + 1}</strong>
-                  <span className="text-xs font-bold text-white/45">더블클릭해서 수정</span>
+                  <strong className="text-[15px] font-extrabold text-white/85">{ui("댓글 ")}{index + 1}</strong>
+                  <span className="text-xs font-bold text-white/45">{ui("더블클릭해서 수정")}</span>
                 </div>
                 <div className="grid gap-3 md:grid-cols-2">
                   <div
@@ -3084,8 +3075,7 @@ function CommentRegenerationComparisonDialog({
                       : "border-white/[.09] bg-white/[.025] hover:border-white/25 hover:bg-white/[.055]"}`}
                   >
                     <span className="mb-1.5 flex items-center justify-between gap-3 text-[13px] font-extrabold text-white/55">
-                      기존 댓글
-                      <span aria-hidden="true" className={`grid h-5 w-5 place-items-center rounded-full border text-[10px] ${existingSelected ? "border-white bg-white text-black" : "border-white/20 text-transparent"}`}>✓</span>
+                      {ui("기존 댓글")}<span aria-hidden="true" className={`grid h-5 w-5 place-items-center rounded-full border text-[10px] ${existingSelected ? "border-white bg-white text-black" : "border-white/20 text-transparent"}`}>✓</span>
                     </span>
                     {existingEditing
                       ? <input
@@ -3145,8 +3135,7 @@ function CommentRegenerationComparisonDialog({
                       : "border-white/[.09] bg-white/[.025] hover:border-violet-300/30 hover:bg-violet-400/[.06]"}`}
                   >
                     <span className="mb-1.5 flex items-center justify-between gap-3 text-[13px] font-extrabold text-violet-100/75">
-                      새 댓글
-                      <span aria-hidden="true" className={`grid h-5 w-5 place-items-center rounded-full border text-[10px] ${generatedSelected ? "border-violet-200 bg-violet-100 text-violet-950" : "border-white/20 text-transparent"}`}>✓</span>
+                      {ui("새 댓글")}<span aria-hidden="true" className={`grid h-5 w-5 place-items-center rounded-full border text-[10px] ${generatedSelected ? "border-violet-200 bg-violet-100 text-violet-950" : "border-white/20 text-transparent"}`}>✓</span>
                     </span>
                     {generatedEditing
                       ? <input
@@ -3193,8 +3182,7 @@ function CommentRegenerationComparisonDialog({
               onClick={onCancel}
               className="min-h-11 rounded-xl border border-white/14 bg-white/[.04] px-5 text-sm font-extrabold text-white/75 transition hover:bg-white/[.09] hover:text-white sm:min-w-[128px]"
             >
-              기존 댓글 유지
-            </button>
+              {ui("기존 댓글 유지")}</button>
             <button
               type="button"
               autoFocus
@@ -3202,8 +3190,7 @@ function CommentRegenerationComparisonDialog({
               disabled={!selectedCommentsValid}
               className="min-h-11 rounded-xl bg-white px-5 text-sm font-extrabold text-black transition hover:bg-neutral-100 active:scale-[.99] disabled:cursor-not-allowed disabled:opacity-40 sm:min-w-[156px]"
             >
-              선택한 댓글 적용
-            </button>
+              {ui("선택한 댓글 적용")}</button>
           </div>
         </footer>
       </section>
@@ -3473,30 +3460,31 @@ function EditorViewportZoomControl({
   className: string;
   onChange: (value: number) => void;
 }) {
+  const ui = useUiText();
   const update = (direction: -1 | 1) => {
     const next = Math.min(max, Math.max(min, value + direction * step));
     onChange(Math.round(next * 100) / 100);
   };
   return <div
     className={`editor-viewport-zoom-control ${className}`}
-    aria-label={`${label} 확대`}
+    aria-label={ui(`${label} 확대`)}
     onPointerDown={(event) => event.stopPropagation()}
   >
-    <span>{label}</span>
+    <span>{ui(label)}</span>
     <button
       type="button"
-      aria-label={`${label} 축소`}
+      aria-label={ui(`${label} 축소`)}
       disabled={value <= min}
       onClick={() => update(-1)}
     >
       −
     </button>
-    <output aria-label={`${label} 확대 비율`}>
+    <output aria-label={ui(`${label} 확대 비율`)}>
       {Math.round(value * 100)}%
     </output>
     <button
       type="button"
-      aria-label={`${label} 확대`}
+      aria-label={ui(`${label} 확대`)}
       disabled={value >= max}
       onClick={() => update(1)}
     >
@@ -3648,6 +3636,7 @@ function CommentTimelineEditor({
   selectionLeftPercent?: number;
   selectionWidthPercent?: number;
 }) {
+  const ui = useUiText();
   const orderedComments = [...comments].sort((left, right) => left.startSeconds - right.startSeconds);
   const [selectedCommentId, setSelectedCommentId] = useState<string | null>(null);
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
@@ -3906,7 +3895,7 @@ function CommentTimelineEditor({
 
   return <section
     className="editor-comment-timeline-panel"
-    aria-label="댓글 노출 구간 편집"
+    aria-label={ui("댓글 노출 구간 편집")}
     onPointerDown={(event) => {
       if (event.target === event.currentTarget) deselectComment();
     }}
@@ -3955,9 +3944,9 @@ function CommentTimelineEditor({
             type="button"
             className="editor-comment-range-body"
             data-editor-guide={index === 0 ? "comment-item" : undefined}
-            aria-label={`${fallbackLabel}: ${commentText} 선택 및 이동`}
+            aria-label={ui(`${fallbackLabel}: ${commentText} 선택 및 이동`)}
             aria-pressed={selected}
-            title={`${commentText}: 더블클릭해서 댓글 수정 · 드래그해서 구간 이동`}
+            title={ui(`${commentText}: 더블클릭해서 댓글 수정 · 드래그해서 구간 이동`)}
             style={{ backgroundColor: comment.avatarColor }}
             onPointerDown={(event) => startDrag(comment, "move", event)}
             onKeyDown={(event) => {
@@ -3982,7 +3971,7 @@ function CommentTimelineEditor({
             <button
               type="button"
               className="editor-comment-range-handle is-start"
-              aria-label={`${fallbackLabel} 시작점 조절`}
+              aria-label={ui(`${fallbackLabel} 시작점 조절`)}
               onPointerDown={(event) => startDrag(comment, "start", event)}
               onKeyDown={(event) => {
                 if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
@@ -3997,7 +3986,7 @@ function CommentTimelineEditor({
             <button
               type="button"
               className="editor-comment-range-handle is-end"
-              aria-label={`${fallbackLabel} 종료점 조절`}
+              aria-label={ui(`${fallbackLabel} 종료점 조절`)}
               onPointerDown={(event) => startDrag(comment, "end", event)}
               onKeyDown={(event) => {
                 if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
@@ -4025,7 +4014,7 @@ function CommentTimelineEditor({
       >
         <div className="editor-comment-popover-arrow" aria-hidden="true" />
         <label>
-          <span>댓글 {editingIndex + 1} 내용</span>
+          <span>{ui("댓글 ")}{editingIndex + 1} {ui(" 내용")}</span>
           <textarea
             autoFocus
             value={editingComment.text}
@@ -4047,11 +4036,11 @@ function CommentTimelineEditor({
             onTextEditEnd();
             setEditingCommentId(null);
             onDelete(editingComment.id);
-          }}>삭제</button>
+          }}>{ui("삭제")}</button>
           <button type="button" onClick={() => {
             onTextEditEnd();
             setEditingCommentId(null);
-          }}>완료</button>
+          }}>{ui("완료")}</button>
         </div>
       </div>,
       document.body,
@@ -4060,6 +4049,7 @@ function CommentTimelineEditor({
 }
 
 function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThumbnailUrl, onClose, onChanged, standalone = false, projectLabel, projectNumber, rangeEditingEnabled = false, overlayPreviewEnabled = false, editorSaveEnabled = false, editorRelease, unifiedTemplateSubtitleCanaryEnabled = false, customTemplateDesignEnabled = false, wordTimedSubtitlesAvailable = false, paidAccessBlocked = false }: { item: GeneratedShort; outputLanguage: OutputLanguage; commentOutputLanguage?: OutputLanguage; channelThumbnailUrl: string | null; onClose: () => void; onChanged: () => Promise<void>; standalone?: boolean; projectLabel?: string; projectNumber?: number; rangeEditingEnabled?: boolean; overlayPreviewEnabled?: boolean; editorSaveEnabled?: boolean; editorRelease: EditorReleaseAssignment; unifiedTemplateSubtitleCanaryEnabled?: boolean; customTemplateDesignEnabled?: boolean; wordTimedSubtitlesAvailable?: boolean; paidAccessBlocked?: boolean }) {
+  const ui = useUiText();
   const { locale: editorLocale, t } = useI18n();
   const translationUnavailable = item.subtitleTranslation?.status === "unavailable";
   const positionedWordsV4Enabled = isEditorRenderSpecV4Enabled();
@@ -10236,11 +10226,11 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
         selectionLeftPercent={editTimeline ? selectionLeft : 0}
         selectionWidthPercent={editTimeline ? selectionWidth : 100}
       />
-      {!commentsAreValid && <p className="editor-comment-timeline-error">댓글 내용과 노출 구간이 비어 있거나 서로 겹치지 않도록 조정해 주세요.</p>}
+      {!commentsAreValid && <p className="editor-comment-timeline-error">{ui("댓글 내용과 노출 구간이 비어 있거나 서로 겹치지 않도록 조정해 주세요.")}</p>}
     </>
     : null;
   const textTimelines = overlayPreviewEnabled && textOverlays.length > 0
-    ? <div className="editor-text-timeline-stack" aria-label="추가한 텍스트 타임라인">
+    ? <div className="editor-text-timeline-stack" aria-label={ui("추가한 텍스트 타임라인")}>
         {textOverlays.map((textOverlay) => {
           const selection = editorTextSelection(textOverlay.id);
           return <EditorTextTimeline
@@ -10374,7 +10364,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
       {standalone && <header className="editor-topbar">
         <div className="editor-topbar-inner">
           <div className="editor-header-project">
-            <span className="editor-header-project-number">{projectNumber ? `프로젝트 #${projectNumber}` : "영상 편집"}</span>
+            <span className="editor-header-project-number">{ui(projectNumber ? `프로젝트 #${projectNumber}` : "영상 편집")}</span>
             <div className="editor-header-title-row">
               <h1 data-i18n-skip={Boolean(projectLabel) || undefined}>{projectLabel || "제목 없는 영상"}</h1>
             </div>
@@ -10383,11 +10373,11 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
           <div className="editor-header-actions">
             {overlayPreviewEnabled && <div
               className="editor-mobile-history-actions"
-              aria-label="편집 기록"
+              aria-label={ui("편집 기록")}
             >
               <button
                 type="button"
-                aria-label="되돌리기"
+                aria-label={ui("되돌리기")}
                 disabled={!canUndoEditorEdit}
                 onClick={() => {
                   if (!finishPendingEditorInteractionsForHistory()) return;
@@ -10396,7 +10386,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
               >↶</button>
               <button
                 type="button"
-                aria-label="앞으로 가기"
+                aria-label={ui("앞으로 가기")}
                 disabled={!canRedoEditorEdit}
                 onClick={() => {
                   if (!finishPendingEditorInteractionsForHistory()) return;
@@ -10408,10 +10398,10 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
               className={`editor-draft-status is-${editorDraftSaveState}`}
               role="status"
               aria-live="polite"
-              title="이 브라우저에 임시 저장 · ⌘S 또는 Ctrl+S로 지금 저장"
+              title={ui("이 브라우저에 임시 저장 · ⌘S 또는 Ctrl+S로 지금 저장")}
             >
               <span aria-hidden="true" />
-              {editorDraftSaveState === "saving"
+              {ui(editorDraftSaveState === "saving"
                 ? "저장 중..."
                 : editorDraftSaveState === "saved"
                   ? editorDraftSavedAgoLabel(
@@ -10420,11 +10410,11 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                     )
                   : editorDraftSaveState === "error"
                     ? "저장 실패"
-                    : "자동 저장"}
+                    : "자동 저장")}
             </span>}
-            <button type="button" onPointerDown={preserveInvalidCaptionTextFocus} onClick={closeEditorAfterSavingCaptionDraft} className="editor-close-button" aria-label="편집기에서 나가기">
+            <button type="button" onPointerDown={preserveInvalidCaptionTextFocus} onClick={closeEditorAfterSavingCaptionDraft} className="editor-close-button" aria-label={ui("편집기에서 나가기")}>
               <span className="editor-close-icon" aria-hidden="true">×</span>
-              <span className="editor-close-label">나가기</span>
+              <span className="editor-close-label">{ui("나가기")}</span>
             </button>
             <button
               type="button"
@@ -10439,8 +10429,8 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                 : saving
                   ? "적용 중..."
                   : <>
-                      <span className="editor-apply-label-desktop">영상에 적용</span>
-                      <span className="editor-apply-label-mobile">영상에 적용</span>
+                      <span className="editor-apply-label-desktop">{ui("영상에 적용")}</span>
+                      <span className="editor-apply-label-mobile">{ui("영상에 적용")}</span>
                     </>}
             </button>
           </div>
@@ -10455,23 +10445,23 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
           className="editor-initial-loading"
           role="status"
           aria-live="polite"
-          aria-label="편집기 준비 중"
+          aria-label={ui("편집기 준비 중")}
         >
           <div>
             <span className="editor-initial-loading-spinner" aria-hidden="true" />
-            <strong>편집기를 준비하고 있어요</strong>
-            <p>영상과 타임라인을 불러오는 중입니다.</p>
+            <strong>{ui("편집기를 준비하고 있어요")}</strong>
+            <p>{ui("영상과 타임라인을 불러오는 중입니다.")}</p>
           </div>
         </section>}
         {standalone && overlayPreviewEnabled && <div
           className="editor-history-controls"
-          aria-label="편집 기록"
+          aria-label={ui("편집 기록")}
           data-editor-guide="editor-history"
         >
           <button
             type="button"
-            aria-label="되돌리기"
-            title="되돌리기 (Ctrl/⌘ + Z)"
+            aria-label={ui("되돌리기")}
+            title={ui("되돌리기 (Ctrl/⌘ + Z)")}
             disabled={!canUndoEditorEdit}
             onPointerDown={(event) => {
               if (event.button !== 0) return;
@@ -10486,12 +10476,11 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
             }}
           >
             <span aria-hidden="true">↶</span>
-            되돌리기
-          </button>
+            {ui("되돌리기")}</button>
           <button
             type="button"
-            aria-label="앞으로 가기"
-            title="앞으로 가기 (Ctrl/⌘ + Shift + Z)"
+            aria-label={ui("앞으로 가기")}
+            title={ui("앞으로 가기 (Ctrl/⌘ + Shift + Z)")}
             disabled={!canRedoEditorEdit}
             onPointerDown={(event) => {
               if (event.button !== 0) return;
@@ -10506,13 +10495,12 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
             }}
           >
             <span aria-hidden="true">↷</span>
-            앞으로 가기
-          </button>
+            {ui("앞으로 가기")}</button>
         </div>}
         <button
           type="button"
           className={`editor-sidebar-rail-toggle${overlayPreviewEnabled ? " editor-overlay-panel-toggle" : ""}`}
-          aria-label={desktopSidebarOpen ? "편집 사이드바 닫기" : "편집 사이드바 열기"}
+          aria-label={ui(desktopSidebarOpen ? "편집 사이드바 닫기" : "편집 사이드바 열기")}
           aria-expanded={desktopSidebarOpen}
           aria-controls={overlayPreviewEnabled ? "editor-tool-detail" : "editor-controls-scroll"}
           onClick={() => setDesktopSidebarOpen((current) => !current)}
@@ -10535,7 +10523,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
         <div
           ref={editorPreviewViewportRef}
           className="editor-preview-canvas-viewport"
-          aria-label={overlayPreviewEnabled ? "미리보기 화면" : undefined}
+          aria-label={ui(overlayPreviewEnabled ? "미리보기 화면" : undefined)}
         >
         <div
           ref={editorCanvasRef}
@@ -10789,7 +10777,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
             onPointerDown={overlayPreviewEnabled
               ? (event) => beginEditorOverlayDrag("video", event)
               : undefined}
-          >클린 영상 준비 중</div>)}
+          >{ui("클린 영상 준비 중")}</div>)}
           {overlayPreviewEnabled && renderOverlayLayout.visible.video && selectedOverlay === "video" && <div
             data-editor-video-resize-frame
             className="pointer-events-none absolute z-[65] border-2 border-white"
@@ -10804,7 +10792,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
               key={resizeHandle.handle}
               type="button"
               data-editor-video-resize-handle={resizeHandle.handle}
-              aria-label={resizeHandle.label}
+              aria-label={ui(resizeHandle.label)}
               onPointerDown={(event) => beginEditorVideoResize(resizeHandle.handle, event)}
               className={`pointer-events-auto absolute h-7 w-7 touch-none border-0 bg-transparent p-0 ${resizeHandle.positionClassName} ${resizeHandle.cursorClassName}`}
             >
@@ -10821,8 +10809,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
             aria-live="polite"
           >
             <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/25 border-t-white" aria-hidden="true" />
-            편집용 영상을 다시 연결하고 있어요
-          </div>}
+            {ui("편집용 영상을 다시 연결하고 있어요")}</div>}
           {videoLoadError && (overlayPreviewEnabled
             ? <div
                 data-i18n-ui=""
@@ -10830,7 +10817,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                 role="alert"
                 onPointerDown={(event) => event.stopPropagation()}
               >
-                <span>편집용 영상 연결이 끊어졌어요.</span>
+                <span>{ui("편집용 영상 연결이 끊어졌어요.")}</span>
                 <button
                   type="button"
                   className="min-h-8 flex-none rounded-lg bg-white px-3 font-extrabold text-black transition hover:bg-neutral-100"
@@ -10839,10 +10826,9 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                     void refreshEditorVideoSource("manual");
                   }}
                 >
-                  다시 시도
-                </button>
+                  {ui("다시 시도")}</button>
               </div>
-            : <div data-i18n-ui="" className="pointer-events-none absolute inset-x-3 top-3 z-50 rounded bg-red-950/90 px-3 py-2 text-center text-xs font-semibold text-red-100">편집용 영상을 재생하지 못했습니다. 잠시 후 다시 열어 주세요.</div>)}
+            : <div data-i18n-ui="" className="pointer-events-none absolute inset-x-3 top-3 z-50 rounded bg-red-950/90 px-3 py-2 text-center text-xs font-semibold text-red-100">{ui("편집용 영상을 재생하지 못했습니다. 잠시 후 다시 열어 주세요.")}</div>)}
           {subtitlesEnabled && captionTemplatePreviewSpec && <CaptionTemplateEditorPreview
             spec={captionTemplatePreviewSpec}
             currentTimeSeconds={displayedPreviewTime}
@@ -10868,7 +10854,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
             {editingSubtitleIndex === activeSubtitleIndex
               ? <textarea
                   autoFocus
-                  aria-label="현재 자막 수정"
+                  aria-label={ui("현재 자막 수정")}
                   value={activeSubtitle.text}
                   maxLength={200}
                   rows={2}
@@ -10896,7 +10882,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
               : <button
                   type="button"
                   className="block w-full cursor-text text-center"
-                  title="더블클릭해서 자막 수정"
+                  title={ui("더블클릭해서 자막 수정")}
                   onPointerDown={(event) => {
                     event.stopPropagation();
                     beginMobileSubtitleTap(
@@ -10947,7 +10933,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                         event.stopPropagation();
                         requestCommentTextEdit(layoutPreviewComment.id);
                       }}
-                      title="더블클릭해서 댓글 수정"
+                      title={ui("더블클릭해서 댓글 수정")}
                     >
                       <TemplateCommentPreview
                         theme={editorCommentTheme}
@@ -11010,9 +10996,9 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                                 );
                               }
                             : undefined}
-                          title={layoutPreviewComment
+                          title={ui(layoutPreviewComment
                             ? "더블클릭해서 댓글 수정"
-                            : undefined}
+                            : undefined)}
                         >
                           {savedCaptionCommentRect ? <CaptionCommentPreview
                             comment={layoutPreviewComment}
@@ -11124,7 +11110,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                 event.stopPropagation();
                 requestCommentTextEdit(layoutPreviewComment.id);
               }}
-              title="더블클릭해서 댓글 수정"
+              title={ui("더블클릭해서 댓글 수정")}
             >
               <TemplateCommentPreview
                 theme={editorCommentTheme}
@@ -11178,7 +11164,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
         </div>
         {overlayPreviewEnabled && scalableOverlaySelection && scalableOverlayScale !== null && scalableOverlayLabel && <aside
           className="editor-overlay-size-control"
-          aria-label={`${scalableOverlayLabel} 크기 조절`}
+          aria-label={ui(`${scalableOverlayLabel} 크기 조절`)}
           data-editor-overlay-size-control={scalableOverlaySelection}
           onPointerDown={(event) => event.stopPropagation()}
         >
@@ -11190,7 +11176,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
               max={EDITOR_TEXT_LAYER_MAX_SCALE * 100}
               step={1}
               value={Math.round(scalableOverlayScale * 100)}
-              aria-label={`${scalableOverlayLabel} 크기`}
+              aria-label={ui(`${scalableOverlayLabel} 크기`)}
               onPointerDown={(event) => beginEditorOverlayScaleDrag(
                 scalableOverlaySelection,
                 event,
@@ -11235,7 +11221,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
               )}
             />
           </div>
-          <output aria-label={`${scalableOverlayLabel} 현재 크기`}>
+          <output aria-label={ui(`${scalableOverlayLabel} 현재 크기`)}>
             {Math.round(scalableOverlayScale * 100)}%
           </output>
         </aside>}
@@ -11245,22 +11231,21 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
           && canApplyActiveCommentPositionToAll
           && <aside
             className="editor-comment-position-apply"
-            aria-label="댓글 위치 일괄 적용"
+            aria-label={ui("댓글 위치 일괄 적용")}
             onPointerDown={(event) => event.stopPropagation()}
           >
             <button
               type="button"
               onClick={applyActiveCommentPositionToAll}
             >
-              모든 댓글에 위치 적용
-            </button>
+              {ui("모든 댓글에 위치 적용")}</button>
           </aside>}
         {overlayPreviewEnabled && selectedOverlay !== null && selectedLayerOrderLabel && <aside
           className="editor-layer-order-control"
-          aria-label={`${selectedLayerOrderLabel} 레이어 순서`}
+          aria-label={ui(`${selectedLayerOrderLabel} 레이어 순서`)}
           onPointerDown={(event) => event.stopPropagation()}
         >
-          <strong>{selectedOverlay === "channel" ? "맨앞 고정" : "레이어 순서"}</strong>
+          <strong>{ui(selectedOverlay === "channel" ? "맨앞 고정" : "레이어 순서")}</strong>
           {selectedOverlay !== "channel" && <div>
             <button
               type="button"
@@ -11271,8 +11256,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                 <path d="m5.5 11.5 4.5-4.5 4.5 4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                 <path d="M5.5 15h9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
               </svg>
-              앞으로
-            </button>
+              {ui("앞으로")}</button>
             <button
               type="button"
               disabled={!canMoveSelectedLayerBackward}
@@ -11282,17 +11266,16 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                 <path d="m5.5 8.5 4.5 4.5 4.5-4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                 <path d="M5.5 5h9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
               </svg>
-              뒤로
-            </button>
+              {ui("뒤로")}</button>
           </div>}
         </aside>}
         {overlayPreviewEnabled && <button
           type="button"
           className="editor-preview-fullscreen-control editor-preview-edge-fullscreen-control"
           disabled={!cleanVideoUrl}
-          aria-label={isPreviewFullscreen ? "전체보기 종료" : "전체보기"}
+          aria-label={ui(isPreviewFullscreen ? "전체보기 종료" : "전체보기")}
           aria-pressed={isPreviewFullscreen}
-          data-tooltip={isPreviewFullscreen ? "전체보기 종료" : "전체보기"}
+          data-tooltip={ui(isPreviewFullscreen ? "전체보기 종료" : "전체보기")}
           onClick={() => void togglePreviewFullscreen()}
         >
           {isPreviewFullscreen
@@ -11305,8 +11288,8 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
         </button>}
         </div>
         <div className="editor-preview-mobile-actions">
-        <div className="editor-preview-transport" aria-label="미리보기 재생 및 화면 제어">
-          <div className="editor-preview-time-group" aria-label="미리보기 재생 시간">
+        <div className="editor-preview-transport" aria-label={ui("미리보기 재생 및 화면 제어")}>
+          <div className="editor-preview-time-group" aria-label={ui("미리보기 재생 시간")}>
             <span>{formatPreciseTimestamp(displayedPreviewTime)}</span>
             <span aria-hidden="true">/</span>
             <span>{formatPreciseTimestamp(previewDuration)}</span>
@@ -11315,11 +11298,11 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
             type="button"
             className="editor-preview-play-control"
             disabled={!cleanVideoUrl}
-            aria-label={isPreviewPlaying ? "미리보기 일시정지" : "미리보기 재생"}
+            aria-label={ui(isPreviewPlaying ? "미리보기 일시정지" : "미리보기 재생")}
             aria-pressed={isPreviewPlaying}
-            data-tooltip={overlayPreviewEnabled
+            data-tooltip={ui(overlayPreviewEnabled
               ? (isPreviewPlaying ? "정지" : "재생")
-              : undefined}
+              : undefined)}
             onClick={togglePreviewPlayback}
           >
             {isPreviewPlaying
@@ -11330,9 +11313,9 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
             type="button"
             className="editor-preview-fullscreen-control"
             disabled={!cleanVideoUrl}
-            aria-label={isPreviewFullscreen ? "전체보기 종료" : "전체보기"}
+            aria-label={ui(isPreviewFullscreen ? "전체보기 종료" : "전체보기")}
             aria-pressed={isPreviewFullscreen}
-            title={isPreviewFullscreen ? "전체보기 종료" : "전체보기"}
+            title={ui(isPreviewFullscreen ? "전체보기 종료" : "전체보기")}
             onClick={() => void togglePreviewFullscreen()}
           >
             {isPreviewFullscreen
@@ -11346,7 +11329,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
         </div>
         {overlayPreviewEnabled && <div
           className="editor-range-actions editor-preview-quick-actions"
-          aria-label="미리보기 빠른 편집"
+          aria-label={ui("미리보기 빠른 편집")}
           data-editor-guide="overlay-actions"
           onPointerDown={(event) => event.stopPropagation()}
         >
@@ -11356,12 +11339,11 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
             disabled={comments.length >= 20}
             onClick={addComment}
           >
-            + 댓글
-          </button>
+            {ui("+ 댓글")}</button>
         </div>}
         {videoCuttingEnabled && <div
           className="editor-preview-cut-actions"
-          aria-label="영상 자르기"
+          aria-label={ui("영상 자르기")}
           onPointerDown={(event) => event.stopPropagation()}
         >
           {selectedOverlay === null
@@ -11372,8 +11354,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
             className="is-delete"
             onClick={deleteSelectedEditorVideoClip}
           >
-            구간 삭제
-          </button>}
+            {ui("구간 삭제")}</button>}
           <button
             type="button"
             data-editor-guide="video-split"
@@ -11381,8 +11362,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
             onClick={splitCurrentEditorVideo}
           >
             <span aria-hidden="true">✂</span>
-            분할
-          </button>
+            {ui("분할")}</button>
         </div>}
         </div>
         </section>
@@ -11392,7 +11372,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
         >
           {overlayPreviewEnabled && <nav
             className={`editor-tool-rail${selectedMobileLayoutTool ? " has-mobile-selection" : ""}`}
-            aria-label="편집 도구"
+            aria-label={ui("편집 도구")}
           >
             <div
               className="editor-tool-rail-buttons"
@@ -11416,14 +11396,14 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                   <span>
                     <EditorSidebarSectionIcon section={tool.id} />
                   </span>
-                  {tool.label}
+                  {ui(tool.label)}
                 </button>
               );
             })}
             </div>
             {selectedMobileLayoutTool && <div
               className={`editor-mobile-selection-actions${selectedOverlay === "comment" && selectedTimelineCommentId ? " has-comment-edit" : ""}`}
-              aria-label={`${selectedMobileLayoutLabel} 선택 작업`}
+              aria-label={ui(`${selectedMobileLayoutLabel} 선택 작업`)}
             >
               <button
                 type="button"
@@ -11437,8 +11417,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                     <path d="m11.5 4.6 3.9 3.9" stroke="currentColor" strokeWidth="1.5" />
                   </svg>
                 </span>
-                수정
-              </button>
+                {ui("수정")}</button>
               <button
                 type="button"
                 className="is-delete"
@@ -11449,8 +11428,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                     <path d="M5.5 6.5h9l-.6 9H6.1l-.6-9ZM4 4.5h12M8 4.5V3.2h4v1.3M8.2 8.5v4.7M11.8 8.5v4.7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </span>
-                삭제
-              </button>
+                {ui("삭제")}</button>
               <button
                 type="button"
                 onClick={() => {
@@ -11464,8 +11442,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                     <path d="m6 6 8 8M14 6l-8 8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
                   </svg>
                 </span>
-                선택 해제
-              </button>
+                {ui("선택 해제")}</button>
               {selectedOverlay === "comment" && selectedTimelineCommentId && <button
                 type="button"
                 className="is-comment-edit"
@@ -11477,8 +11454,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                     <path d="m8 10.8.35-1.8 3.9-3.9 1.45 1.45-3.9 3.9-1.8.35Z" stroke="currentColor" strokeWidth="1.25" strokeLinejoin="round" />
                   </svg>
                 </span>
-                댓글 내용 수정
-              </button>}
+                {ui("댓글 내용 수정")}</button>}
             </div>}
           </nav>}
           <div
@@ -11486,7 +11462,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
             className="editor-controls-detail"
           >
           <div className="editor-controls-sheet-header">
-            <span id="editor-title" className="sr-only">편집 설정</span>
+            <span id="editor-title" className="sr-only">{ui("편집 설정")}</span>
             <button
               type="button"
               className="editor-controls-sheet-toggle"
@@ -11503,9 +11479,9 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
               }}
             >
               <span className="editor-controls-title">
-                {EDITOR_SIDEBAR_TOOLS.find((tool) => (
+                {ui(EDITOR_SIDEBAR_TOOLS.find((tool) => (
                   tool.id === activeEditorSidebarTool
-                ))?.label || "편집 설정"}
+                ))?.label || "편집 설정")}
               </span>
               <span className="editor-controls-chevron" aria-hidden="true">
                 <svg viewBox="0 0 20 20" fill="none">
@@ -11513,15 +11489,15 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                 </svg>
               </span>
             </button>
-            {!standalone && <button onClick={onClose} className="editor-dialog-close-button rounded-lg px-3 py-2 text-sm text-white hover:bg-white/10">닫기</button>}
+            {!standalone && <button onClick={onClose} className="editor-dialog-close-button rounded-lg px-3 py-2 text-sm text-white hover:bg-white/10">{ui("닫기")}</button>}
           </div>
           <div id="editor-controls-scroll" className="editor-controls-scroll">
           {overlayPreviewEnabled && <section
             className={`editor-sidebar-tool-panel editor-v2-text-tool-panel${activeEditorSidebarTool === "text" ? " is-active" : ""}`}
-            aria-label="텍스트 설정"
+            aria-label={ui("텍스트 설정")}
           >
             <header className="editor-tool-panel-header">
-              <strong>텍스트</strong>
+              <strong>{ui("텍스트")}</strong>
             </header>
             <button
               type="button"
@@ -11530,10 +11506,9 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
               onClick={addEditorTextOverlay}
             >
               <span aria-hidden="true">+</span>
-              텍스트 추가
-            </button>
+              {ui("텍스트 추가")}</button>
             {textOverlays.length > 0
-              ? <div className="editor-v2-text-list" aria-label="추가한 텍스트 목록">
+              ? <div className="editor-v2-text-list" aria-label={ui("추가한 텍스트 목록")}>
                 {textOverlays.map((textOverlay, index) => {
                   const selection = editorTextSelection(textOverlay.id);
                   const textLabel = textOverlay.text.trim() || `텍스트 ${index + 1}`;
@@ -11574,45 +11549,44 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                 })}
               </div>
               : <p className="editor-v2-text-empty">
-                추가한 텍스트가 없습니다.
-              </p>}
+                {ui("추가한 텍스트가 없습니다.")}</p>}
           </section>}
           {overlayPreviewEnabled
             && subtitleToolVisible
             && <section
               className={`editor-sidebar-tool-panel editor-subtitle-tool-panel${activeEditorSidebarTool === "subtitle" ? " is-active" : ""}`}
-              aria-label={editableCaptionSourceSpec
+              aria-label={ui(editableCaptionSourceSpec
                 ? "자막 내용, 색상, 위치와 크기 설정"
-                : "자막 표시 설정"}
+                : "자막 표시 설정")}
             >
               <header className="editor-tool-panel-header">
                 <div className="flex items-center gap-2">
-                  <strong>{translationUnavailable ? "자막 번역 미완료" : captionTemplateEditorSpec
+                  <strong>{ui(translationUnavailable ? "자막 번역 미완료" : captionTemplateEditorSpec
                     ? captionTemplateEditorSpec.templateId === "basic"
                       ? "기본형 번역 자막"
                       : captionTemplateEditorSpec.templateId === "pop"
                       ? "팝형 자막"
                       : "강조형 자막"
-                    : "강조형 자막"}</strong>
+                    : "강조형 자막")}</strong>
 
                 </div>
                 <button
                   type="button"
                   className="editor-visibility-toggle disabled:cursor-not-allowed disabled:opacity-40"
-                  aria-label={subtitlesEnabled ? "자막 끄기" : "자막 켜기"}
+                  aria-label={ui(subtitlesEnabled ? "자막 끄기" : "자막 켜기")}
                   aria-pressed={subtitlesEnabled}
                   disabled={translationUnavailable || (unifiedSubtitleLayoutEnabled
                     && !subtitlesEnabled
                     && !editableCaptionSourceSpec)}
-                  title={translationUnavailable ? "번역이 완료되지 않아 자막을 켤 수 없습니다." : unifiedSubtitleLayoutEnabled
+                  title={ui(translationUnavailable ? "번역이 완료되지 않아 자막을 켤 수 없습니다." : unifiedSubtitleLayoutEnabled
                     && !subtitlesEnabled
                     && !editableCaptionSourceSpec
                     ? "단어 타이밍이 없어 자막을 켤 수 없습니다."
-                    : undefined}
+                    : undefined)}
                   onClick={toggleEditorSubtitles}
                 >
                   <span aria-hidden="true"><i /></span>
-                  {subtitlesEnabled ? "켜짐" : "꺼짐"}
+                  {ui(subtitlesEnabled ? "켜짐" : "꺼짐")}
                 </button>
               </header>
               {subtitlesEnabled
@@ -11623,10 +11597,10 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                   ? "번역 자막은 팝업·강조 효과 없이 기본형으로 표시됩니다. 위치·글꼴·크기·색상을 바꾸거나 자막을 더블클릭해 문구를 수정할 수 있습니다."
                   : captionTextEditingEnabled
                   ? t("editor.captionTimingHint", { frames: editableCaptionSourceSpec.timingLeadFrames ?? SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES })
-                  : <>자막의 위치·글꼴·크기·색상을 조정할 수 있습니다. 정확한 자막 구간이 저장되지 않은 영상에서는 문구 편집을 지원하지 않습니다.</>}
+                  : <>{ui("자막의 위치·글꼴·크기·색상을 조정할 수 있습니다. 정확한 자막 구간이 저장되지 않은 영상에서는 문구 편집을 지원하지 않습니다.")}</>}
               </p>
               <div className="mb-6">
-                <span className="mb-2 block text-xs font-semibold text-white">자막 글씨체</span>
+                <span className="mb-2 block text-xs font-semibold text-white">{ui("자막 글씨체")}</span>
                 <EditorFontPicker
                   value={activeCaptionFontId}
                   options={availableEditorFontOptions}
@@ -11641,13 +11615,13 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                 />
               </div>
               {fullSubtitleStyleEditingEnabled && <fieldset className="editor-text-color-setting mb-6">
-                <legend>일반 글자색</legend>
+                <legend>{ui("일반 글자색")}</legend>
                 <div>
                   {templatePresetColorOptions.map((option) => <button
                     key={option.color}
                     type="button"
-                    aria-label={`자막 일반 글자색 ${option.name}`}
-                    title={option.name}
+                    aria-label={ui(`자막 일반 글자색 ${option.name}`)}
+                    title={ui(option.name)}
                     aria-pressed={(
                       subtitleLayout.color
                       || editableCaptionSourceSpec.style.textColor
@@ -11665,13 +11639,13 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                 </div>
               </fieldset>}
               {editableCaptionSourceSpec.templateId !== "basic" && <fieldset className="editor-text-color-setting mb-6">
-                <legend>포인트 색상</legend>
+                <legend>{ui("포인트 색상")}</legend>
                 <div>
                   {templatePresetColorOptions.map((option) => <button
                     key={option.color}
                     type="button"
-                    aria-label={`자막 포인트 색상 ${option.name}`}
-                    title={option.name}
+                    aria-label={ui(`자막 포인트 색상 ${option.name}`)}
+                    title={ui(option.name)}
                     aria-pressed={(
                       subtitleLayout.accentColor
                       || editableCaptionSourceSpec.style.accentColor
@@ -11690,7 +11664,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
               </fieldset>}
               <label className="block font-semibold">
                 <span className="flex items-center justify-between gap-3 text-white">
-                  <span>세로 위치</span>
+                  <span>{ui("세로 위치")}</span>
                   <strong className="text-xs text-white/75">
                     {subtitleLayout.offsetY === 0
                       ? "기본"
@@ -11698,7 +11672,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                   </strong>
                 </span>
                 <input
-                  aria-label="자막 세로 위치"
+                  aria-label={ui("자막 세로 위치")}
                   type="range"
                   min={subtitleOffsetBounds.min}
                   max={subtitleOffsetBounds.max}
@@ -11719,14 +11693,14 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
               </label>
               {fullSubtitleStyleEditingEnabled ? <label className="mt-6 block font-semibold">
                 <span className="flex items-center justify-between gap-3 text-white">
-                  <span>자막 크기</span>
+                  <span>{ui("자막 크기")}</span>
                   <strong className="text-xs text-white/75">
                     {subtitleLayout.fontSize
                       || editableCaptionSourceSpec.style.fontSize}px
                   </strong>
                 </span>
                 <input
-                  aria-label="자막 크기"
+                  aria-label={ui("자막 크기")}
                   type="range"
                   min={24}
                   max={120}
@@ -11748,13 +11722,13 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                 />
               </label> : <label className="mt-6 block font-semibold">
                 <span className="flex items-center justify-between gap-3 text-white">
-                  <span>자막 크기</span>
+                  <span>{ui("자막 크기")}</span>
                   <strong className="text-xs text-white/75">
                     {Math.round(subtitleLayout.scale * 100)}%
                   </strong>
                 </span>
                 <input
-                  aria-label="자막 크기"
+                  aria-label={ui("자막 크기")}
                   type="range"
                   min={EDITOR_SUBTITLE_SCALE_MIN}
                   max={EDITOR_SUBTITLE_SCALE_MAX}
@@ -11795,8 +11769,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                 }}
                 className="mt-6 min-h-10 w-full rounded-xl border border-white/15 bg-white/[.04] px-3 text-xs font-extrabold text-white/75 transition hover:bg-white/[.09] disabled:cursor-not-allowed disabled:opacity-35"
               >
-                기본 자막 설정으로 초기화
-              </button> : <button
+                {ui("기본 자막 설정으로 초기화")}</button> : <button
                 type="button"
                 disabled={
                   subtitleLayout.offsetY === DEFAULT_EDITOR_SUBTITLE_LAYOUT.offsetY
@@ -11812,49 +11785,45 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                 }}
                 className="mt-6 min-h-10 w-full rounded-xl border border-white/15 bg-white/[.04] px-3 text-xs font-extrabold text-white/75 transition hover:bg-white/[.09] disabled:cursor-not-allowed disabled:opacity-35"
               >
-                기본 위치·크기로 초기화
-              </button>}
+                {ui("기본 위치·크기로 초기화")}</button>}
                     </>
                   : <div className="rounded-xl border border-white/10 bg-white/[.035] px-4 py-5">
                     <strong className="block text-sm font-extrabold text-white">
-                      표시할 자막이 없습니다
-                    </strong>
+                      {ui("표시할 자막이 없습니다")}</strong>
                     <p className="mt-2 text-xs leading-5 text-white/55">
-                      이 영상에 저장된 전사 자막 구간을 찾지 못했습니다.
-                    </p>
+                      {ui("이 영상에 저장된 전사 자막 구간을 찾지 못했습니다.")}</p>
                   </div>
                 : <div className="rounded-xl border border-white/10 bg-white/[.035] px-4 py-5">
                   <strong className="block text-sm font-extrabold text-white">
-                    자막이 꺼져 있습니다
-                  </strong>
+                    {ui("자막이 꺼져 있습니다")}</strong>
                   <p className="mt-2 text-xs leading-5 text-white/55">
-                    {unifiedSubtitleLayoutEnabled
+                    {ui(unifiedSubtitleLayoutEnabled
                       ? editableCaptionSourceSpec
                         ? "미리보기와 실제 렌더 영상에서 자막이 모두 숨겨집니다. 다시 켜면 기존 문구와 위치·크기·색상 설정이 그대로 복원됩니다."
                         : "이 기존 영상에는 유효한 단어 타이밍이 없어 새 자막을 켤 수 없습니다. 다른 편집 기능은 그대로 사용할 수 있습니다."
                       : editableCaptionSourceSpec
                         ? "미리보기와 실제 렌더 영상에서 자막이 모두 숨겨집니다. 다시 켜면 기존 문구와 위치·크기·색상 설정이 그대로 복원됩니다."
-                        : "미리보기와 실제 렌더 영상에서 자막이 모두 숨겨집니다. 다시 켜면 기존 전사 자막이 그대로 복원됩니다."}
+                        : "미리보기와 실제 렌더 영상에서 자막이 모두 숨겨집니다. 다시 켜면 기존 전사 자막이 그대로 복원됩니다.")}
                   </p>
                 </div>}
             </section>}
           {overlayPreviewEnabled && <section
             className={`editor-sidebar-tool-panel${!selectedTextOverlay && activeEditorSidebarTool === "channel" ? " is-active" : ""}`}
-            aria-label="채널명 설정"
+            aria-label={ui("채널명 설정")}
           >
             <header className="editor-tool-panel-header">
-              <strong>채널명</strong>
+              <strong>{ui("채널명")}</strong>
               <button
                 type="button"
                 className="editor-visibility-toggle"
-                aria-label={renderOverlayLayout.visible.channel
+                aria-label={ui(renderOverlayLayout.visible.channel
                   ? "채널명 숨기기"
-                  : "채널명 보이기"}
+                  : "채널명 보이기")}
                 aria-pressed={renderOverlayLayout.visible.channel}
                 onClick={toggleEditorChannelVisibility}
               >
                 <span aria-hidden="true"><i /></span>
-                {renderOverlayLayout.visible.channel ? "숨기기" : "보이기"}
+                {ui(renderOverlayLayout.visible.channel ? "숨기기" : "보이기")}
               </button>
             </header>
             <div className="editor-channel-preset-library">
@@ -11868,11 +11837,10 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                 }}
               >
                 <span aria-hidden="true">+</span>
-                내 채널명 추가하기
-              </button>
+                {ui("내 채널명 추가하기")}</button>
               {channelPresetComposerOpen && <div
                 className="editor-channel-preset-composer"
-                aria-label="내 채널명 추가"
+                aria-label={ui("내 채널명 추가")}
               >
                 <div className="editor-channel-preset-image-input">
                   <ChannelAvatar
@@ -11883,11 +11851,11 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                     sizes="48px"
                   />
                   <label>
-                    {channelPresetImageBusy
+                    {ui(channelPresetImageBusy
                       ? "이미지 준비 중..."
                       : channelPresetDraftImageDataUrl
                         ? "이미지 바꾸기"
-                        : "이미지 선택"}
+                        : "이미지 선택")}
                     <input
                       type="file"
                       accept="image/*"
@@ -11899,12 +11867,12 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                   </label>
                 </div>
                 <label className="editor-channel-preset-name-input">
-                  <span>채널명</span>
+                  <span>{ui("채널명")}</span>
                   <input
                     type="text"
                     value={channelPresetDraftName}
                     maxLength={50}
-                    placeholder="채널명을 입력하세요"
+                    placeholder={ui("채널명을 입력하세요")}
                     onChange={(event) => setChannelPresetDraftName(
                       event.target.value,
                     )}
@@ -11923,20 +11891,18 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                       setChannelPresetError(null);
                     }}
                   >
-                    취소
-                  </button>
+                    {ui("취소")}</button>
                   <button
                     type="button"
                     disabled={channelPresetImageBusy}
                     onClick={saveEditorChannelPreset}
                   >
-                    저장
-                  </button>
+                    {ui("저장")}</button>
                 </div>
               </div>}
               {editorChannelPresets.length > 0 && <div
                 className="editor-channel-preset-list"
-                aria-label="저장한 내 채널명"
+                aria-label={ui("저장한 내 채널명")}
               >
                 {editorChannelPresets.map((preset) => {
                   const selected = channel === preset.name
@@ -11958,7 +11924,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                         fallbackBackground="#202024"
                         sizes="40px"
                       />
-                      <span>{preset.name}</span>
+                      <span>{ui(preset.name)}</span>
                       {selected && <svg
                         viewBox="0 0 20 20"
                         fill="none"
@@ -11970,7 +11936,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                     <button
                       type="button"
                       className="editor-channel-preset-delete"
-                      aria-label={`${preset.name} 삭제`}
+                      aria-label={ui(`${preset.name} 삭제`)}
                       onClick={() => deleteEditorChannelPreset(preset.id)}
                     >
                       ×
@@ -11980,7 +11946,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
               </div>}
             </div>
             <div className="editor-element-settings editor-channel-settings">
-              <strong className="editor-channel-current-title">현재 채널명</strong>
+              <strong className="editor-channel-current-title">{ui("현재 채널명")}</strong>
               <div className="editor-channel-image-setting">
                 <ChannelAvatar
                   url={editorChannelThumbnailUrl}
@@ -11990,8 +11956,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                   sizes="44px"
                 />
                 <label>
-                  사진 바꾸기
-                  <input
+                  {ui("사진 바꾸기")}<input
                     type="file"
                     accept="image/*"
                     onChange={updateEditorChannelThumbnail}
@@ -11999,7 +11964,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                 </label>
               </div>
               <label className="editor-channel-name-setting">
-                <span>채널명</span>
+                <span>{ui("채널명")}</span>
                 <input
                   type="text"
                   value={channel}
@@ -12021,20 +11986,20 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
           </section>}
           {overlayPreviewEnabled && <section
             className={`editor-sidebar-tool-panel${!selectedTextOverlay && activeEditorSidebarTool === "comment" ? " is-active" : ""}`}
-            aria-label="댓글 설정"
+            aria-label={ui("댓글 설정")}
           >
             <header className="editor-tool-panel-header">
-              <strong>댓글</strong>
+              <strong>{ui("댓글")}</strong>
             </header>
             {selectedTimelineComment && <div className="editor-selected-comment-setting">
               <div className="editor-selected-comment-setting-heading">
-                <strong>선택한 댓글</strong>
+                <strong>{ui("선택한 댓글")}</strong>
                 <span>{selectedTimelineComment.text.length}/200</span>
               </div>
               <label>
-                <span>댓글 내용</span>
+                <span>{ui("댓글 내용")}</span>
                 <textarea
-                  aria-label="선택한 댓글 내용 수정"
+                  aria-label={ui("선택한 댓글 내용 수정")}
                   value={selectedTimelineComment.text}
                   maxLength={200}
                   rows={3}
@@ -12049,22 +12014,20 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
               </label>
             </div>}
             <fieldset className="editor-comment-theme-setting">
-              <legend>댓글 모드</legend>
+              <legend>{ui("댓글 모드")}</legend>
               <div>
                 <button
                   type="button"
                   aria-pressed={editorCommentTheme === "dark"}
                   onClick={() => setEditorCommentTheme("dark")}
                 >
-                  다크
-                </button>
+                  {ui("다크")}</button>
                 <button
                   type="button"
                   aria-pressed={editorCommentTheme === "light"}
                   onClick={() => setEditorCommentTheme("light")}
                 >
-                  화이트
-                </button>
+                  {ui("화이트")}</button>
               </div>
             </fieldset>
             <button
@@ -12083,11 +12046,10 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                   <path d="m18.5 14 .7 2.3 2.3.7-2.3.7-.7 2.3-.7-2.3-2.3-.7 2.3-.7.7-2.3Z" fill="currentColor" opacity=".7" />
                 </svg>
               </span>
-              {regeneratingComments ? "댓글 생성 중..." : "AI로 댓글 재생성"}
+              {ui(regeneratingComments ? "댓글 생성 중..." : "AI로 댓글 재생성")}
             </button>
             {comments.length === 0 && <p className="editor-comment-regenerate-hint">
-              댓글을 먼저 추가해 주세요.
-            </p>}
+              {ui("댓글을 먼저 추가해 주세요.")}</p>}
           </section>}
           <details
             className={`editor-accordion editor-sidebar-tool-panel${!selectedTextOverlay && activeEditorSidebarTool === "title" ? " is-active" : ""}`}
@@ -12095,7 +12057,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
           >
             <summary className="editor-accordion-summary">
               <span className="editor-accordion-summary-icon"><EditorSidebarSectionIcon section="title" /></span>
-              <span>후킹 제목</span>
+              <span>{ui("후킹 제목")}</span>
               <span className="editor-accordion-chevron" aria-hidden="true">
                 <svg viewBox="0 0 20 20" fill="none">
                   <path d="m6 8 4 4 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
@@ -12104,10 +12066,10 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
             </summary>
             <div className="editor-accordion-panel">
               {overlayPreviewEnabled && <header className="editor-tool-panel-header">
-                <strong>후킹 제목</strong>
+                <strong>{ui("후킹 제목")}</strong>
               </header>}
               <label className="block">
-                <span className="sr-only">후킹 제목</span>
+                <span className="sr-only">{ui("후킹 제목")}</span>
                 <textarea
                   ref={titleInputRef}
                   value={title}
@@ -12128,34 +12090,34 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
               options={availableEditorFontOptions.filter((font) => contentTitleFont(title, font.id, japaneseFontEnabled) === font.id)}
             />}
             <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3">
-            <p className="text-xs leading-5 text-white/70">글자를 선택하면 선택한 부분만, 선택하지 않으면 제목 전체의 색상이 바뀝니다.</p>
+            <p className="text-xs leading-5 text-white/70">{ui("글자를 선택하면 선택한 부분만, 선택하지 않으면 제목 전체의 색상이 바뀝니다.")}</p>
             <p className={`mt-2 truncate rounded-lg px-2.5 py-2 text-xs text-white ${titleSelection ? "bg-white/10" : "bg-white/[.04] opacity-50"}`}>
-              {titleSelection ? `선택: ${Array.from(title).slice(titleSelection.start, titleSelection.end).join("")}` : "제목 전체에 적용"}
+              {ui(titleSelection ? `선택: ${Array.from(title).slice(titleSelection.start, titleSelection.end).join("")}` : "제목 전체에 적용")}
             </p>
             <div className="mt-3 grid grid-cols-2 items-start gap-5">
               <fieldset>
-                <legend className="sr-only">글자색</legend>
-                <div className="flex items-center justify-between gap-3"><span className="text-xs font-semibold text-white">글자색</span></div>
+                <legend className="sr-only">{ui("글자색")}</legend>
+                <div className="flex items-center justify-between gap-3"><span className="text-xs font-semibold text-white">{ui("글자색")}</span></div>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {(showAllTextColors ? titleTextColorOptions : titleTextColorOptions.slice(0, 3)).map((option) => <button key={option.color} type="button" aria-label={`글자색 ${option.name}`} title={option.name} aria-pressed={titleTextColor === option.color} onClick={() => { setTitleTextColor(option.color); updateSelectedTitleStyle({ color: option.color }); }} className={`h-8 w-8 rounded-full border border-white/20 transition disabled:cursor-not-allowed disabled:opacity-30 ${titleTextColor === option.color ? "outline outline-2 outline-offset-2 outline-white" : "hover:scale-105 hover:border-white/50"}`} style={{ background: option.color }} />)}
-                  <button type="button" aria-label={showAllTextColors ? "글자색 접기" : "글자색 전체 보기"} title={showAllTextColors ? "접기" : "전체 보기"} aria-expanded={showAllTextColors} onClick={() => setShowAllTextColors((current) => !current)} className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-[#353438] text-base font-medium text-white transition hover:border-white/40 hover:bg-[#454449] disabled:cursor-not-allowed disabled:opacity-30">{showAllTextColors ? "−" : "+"}</button>
+                  {(showAllTextColors ? titleTextColorOptions : titleTextColorOptions.slice(0, 3)).map((option) => <button key={option.color} type="button" aria-label={ui(`글자색 ${option.name}`)} title={ui(option.name)} aria-pressed={titleTextColor === option.color} onClick={() => { setTitleTextColor(option.color); updateSelectedTitleStyle({ color: option.color }); }} className={`h-8 w-8 rounded-full border border-white/20 transition disabled:cursor-not-allowed disabled:opacity-30 ${titleTextColor === option.color ? "outline outline-2 outline-offset-2 outline-white" : "hover:scale-105 hover:border-white/50"}`} style={{ background: option.color }} />)}
+                  <button type="button" aria-label={ui(showAllTextColors ? "글자색 접기" : "글자색 전체 보기")} title={ui(showAllTextColors ? "접기" : "전체 보기")} aria-expanded={showAllTextColors} onClick={() => setShowAllTextColors((current) => !current)} className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-[#353438] text-base font-medium text-white transition hover:border-white/40 hover:bg-[#454449] disabled:cursor-not-allowed disabled:opacity-30">{showAllTextColors ? "−" : "+"}</button>
                 </div>
               </fieldset>
               <fieldset>
-                <legend className="sr-only">텍스트 배경색</legend>
-                <div className="flex items-center justify-between gap-3"><span className="text-xs font-semibold text-white">텍스트 배경색</span></div>
+                <legend className="sr-only">{ui("텍스트 배경색")}</legend>
+                <div className="flex items-center justify-between gap-3"><span className="text-xs font-semibold text-white">{ui("텍스트 배경색")}</span></div>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  <button type="button" aria-label="텍스트 배경색 없음" title="없음" onClick={() => updateSelectedTitleStyle({ backgroundColor: null })} className="flex h-8 w-8 items-center justify-center rounded-full border border-dashed border-white/35 bg-white/[.03] text-[8px] font-bold text-white transition hover:border-white/60 disabled:cursor-not-allowed disabled:opacity-30">없음</button>
-                  {(showAllBackgroundColors ? titleBackgroundColorOptions : titleBackgroundColorOptions.slice(0, 2)).map((option) => <button key={option.color} type="button" aria-label={`텍스트 배경색 ${option.name}`} title={option.name} aria-pressed={titleBackgroundColor === option.color} onClick={() => { setTitleBackgroundColor(option.color); updateSelectedTitleStyle({ backgroundColor: option.color }); }} className={`h-8 w-8 rounded-full border border-white/20 transition disabled:cursor-not-allowed disabled:opacity-30 ${titleBackgroundColor === option.color ? "outline outline-2 outline-offset-2 outline-white" : "hover:scale-105 hover:border-white/50"}`} style={{ background: option.color }} />)}
-                  <button type="button" aria-label={showAllBackgroundColors ? "텍스트 배경색 접기" : "텍스트 배경색 전체 보기"} title={showAllBackgroundColors ? "접기" : "전체 보기"} aria-expanded={showAllBackgroundColors} onClick={() => setShowAllBackgroundColors((current) => !current)} className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-[#353438] text-base font-medium text-white transition hover:border-white/40 hover:bg-[#454449] disabled:cursor-not-allowed disabled:opacity-30">{showAllBackgroundColors ? "−" : "+"}</button>
+                  <button type="button" aria-label={ui("텍스트 배경색 없음")} title={ui("없음")} onClick={() => updateSelectedTitleStyle({ backgroundColor: null })} className="flex h-8 w-8 items-center justify-center rounded-full border border-dashed border-white/35 bg-white/[.03] text-[8px] font-bold text-white transition hover:border-white/60 disabled:cursor-not-allowed disabled:opacity-30">{ui("없음")}</button>
+                  {(showAllBackgroundColors ? titleBackgroundColorOptions : titleBackgroundColorOptions.slice(0, 2)).map((option) => <button key={option.color} type="button" aria-label={ui(`텍스트 배경색 ${option.name}`)} title={ui(option.name)} aria-pressed={titleBackgroundColor === option.color} onClick={() => { setTitleBackgroundColor(option.color); updateSelectedTitleStyle({ backgroundColor: option.color }); }} className={`h-8 w-8 rounded-full border border-white/20 transition disabled:cursor-not-allowed disabled:opacity-30 ${titleBackgroundColor === option.color ? "outline outline-2 outline-offset-2 outline-white" : "hover:scale-105 hover:border-white/50"}`} style={{ background: option.color }} />)}
+                  <button type="button" aria-label={ui(showAllBackgroundColors ? "텍스트 배경색 접기" : "텍스트 배경색 전체 보기")} title={ui(showAllBackgroundColors ? "접기" : "전체 보기")} aria-expanded={showAllBackgroundColors} onClick={() => setShowAllBackgroundColors((current) => !current)} className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-[#353438] text-base font-medium text-white transition hover:border-white/40 hover:bg-[#454449] disabled:cursor-not-allowed disabled:opacity-30">{showAllBackgroundColors ? "−" : "+"}</button>
                 </div>
               </fieldset>
             </div>
             </div>
             <label className="mt-5 block font-semibold">
-              <span className="flex items-center justify-between text-white"><span>제목 글자 크기</span><strong className="text-sm">{Math.round(titleFontScale * 100)}%</strong></span>
+              <span className="flex items-center justify-between text-white"><span>{ui("제목 글자 크기")}</span><strong className="text-sm">{Math.round(titleFontScale * 100)}%</strong></span>
               <input
-                aria-label="제목 글자 크기"
+                aria-label={ui("제목 글자 크기")}
                 type="range"
                 min={EDITOR_TEXT_LAYER_MIN_SCALE}
                 max={EDITOR_TEXT_LAYER_MAX_SCALE}
@@ -12181,15 +12143,15 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
           >
             <summary className="editor-accordion-summary">
               <span className="editor-accordion-summary-icon"><EditorSidebarSectionIcon section="background" /></span>
-              <span>배경</span>
+              <span>{ui("배경")}</span>
               <span className="editor-accordion-summary-meta">
-                {editorCanvasBackground?.kind === "image"
+                {ui(editorCanvasBackground?.kind === "image"
                   ? stockBackgrounds.find((item) => item.id === editorCanvasBackground.assetId)?.label
                   : editorCanvasBackground?.kind === "uploaded_image"
                     ? "내 배경"
                   : editorCanvasBackground?.kind === "color"
                     ? templatePresetColorOptions.find((item) => item.color === editorCanvasBackground.color)?.name
-                    : "템플릿 기본"}
+                    : "템플릿 기본")}
               </span>
               <span className="editor-accordion-chevron" aria-hidden="true">
                 <svg viewBox="0 0 20 20" fill="none">
@@ -12199,7 +12161,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
             </summary>
             <div className="editor-accordion-panel editor-background-panel">
               <header className="editor-tool-panel-header">
-                <strong>배경</strong>
+                <strong>{ui("배경")}</strong>
               </header>
               {(customTemplateDesignEnabled || editorCanvasBackground?.kind === "uploaded_image") && <BackgroundAssetPicker
                 value={editorCanvasBackground}
@@ -12220,16 +12182,15 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                   <path d="M4.5 6.5h7a4 4 0 1 1-3.25 6.32" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" />
                   <path d="m4.5 6.5 2.2-2.2M4.5 6.5l2.2 2.2" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
-                템플릿 기본 배경
-              </button>
+                {ui("템플릿 기본 배경")}</button>
               <fieldset className="editor-background-color-setting" disabled={backgroundAssetBusy || saving}>
-                <legend>색상 배경</legend>
+                <legend>{ui("색상 배경")}</legend>
                 <div>
                   {templatePresetColorOptions.map((option) => <button
                     key={option.color}
                     type="button"
-                    aria-label={`배경 색상 ${option.name}`}
-                    title={option.name}
+                    aria-label={ui(`배경 색상 ${option.name}`)}
+                    title={ui(option.name)}
                     aria-pressed={editorCanvasBackground?.kind === "color"
                       && editorCanvasBackground.color === option.color}
                     onClick={() => setEditorCanvasBackground({
@@ -12241,12 +12202,12 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                 </div>
               </fieldset>
               <fieldset className="editor-background-image-setting" disabled={backgroundAssetBusy || saving}>
-                <legend>이미지 배경</legend>
+                <legend>{ui("이미지 배경")}</legend>
                 <div>
                   {stockBackgrounds.map((asset) => <button
                     key={asset.id}
                     type="button"
-                    aria-label={`이미지 배경 ${asset.label}`}
+                    aria-label={ui(`이미지 배경 ${asset.label}`)}
                     aria-pressed={editorCanvasBackground?.kind === "image"
                       && editorCanvasBackground.assetId === asset.id}
                     onClick={() => setEditorCanvasBackground({
@@ -12264,11 +12225,11 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
               </fieldset>
             </div>
           </details>}
-          {!overlayPreviewEnabled && templateId !== "comment-capture" && <label className="editor-section block text-sm font-semibold">채널명<input value={channel} onFocus={beginEditorCopyInteraction} onBlur={finishEditorCopyInteraction} onChange={(event) => { channelRef.current = event.target.value; setChannel(event.target.value); }} maxLength={50} className="mt-2 h-11 w-full rounded-lg border border-white/15 bg-black/30 px-3" /></label>}
+          {!overlayPreviewEnabled && templateId !== "comment-capture" && <label className="editor-section block text-sm font-semibold">{ui("채널명")}<input value={channel} onFocus={beginEditorCopyInteraction} onBlur={finishEditorCopyInteraction} onChange={(event) => { channelRef.current = event.target.value; setChannel(event.target.value); }} maxLength={50} className="mt-2 h-11 w-full rounded-lg border border-white/15 bg-black/30 px-3" /></label>}
           {!overlayPreviewEnabled && !captionTemplateEditorSpec && <label className="hidden"><input type="checkbox" checked={subtitlesEnabled} onChange={(event) => {
             subtitlesEnabledRef.current = event.target.checked;
             setSubtitlesEnabled(event.target.checked);
-          }} />자동 자막 표시</label>}
+          }} />{ui("자동 자막 표시")}</label>}
           {subtitlesEnabled && <div className="hidden">{segments.map((segment, index) => <label key={`${segment.start}-${index}`}><span>{formatTimestamp(segment.start)}</span><input value={segment.text} onChange={(event) => updateSubtitleText(index, event.target.value)} /></label>)}</div>}
           <details
             className={`editor-accordion editor-sidebar-tool-panel${!selectedTextOverlay && activeEditorSidebarTool === "template" ? " is-active" : ""}`}
@@ -12276,7 +12237,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
           >
             <summary className="editor-accordion-summary">
               <span className="editor-accordion-summary-icon"><EditorSidebarSectionIcon section="template" /></span>
-              <span>템플릿</span>
+              <span>{ui("템플릿")}</span>
               <span className="editor-accordion-summary-meta">{activeCustomTemplate?.name || editorTemplateDisplayName}</span>
               <span className="editor-accordion-chevron" aria-hidden="true">
                 <svg viewBox="0 0 20 20" fill="none">
@@ -12286,9 +12247,9 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
             </summary>
             <div className="editor-accordion-panel">
               {overlayPreviewEnabled && <header className="editor-tool-panel-header">
-                <strong>템플릿</strong>
+                <strong>{ui("템플릿")}</strong>
               </header>}
-              <p className="mb-3 text-xs text-white/65">최종 영상의 제목·영상·하단 구성을 미리 확인하세요.</p>
+              <p className="mb-3 text-xs text-white/65">{ui("최종 영상의 제목·영상·하단 구성을 미리 확인하세요.")}</p>
               <div className="editor-template-grid">
                 {availableCustomTemplate && <button
                   type="button"
@@ -12305,7 +12266,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                     positionedWordsV4Enabled={positionedWordsV4Enabled}
                   />
                   <span className="mt-2 block truncate text-center text-xs font-semibold">{availableCustomTemplate.name}</span>
-                  <span className="mt-1 block text-center text-[10px] font-bold text-white/80">적용 중인 내 템플릿</span>
+                  <span className="mt-1 block text-center text-[10px] font-bold text-white/80">{ui("적용 중인 내 템플릿")}</span>
                 </button>}
                 {templates.map((value) => {
                   const selected = !activeCustomTemplate && templateId === value.id;
@@ -12329,14 +12290,14 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
               </div>
             </div>
           </details>
-          {error && <p className="mt-4 text-sm font-semibold text-white">{error}</p>}
-          {!standalone && <div className="mt-6 flex flex-wrap justify-end gap-2"><button onClick={onClose} className="h-11 rounded-lg border border-white/15 px-4 text-sm font-semibold">변경 취소</button><button disabled={(overlayPreviewEnabled && !editorSaveEnabled) || !editorValid || saving} onPointerDown={preserveInvalidCaptionTextFocus} onClick={openEditorApplyConfirmation} className="h-11 rounded-lg bg-white px-4 text-sm font-bold text-black disabled:opacity-40">{overlayPreviewEnabled && !editorSaveEnabled ? "저장 잠금" : saving ? "처리 중..." : "영상에 적용"}</button></div>}
+          {error && <p className="mt-4 text-sm font-semibold text-white">{ui(error)}</p>}
+          {!standalone && <div className="mt-6 flex flex-wrap justify-end gap-2"><button onClick={onClose} className="h-11 rounded-lg border border-white/15 px-4 text-sm font-semibold">{ui("변경 취소")}</button><button disabled={(overlayPreviewEnabled && !editorSaveEnabled) || !editorValid || saving} onPointerDown={preserveInvalidCaptionTextFocus} onClick={openEditorApplyConfirmation} className="h-11 rounded-lg bg-white px-4 text-sm font-bold text-black disabled:opacity-40">{ui(overlayPreviewEnabled && !editorSaveEnabled ? "저장 잠금" : saving ? "처리 중..." : "영상에 적용")}</button></div>}
           </div>
           </div>
         </section>
         {editTimeline && <section
           className="editor-range-panel editor-workspace-timeline"
-          aria-label="영상 및 댓글 구간 선택"
+          aria-label={ui("영상 및 댓글 구간 선택")}
           data-editor-guide={overlayPreviewEnabled ? "editor-timeline" : undefined}
         >
           {overlayPreviewEnabled && <EditorViewportZoomControl
@@ -12377,7 +12338,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                     <div
                       key={`video-ripple-${videoRippleRevision}`}
                       className={`editor-video-clip-strip${videoRippleRevision > 0 ? " is-rippling" : ""}`}
-                      aria-label="영상 조각 타임라인"
+                      aria-label={ui("영상 조각 타임라인")}
                       style={{
                         left: `${sourceSelectionLeft}%`,
                         width: `${videoOutputWidthPercent}%`,
@@ -12397,7 +12358,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                         key={clip.id}
                         type="button"
                         data-editor-video-clip-id={clip.id}
-                        aria-label={`영상 조각 ${clipIndex + 1} 선택`}
+                        aria-label={ui(`영상 조각 ${clipIndex + 1} 선택`)}
                         aria-pressed={selectedVideoClipId === clip.id}
                         className={selectedVideoClipId === clip.id ? "is-selected" : ""}
                         style={{
@@ -12429,7 +12390,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                           })}
                         </span>
                         {renderVideoClips.length > 1 && <span className="editor-video-clip-label">
-                          조각 {clipIndex + 1}
+                          {ui("조각 ")}{clipIndex + 1}
                         </span>}
                       </button>;
                     })}
@@ -12453,7 +12414,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                       <button
                         type="button"
                         className="editor-video-clip-trim-handle is-start"
-                        aria-label="선택한 영상 조각 앞부분 조절"
+                        aria-label={ui("선택한 영상 조각 앞부분 조절")}
                         style={{
                           left: `${selectedVideoClipOutputStart / Math.max(videoSequenceDuration, 0.001) * 100}%`,
                         }}
@@ -12466,7 +12427,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                       <button
                         type="button"
                         className="editor-video-clip-trim-handle is-end"
-                        aria-label="선택한 영상 조각 뒷부분 조절"
+                        aria-label={ui("선택한 영상 조각 뒷부분 조절")}
                         style={{
                           left: `${(
                             selectedVideoClipOutputStart
@@ -12501,12 +12462,12 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                       <span className="editor-range-marker-time">{formatPreciseTimestamp(selectionDuration)}</span>
                       <span className="editor-range-marker-grip">•••</span>
                     </span>
-                    <input aria-label="최종 영상 시작 시간" type="range" min={editTimeline.timelineStartSeconds} max={editTimeline.timelineEndSeconds} step={0.001} value={selectionStart} onChange={(event) => updateSelectionStart(Number(event.target.value))} className="sr-only" />
-                    <input aria-label="최종 영상 종료 시간" type="range" min={editTimeline.timelineStartSeconds} max={editTimeline.timelineEndSeconds} step={0.001} value={selectionEnd} onChange={(event) => updateSelectionEnd(Number(event.target.value))} className="sr-only" />
+                    <input aria-label={ui("최종 영상 시작 시간")} type="range" min={editTimeline.timelineStartSeconds} max={editTimeline.timelineEndSeconds} step={0.001} value={selectionStart} onChange={(event) => updateSelectionStart(Number(event.target.value))} className="sr-only" />
+                    <input aria-label={ui("최종 영상 종료 시간")} type="range" min={editTimeline.timelineStartSeconds} max={editTimeline.timelineEndSeconds} step={0.001} value={selectionEnd} onChange={(event) => updateSelectionEnd(Number(event.target.value))} className="sr-only" />
                   </>}
               <span className="editor-timeline-playhead" style={{ left: `${playheadLeft}%` }} aria-hidden="true" />
             </div>
-            <div className="editor-filmstrip-bounds" aria-label="전체 편집 가능 범위">
+            <div className="editor-filmstrip-bounds" aria-label={ui("전체 편집 가능 범위")}>
               {videoCuttingEnabled
                 ? <>
                     <span>{formatTimelineOffset(editTimeline.timelineStartSeconds - selectionStart)}</span>
@@ -12527,11 +12488,11 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
           </div>
           </div>
           {!overlayPreviewEnabled && <div className="editor-range-actions">
-            <button type="button" data-editor-guide="reset-range" onClick={() => { setSelectionStart(editTimeline.initialStartSeconds); setSelectionEnd(editTimeline.initialEndSeconds); seekTimeline(editTimeline.initialStartSeconds); }}>↺ 원본으로 되돌리기</button>
-            {templateId === "comment-capture" && <button type="button" data-editor-guide="add-comment" disabled={comments.length >= 20} onClick={addComment}>+ 댓글</button>}
+            <button type="button" data-editor-guide="reset-range" onClick={() => { setSelectionStart(editTimeline.initialStartSeconds); setSelectionEnd(editTimeline.initialEndSeconds); seekTimeline(editTimeline.initialStartSeconds); }}>{ui("↺ 원본으로 되돌리기")}</button>
+            {templateId === "comment-capture" && <button type="button" data-editor-guide="add-comment" disabled={comments.length >= 20} onClick={addComment}>{ui("+ 댓글")}</button>}
           </div>}
-          {previewDuration > 180 && <p className="editor-range-warning">3분을 넘는 영상은 YouTube에서 Shorts로 분류되지 않을 수 있지만 저장할 수 있습니다.</p>}
-          {!validSelection && <p className="editor-range-error">최종 영상은 1초 이상이어야 합니다.</p>}
+          {previewDuration > 180 && <p className="editor-range-warning">{ui("3분을 넘는 영상은 YouTube에서 Shorts로 분류되지 않을 수 있지만 저장할 수 있습니다.")}</p>}
+          {!validSelection && <p className="editor-range-error">{ui("최종 영상은 1초 이상이어야 합니다.")}</p>}
         </section>}
         {!editTimeline && (commentTimeline || textTimelines) && <section
           className="editor-range-panel editor-workspace-timeline editor-comment-only-panel"
@@ -12558,7 +12519,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
           </div>
           </div>
           {!overlayPreviewEnabled && <div className="editor-range-actions">
-            {commentTimeline && <button type="button" data-editor-guide="add-comment" disabled={comments.length >= 20} onClick={addComment}>+ 댓글</button>}
+            {commentTimeline && <button type="button" data-editor-guide="add-comment" disabled={comments.length >= 20} onClick={addComment}>{ui("+ 댓글")}</button>}
           </div>}
         </section>}
       </div>
@@ -12576,6 +12537,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
 }
 
 function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = false, unifiedTemplateSubtitleCanaryEnabled = false }: { job: VideoJob; access: ProjectActionAccess; onBack: () => void; adminSubtitleLayoutEnabled?: boolean; unifiedTemplateSubtitleCanaryEnabled?: boolean }) {
+  const ui = useUiText();
   const { locale } = useI18n();
   const [playbackAssets, setPlaybackAssets] = useState<Record<string, {
     url: string;
@@ -12749,13 +12711,13 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
         : projectExpired || job.status === "expired" || job.status === "deleted"
           ? "보관 기간이 끝나 이 프로젝트의 쇼츠를 볼 수 없습니다."
           : "아직 생성된 쇼츠가 없습니다.";
-    return <div className="project-workspace"><button onClick={onBack}>← 프로젝트로 돌아가기</button><p className={`m-auto max-w-xl whitespace-pre-line px-6 text-center leading-7 ${job.status === "failed" ? "text-red-300" : "text-neutral-500"}`}>{message}</p></div>;
+    return <div className="project-workspace"><button onClick={onBack}>{ui("← 프로젝트로 돌아가기")}</button><p className={`m-auto max-w-xl whitespace-pre-line px-6 text-center leading-7 ${job.status === "failed" ? "text-red-300" : "text-neutral-500"}`}>{ui(message)}</p></div>;
   }
   if (
     job.status === "completed"
     && (!revealDecision || revealDecision.jobId !== job.id)
   ) {
-    return <div className="project-workspace" aria-label="프로젝트를 여는 중" />;
+    return <div className="project-workspace" aria-label={ui("프로젝트를 여는 중")} />;
   }
   if (revealDecision?.jobId === job.id && revealDecision.show) {
     return (
@@ -12771,7 +12733,7 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
   return (
     <div className="project-workspace">
       <header className="workspace-header">
-        <div className="min-w-0"><button data-project-guide="back" onClick={onBack} className="text-xs font-semibold text-neutral-400 hover:text-white">{locale === "ko" ? `← 프로젝트 /${job.projectNumber}` : locale === "en" ? `← Project /${job.projectNumber}` : `← プロジェクト /${job.projectNumber}`}</button><div className="mt-1 flex min-w-0 items-center gap-3"><h1 data-i18n-skip className="truncate text-base font-bold">{job.videoTitle}</h1>{job.isExample && <span className="shrink-0 rounded bg-red-500/15 px-2 py-1 text-[11px] font-extrabold text-red-300">예시 작업 · 읽기 전용</span>}<span className="shrink-0 text-xs text-neutral-500">{locale === "ko" ? `쇼츠 ${job.shorts.length}개` : locale === "en" ? `${job.shorts.length} Shorts` : `ショート動画 ${job.shorts.length}本`}</span></div></div>
+        <div className="min-w-0"><button data-project-guide="back" onClick={onBack} className="text-xs font-semibold text-neutral-400 hover:text-white">{locale === "ko" ? `← 프로젝트 /${job.projectNumber}` : locale === "en" ? `← Project /${job.projectNumber}` : `← プロジェクト /${job.projectNumber}`}</button><div className="mt-1 flex min-w-0 items-center gap-3"><h1 data-i18n-skip className="truncate text-base font-bold">{job.videoTitle}</h1>{job.isExample && <span className="shrink-0 rounded bg-red-500/15 px-2 py-1 text-[11px] font-extrabold text-red-300">{ui("예시 작업 · 읽기 전용")}</span>}<span className="shrink-0 text-xs text-neutral-500">{locale === "ko" ? `쇼츠 ${job.shorts.length}개` : locale === "en" ? `${job.shorts.length} Shorts` : `ショート動画 ${job.shorts.length}本`}</span></div></div>
         <ProjectDownloadButton key={job.id} projectNumber={job.projectNumber} disabled={job.isExample || !downloadableItems.length} canDownload={access.canDownload} onPaywall={() => setDownloadPaywallOpen(true)} locale={locale} />
       </header>
       <ProjectActionGuide
@@ -12832,7 +12794,7 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
                   {item.viralScore != null && (
                     <span
                       className="viral-score-badge"
-                      title="대본을 바탕으로 AI가 예측한 점수입니다"
+                      title={ui("대본을 바탕으로 AI가 예측한 점수입니다")}
                     >
                       {locale === "ko" ? `바이럴 점수 ${item.viralScore}/100` : locale === "en" ? `Viral score ${item.viralScore}/100` : `バイラルスコア ${item.viralScore}/100`}
                     </span>
@@ -12841,7 +12803,7 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
                 <div className="short-result-layout">
                   <div className="short-video-column">
                     <div className="short-video-shell">
-                      {itemUrl ? <ProjectFeedbackVideo key={shortPlaybackVersionKey(item)} projectNumber={job.projectNumber} feedbackEnabled={job.status === "completed" && !job.isExample && item.status === "ready"} src={itemUrl} poster={itemAsset?.posterUrl || undefined} controls={!itemIsRerendering} controlsList="nodownload" playsInline preload="metadata" onError={() => refreshPlaybackAccess(item)} className={itemIsRerendering ? "grayscale" : ""} /> : <div className="short-video-placeholder">영상 준비 중</div>}
+                      {itemUrl ? <ProjectFeedbackVideo key={shortPlaybackVersionKey(item)} projectNumber={job.projectNumber} feedbackEnabled={job.status === "completed" && !job.isExample && item.status === "ready"} src={itemUrl} poster={itemAsset?.posterUrl || undefined} controls={!itemIsRerendering} controlsList="nodownload" playsInline preload="metadata" onError={() => refreshPlaybackAccess(item)} className={itemIsRerendering ? "grayscale" : ""} /> : <div className="short-video-placeholder">{ui("영상 준비 중")}</div>}
                       <span className="short-duration-badge">{formatDuration(item.durationSeconds, locale)}</span>
                       {itemIsRerendering && <EstimatedProcessingOverlay operationKey={`rerender:${item.id}:${item.renderVersion}`} durationSeconds={item.durationSeconds} rerender minimumProgress={item.rerenderProgress} />}
                     </div>
@@ -12852,7 +12814,7 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
                     <SubtitleTranslationNotice outcome={item.subtitleTranslation} locale={locale} />
                     <div className="short-result-actions">
                       {job.isExample || itemIsRerendering || subtitleEditorUnavailable
-                        ? <button disabled title={job.isExample ? "예시 작업은 편집할 수 없습니다." : item.subtitleTemplateId ? item.captionRenderSpec ? "현재 편집기에서는 이 자막 영상을 편집할 수 없습니다." : "이전 자막 형식은 새 편집기에서 지원하지 않습니다." : undefined} className="tool-button short-edit-button cursor-not-allowed opacity-40">{item.subtitleTemplateId ? "✎ 편집 준비 중" : "✎ 편집하기"}</button>
+                        ? <button disabled title={ui(job.isExample ? "예시 작업은 편집할 수 없습니다." : item.subtitleTemplateId ? item.captionRenderSpec ? "현재 편집기에서는 이 자막 영상을 편집할 수 없습니다." : "이전 자막 형식은 새 편집기에서 지원하지 않습니다." : undefined)} className="tool-button short-edit-button cursor-not-allowed opacity-40">{ui(item.subtitleTemplateId ? "✎ 편집 준비 중" : "✎ 편집하기")}</button>
                         : <Link
                             data-project-guide={item.id === guideEditShortId ? "edit" : undefined}
                             href={`/projects/${job.projectNumber}/edit/${item.id}`}
@@ -12870,26 +12832,26 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
                                 href: `/projects/${job.projectNumber}/edit/${item.id}`,
                               });
                             }}
-                          >✎ 편집하기</Link>}
+                          >{ui("✎ 편집하기")}</Link>}
                       {job.isExample || itemIsRerendering || item.status !== "ready"
-                        ? <button disabled title={job.isExample ? "예시 작업은 다운로드할 수 없습니다." : undefined} className="tool-button short-download-button disabled:cursor-not-allowed disabled:opacity-40">↓ 다운로드</button>
+                        ? <button disabled title={ui(job.isExample ? "예시 작업은 다운로드할 수 없습니다." : undefined)} className="tool-button short-download-button disabled:cursor-not-allowed disabled:opacity-40">{ui("↓ 다운로드")}</button>
                         : access.canDownload
-                          ? <a data-project-guide={item.id === guideDownloadShortId ? "download" : undefined} href={`/api/shorts/${encodeURIComponent(item.id)}/download`} download={shortDownloadFilename(item.hookTitle)} className="tool-button short-download-button flex items-center justify-center" aria-label={locale === "ko" ? `${item.hookTitle} 다운로드` : locale === "en" ? `Download ${item.hookTitle}` : `${item.hookTitle}をダウンロード`}>↓ 다운로드</a>
-                          : <button data-project-guide={item.id === guideDownloadShortId ? "download" : undefined} type="button" onClick={() => setDownloadPaywallOpen(true)} className="tool-button short-download-button">↓ 다운로드</button>}
+                          ? <a data-project-guide={item.id === guideDownloadShortId ? "download" : undefined} href={`/api/shorts/${encodeURIComponent(item.id)}/download`} download={shortDownloadFilename(item.hookTitle)} className="tool-button short-download-button flex items-center justify-center" aria-label={locale === "ko" ? `${item.hookTitle} 다운로드` : locale === "en" ? `Download ${item.hookTitle}` : `${item.hookTitle}をダウンロード`}>{ui("↓ 다운로드")}</a>
+                          : <button data-project-guide={item.id === guideDownloadShortId ? "download" : undefined} type="button" onClick={() => setDownloadPaywallOpen(true)} className="tool-button short-download-button">{ui("↓ 다운로드")}</button>}
                     </div>
                     {subtitleEditorUnavailable && (
                       <p className="mt-2 text-center text-xs font-medium text-neutral-400">
-                        {item.captionRenderSpec
+                        {ui(item.captionRenderSpec
                           ? "현재 편집기 릴리스에서는 이 자막을 편집할 수 없어요."
-                          : "이전 자막 형식은 새 편집기에서 지원하지 않아요."}
+                          : "이전 자막 형식은 새 편집기에서 지원하지 않아요.")}
                       </p>
                     )}
                   </div>
                   <div className="short-detail-column">
-                    <div className="short-highlight-note"><strong>✦ AI 하이라이트</strong><p data-i18n-skip>{item.highlightReason.trim()}</p></div>
-                    <div className="short-source-range"><span>원본 영상 타임라인</span><strong>◷ {formatTimestamp(item.startSeconds)} ~ {formatTimestamp(item.endSeconds)}</strong></div>
+                    <div className="short-highlight-note"><strong>{ui("✦ AI 하이라이트")}</strong><p data-i18n-skip>{item.highlightReason.trim()}</p></div>
+                    <div className="short-source-range"><span>{ui("원본 영상 타임라인")}</span><strong>◷ {formatTimestamp(item.startSeconds)} ~ {formatTimestamp(item.endSeconds)}</strong></div>
                     <section className="short-script-panel">
-                      <h3>스크립트</h3>
+                      <h3>{ui("스크립트")}</h3>
                       <p data-i18n-skip>{script}</p>
                     </section>
                   </div>
@@ -12904,6 +12866,7 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
 }
 
 export function ShortEditorPage({ projectNumber, shortId, rangeEditingEnabled = false, overlayPreviewEnabled = false, editorSaveEnabled = false, editorRelease, unifiedTemplateSubtitleCanaryEnabled = false, customTemplateDesignEnabled = false }: { projectNumber: number; shortId: string; rangeEditingEnabled?: boolean; overlayPreviewEnabled?: boolean; editorSaveEnabled?: boolean; editorRelease: EditorReleaseAssignment; unifiedTemplateSubtitleCanaryEnabled?: boolean; customTemplateDesignEnabled?: boolean }) {
+  const ui = useUiText();
   const [project, setProject] = useState<VideoJob | null>(null);
   const [access, setAccess] = useState<ProjectActionAccess | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -12925,14 +12888,15 @@ export function ShortEditorPage({ projectNumber, shortId, rangeEditingEnabled = 
     window.setTimeout(() => { if (!window.closed) window.location.href = browserLocalizedHref(`/projects/${projectNumber}`); }, 100);
   };
 
-  if (error) return <main className="editor-page grid place-items-center p-6 text-center"><div><h1 className="text-lg font-bold">편집기를 열 수 없습니다.</h1><p className="mt-3 text-sm text-red-300">{error}</p><Link href={`/projects/${projectNumber}`} prefetch={false} className="mt-6 inline-flex rounded-xl bg-white px-5 py-3 text-sm font-bold text-black">프로젝트로 돌아가기</Link></div></main>;
-  if (!project) return <main className="editor-page grid place-items-center text-sm text-neutral-400">편집기를 준비하고 있습니다…</main>;
-  if (!item || project.isExample) return <main className="editor-page grid place-items-center p-6 text-center"><div><h1 className="text-lg font-bold">편집할 수 없는 쇼츠입니다.</h1><Link href={`/projects/${projectNumber}`} prefetch={false} className="mt-6 inline-flex rounded-xl bg-white px-5 py-3 text-sm font-bold text-black">프로젝트로 돌아가기</Link></div></main>;
+  if (error) return <main className="editor-page grid place-items-center p-6 text-center"><div><h1 className="text-lg font-bold">{ui("편집기를 열 수 없습니다.")}</h1><p className="mt-3 text-sm text-red-300">{ui(error)}</p><Link href={`/projects/${projectNumber}`} prefetch={false} className="mt-6 inline-flex rounded-xl bg-white px-5 py-3 text-sm font-bold text-black">{ui("프로젝트로 돌아가기")}</Link></div></main>;
+  if (!project) return <main className="editor-page grid place-items-center text-sm text-neutral-400">{ui("편집기를 준비하고 있습니다…")}</main>;
+  if (!item || project.isExample) return <main className="editor-page grid place-items-center p-6 text-center"><div><h1 className="text-lg font-bold">{ui("편집할 수 없는 쇼츠입니다.")}</h1><Link href={`/projects/${projectNumber}`} prefetch={false} className="mt-6 inline-flex rounded-xl bg-white px-5 py-3 text-sm font-bold text-black">{ui("프로젝트로 돌아가기")}</Link></div></main>;
 
   return <Editor item={item} outputLanguage={project.outputLanguage} commentOutputLanguage={project.sourceLanguage ? project.outputLanguage : "ko"} channelThumbnailUrl={project.channelThumbnailUrl} standalone projectLabel={item.hookTitle} projectNumber={project.projectNumber} onClose={closeEditor} onChanged={loadProject} rangeEditingEnabled={rangeEditingEnabled} overlayPreviewEnabled={overlayPreviewEnabled} editorSaveEnabled={editorSaveEnabled} editorRelease={editorRelease} unifiedTemplateSubtitleCanaryEnabled={unifiedTemplateSubtitleCanaryEnabled} customTemplateDesignEnabled={customTemplateDesignEnabled} wordTimedSubtitlesAvailable={item.wordTimedSubtitlesAvailable} paidAccessBlocked={!access?.canEdit} />;
 }
 
 export function ProjectPage({ projectNumber, adminSubtitleLayoutEnabled = false, unifiedTemplateSubtitleCanaryEnabled = false }: { projectNumber: number; adminSubtitleLayoutEnabled?: boolean; unifiedTemplateSubtitleCanaryEnabled?: boolean }) {
+  const ui = useUiText();
   const [project, setProject] = useState<VideoJob | null>(null);
   const [access, setAccess] = useState<ProjectActionAccess>({ canEdit: false, canDownload: false });
   const [loading, setLoading] = useState(true);
@@ -12993,12 +12957,12 @@ export function ProjectPage({ projectNumber, adminSubtitleLayoutEnabled = false,
   if (!project) {
     return (
       <div className="project-workspace">
-        <button onClick={returnToProjects}>← 프로젝트로 돌아가기</button>
+        <button onClick={returnToProjects}>{ui("← 프로젝트로 돌아가기")}</button>
         <div className="m-auto max-w-xl px-6 text-center">
           <p className={`leading-7 ${loadError ? "text-red-300" : "text-neutral-500"}`}>
-            {loadError || (loading ? "프로젝트를 불러오는 중입니다." : "프로젝트를 찾을 수 없습니다.")}
+            {ui(loadError || (loading ? "프로젝트를 불러오는 중입니다." : "프로젝트를 찾을 수 없습니다."))}
           </p>
-          {loadError && <button type="button" onClick={() => { setLoading(true); void loadProject(); }} className="mt-5 rounded-lg border border-white/15 px-4 py-2 text-sm font-semibold text-white">다시 시도</button>}
+          {loadError && <button type="button" onClick={() => { setLoading(true); void loadProject(); }} className="mt-5 rounded-lg border border-white/15 px-4 py-2 text-sm font-semibold text-white">{ui("다시 시도")}</button>}
         </div>
       </div>
     );
@@ -13047,6 +13011,7 @@ function SourceRangeSelector({
   singleRowControls?: boolean;
   showPlannedShortCount?: boolean;
 }) {
+  const ui = useUiText();
   const { locale, t } = useI18n();
   const safeDuration = Math.max(1, sourceDurationSeconds);
   const selectedDuration = Math.max(0, endSeconds - startSeconds);
@@ -13060,10 +13025,9 @@ function SourceRangeSelector({
     <div className="rounded-2xl border border-[#ff8f7f]/30 bg-[#ff715e]/[.055] p-5 sm:p-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-lg font-extrabold text-white">사용할 영상 구간</h2>
+          <h2 className="text-lg font-extrabold text-white">{ui("사용할 영상 구간")}</h2>
           <p className="mt-1 text-sm leading-6 text-neutral-400">
-            양쪽 손잡이를 드래그해 전사·분석할 범위를 정하세요. 4분부터 60분까지 선택할 수 있습니다.
-          </p>
+            {ui("양쪽 손잡이를 드래그해 전사·분석할 범위를 정하세요. 4분부터 60분까지 선택할 수 있습니다.")}</p>
         </div>
         <strong className="font-mono text-sm tabular-nums text-[#ffb4aa] sm:text-base">
           {formatTimestamp(startSeconds)} – {formatTimestamp(endSeconds)}
@@ -13088,7 +13052,7 @@ function SourceRangeSelector({
           style={{ left: sliderThumbCenter(selectedEnd) }}
         />
         <input
-          aria-label="사용할 영상 시작 지점"
+          aria-label={ui("사용할 영상 시작 지점")}
           type="range"
           min={0}
           max={sourceDurationSeconds}
@@ -13098,7 +13062,7 @@ function SourceRangeSelector({
           className="range-editor-handle absolute inset-0 z-20 h-10 w-full"
         />
         <input
-          aria-label="사용할 영상 끝 지점"
+          aria-label={ui("사용할 영상 끝 지점")}
           type="range"
           min={0}
           max={sourceDurationSeconds}
@@ -13121,8 +13085,7 @@ function SourceRangeSelector({
           <SourceTimestampInput compact label="시작" value={startSeconds} onChange={onStartChange} />
           <SourceTimestampInput compact label="종료" value={endSeconds} onChange={onEndChange} />
           <button type="button" onClick={onReset} className="h-11 rounded-xl border border-white/10 px-3 text-xs font-bold text-neutral-300 transition hover:border-white/20 hover:bg-white/[.05] hover:text-white">
-            초기화
-          </button>
+            {ui("초기화")}</button>
         </div>
       ) : (
         <>
@@ -13131,8 +13094,7 @@ function SourceRangeSelector({
             <SourceTimestampInput label="종료 시각" value={endSeconds} onChange={onEndChange} />
           </div>
           <button type="button" onClick={onReset} className="mt-4 min-h-10 rounded-xl border border-white/10 px-4 text-xs font-bold text-neutral-300 transition hover:border-white/20 hover:bg-white/[.05] hover:text-white">
-            선택 범위 초기화
-          </button>
+            {ui("선택 범위 초기화")}</button>
         </>
       )}
     </div>
@@ -13150,6 +13112,7 @@ function SourceTimestampInput({
   onChange: (seconds: number) => void;
   compact?: boolean;
 }) {
+  const ui = useUiText();
   const [draft, setDraft] = useState(() => formatTimestamp(value));
   useEffect(() => setDraft(formatTimestamp(value)), [value]);
   const commit = () => {
@@ -13162,7 +13125,7 @@ function SourceTimestampInput({
   };
   return (
     <label className="grid gap-2 text-xs font-bold text-neutral-300">
-      <span>{label}</span>
+      <span>{ui(label)}</span>
       <input
         inputMode="decimal"
         value={draft}
@@ -13178,7 +13141,7 @@ function SourceTimestampInput({
             event.currentTarget.blur();
           }
         }}
-        aria-label={label}
+        aria-label={ui(label)}
         placeholder="0:00"
         className={`h-11 min-w-0 rounded-xl border border-white/10 bg-black/25 font-mono text-sm tabular-nums text-white outline-none transition focus:border-[#ff8f7f]/70 ${compact ? "px-2 sm:px-3" : "px-4"}`}
       />
@@ -13196,6 +13159,7 @@ type LocaleCreationDraft = {
 };
 
 export function ShortsApp({ initialState = null }: { initialState?: MvpState | null }) {
+  const ui = useUiText();
   const { locale, t } = useI18n();
   const [resumedDraft] = useState(() => readCreationDraft<LocaleCreationDraft>(initialState?.user?.id ?? null, locale));
   useEffect(() => { clearCreationDraft(); }, []);
@@ -14424,10 +14388,9 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
             {uploadCompletionOpen && !uploadExitGuardActive ? (
               <>
                 <span className="grid h-12 w-12 place-items-center rounded-full border border-emerald-300/30 bg-emerald-300/10 text-2xl font-black text-emerald-200" aria-hidden="true">✓</span>
-                <h2 id="upload-lifecycle-title" className="mt-5 text-2xl font-black text-white">업로드 완료</h2>
+                <h2 id="upload-lifecycle-title" className="mt-5 text-2xl font-black text-white">{ui("업로드 완료")}</h2>
                 <p id="upload-lifecycle-description" className="mt-3 text-sm font-semibold leading-6 text-neutral-300">
-                  이제 창을 닫아도 쇼츠 생성 작업은 계속됩니다.
-                </p>
+                  {ui("이제 창을 닫아도 쇼츠 생성 작업은 계속됩니다.")}</p>
                 <button
                   type="button"
                   autoFocus
@@ -14438,8 +14401,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
                   }}
                   className="mt-7 h-12 w-full rounded-xl bg-white text-sm font-black text-black transition hover:bg-neutral-100 active:scale-[.99]"
                 >
-                  확인
-                </button>
+                  {ui("확인")}</button>
               </>
             ) : (
               <>
@@ -14447,16 +14409,14 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
                   <span className="h-5 w-5 animate-spin rounded-full border-2 border-[#ffb4a8]/30 border-t-[#ff8f7f] motion-reduce:animate-none" />
                 </span>
                 <h2 id="upload-lifecycle-title" className="mt-5 text-2xl font-black text-white">
-                  영상 업로드 중
-                </h2>
+                  {ui("영상 업로드 중")}</h2>
                 <p id="upload-lifecycle-description" className="mt-3 text-sm font-semibold leading-6 text-neutral-300">
-                  업로드가 끝날 때까지 이 탭을 열어두세요.
-                </p>
+                  {ui("업로드가 끝날 때까지 이 탭을 열어두세요.")}</p>
                 {uploadTransferActive && uploadProgress !== null ? (
                   <div
                     className="mt-6 overflow-hidden rounded-full bg-white/10 p-1"
                     role="progressbar"
-                    aria-label="업로드 진행률"
+                    aria-label={ui("업로드 진행률")}
                     aria-valuemin={1}
                     aria-valuemax={100}
                     aria-valuenow={uploadProgress}
@@ -14470,18 +14430,17 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
                   <div
                     className="mt-6 h-4 overflow-hidden rounded-full bg-white/10 p-1"
                     role="progressbar"
-                    aria-label="업로드 시작 중"
+                    aria-label={ui("업로드 시작 중")}
                     aria-valuetext="업로드 시작 중"
                   />
                 )}
                 <p className="mt-2 text-center text-xs font-extrabold tabular-nums text-neutral-400">
-                  {uploadTransferActive && uploadProgress !== null
+                  {ui(uploadTransferActive && uploadProgress !== null
                     ? `${uploadProgress}%`
-                    : "업로드 시작 중"}
+                    : "업로드 시작 중")}
                 </p>
                 <p className="mt-5 text-xs font-semibold leading-5 text-amber-100/80 sm:hidden">
-                  화면을 켜둔 채 기다려 주세요.
-                </p>
+                  {ui("화면을 켜둔 채 기다려 주세요.")}</p>
                 {desktopUploadCompanionAvailable ? (
                   <Link
                     href="/"
@@ -14489,8 +14448,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
                     rel="noopener noreferrer"
                     className="mt-5 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-white text-sm font-extrabold text-black transition hover:bg-neutral-100 active:scale-[.99]"
                   >
-                    새 창에서 더 작업하기
-                    <span aria-hidden="true">↗</span>
+                    {ui("새 창에서 더 작업하기")}<span aria-hidden="true">↗</span>
                   </Link>
                 ) : null}
                 <button
@@ -14498,8 +14456,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
                   onClick={cancelActiveUpload}
                   className={`${desktopUploadCompanionAvailable ? "mt-3" : "mt-5"} h-11 w-full rounded-xl border border-white/15 text-sm font-extrabold text-neutral-200 transition hover:bg-white/[.06]`}
                 >
-                  업로드 취소
-                </button>
+                  {ui("업로드 취소")}</button>
               </>
             )}
           </div>
@@ -14508,7 +14465,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       <NoticeDialog
         open={conversionMaintenanceOpen}
         dialogId="conversion-maintenance"
-        title="서비스 점검 중입니다"
+        title={ui("서비스 점검 중입니다")}
         description="더 안정적인 서비스를 위해 잠시 점검하고 있어요. 오후 12:40부터 다시 이용할 수 있습니다."
         variant="info"
         onClose={closeConversionMaintenance}
@@ -14516,14 +14473,14 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       <NoticeDialog
         open={creationRestrictionOpen && Boolean(creationRestrictionReason)}
         dialogId="creation-restriction"
-        title={!uploadSourceActive && analysis?.creationAllowed === false ? "영상 이용 제한 안내" : "영상을 확인해 주세요"}
+        title={ui(!uploadSourceActive && analysis?.creationAllowed === false ? "영상 이용 제한 안내" : "영상을 확인해 주세요")}
         description={creationRestrictionReason || "이 영상은 이용 제한이 확인된 영상입니다."}
         onClose={closeCreationRestriction}
       />
       <NoticeDialog
         open={concurrentJobNoticeOpen}
         dialogId="concurrent-job-notice"
-        title="동시 작업 한도에 도달했어요"
+        title={ui("동시 작업 한도에 도달했어요")}
         description={`동시에 ${maxActiveJobs}개까지 처리할 수 있습니다. 진행 중인 작업이 끝난 뒤 다시 시도해 주세요.`}
         variant="info"
         onClose={closeConcurrentJobNotice}
@@ -14531,7 +14488,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       <NoticeDialog
         open={longSourceNoticeOpen}
         dialogId="long-source-notice"
-        title={"길이가 긴 영상은 처리시간이\n조금 더 걸릴 수 있어요"}
+        title={ui("길이가 긴 영상은 처리시간이\n조금 더 걸릴 수 있어요")}
         variant="info"
         confirmLabel="확인하고 계속"
         onClose={closeLongSourceNotice}
@@ -14655,12 +14612,12 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
             >
               {uploadVideo ? (
                 <>
-                  <Image src={uploadVideo.thumbnailDataUrl} alt="선택한 영상 썸네일" fill unoptimized className="source-upload-thumbnail" />
+                  <Image src={uploadVideo.thumbnailDataUrl} alt={ui("선택한 영상 썸네일")} fill unoptimized className="source-upload-thumbnail" />
                   <strong data-i18n-skip className="source-upload-title">{uploadVideo.file.name}</strong>
                   <span className="source-upload-selected-meta">
                     {t("home.uploadMetadata", { size: (uploadVideo.file.size / 1024 / 1024).toFixed(1), duration: formatDuration(uploadVideo.durationSeconds, locale) })}
                   </span>
-                  <span className="source-upload-reselect">다른 영상 선택</span>
+                  <span className="source-upload-reselect">{ui("다른 영상 선택")}</span>
                 </>
               ) : (
                 <>
@@ -14670,11 +14627,11 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
                       <defs><linearGradient id="admin-upload-folder-fill" x1="7" y1="9" x2="48" y2="44" gradientUnits="userSpaceOnUse"><stop stopColor="#FF715E"/><stop offset=".52" stopColor="#FFB4A8"/><stop offset="1" stopColor="#A078FF"/></linearGradient></defs>
                     </svg>
                   </span>
-                  <strong className="source-upload-title">동영상 파일을 드래그하거나 클릭하여 선택하세요</strong>
-                  <span className="source-upload-warning">페이지를 새로고침하면 선택한 파일이 취소됩니다.</span>
-                  <span className="source-upload-meta">지원 형식: MP4, MOV, M4V, WEBM, MKV</span>
-                  <span className="source-upload-meta">파일 제한: 최대 5GB · 3분~3시간 영상</span>
-                  {uploadInspectionBusy ? <span className="source-upload-feedback">영상 정보를 확인하고 있습니다…</span> : null}
+                  <strong className="source-upload-title">{ui("동영상 파일을 드래그하거나 클릭하여 선택하세요")}</strong>
+                  <span className="source-upload-warning">{ui("페이지를 새로고침하면 선택한 파일이 취소됩니다.")}</span>
+                  <span className="source-upload-meta">{ui("지원 형식: MP4, MOV, M4V, WEBM, MKV")}</span>
+                  <span className="source-upload-meta">{ui("파일 제한: 최대 5GB · 3분~3시간 영상")}</span>
+                  {uploadInspectionBusy ? <span className="source-upload-feedback">{ui("영상 정보를 확인하고 있습니다…")}</span> : null}
                 </>
               )}
             </button>
@@ -14695,7 +14652,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       </section> : null}
       <TransformationShowcase />
       <BackgroundShowcase />
-      {error && <div role="alert" className="rounded-xl border border-red-900 bg-red-950/50 p-4 text-sm text-red-200">{error}</div>}
+      {error && <div role="alert" className="rounded-xl border border-red-900 bg-red-950/50 p-4 text-sm text-red-200">{ui(error)}</div>}
       {stateLoadStatus === "error" && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-900 bg-amber-950/40 p-4 text-sm text-amber-100"><div><p>{t("home.serviceLoadError")}</p>{stateLoadError && <p className="mt-1 text-xs text-amber-300">{stateLoadError}</p>}</div><button type="button" onClick={retryStateLoad} className="rounded-lg border border-amber-300/30 px-3 py-2 font-semibold">{t("common.retry")}</button></div>}
       {selectedSource && (
         <section
@@ -14724,7 +14681,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
                 />
               </div>
             ) : (
-              <YoutubeThumbnail src={selectedSource.thumbnailUrl} alt="영상 썸네일" width={480} height={270} unoptimized className="aspect-video w-full object-cover sm:w-72" />
+              <YoutubeThumbnail src={selectedSource.thumbnailUrl} alt={ui("영상 썸네일")} width={480} height={270} unoptimized className="aspect-video w-full object-cover sm:w-72" />
             )}
             <div className="p-5">
               <h2 data-i18n-skip className="text-lg font-bold">{selectedSource.title}</h2>
@@ -14732,13 +14689,13 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
               {!adminTemplateLayoutEnabled && (
                 <>
                   <p className="mt-4 text-sm">{t("home.sourceSummary", { duration: formatDuration(selectedSource.durationSeconds, locale), count: selectedPlannedShortCount })}</p>
-                  <p className="mt-1 text-xs text-neutral-500">{sourceRangeSelectionEnabled
+                  <p className="mt-1 text-xs text-neutral-500">{ui(sourceRangeSelectionEnabled
                     ? planEnforcementEnabled
                       ? t("home.selectedUsage", { duration: formatDuration(selectedSourceDurationSeconds, locale) })
                       : t("home.selectedAnalysis", { duration: formatDuration(selectedSourceDurationSeconds, locale) })
                     : planEnforcementEnabled
                       ? t("home.fullUsage", { duration: formatDuration(selectedSource.durationSeconds, locale) })
-                      : "현재는 플랜 처리시간 차감 없이 생성됩니다."}</p>
+                      : "현재는 플랜 처리시간 차감 없이 생성됩니다.")}</p>
                 </>
               )}
             </div>
@@ -14789,7 +14746,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
           {languageTestActive && (
             <section className="rounded-xl border border-white/15 bg-white/[.025] p-4" data-language-selection>
               <div className="flex items-center justify-between gap-4 text-sm font-bold">
-                <h3>{languageText.heading}</h3>
+                <h3>{ui(languageText.heading)}</h3>
                 <button type="button" onClick={() => { setLanguageGuideComplete(false); setLanguageGuideReplay((v) => v + 1); }}
                   disabled={busy || !languageAvailable}
                   className="rounded-lg px-2 py-1 text-xs font-semibold text-neutral-300 underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#ff715e]">{languageText.help}</button>
@@ -14862,8 +14819,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
           />
           {analysisCreationBlocked && analysis && (
             <button type="button" onClick={() => { setCreationRestrictionReason(analysis.creationBlockReason || "영상 이용 제한을 확인했습니다."); setCreationRestrictionOpen(true); }} className="min-h-11 w-full rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-100 transition hover:bg-red-500/15">
-              생성 불가 사유 보기
-            </button>
+              {ui("생성 불가 사유 보기")}</button>
           )}
           <label
             ref={rightsConfirmationRef}
@@ -14882,23 +14838,22 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
               className="mt-1 h-5 w-5 shrink-0 accent-emerald-400"
             />
             <span>
-              <strong className="block text-sm font-extrabold text-white">원본 영상 권리 확인</strong>
+              <strong className="block text-sm font-extrabold text-white">{ui("원본 영상 권리 확인")}</strong>
               <span id="rights-confirmation-description" className="mt-1 block text-xs font-medium leading-5 text-neutral-400">
-                이 영상은 내가 소유하고 있거나, 권리자로부터 쇼츠 제작·편집 및 이용에 필요한 허가를 받은 영상임을 확인합니다.
-              </span>
+                {ui("이 영상은 내가 소유하고 있거나, 권리자로부터 쇼츠 제작·편집 및 이용에 필요한 허가를 받은 영상임을 확인합니다.")}</span>
             </span>
           </label>
           {error && (
             <div role="alert" className="rounded-xl border border-red-400/25 bg-red-500/[.08] px-4 py-3 text-sm font-semibold leading-6 text-red-100">
-              {error}
+              {ui(error)}
             </div>
           )}
           <button disabled={analysisCreationBlocked || !sourceRangeIsValid || busy || stateLoadStatus !== "ready"} onClick={() => void (uploadSourceActive ? createUploadJob() : createJob())} aria-busy={busy || loginPromptPending} className={`h-[52px] w-full rounded-xl py-4 font-bold text-black transition duration-150 disabled:bg-neutral-800 disabled:text-neutral-500 ${loginPromptPending ? "scale-[.985] bg-neutral-200 shadow-[inset_0_2px_6px_rgba(0,0,0,.22)] motion-reduce:transform-none" : "bg-white hover:bg-neutral-100 active:scale-[.985]"}`}>
             <span className="inline-flex items-center justify-center gap-2">
               {(busy || loginPromptPending) && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-black/25 border-t-black motion-reduce:animate-none" />}
-              {busy
+              {ui(busy
                 ? localizedValue(locale, { ko: "작업을 시작하고 있어요", en: "Starting your job", ja: "処理を開始しています" })
-                : analysisCreationBlocked ? t("home.createUnavailable") : stateLoadStatus !== "ready" ? t("home.loginChecking") : !state?.user ? t("home.create") : !planEnforcementEnabled || state.billing.canCreateJobs || shortsEventRewardAvailable ? t("home.create") : t("home.choosePlan")}
+                : analysisCreationBlocked ? t("home.createUnavailable") : stateLoadStatus !== "ready" ? t("home.loginChecking") : !state?.user ? t("home.create") : !planEnforcementEnabled || state.billing.canCreateJobs || shortsEventRewardAvailable ? t("home.create") : t("home.choosePlan"))}
             </span>
           </button>
         </section>

@@ -1,3 +1,6 @@
+"use client";
+
+import { useUiText } from "@/lib/i18n/use-ui-text";
 import type { CSSProperties, PointerEventHandler } from "react";
 import type { CommentOverlay, OutputLanguage } from "@/lib/contracts";
 import { formatLocale } from "@/lib/i18n/config";
@@ -111,11 +114,12 @@ export function TemplateCommentPreview({
   japaneseFontEnabled?: boolean;
   outputLanguage?: OutputLanguage;
 }) {
+  const ui = useUiText();
   if (comment === null) return null;
   const appearance = commentAppearance(theme, size);
   return (
     <div
-      aria-label="댓글 미리보기"
+      aria-label={ui("댓글 미리보기")}
       data-i18n-content={comment ? "" : undefined}
       className="relative z-40 block w-full overflow-hidden rounded-none border-0 text-left shadow-none"
       style={appearance.style}
@@ -140,12 +144,13 @@ export function TemplateCommentPrototype({
   onSelect: () => void;
   onPointerDown: PointerEventHandler<HTMLButtonElement>;
 }) {
+  const ui = useUiText();
   const appearance = commentAppearance(theme, size);
 
   return (
     <button
       type="button"
-      aria-label="댓글 레이어 선택 및 세로 이동"
+      aria-label={ui("댓글 레이어 선택 및 세로 이동")}
       onClick={onSelect}
       onPointerDown={onPointerDown}
       className={`relative z-40 block w-full cursor-ns-resize appearance-none overflow-hidden rounded-none border-0 text-left shadow-none ${selected ? "outline outline-2 outline-[#ff715e] outline-offset-[-2px]" : ""}`}

@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import { useEffect, useState } from "react";
 import { PurchaseTermsConsent } from "@/components/purchase-terms-consent";
 import { PaymentMessageOverlay } from "@/components/payment-message-overlay";
@@ -268,6 +270,7 @@ export function PricingClient({
   initialState: PricingState | null;
   onRequireLogin: () => void;
 }) {
+  const ui = useUiText();
   const { refreshUsage } = useUsageState();
   const { locale, t } = useI18n();
   const [previewMessage, setPreviewMessage] = useState<string | null>(null);
@@ -748,7 +751,7 @@ export function PricingClient({
       >
         {plan.badge && (plan.code !== "starter" || packageMonths === 6) && (
           <span className={`pricing-badge ${plan.code === "expert" ? "pricing-badge-violet" : ""}`}>
-            {plan.badge}
+            {ui(plan.badge)}
           </span>
         )}
         {plan.eyebrow && (
@@ -757,15 +760,15 @@ export function PricingClient({
               isPackagePlanCode(plan.code) ? styles.discountEyebrow : ""
             } ${plan.code === "expert" ? styles.discountEyebrowViolet : ""}`}
           >
-            {plan.eyebrow}
+            {ui(plan.eyebrow)}
           </span>
         )}
-        <div className="pricing-plan-name"><h2>{plan.name}</h2></div>
-        <p className={styles.planDescription}>{plan.description}</p>
+        <div className="pricing-plan-name"><h2>{ui(plan.name)}</h2></div>
+        <p className={styles.planDescription}>{ui(plan.description)}</p>
         <div className="pricing-price">
-          <strong>{plan.price}</strong><span>{plan.priceSuffix}</span>
+          <strong>{plan.price}</strong><span>{ui(plan.priceSuffix)}</span>
         </div>
-        <p className="pricing-billing">{plan.billing}</p>
+        <p className="pricing-billing">{ui(plan.billing)}</p>
         <ul>
           {plan.features.map((feature) => (
             <li
@@ -773,7 +776,7 @@ export function PricingClient({
               className={feature.unavailable ? "pricing-feature-unavailable" : ""}
             >
               <span aria-hidden="true">{feature.unavailable ? "×" : "✓"}</span>
-              <div>{featureContent(feature.text, feature.strong)}</div>
+              <div>{featureContent(ui(feature.text), feature.strong ? ui(feature.strong) : undefined)}</div>
             </li>
           ))}
         </ul>
@@ -785,9 +788,9 @@ export function PricingClient({
           }`}
           onClick={() => void choosePlan(plan.checkoutPlanCode)}
         >
-          {alreadyPurchased
+          {ui(alreadyPurchased
             ? "이미 구매함"
-            : busy === plan.checkoutPlanCode ? "준비 중..." : plan.cta}
+            : busy === plan.checkoutPlanCode ? "준비 중..." : plan.cta)}
         </button>
       </article>
     );
@@ -836,7 +839,7 @@ export function PricingClient({
           </section>
 
           {activeProducts.length > 0 && (
-            <section className={styles.activeProductsSection} aria-label="활성 이용 상품">
+            <section className={styles.activeProductsSection} aria-label={ui("활성 이용 상품")}>
           <div className={styles.activeProductsGrid}>
             {activeProducts.map((product, index) => {
               const pricingProduct = getPricingV2Plan(product.planCode);
@@ -862,9 +865,8 @@ export function PricingClient({
                   <div className={styles.activeProductTopline}>
                     <span className={styles.activeProductBadge}>
                       <i aria-hidden="true" />
-                      이용 중
-                    </span>
-                    <span>{isPackage ? "기간 패키지" : "월간 구독"}</span>
+                      {ui("이용 중")}</span>
+                    <span>{ui(isPackage ? "기간 패키지" : "월간 구독")}</span>
                   </div>
                   <h3>{product.displayName}</h3>
                   <div className={styles.activeProductBenefit}>
@@ -873,7 +875,7 @@ export function PricingClient({
                       : locale === "en"
                         ? `${priceFormatter.format(Math.floor(product.monthlySourceSeconds / 60))} min/month`
                         : `毎月${priceFormatter.format(Math.floor(product.monthlySourceSeconds / 60))}分`}</strong>
-                    <span>원본 영상 처리</span>
+                    <span>{ui("원본 영상 처리")}</span>
                   </div>
                   <p>{scheduleLabel}</p>
                   {!isPackage && product.cancelAtPeriodEnd && (
@@ -886,8 +888,7 @@ export function PricingClient({
                         setResubscribeUseDifferentCard(false);
                       }}
                     >
-                      다시 구독하기
-                    </button>
+                      {ui("다시 구독하기")}</button>
                   )}
                 </article>
               );
@@ -896,10 +897,10 @@ export function PricingClient({
             </section>
           )}
 
-          <section id="pricing-plans" className={styles.planSection} aria-label="요금제 선택">
+          <section id="pricing-plans" className={styles.planSection} aria-label={ui("요금제 선택")}>
         <div className={`${styles.planToolbar} ${hasActivePackage ? styles.packageOnlyToolbar : ""}`}>
-          <span>패키지 이용기간</span>
-          <div className={styles.packageTermPicker} role="group" aria-label="패키지 이용기간">
+          <span>{ui("패키지 이용기간")}</span>
+          <div className={styles.packageTermPicker} role="group" aria-label={ui("패키지 이용기간")}>
             {packageMonthOptions.map((months) => (
               <button
                 key={months}
@@ -941,8 +942,8 @@ export function PricingClient({
 
       <section className={styles.earlyBirdSection} aria-labelledby="early-bird-heading">
         <div className="pricing-section-heading">
-          <h2 id="early-bird-heading">얼리버드 특가 할인</h2>
-          <p>계정당 한 번씩만 구매할 수 있는 특별 상품입니다.</p>
+          <h2 id="early-bird-heading">{ui("얼리버드 특가 할인")}</h2>
+          <p>{ui("계정당 한 번씩만 구매할 수 있는 특별 상품입니다.")}</p>
         </div>
         <div className={styles.earlyBirdGrid}>
           {earlyBirdProducts.map((product) => (
@@ -953,7 +954,7 @@ export function PricingClient({
               } ${product.accent === "violet" ? styles.earlyBirdViolet : ""}`}
             >
               <span className={styles.discountBadge}>{locale === "ko" ? `${product.discount}% 할인` : locale === "en" ? `${product.discount}% off` : `${product.discount}%割引`}</span>
-              <p>얼리버드</p>
+              <p>{ui("얼리버드")}</p>
               <h3>{minuteLabel(priceFormatter.format(product.minutes), locale)}</h3>
               <span className={styles.originalPrice}>₩{priceFormatter.format(product.originalPrice)}</span>
               <strong>₩{priceFormatter.format(product.salePrice)}</strong>
@@ -962,41 +963,40 @@ export function PricingClient({
                 disabled={busy !== null}
                 onClick={() => void buyEarlyBird(product)}
               >
-                {busy === product.code ? "결제 중..." : "구매"}
+                {ui(busy === product.code ? "결제 중..." : "구매")}
               </button>
             </article>
           ))}
         </div>
         <p className={styles.earlyBirdNote}>
-          활성 이용권 보유자만 구매 가능 · 상품별 계정당 1회 · 구매일로부터 90일 유효 · 다른 할인과 중복 불가
-        </p>
+          {ui("활성 이용권 보유자만 구매 가능 · 상품별 계정당 1회 · 구매일로부터 90일 유효 · 다른 할인과 중복 불가")}</p>
       </section>
 
       {!ancillaryOnly && (
         <section className="pricing-comparison" aria-labelledby="pricing-two-comparison">
         <div className="pricing-section-heading">
-          <h2 id="pricing-two-comparison">상품 한눈에 보기</h2>
+          <h2 id="pricing-two-comparison">{ui("상품 한눈에 보기")}</h2>
         </div>
         <div className="pricing-comparison-table-wrap">
           <table className="pricing-comparison-table">
             <thead>
               <tr>
-                <th>구분</th>
-                <th>이지컷 프로</th>
-                <th className="pricing-comparison-popular">스타터</th>
-                <th>전문가</th>
+                <th>{ui("구분")}</th>
+                <th>{ui("이지컷 프로")}</th>
+                <th className="pricing-comparison-popular">{ui("스타터")}</th>
+                <th>{ui("전문가")}</th>
               </tr>
             </thead>
             <tbody>
               {comparisonRows.map((row) => (
                 <tr key={row.label}>
-                  <th>{row.label}</th>
+                  <th>{ui(row.label)}</th>
                   {row.values.map((value, index) => (
                     <td
                 key={`${row.label}-${index}`}
                       className={row.label === "전략 가이드 PDF" && index === 0 ? styles.unavailableCell : ""}
                     >
-                      {value}
+                      {ui(value)}
                     </td>
                   ))}
                 </tr>
@@ -1042,7 +1042,7 @@ export function PricingClient({
         />
       ) : (
         <ThePayOnePaymentOverlay
-          title="카드 정보"
+          title={ui("카드 정보")}
           busy={Boolean(busy)}
           primaryDisabled={
             ![6, 10].includes(digits(cardAuth.identityNumber, 10).length)
@@ -1070,8 +1070,7 @@ export function PricingClient({
             )}
             <div className="grid grid-cols-2 gap-3">
               <label className="min-w-0 text-xs font-bold text-neutral-300">
-                생년월일 또는 사업자번호
-                <input
+                {ui("생년월일 또는 사업자번호")}<input
                   data-payment-autofocus
                   required
                   inputMode="numeric"
@@ -1083,13 +1082,12 @@ export function PricingClient({
                     ...current,
                     identityNumber: digits(event.target.value, 10),
                   }))}
-                  placeholder="6자리 또는 10자리"
+                  placeholder={ui("6자리 또는 10자리")}
                   className="mt-2 min-h-14 w-full rounded-2xl border border-white/10 bg-[#101315] px-4 text-base text-white outline-none transition placeholder:text-neutral-600 focus:border-[#ff8f80]/70 focus:ring-4 focus:ring-[#ff715e]/10"
                 />
               </label>
               <label className="min-w-0 text-xs font-bold text-neutral-300">
-                카드 비밀번호 앞 2자리
-                <input
+                {ui("카드 비밀번호 앞 2자리")}<input
                   required
                   type="password"
                   inputMode="numeric"
@@ -1107,8 +1105,7 @@ export function PricingClient({
             </div>
             {!state?.billing.hasStoredPayerTel && (
               <label className="text-xs font-bold text-neutral-300">
-                휴대전화 번호
-                <input
+                {ui("휴대전화 번호")}<input
                   required
                   inputMode="numeric"
                   autoComplete="tel"
@@ -1135,7 +1132,7 @@ export function PricingClient({
       <PaymentMessageOverlay
         open={resubscribeConfirmationOpen}
         tone="info"
-        title={`${priceFormatter.format(resubscribeChargeAmountKrw)}원이 즉시 결제됩니다`}
+        title={ui(`${priceFormatter.format(resubscribeChargeAmountKrw)}원이 즉시 결제됩니다`)}
         message={[
           "다시 구독하기는 해지 예약을 취소하는 절차가 아니라 새로운 유료 결제입니다.",
           `계속하면 이지컷 프로 월 이용료 ${priceFormatter.format(resubscribeChargeAmountKrw)}원이 저장 카드로 바로 결제됩니다.`,
@@ -1169,7 +1166,7 @@ export function PricingClient({
         />
       ) : (
         <ThePayOnePaymentOverlay
-          title="카드 정보"
+          title={ui("카드 정보")}
           busy={Boolean(busy)}
           primaryDisabled={
             ![6, 10].includes(digits(resubscribeAuth.identityNumber, 10).length)
@@ -1194,8 +1191,7 @@ export function PricingClient({
             )}
             <div className="grid grid-cols-2 gap-3">
               <label className="min-w-0 text-xs font-bold text-neutral-300">
-                생년월일 또는 사업자번호
-                <input
+                {ui("생년월일 또는 사업자번호")}<input
                   data-payment-autofocus
                   required
                   inputMode="numeric"
@@ -1207,13 +1203,12 @@ export function PricingClient({
                     ...current,
                     identityNumber: digits(event.target.value, 10),
                   } : current)}
-                  placeholder="6자리 또는 10자리"
+                  placeholder={ui("6자리 또는 10자리")}
                   className="mt-2 min-h-14 w-full rounded-2xl border border-white/10 bg-[#101315] px-4 text-base text-white outline-none transition placeholder:text-neutral-600 focus:border-[#ff8f80]/70 focus:ring-4 focus:ring-[#ff715e]/10"
                 />
               </label>
               <label className="min-w-0 text-xs font-bold text-neutral-300">
-                카드 비밀번호 앞 2자리
-                <input
+                {ui("카드 비밀번호 앞 2자리")}<input
                   required
                   type="password"
                   inputMode="numeric"
@@ -1242,7 +1237,7 @@ export function PricingClient({
       <PaymentMessageOverlay
         open={Boolean(error)}
         tone="error"
-        title="결제를 확인해 주세요"
+        title={ui("결제를 확인해 주세요")}
         message={error || ""}
         onClose={() => setError(null)}
       />
@@ -1250,7 +1245,7 @@ export function PricingClient({
       <PaymentMessageOverlay
         open={Boolean(earlyBirdSuccess)}
         tone="success"
-        title="추가시간 충전 완료"
+        title={ui("추가시간 충전 완료")}
         highlight={earlyBirdSuccess
           ? <AnimatedMinuteCredit minutes={earlyBirdSuccess.minutes} />
           : null}
@@ -1270,7 +1265,7 @@ export function PricingClient({
       {previewMessage && (
         <div className={styles.previewToast} role="status">
           <span>{previewMessage}</span>
-          <button type="button" onClick={() => setPreviewMessage(null)} aria-label="안내 닫기">×</button>
+          <button type="button" onClick={() => setPreviewMessage(null)} aria-label={ui("안내 닫기")}>×</button>
         </div>
       )}
     </>

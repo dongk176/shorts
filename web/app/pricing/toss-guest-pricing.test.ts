@@ -41,8 +41,8 @@ describe("guest Toss pricing", () => {
 
   it("fixes Pro to monthly and exposes only 3, 6, and 12 months for packages", () => {
     expect(tossSource).toContain("const PACKAGE_TERMS = [3, 6, 12] as const");
-    expect(tossSource).toContain("<span>패키지 이용기간</span>");
-    expect(tossSource).toContain('aria-label="패키지 이용기간"');
+    expect(tossSource).toContain('<span>{ui("패키지 이용기간")}</span>');
+    expect(tossSource).toContain('aria-label={ui("패키지 이용기간")}');
     expect(tossSource).toContain('? plan.contractMonths === 1');
     expect(tossSource).not.toContain('term === 1 ? "월간"');
   });
@@ -70,10 +70,10 @@ describe("guest Toss pricing", () => {
 
   it("keeps the maximum-discount badge the same size as the best-value badge", () => {
     expect(tossSource).toContain(
-      '<span className={`pricing-badge ${styles.localReasonableBadge}`}>가장 합리적</span>',
+      '<span className={`pricing-badge ${styles.localReasonableBadge}`}>{ui("가장 합리적")}</span>',
     );
     expect(tossSource).toContain(
-      '<span className={`pricing-badge ${styles.localReasonableBadge}`}>최대 할인</span>',
+      '<span className={`pricing-badge ${styles.localReasonableBadge}`}>{ui("최대 할인")}</span>',
     );
   });
 

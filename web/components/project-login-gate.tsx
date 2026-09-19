@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import { useEffect, useState } from "react";
 import { AuthControls } from "@/components/auth-controls";
 import { SiteFooter } from "@/components/site-footer";
@@ -40,6 +42,7 @@ export function ProjectLoginRequiredPage({
 }: {
   projectNumber: number;
 }) {
+  const ui = useUiText();
   const next = `/projects/${projectNumber}`;
   const [loginOpen, setLoginOpen] = useState(false);
 
@@ -71,18 +74,15 @@ export function ProjectLoginRequiredPage({
             Project /{projectNumber}
           </p>
           <h1 className="relative mt-3 text-2xl font-black tracking-[-.045em] text-white sm:text-3xl">
-            로그인하면 프로젝트를 바로 확인할 수 있어요
-          </h1>
+            {ui("로그인하면 프로젝트를 바로 확인할 수 있어요")}</h1>
           <p className="relative mx-auto mt-4 max-w-xl text-sm leading-7 text-neutral-400 sm:text-[15px]">
-            내 프로젝트로 확인되면 로그인 직후 같은 페이지로 자동 이동합니다.
-            다른 사람의 프로젝트 내용은 표시하지 않아요.
-          </p>
+            {ui("내 프로젝트로 확인되면 로그인 직후 같은 페이지로 자동 이동합니다. 다른 사람의 프로젝트 내용은 표시하지 않아요.")}</p>
           <button
             type="button"
             onClick={() => setLoginOpen(true)}
             className="relative mt-8 inline-flex min-h-12 items-center justify-center rounded-xl bg-white px-6 text-sm font-black text-black transition hover:-translate-y-0.5 hover:bg-neutral-200"
           >
-            로그인하고 프로젝트 보기 <span className="ml-2" aria-hidden="true">→</span>
+            {ui("로그인하고 프로젝트 보기 ")}<span className="ml-2" aria-hidden="true">→</span>
           </button>
         </section>
       </main>

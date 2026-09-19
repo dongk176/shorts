@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import Link from "@/lib/i18n/navigation";
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -17,6 +19,7 @@ export function PopularFiltersPlanOverlay({
   onClose: () => void;
   onRequireLogin: () => void;
 }) {
+  const ui = useUiText();
   const confirmRef = useRef<HTMLAnchorElement | HTMLButtonElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
 
@@ -84,10 +87,10 @@ export function PopularFiltersPlanOverlay({
         </div>
         <p className="relative mt-5 text-[11px] font-black uppercase tracking-[.18em] text-[#ff9b8d]">Easy Cut Paid</p>
         <h2 id="popular-filter-plan-title" className="relative mt-2 text-2xl font-black tracking-[-.04em] text-white">
-          {title}
+          {ui(title)}
         </h2>
         <p id="popular-filter-plan-description" className="relative mt-4 text-sm leading-6 text-neutral-400">
-          {description}
+          {ui(description)}
         </p>
         <div className="relative mt-7 grid gap-2.5">
           {isAuthenticated ? (
@@ -121,8 +124,7 @@ export function PopularFiltersPlanOverlay({
             onClick={onClose}
             className="min-h-11 rounded-xl border border-white/10 px-5 text-sm font-bold text-neutral-300 transition hover:border-white/25 hover:text-white"
           >
-            닫기
-          </button>
+            {ui("닫기")}</button>
         </div>
       </section>
     </div>,

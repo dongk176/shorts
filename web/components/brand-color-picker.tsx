@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import { useEffect, useId, useRef, useState } from "react";
 import {
   templatePresetColorOptions,
@@ -18,6 +20,7 @@ export function BrandColorPicker({
   disabled?: boolean;
   disabledReason?: string;
 }) {
+  const ui = useUiText();
   const [open, setOpen] = useState(false);
   const pickerId = useId();
   const disabledReasonId = `${pickerId}-disabled-reason`;
@@ -55,9 +58,9 @@ export function BrandColorPicker({
       key={option.color}
       type="button"
       disabled={disabled}
-      aria-label={`${option.name} 브랜드 컬러`}
+      aria-label={ui(`${option.name} 브랜드 컬러`)}
       aria-pressed={value === option.color}
-      title={option.name}
+      title={ui(option.name)}
       onClick={() => {
         onChange(option.color);
         if (!compact) setOpen(false);
@@ -77,9 +80,9 @@ export function BrandColorPicker({
       aria-describedby={disabled && disabledReason ? disabledReasonId : undefined}
       className="w-full min-w-0"
     >
-      <legend className="sr-only">브랜드 컬러</legend>
+      <legend className="sr-only">{ui("브랜드 컬러")}</legend>
       <div ref={rootRef} className={`relative grid min-w-0 grid-cols-[72px_minmax(0,1fr)] items-center gap-3 transition-opacity ${disabled ? "opacity-[.45]" : ""}`}>
-        <span className="w-[72px] shrink-0 text-xs font-semibold text-neutral-400">브랜드 컬러</span>
+        <span className="w-[72px] shrink-0 text-xs font-semibold text-neutral-400">{ui("브랜드 컬러")}</span>
         <div className="flex min-w-0 max-w-full items-center gap-2">
           {displayedCompactOptions.map((option, index) => colorButton(
             option,
@@ -91,22 +94,22 @@ export function BrandColorPicker({
           <button
             type="button"
             disabled={disabled}
-            aria-label="브랜드 컬러 더 보기"
+            aria-label={ui("브랜드 컬러 더 보기")}
             aria-expanded={expanded}
             aria-controls={pickerId}
-            title="더 많은 브랜드 컬러 보기"
+            title={ui("더 많은 브랜드 컬러 보기")}
             onClick={() => setOpen((current) => !current)}
             className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/15 bg-white/[.06] text-base font-bold leading-none text-white transition hover:border-white/35 hover:bg-white/[.11]"
           >
             {expanded ? "−" : "+"}
           </button>
-          <span className="hidden truncate text-[11px] font-semibold text-neutral-500 sm:block">{selected?.name}</span>
+          <span className="hidden truncate text-[11px] font-semibold text-neutral-500 sm:block">{ui(selected?.name)}</span>
         </div>
         {expanded && (
           <div
             id={pickerId}
             role="group"
-            aria-label="전체 브랜드 컬러"
+            aria-label={ui("전체 브랜드 컬러")}
             className="absolute left-0 top-[calc(100%+10px)] z-40 grid max-w-[calc(100vw-64px)] grid-cols-5 gap-2 rounded-xl border border-white/15 bg-[#171719]/95 p-3 shadow-2xl backdrop-blur-xl sm:left-[84px] sm:grid-cols-6"
           >
             {templatePresetColorOptions.map((option) => colorButton(option))}
