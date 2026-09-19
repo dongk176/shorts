@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
+import { localizedRedirectPath } from "@/lib/i18n/server";
 
-export default function LegacyPricingTwoPage() {
-  redirect("/pricing");
+export default async function LegacyPricingTwoPage() {
+  redirect(await localizedRedirectPath("/pricing"));
 }

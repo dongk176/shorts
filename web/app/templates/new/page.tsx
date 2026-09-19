@@ -1,4 +1,5 @@
 import { notFound, redirect } from "next/navigation";
+import { localizedRedirectPath } from "@/lib/i18n/server";
 import { TemplateEditor } from "../template-editor";
 import {
   createDefaultTemplateConfig,
@@ -27,7 +28,7 @@ export default async function NewTemplatePage({ searchParams }: { searchParams: 
   const { base, preset } = await searchParams;
   const baseTemplateId = (templateIds.includes(base as TemplateId) ? base : "dark-minimal") as TemplateId;
   const next = `/templates/new${preset ? `?preset=${encodeURIComponent(preset)}` : base ? `?base=${encodeURIComponent(base)}` : ""}`;
-  if (!user) redirect(`/auth/sign-in?next=${encodeURIComponent(next)}`);
+  if (!user) redirect(await localizedRedirectPath(`/auth/sign-in?next=${encodeURIComponent(next)}`));
   const session = await requireMvpSession(user, { createIfMissing: false });
   const db = getDb();
   const [subtitleEditorContext, billing, designAccess] = await Promise.all([
@@ -40,8 +41,8 @@ export default async function NewTemplatePage({ searchParams }: { searchParams: 
   const subtitleVariant = preset ? subtitlePresetVariants[preset] : null;
   if (preset && !subtitleVariant) notFound();
   if (!billingSupportsCustomTemplates(billing)) {
-    if (subtitleVariant) redirect(`/?subtitleTemplate=${subtitleVariant}`);
-    redirect("/pricing");
+    if (subtitleVariant) redirect(await localizedRedirectPath(`/?subtitleTemplate=${subtitleVariant}`));
+    redirect(await localizedRedirectPath("/pricing"));
   }
   if (preset && !unifiedSubtitleCanaryEnabled) notFound();
 

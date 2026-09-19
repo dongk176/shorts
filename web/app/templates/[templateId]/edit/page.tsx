@@ -1,4 +1,5 @@
 import { notFound, redirect } from "next/navigation";
+import { localizedRedirectPath } from "@/lib/i18n/server";
 import { customTemplateFromRow } from "@/lib/custom-templates";
 import { getDb } from "@/lib/db";
 import { getCustomTemplateDesignAccess } from "@/lib/custom-template-design-access";
@@ -19,7 +20,7 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ t
   const { templateId } = await params;
   const user = await getAuthenticatedUser();
   const next = `/templates/${templateId}/edit`;
-  if (!user) redirect(`/auth/sign-in?next=${encodeURIComponent(next)}`);
+  if (!user) redirect(await localizedRedirectPath(`/auth/sign-in?next=${encodeURIComponent(next)}`));
   const session = await requireMvpSession(user, { createIfMissing: false });
   const db = getDb();
   const [rows, subtitleEditorContext, billing, designAccess] = await Promise.all([
@@ -33,7 +34,7 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ t
   ]);
   const subtitleAccess = subtitleEditorContext.subtitleAccess;
   if (!rows[0]) notFound();
-  if (!billingSupportsCustomTemplates(billing)) redirect("/pricing");
+  if (!billingSupportsCustomTemplates(billing)) redirect(await localizedRedirectPath("/pricing"));
   const template = customTemplateFromRow(rows[0]);
   if (isTemplateConfigV5(template.config) && !subtitleAccess.unifiedEnabled) notFound();
   const initialConfig = subtitleAccess.unifiedEnabled

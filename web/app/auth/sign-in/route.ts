@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authFailureUrl, OAUTH_NEXT_COOKIE, requestAppOrigin, safeNextPath } from "@/lib/auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { localePath, localizedHref } from "@/lib/i18n/routing";
 
 export async function GET(request: NextRequest) {
   const next = safeNextPath(request.nextUrl.searchParams.get("next"));
   try {
     const provider = request.nextUrl.searchParams.get("provider");
     if (!provider) {
-      const target = new URL("/", requestAppOrigin(request));
+      const target = new URL(localizedHref("/", localePath(next).locale), requestAppOrigin(request));
       target.searchParams.set("login", "1");
       target.searchParams.set("next", next);
       return NextResponse.redirect(target, { status: 303 });

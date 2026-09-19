@@ -19,11 +19,5 @@ export async function getRequestMessages() {
 }
 
 export async function localizedRedirectPath(href: string) {
-  const locale = await getRequestLocale();
-  if (href.startsWith("/auth/sign-in?")) {
-    const url = new URL(href, "https://local.invalid");
-    url.searchParams.set("next", localizedHref(url.searchParams.get("next") || "/", locale));
-    return `${url.pathname}${url.search}`;
-  }
-  return localizedHref(href, locale);
+  return localizedHref(href, await getRequestLocale());
 }

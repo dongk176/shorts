@@ -12,6 +12,18 @@ describe("site language routes", () => {
     expect(localizedHref("/jp?draft=1#workspace", "ko")).toBe("/?draft=1#workspace");
     expect(localizedHref("/jp", "en")).toBe("/en");
   });
+  it("keeps login on the shared endpoint and localizes its return page", () => {
+    const login = new URL(localizedHref("/auth/sign-in?provider=google&next=%2Ftemplates%2Fnew%3Fbase%3Dpaper%23design", "ja"), "https://local.invalid");
+    expect(login.pathname).toBe("/auth/sign-in");
+    expect(login.searchParams.get("provider")).toBe("google");
+    expect(login.searchParams.get("next")).toBe("/jp/templates/new?base=paper#design");
+    expect(localizedHref("/auth/sign-in", "en")).toBe("/auth/sign-in?next=%2Fen");
+    expect(localizedHref("/auth/sign-in?next=%2Fjp%2Fprojects", "ko")).toBe("/auth/sign-in?next=%2Fprojects");
+  });
+  it.each(["/admin/easycutcutcutcutcutcut", "/enterprise-pay/token", "/auth/sign-in?next=/projects", "//external.example/projects", "https://external.example/projects"])("does not rewrite shared or external login destination %s", (next) => {
+    const href = `/auth/sign-in?next=${encodeURIComponent(next)}`;
+    expect(localizedHref(href, "ja")).toBe(href);
+  });
   it.each(["/api/jobs", "/auth/callback?code=x", "/admin/easycutcutcutcutcutcut", "/east-cut-logo.png", "/creator-project/share-token", "/content-calendar", "//external.example", "https://example.com", "#results"])('leaves shared and external address %s alone', (path) => {
     expect(localizedHref(path, "ja")).toBe(path);
     expect(isLocalizedPage(path)).toBe(false);

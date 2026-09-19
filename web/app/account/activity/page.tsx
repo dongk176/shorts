@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { localizedRedirectPath } from "@/lib/i18n/server";
 import { AuthControls } from "@/components/auth-controls";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
@@ -16,7 +17,7 @@ export default async function AccountActivityPage() {
   try {
     session = await requireAuthenticatedMvpSession({ createIfMissing: false });
   } catch (error) {
-    if (error instanceof HttpError && error.status === 401) redirect("/auth/sign-in?next=/account/activity");
+    if (error instanceof HttpError && error.status === 401) redirect(await localizedRedirectPath("/auth/sign-in?next=/account/activity"));
     throw error;
   }
   return (

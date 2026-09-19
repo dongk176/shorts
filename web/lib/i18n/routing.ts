@@ -32,6 +32,17 @@ export function localizedHref(href: string, locale: SiteLocale): string {
   // slice, rather than rebuilding URLSearchParams, preserves query/hash bytes.
   const tail = href.slice(path.length);
   const { pathname } = localePath(path);
+  // Authentication stays on its shared endpoint; its destination is a page.
+  if (path === "/auth/sign-in") {
+    const url = new URL(href, "https://local.invalid");
+    const next = url.searchParams.get("next") || "/";
+    const nextPath = localePath(next.split(/[?#]/, 1)[0]).pathname;
+    if (isLocalizedPage(nextPath)) {
+      url.searchParams.set("next", localizedHref(next, locale));
+      return `${url.pathname}${url.search}${url.hash}`;
+    }
+    return href;
+  }
   if (!isLocalizedPage(pathname)) return href;
   return `${prefixes[locale]}${pathname === "/" ? (locale === "ko" ? "/" : "") : pathname}${tail}`;
 }

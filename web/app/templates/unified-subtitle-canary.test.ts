@@ -41,8 +41,8 @@ describe("unified template subtitle access", () => {
     expect(newPageSource).not.toContain("session.isAdmin === true");
     expect(editPageSource).not.toContain("session.isAdmin === true");
     expect(newPageSource).toContain("if (!billingSupportsCustomTemplates(billing))");
-    expect(newPageSource).toContain("if (subtitleVariant) redirect(`/?subtitleTemplate=${subtitleVariant}`)");
-    expect(editPageSource).toContain("if (!billingSupportsCustomTemplates(billing)) redirect(\"/pricing\")");
+    expect(newPageSource).toContain("if (subtitleVariant) redirect(await localizedRedirectPath(`/?subtitleTemplate=${subtitleVariant}`))");
+    expect(editPageSource).toContain("if (!billingSupportsCustomTemplates(billing)) redirect(await localizedRedirectPath(\"/pricing\"))");
   });
 
   it("offers the agreed saveable subtitle controls while fixing horizontal position", () => {
