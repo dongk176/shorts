@@ -9,8 +9,8 @@ const outputLanguageNames: Record<SiteLocale, Record<OutputLanguage, string>> = 
 
 const aspectRatioNames: Record<SiteLocale, Record<VideoAspectRatio, string>> = {
   ko: { "16:9": "가로모드", "5:4": "가로 5:4", "1:1": "정사각형", "4:5": "세로형", "9:16": "세로 꽉참" },
-  en: { "16:9": "Landscape", "5:4": "Landscape 5:4", "1:1": "Square", "4:5": "Portrait", "9:16": "Full portrait" },
-  ja: { "16:9": "横向き", "5:4": "横向き 5:4", "1:1": "正方形", "4:5": "縦向き", "9:16": "縦画面いっぱい" },
+  en: { "16:9": "Landscape", "5:4": "Landscape 5:4", "1:1": "Square", "4:5": "Portrait", "9:16": "Full-height portrait" },
+  ja: { "16:9": "横向き", "5:4": "横向き 5:4", "1:1": "正方形", "4:5": "縦向き", "9:16": "縦長（全画面）" },
 };
 
 export function outputLanguageName(code: OutputLanguage, locale: SiteLocale) {

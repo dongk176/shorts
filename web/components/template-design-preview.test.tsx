@@ -1,5 +1,5 @@
-import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
+import { createElement, type ReactNode } from "react";
+import { renderToStaticMarkup as renderMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { CustomTemplateCanvasPreview } from "@/components/custom-template-canvas-preview";
@@ -8,6 +8,14 @@ import { EditorTextOverlayControls } from "@/components/editor-text-overlay-cont
 import { TemplateEditor } from "@/app/templates/template-editor";
 import { addTemplateTextOverlay, templateTextRenderSpec } from "@/lib/template-design-preview";
 import { createDefaultTemplateConfig, type CustomTemplate } from "@/lib/template-config";
+
+import { I18nProvider } from "@/lib/i18n/provider";
+import { messagesByLocale } from "@/lib/i18n/messages";
+import type { SiteLocale } from "@/lib/i18n/config";
+
+function renderToStaticMarkup(children: ReactNode, locale: SiteLocale = "ko") {
+  return renderMarkup(<I18nProvider locale={locale} messages={messagesByLocale[locale]}>{children}</I18nProvider>);
+}
 
 const templateEditorSource = readFileSync(
   new URL("../app/templates/template-editor.tsx", import.meta.url),
@@ -24,6 +32,15 @@ const template: CustomTemplate = {
 };
 
 describe("template design presentation", () => {
+  it.each(["en", "ja"] as const)("localizes %s preview examples while preserving authored overlays", (locale) => {
+    const html = renderToStaticMarkup(createElement(TemplateEditor, {
+      initialTemplate: template, baseTemplateId: "dark-minimal", initialConfig: config,
+    }), locale);
+    expect(html).toContain("첫 줄");
+    expect(html).toContain(locale === "en" ? "The decisive moment" : "決定的な瞬間");
+    expect(html).not.toContain("결정적 순간");
+  });
+
   it("renders uploaded backgrounds and fixed text in a card without nested controls", () => {
     const html = renderToStaticMarkup(createElement(CustomTemplateCanvasPreview, {
       template, firstLine: "제목", secondLine: "두 번째 줄", channelLabel: "채널",

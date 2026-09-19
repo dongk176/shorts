@@ -1,5 +1,8 @@
 "use client";
 
+import { useI18n } from "@/lib/i18n/provider";
+import { translateLegacyText } from "@/lib/i18n/legacy-phrases";
+
 import { browserLocalizedHref } from "@/lib/i18n/routing";
 
 import { PaymentMessageOverlay } from "@/components/payment-message-overlay";
@@ -137,6 +140,7 @@ export function PlanCheckoutOverlay({
   preferredInstallmentMonths?: number;
   onClose: () => void;
 }) {
+  const { locale, t } = useI18n();
   const isOneTimeProduct = product.kind === "package" || product.kind === "addon";
   const defaultInstallmentMonths = preferredInstallmentMonths
     ?? (product.kind === "package" ? product.durationMonths : undefined);
@@ -1131,7 +1135,7 @@ export function PlanCheckoutOverlay({
                       이용기간
                     </span>
                     <strong className="mt-1 block text-base font-black text-white">
-                      {product.durationMonths}개월
+                      {t("pricing.months", { count: product.durationMonths })}
                     </strong>
                   </div>
                   <div className="border-l border-white/10 pl-3">
@@ -1139,13 +1143,12 @@ export function PlanCheckoutOverlay({
                       결제 할부
                     </span>
                     <strong className="mt-1 block text-base font-black text-[#ffad9f]">
-                      최대 {MANUAL_INSTALLMENT_MAX_MONTHS}개월
+                      {t("checkout.maxInstallments", { months: MANUAL_INSTALLMENT_MAX_MONTHS })}
                     </strong>
                   </div>
                 </div>
                 <p className="mt-3 text-xs font-medium leading-5 text-neutral-400">
-                  일시불 또는 2~{MANUAL_INSTALLMENT_MAX_MONTHS}개월 중 선택할 수 있으며,
-                  카드사 정책에 따라 제한될 수 있습니다.
+                  {t("checkout.installmentsHint", { months: MANUAL_INSTALLMENT_MAX_MONTHS })}
                 </p>
                 {mode === "change_subscription"
                   && changeQuote?.refund?.mode === "automatic_full"
@@ -1155,9 +1158,7 @@ export function PlanCheckoutOverlay({
                       패키지 결제 완료 즉시 전환
                     </strong>
                     <p className="mt-1 text-xs font-medium leading-5 text-neutral-300">
-                      {changeQuote.currentPlanDisplayName || "이지컷 프로"} 결제금액
-                      {" "}{priceFormatter.format(changeQuote.refund.amountKrw)}원은 전액 환불 대상이며, 새 이용권과 사용량은 결제 완료 즉시 적용됩니다.
-                      자동 환불이 지연되면 담당자가 별도로 환불해 드립니다. 기존 프로 이용시간은 종료됩니다.
+                      {t("checkout.switchRefund", { plan: translateLegacyText(changeQuote.currentPlanDisplayName || "이지컷 프로", locale), amount: priceFormatter.format(changeQuote.refund.amountKrw) })}
                     </p>
                   </div>
                 )}
@@ -1449,7 +1450,7 @@ export function PlanCheckoutOverlay({
                             className="mt-2 rounded-xl border border-[#ff9b8d]/25 bg-[#ff715e]/8 px-3 py-2 text-sm font-bold leading-5 text-[#ffb0a6]"
                             role="status"
                           >
-                            해당 카드는 최대 {providerMaxInstallmentMonths}개월 할부까지 지원합니다.
+                            {t("checkout.cardInstallments", { months: providerMaxInstallmentMonths })}
                           </p>
                         )}
                         <InstallmentSelect

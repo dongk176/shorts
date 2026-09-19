@@ -1,5 +1,8 @@
 "use client";
 
+import { useI18n } from "@/lib/i18n/provider";
+import { translateLegacyText } from "@/lib/i18n/legacy-phrases";
+
 import Link from "@/lib/i18n/navigation";
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
@@ -240,6 +243,7 @@ export function TemplateEditor({
   customTemplateDesignEnabled?: boolean;
   suggestedName?: string;
 }) {
+  const { locale } = useI18n();
   const commentLayerEnabled = baseTemplateId === "comment-capture";
   const [history, setHistory] = useState<History>({ past: [], present: initialConfig, future: [] });
   const initialName = initialTemplate?.name || suggestedName || "나의 템플릿";
@@ -270,9 +274,10 @@ export function TemplateEditor({
     ? extraTexts.find((text) => text.id === selectedLayer.slice(5)) || null
     : null;
   const hasDesignOrder = hasTemplateDesignLayerOrder(config);
-  const previewTitleLines = isTemplateConfigV5(config) && config.subtitle.visible
+  const previewTitleLines = (isTemplateConfigV5(config) && config.subtitle.visible
     ? (["AI가 고른 오늘의", "핵심 장면"] as const)
-    : templatePresetPresentation[baseTemplateId].titleLines;
+    : templatePresetPresentation[baseTemplateId].titleLines)
+    .map((line) => translateLegacyText(line, locale));
   const dirty = JSON.stringify({ name, config }) !== baselineRef.current;
   const unifiedSubtitleConfigEnabled = unifiedSubtitleCanaryEnabled && isTemplateConfigV5(config);
   const positionedWordsV4Enabled = isEditorRenderSpecV4Enabled();
@@ -843,6 +848,7 @@ export function TemplateEditor({
                       />}
                   {unifiedSubtitleConfigEnabled && isTemplateConfigV5(config)
                     ? <TemplateSubtitlePreview
+                        previewLocale={locale}
                         subtitle={config.subtitle}
                         selected={selectedLayer === "subtitle"}
                         onPointerDown={(event) => beginPointerAction(event, "subtitle")}
@@ -851,7 +857,7 @@ export function TemplateEditor({
                     : null}
                   {config.channel.visible && !commentLayerEnabled && <button type="button" onPointerDown={(event) => beginPointerAction(event, "channel")} className={`absolute z-30 cursor-move truncate rounded px-[1.8cqw] py-[.8cqw] text-center font-bold ${selectedLayer === "channel" ? "outline outline-2 outline-[#ff715e]" : ""}`} style={{ ...customCenteredLayerStyle(config.channel), color: config.channel.color, backgroundColor: config.channel.backgroundColor || "transparent", fontSize: customCanvasWidth(config.channel.fontSize), zIndex: templateDesignLayerZIndex(config, "channel") }}>● Easy Cut</button>}
                   {commentLayerEnabled && <div className={`absolute inset-x-0 ${hasDesignOrder ? "" : "z-40"}`} style={{ top: `${(commentY / TEMPLATE_CANVAS.height) * 100}%` }}>
-                    {config.comment.visible && <div style={hasDesignOrder ? { position: "relative", zIndex: templateDesignLayerZIndex(config, "comment") } : undefined}><TemplateCommentPrototype selected={selectedLayer === "comment"} theme={config.comment.theme} size={config.comment.size} comment={TEMPLATE_PRESET_COMMENT_SAMPLE} onSelect={() => selectLayer("comment")} onPointerDown={beginCommentPointerAction} /></div>}
+                    {config.comment.visible && <div style={hasDesignOrder ? { position: "relative", zIndex: templateDesignLayerZIndex(config, "comment") } : undefined}><TemplateCommentPrototype selected={selectedLayer === "comment"} theme={config.comment.theme} size={config.comment.size} comment={{ ...TEMPLATE_PRESET_COMMENT_SAMPLE, ageLabel: locale === "en" ? "5 months ago" : locale === "ja" ? "5か月前" : TEMPLATE_PRESET_COMMENT_SAMPLE.ageLabel, text: locale === "en" ? "Okay, that made me laugh 😂" : locale === "ja" ? "これは笑った😂" : TEMPLATE_PRESET_COMMENT_SAMPLE.text }} onSelect={() => selectLayer("comment")} onPointerDown={beginCommentPointerAction} /></div>}
                     {config.channel.visible && <button type="button" onClick={() => selectLayer("channel")} onPointerDown={(event) => beginCanvasTargetTap(event, "channel")} className={`${config.schemaVersion >= 4 ? "absolute left-1/2" : "relative mx-auto mt-[2cqw] block"} z-30 truncate rounded px-[1.8cqw] py-[.8cqw] text-center font-bold ${selectedLayer === "channel" ? "outline outline-2 outline-[#ff715e]" : ""}`} style={{ top: config.schemaVersion >= 4 ? customCanvasWidth(config.channel.y - commentY) : undefined, transform: config.schemaVersion >= 4 ? "translate(-50%, -50%)" : undefined, width: customCanvasWidth(config.channel.maxWidth), color: config.channel.color, backgroundColor: config.channel.backgroundColor || "transparent", fontSize: customCanvasWidth(config.channel.fontSize), zIndex: templateDesignLayerZIndex(config, "channel") }}>● Easy Cut</button>}
                   </div>}
                   {extraTexts.map((text) => customTemplateDesignEnabled

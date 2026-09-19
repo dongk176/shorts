@@ -224,6 +224,7 @@ function featureContent(text: string, strong?: string) {
 }
 
 function AnimatedMinuteCredit({ minutes }: { minutes: number }) {
+  const { t } = useI18n();
   const [displayedMinutes, setDisplayedMinutes] = useState(1);
 
   useEffect(() => {
@@ -247,12 +248,12 @@ function AnimatedMinuteCredit({ minutes }: { minutes: number }) {
 
   return (
     <div className="relative mt-5">
-      <span className="sr-only">{priceFormatter.format(minutes)}분 추가</span>
+      <span className="sr-only">{t("pricing.addedMinutes", { minutes: priceFormatter.format(minutes) })}</span>
       <strong
         aria-hidden="true"
         className="inline-flex min-h-14 items-center rounded-2xl border border-[#ff8c7c]/25 bg-[#ff715e]/10 px-5 text-3xl font-black tabular-nums tracking-[-.04em] text-[#ffad9f]"
       >
-        +{priceFormatter.format(displayedMinutes)}분
+        +{priceFormatter.format(displayedMinutes)} {t("common.minuteUnit")}
       </strong>
     </div>
   );

@@ -1,5 +1,9 @@
 "use client";
 
+import { useI18n } from "@/lib/i18n/provider";
+import { formatSeoulDate } from "@/lib/i18n/format";
+import { translateLegacyText } from "@/lib/i18n/legacy-phrases";
+
 import Link from "@/lib/i18n/navigation";
 import { useState } from "react";
 import { AuthControls } from "@/components/auth-controls";
@@ -17,15 +21,6 @@ import {
 type ConfirmAction = "cancel" | "resume" | null;
 type Result = { title: string; detail: string } | null;
 
-function date(value: string) {
-  return new Intl.DateTimeFormat("ko-KR", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    timeZone: "Asia/Seoul",
-  }).format(new Date(value));
-}
-
 async function post(url: string, body: Record<string, unknown>) {
   const response = await fetch(url, {
     method: "POST",
@@ -38,16 +33,11 @@ async function post(url: string, body: Record<string, unknown>) {
   if (!response.ok) throw new Error(payload.detail || "요청을 완료하지 못했습니다.");
 }
 
-function planScheduleCopy(plan: ManagedPlan, hasNextPlan: boolean) {
-  if (plan.cancelAtPeriodEnd) return `${date(plan.periodEnd)} 이용 종료 예정`;
-  if (hasNextPlan) return `${date(plan.periodEnd)}까지 현재 혜택`;
-  if (plan.kind === "subscription" && plan.nextChargeAt) {
-    return `${date(plan.nextChargeAt)} 다음 갱신`;
-  }
-  return `${date(plan.periodEnd)}까지 이용`;
-}
-
 function PlanCard({ plan, hasNextPlan }: { plan: ManagedPlan; hasNextPlan: boolean }) {
+  const { locale, t } = useI18n();
+  const date = (value: string) => formatSeoulDate(value, locale);
+  const schedule = plan.cancelAtPeriodEnd ? "plan.ends" : hasNextPlan ? "plan.benefitsUntil"
+    : plan.kind === "subscription" && plan.nextChargeAt ? "plan.renews" : "plan.until";
   return (
     <article className="rounded-[24px] border border-white/[.09] bg-[#191c1e]/90 p-6 shadow-[0_24px_80px_rgba(0,0,0,.2)] sm:p-8">
       <div className="flex flex-wrap items-center gap-2">
@@ -69,26 +59,26 @@ function PlanCard({ plan, hasNextPlan }: { plan: ManagedPlan; hasNextPlan: boole
       <h2 className="mt-5 text-3xl font-black tracking-tight text-white">{plan.name}</h2>
       <div className="mt-5 flex flex-wrap gap-2">
         <span className="rounded-xl bg-white/[.055] px-3 py-2 text-xs font-bold text-neutral-300">
-          매월 {plan.monthlyMinutes.toLocaleString("ko-KR")}분
+          {translateLegacyText(`매월 ${plan.monthlyMinutes.toLocaleString()}분`, locale)}
         </span>
         {plan.maxActiveJobs ? (
           <span className="rounded-xl bg-white/[.055] px-3 py-2 text-xs font-bold text-neutral-300">
-            동시 작업 {plan.maxActiveJobs}개
+            {translateLegacyText(`동시 작업 ${plan.maxActiveJobs}개`, locale)}
           </span>
         ) : null}
         {plan.guidebookIncluded !== null ? (
           <span className="rounded-xl bg-white/[.055] px-3 py-2 text-xs font-bold text-neutral-300">
-            가이드북 {plan.guidebookIncluded ? "포함" : "미포함"}
+            {translateLegacyText(plan.guidebookIncluded ? "가이드북 포함" : "가이드북 미포함", locale)}
           </span>
         ) : null}
       </div>
 
       <div className="mt-6 border-t border-white/[.07] pt-5">
         <p className={`text-sm font-bold ${plan.cancelAtPeriodEnd ? "text-amber-100/75" : "text-neutral-300"}`}>
-          {planScheduleCopy(plan, hasNextPlan)}
+          {t(schedule, { date: date(schedule === "plan.renews" ? plan.nextChargeAt! : plan.periodEnd) })}
         </p>
         {plan.nextQuotaAt && plan.nextQuotaAt !== plan.periodEnd ? (
-          <p className="mt-2 text-xs text-neutral-500">다음 처리시간 지급 {date(plan.nextQuotaAt)}</p>
+          <p className="mt-2 text-xs text-neutral-500">{t("plan.nextQuota", { date: date(plan.nextQuotaAt) })}</p>
         ) : null}
       </div>
     </article>
@@ -101,6 +91,8 @@ export function PlanManagementClient({ user, provider, initialTossState, initial
   initialTossState: TossBillingState | null;
   initialLegacyState: BillingSummary | null;
 }) {
+  const { locale, t } = useI18n();
+  const date = (value: string) => formatSeoulDate(value, locale);
   const [tossState, setTossState] = useState(initialTossState);
   const [legacyState, setLegacyState] = useState(initialLegacyState);
   const [confirm, setConfirm] = useState<ConfirmAction>(null);
@@ -143,7 +135,7 @@ export function PlanManagementClient({ user, provider, initialTossState, initial
       setResult(cancelAtPeriodEnd
         ? {
             title: "구독 해지가 예약되었습니다",
-            detail: `${date(managedPlan.periodEnd)}까지 현재 플랜을 그대로 이용할 수 있습니다.`,
+            detail: t("plan.accessUntil", { date: date(managedPlan.periodEnd) }),
           }
         : {
             title: "구독을 계속 이용합니다",
@@ -208,19 +200,19 @@ export function PlanManagementClient({ user, provider, initialTossState, initial
                     </span>
                   ) : null}
                 </div>
-                <p className="mt-2 text-sm font-bold text-neutral-300">{date(view.nextPlan.effectiveAt)}부터 전환 예정</p>
+                <p className="mt-2 text-sm font-bold text-neutral-300">{t("plan.switchDate", { date: date(view.nextPlan.effectiveAt) })}</p>
                 <div className="mt-4 flex flex-wrap gap-2">
                   <span className="rounded-xl bg-white/[.055] px-3 py-2 text-xs font-bold text-neutral-300">
-                    매월 {view.nextPlan.monthlyMinutes.toLocaleString("ko-KR")}분
+                    {translateLegacyText(`매월 ${view.nextPlan.monthlyMinutes.toLocaleString()}분`, locale)}
                   </span>
                   {view.nextPlan.maxActiveJobs ? (
                     <span className="rounded-xl bg-white/[.055] px-3 py-2 text-xs font-bold text-neutral-300">
-                      동시 작업 {view.nextPlan.maxActiveJobs}개
+                      {translateLegacyText(`동시 작업 ${view.nextPlan.maxActiveJobs}개`, locale)}
                     </span>
                   ) : null}
                   {view.nextPlan.guidebookIncluded !== null ? (
                     <span className="rounded-xl bg-white/[.055] px-3 py-2 text-xs font-bold text-neutral-300">
-                      가이드북 {view.nextPlan.guidebookIncluded ? "포함" : "미포함"}
+                      {translateLegacyText(view.nextPlan.guidebookIncluded ? "가이드북 포함" : "가이드북 미포함", locale)}
                     </span>
                   ) : null}
                 </div>
@@ -264,7 +256,7 @@ export function PlanManagementClient({ user, provider, initialTossState, initial
                     <strong className="text-sm font-black text-neutral-300">{managedPlan.name} 구독</strong>
                     <p className="mt-1 text-xs leading-5 text-neutral-500">
                       {managedPlan.cancelAtPeriodEnd
-                        ? `${date(managedPlan.periodEnd)}에 이용이 종료될 예정입니다.`
+                        ? t("plan.ends", { date: date(managedPlan.periodEnd) })
                         : "해지해도 현재 이용기간까지 혜택은 유지됩니다."}
                     </p>
                   </div>
@@ -309,16 +301,16 @@ export function PlanManagementClient({ user, provider, initialTossState, initial
         }}>
           <section role="dialog" aria-modal="true" aria-labelledby="subscription-dialog-title" className="w-full max-w-md rounded-[22px] border border-white/[.14] bg-[#232526] p-6 shadow-[0_30px_100px_rgba(0,0,0,.65)]">
             <h2 id="subscription-dialog-title" className="text-xl font-black text-white">
-              {confirm === "cancel" ? `${managedPlan.name} 구독을 해지할까요?` : "구독을 계속 이용할까요?"}
+              {confirm === "cancel" ? t("plan.cancelTitle", { plan: translateLegacyText(managedPlan.name, locale) }) : "구독을 계속 이용할까요?"}
             </h2>
             <p className="mt-3 text-sm leading-7 text-neutral-400">
               {confirm === "cancel"
-                ? `${date(managedPlan.periodEnd)}까지 현재 플랜의 기능을 그대로 이용할 수 있습니다. 이후 자동 갱신이 중지됩니다.`
+                ? t("plan.cancelDetail", { date: date(managedPlan.periodEnd) })
                 : "예약된 해지가 취소되고 현재 플랜의 자동 갱신이 유지됩니다."}
             </p>
             {confirm === "cancel" && provider === "toss" && view.nextPlan ? (
               <p className="mt-4 rounded-2xl border border-amber-300/15 bg-amber-300/[.055] px-4 py-3 text-sm leading-6 text-amber-100/80">
-                구독을 해지하면 {view.nextPlan.name} 변경 예약도 함께 취소됩니다.
+                {t("plan.cancelScheduledChange", { plan: translateLegacyText(view.nextPlan.name, locale) })}
               </p>
             ) : null}
             {error ? <p role="alert" className="mt-4 text-sm text-red-200">{error}</p> : null}

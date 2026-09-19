@@ -1,5 +1,6 @@
 "use client";
 
+import { useI18n } from "@/lib/i18n/provider";
 import Image from "next/image";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import {
@@ -34,6 +35,7 @@ export function BackgroundAssetPicker({
   disabled?: boolean;
   canUpload?: boolean;
 }) {
+  const { t } = useI18n();
   const [library, setLibrary] = useState<BackgroundAssetList | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -183,20 +185,20 @@ export function BackgroundAssetPicker({
       {library?.assets.map((asset) => {
         const selected = value?.kind === "uploaded_image" && value.assetId === asset.id;
         return <div key={asset.id} className="min-w-0">
-          <button type="button" disabled={locked || !canUpload} onClick={() => void select(asset)} title={asset.displayName} aria-label={`${asset.displayName} 배경 선택`} aria-pressed={selected} className={`relative block aspect-[9/16] w-full overflow-hidden rounded-lg border disabled:opacity-50 ${selected ? "border-[#ff715e] ring-2 ring-[#ff715e]/25" : "border-white/10 hover:border-white/35"}`}>
+          <button type="button" disabled={locked || !canUpload} onClick={() => void select(asset)} title={asset.displayName} aria-label={t("background.select", { title: asset.displayName })} aria-pressed={selected} className={`relative block aspect-[9/16] w-full overflow-hidden rounded-lg border disabled:opacity-50 ${selected ? "border-[#ff715e] ring-2 ring-[#ff715e]/25" : "border-white/10 hover:border-white/35"}`}>
             <Image src={asset.imageUrl} alt="" fill sizes="120px" unoptimized className="object-cover" />
-            <span className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/90 to-black/20 px-1 py-1.5 text-[9px] font-bold text-white">{asset.displayName}</span>
+            <span data-i18n-skip className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/90 to-black/20 px-1 py-1.5 text-[9px] font-bold text-white">{asset.displayName}</span>
           </button>
-          <button type="button" disabled={locked} onClick={() => setRemoving(asset)} aria-label={`${asset.displayName} 목록에서 제거`} className="mt-1 w-full rounded px-1 py-1 text-[10px] text-neutral-500 hover:bg-white/5 hover:text-red-200 disabled:opacity-40">목록에서 제거</button>
+          <button type="button" disabled={locked} onClick={() => setRemoving(asset)} aria-label={t("background.remove", { title: asset.displayName })} className="mt-1 w-full rounded px-1 py-1 text-[10px] text-neutral-500 hover:bg-white/5 hover:text-red-200 disabled:opacity-40">목록에서 제거</button>
         </div>;
       })}
     </div>}
     {removing && <div role="alertdialog" aria-label="내 배경 목록에서 제거" aria-describedby={removalDescriptionId} className="rounded-xl border border-white/15 bg-black/30 p-3">
-      <p id={removalDescriptionId} className="text-xs leading-5 text-neutral-300">‘{removing.displayName}’을 목록에서 제거할까요? 이미 사용 중인 템플릿·영상은 유지되며, 파일은 즉시 삭제되지 않습니다.</p>
+      <p id={removalDescriptionId} className="text-xs leading-5 text-neutral-300">{t("background.removeConfirm", { title: removing.displayName })}</p>
       <div className="mt-3 flex justify-end gap-2"><button type="button" disabled={locked} onClick={() => setRemoving(null)} className="rounded-lg px-3 py-2 text-xs text-neutral-400">취소</button><button type="button" disabled={locked} onClick={() => void remove(removing)} className="rounded-lg bg-white/10 px-3 py-2 text-xs font-bold text-red-200 disabled:opacity-40">{busy ? "제거 중…" : "목록에서 제거"}</button></div>
     </div>}
     {error && <div role="alert" className="text-xs leading-5 text-red-200"><p>{error}</p><button type="button" disabled={locked} onClick={() => void refresh()} className="mt-1 underline">목록 다시 불러오기</button></div>}
     {message && <p role="status" className="text-[11px] leading-5 text-emerald-200">{message}</p>}
-    {library && <p className="text-[10px] leading-4 text-neutral-600">보관 용량 {Math.ceil(library.quota.bytesUsed / 1024 / 1024)} / {Math.round(library.quota.maxBytes / 1024 / 1024)}MB · 기존 영상 때문에 보관 중인 파일도 포함됩니다.</p>}
+    {library && <p className="text-[10px] leading-4 text-neutral-600">{t("background.storage", { used: Math.ceil(library.quota.bytesUsed / 1024 / 1024), max: Math.round(library.quota.maxBytes / 1024 / 1024) })}</p>}
   </section>;
 }

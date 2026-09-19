@@ -1378,7 +1378,9 @@ function PresetInlineEditorChannel({
 
 
 function TemplatePreview({ template, videoAspectRatio, channelName, channelThumbnailUrl, brandColor, titleV4Enabled = false }: { template: (typeof templates)[number]; videoAspectRatio: VideoAspectRatio; channelName: string; channelThumbnailUrl: string | null; brandColor?: TemplatePresetColor; titleV4Enabled?: boolean }) {
-  const [firstLine, secondLine] = template.label.split("\n");
+  const { locale } = useI18n();
+  const previewTitle = template.label.split("\n").map((line) => translateLegacyText(line, locale)).join("\n");
+  const [firstLine, secondLine] = previewTitle.split("\n");
   const isLight = template.id === "white-yellow" || template.id === "paper";
   const foreground = isLight ? "text-black" : "text-white";
   const layout = aspectLayout(
@@ -1387,12 +1389,12 @@ function TemplatePreview({ template, videoAspectRatio, channelName, channelThumb
     template.id === "comment-capture",
   );
   const titleV4Styles = useMemo(() => defaultTemplateTitleTextStyles(
-    template.label,
+    previewTitle,
     layout.option.value,
     template.background,
     template.accentBackground,
     brandColor,
-  ), [brandColor, layout.option.value, template]);
+  ), [brandColor, layout.option.value, template, previewTitle]);
   const titleV4Primary = brandedTitleLinePresentation({
     index: 0,
     overlayMode: layout.fullVertical,
@@ -1449,7 +1451,7 @@ function TemplatePreview({ template, videoAspectRatio, channelName, channelThumb
         ? <TemplateTitleV4Preview
             enabled
             templateId={template.id}
-            title={template.label}
+            title={previewTitle}
             videoAspectRatio={layout.option.value}
             textStyles={titleV4Styles}
             primaryColor={titleV4Primary}
@@ -1465,7 +1467,7 @@ function TemplatePreview({ template, videoAspectRatio, channelName, channelThumb
       </div>
       <div className={`absolute inset-x-0 z-10 overflow-hidden text-[5.5cqw] font-semibold ${template.id === "paper" ? "text-neutral-700" : ""}`} style={layout.fullVertical ? { bottom: "6.25%", height: "9.375%" } : { top: `${layout.videoTop + layout.videoHeight}%`, height: `${layout.bottomHeight}%` }}>
         {template.id === "comment-capture"
-          ? <div className="h-full bg-[#040404]"><CommentCaptureCard comment={TEMPLATE_PRESET_COMMENT_SAMPLE} /></div>
+          ? <div className="h-full bg-[#040404]"><CommentCaptureCard outputLanguage={locale} comment={{ ...TEMPLATE_PRESET_COMMENT_SAMPLE, ageLabel: locale === "en" ? "5 months ago" : locale === "ja" ? "5か月前" : TEMPLATE_PRESET_COMMENT_SAMPLE.ageLabel, text: locale === "en" ? "Okay, that made me laugh 😂" : locale === "ja" ? "これは笑った😂" : TEMPLATE_PRESET_COMMENT_SAMPLE.text }} /></div>
           : null}
       </div>
       {template.id === "comment-capture"
@@ -1484,14 +1486,16 @@ function CustomHomeTemplatePreview({
   showUnifiedSubtitle?: boolean;
   positionedWordsV4Enabled?: boolean;
 }) {
-  const titleLines = isTemplateConfigV5(template.config) && template.config.subtitle.visible
+  const { locale } = useI18n();
+  const titleLines = (isTemplateConfigV5(template.config) && template.config.subtitle.visible
     ? (["AI가 고른 오늘의", "핵심 장면"] as const)
-    : templatePresetPresentation[template.baseTemplateId].titleLines;
+    : templatePresetPresentation[template.baseTemplateId].titleLines).map((line) => translateLegacyText(line, locale));
   return <CustomTemplateCanvasPreview
+    previewLocale={locale}
     template={template}
     firstLine={titleLines[0]}
     secondLine={titleLines[1]}
-    channelLabel="채널 이름"
+    channelLabel={locale === "ko" ? "채널 이름" : locale === "en" ? "Channel name" : "チャンネル名"}
     showUnifiedSubtitle={showUnifiedSubtitle}
     positionedWordsV4Enabled={positionedWordsV4Enabled}
   />;
@@ -1516,6 +1520,7 @@ function SubtitleTemplatePreview({
   fullVerticalTitleBackgroundEnabled: boolean;
   fontId?: EditorFontId;
 }) {
+  const { locale } = useI18n();
   const { config, style: snapshot } = useMemo(() => builtInSubtitlePresentation({
     id,
     videoAspectRatio,
@@ -1549,7 +1554,7 @@ function SubtitleTemplatePreview({
       <TemplateTitleV4Preview
         enabled
         templateId="dark-minimal"
-        title={"AI가 고른 오늘의\n핵심 장면"}
+        title={locale === "ko" ? "AI가 고른 오늘의\n핵심 장면" : locale === "en" ? "The best moments\npicked by AI" : "AIが選んだ\n動画の見どころ"}
         templateConfig={config}
         videoAspectRatio={videoAspectRatio}
         fontId={fontId}
@@ -1572,7 +1577,7 @@ function SubtitleTemplatePreview({
       >
           {snapshot.subtitleTemplateId === "highlight" && (
             <span className="whitespace-nowrap">
-              이게 바로 <span style={{ color: snapshot.color.active }}>자막입니다</span>
+              {locale === "ko" ? "이게 바로 " : locale === "en" ? "These are " : "これが"}<span style={{ color: snapshot.color.active }}>{locale === "ko" ? "자막입니다" : locale === "en" ? "captions" : "字幕です"}</span>
             </span>
           )}
           {snapshot.subtitleTemplateId === "pop" && (
@@ -1587,8 +1592,8 @@ function SubtitleTemplatePreview({
                   color: snapshot.color.active,
                   fontSize: canvasCqw(snapshot.font.sizePx * snapshot.popScale),
                 }}
-              >자막</span>
-              <span>입니다</span>
+              >{locale === "ko" ? "자막" : locale === "en" ? "Captions" : "字幕"}</span>
+              <span>{locale === "ko" ? "입니다" : locale === "en" ? "in action" : "のサンプル"}</span>
             </span>
           )}
       </div>
@@ -1609,7 +1614,7 @@ function SubtitleTemplatePreview({
           }}
           aria-hidden="true"
         />
-        <span className="max-w-[75%] truncate">{channelName.trim() || "YouTube 채널"}</span>
+        <span className="max-w-[75%] truncate">{channelName.trim() || (locale === "ko" ? "YouTube 채널" : locale === "en" ? "YouTube channel" : "YouTubeチャンネル")}</span>
       </div>
     </div>
   );
@@ -4055,7 +4060,7 @@ function CommentTimelineEditor({
 }
 
 function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThumbnailUrl, onClose, onChanged, standalone = false, projectLabel, projectNumber, rangeEditingEnabled = false, overlayPreviewEnabled = false, editorSaveEnabled = false, editorRelease, unifiedTemplateSubtitleCanaryEnabled = false, customTemplateDesignEnabled = false, wordTimedSubtitlesAvailable = false, paidAccessBlocked = false }: { item: GeneratedShort; outputLanguage: OutputLanguage; commentOutputLanguage?: OutputLanguage; channelThumbnailUrl: string | null; onClose: () => void; onChanged: () => Promise<void>; standalone?: boolean; projectLabel?: string; projectNumber?: number; rangeEditingEnabled?: boolean; overlayPreviewEnabled?: boolean; editorSaveEnabled?: boolean; editorRelease: EditorReleaseAssignment; unifiedTemplateSubtitleCanaryEnabled?: boolean; customTemplateDesignEnabled?: boolean; wordTimedSubtitlesAvailable?: boolean; paidAccessBlocked?: boolean }) {
-  const { locale: editorLocale } = useI18n();
+  const { locale: editorLocale, t } = useI18n();
   const translationUnavailable = item.subtitleTranslation?.status === "unavailable";
   const positionedWordsV4Enabled = isEditorRenderSpecV4Enabled();
   const adminSubtitleLayoutEnabled = subtitleEditingReleaseEnabled(
@@ -11617,7 +11622,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                 {editableCaptionSourceSpec.templateId === "basic"
                   ? "번역 자막은 팝업·강조 효과 없이 기본형으로 표시됩니다. 위치·글꼴·크기·색상을 바꾸거나 자막을 더블클릭해 문구를 수정할 수 있습니다."
                   : captionTextEditingEnabled
-                  ? <>자막을 위아래로 드래그해 옮기거나 더블클릭해 문구를 수정할 수 있습니다. 음성보다 {editableCaptionSourceSpec.timingLeadFrames ?? SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES}프레임 먼저 표시되는 실제 렌더 타이밍도 그대로 유지됩니다.</>
+                  ? t("editor.captionTimingHint", { frames: editableCaptionSourceSpec.timingLeadFrames ?? SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES })
                   : <>자막의 위치·글꼴·크기·색상을 조정할 수 있습니다. 정확한 자막 구간이 저장되지 않은 영상에서는 문구 편집을 지원하지 않습니다.</>}
               </p>
               <div className="mb-6">
@@ -11827,9 +11832,9 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                       ? editableCaptionSourceSpec
                         ? "미리보기와 실제 렌더 영상에서 자막이 모두 숨겨집니다. 다시 켜면 기존 문구와 위치·크기·색상 설정이 그대로 복원됩니다."
                         : "이 기존 영상에는 유효한 단어 타이밍이 없어 새 자막을 켤 수 없습니다. 다른 편집 기능은 그대로 사용할 수 있습니다."
-                      : <>미리보기와 실제 렌더 영상에서 자막이 모두 숨겨집니다. 다시 켜면 {editableCaptionSourceSpec
-                        ? "기존 문구와 위치·크기·색상 설정이"
-                        : "기존 전사 자막이"} 그대로 복원됩니다.</>}
+                      : editableCaptionSourceSpec
+                        ? "미리보기와 실제 렌더 영상에서 자막이 모두 숨겨집니다. 다시 켜면 기존 문구와 위치·크기·색상 설정이 그대로 복원됩니다."
+                        : "미리보기와 실제 렌더 영상에서 자막이 모두 숨겨집니다. 다시 켜면 기존 전사 자막이 그대로 복원됩니다."}
                   </p>
                 </div>}
             </section>}
@@ -12116,7 +12121,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                   className="w-full rounded-lg border border-white/15 bg-black/30 p-3 text-sm"
                 />
               </label>
-              <p className={`mt-1 text-xs text-white ${validTitle ? "opacity-60" : "opacity-100"}`}>최대 2줄·80자 ({title.length}/80)</p>
+              <p className={`mt-1 text-xs text-white ${validTitle ? "opacity-60" : "opacity-100"}`}>{t("editor.titleLimit", { count: title.length })}</p>
             {overlayPreviewEnabled && <EditorFontPicker
               value={titleFontId}
               onChange={(fontId) => updateEditorFont("title", fontId)}
@@ -13042,6 +13047,7 @@ function SourceRangeSelector({
   singleRowControls?: boolean;
   showPlannedShortCount?: boolean;
 }) {
+  const { locale, t } = useI18n();
   const safeDuration = Math.max(1, sourceDurationSeconds);
   const selectedDuration = Math.max(0, endSeconds - startSeconds);
   const selectedLeft = Math.max(0, Math.min(100, startSeconds / safeDuration * 100));
@@ -13105,8 +13111,8 @@ function SourceRangeSelector({
       <div className="mt-2 flex items-center justify-between gap-3 text-xs font-medium text-neutral-500">
         <span className="font-mono tabular-nums">0:00</span>
         <span className="text-center" data-source-range-guide="usage">
-          선택 {formatDuration(selectedDuration)} · 차감 {formatDuration(usageSeconds)}
-          {showPlannedShortCount ? ` · 예상 쇼츠 ${plannedShortCount}개` : ""}
+          {t("range.usage", { duration: formatDuration(selectedDuration, locale), usage: formatDuration(usageSeconds, locale) })}
+          {showPlannedShortCount ? ` · ${t("range.estimate", { count: plannedShortCount })}` : ""}
         </span>
         <span className="font-mono tabular-nums">{formatTimestamp(sourceDurationSeconds)}</span>
       </div>
@@ -14610,6 +14616,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
           <div className="mt-3 w-full max-w-3xl">
             <input
               ref={uploadFileInputRef}
+              aria-label={t("home.uploadTab")}
               type="file"
               accept="video/mp4,video/quicktime,video/x-m4v,video/webm,video/x-matroska,.mp4,.mov,.m4v,.webm,.mkv"
               className="sr-only"
@@ -14649,9 +14656,9 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
               {uploadVideo ? (
                 <>
                   <Image src={uploadVideo.thumbnailDataUrl} alt="선택한 영상 썸네일" fill unoptimized className="source-upload-thumbnail" />
-                  <strong className="source-upload-title">{uploadVideo.file.name}</strong>
+                  <strong data-i18n-skip className="source-upload-title">{uploadVideo.file.name}</strong>
                   <span className="source-upload-selected-meta">
-                    {(uploadVideo.file.size / 1024 / 1024).toFixed(1)}MB · {formatDuration(uploadVideo.durationSeconds)} · 영상 정보 확인 완료
+                    {t("home.uploadMetadata", { size: (uploadVideo.file.size / 1024 / 1024).toFixed(1), duration: formatDuration(uploadVideo.durationSeconds, locale) })}
                   </span>
                   <span className="source-upload-reselect">다른 영상 선택</span>
                 </>
@@ -14709,7 +14716,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
               <div className="aspect-video w-full shrink-0 overflow-hidden bg-black sm:w-72">
                 <iframe
                   src={sourceVideoEmbedUrl}
-                  title={`${selectedSource.title} 원본 영상 플레이어`}
+                  title={t("home.sourcePlayer", { title: selectedSource.title })}
                   className="h-full w-full border-0"
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                   referrerPolicy="strict-origin-when-cross-origin"
@@ -14720,17 +14727,17 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
               <YoutubeThumbnail src={selectedSource.thumbnailUrl} alt="영상 썸네일" width={480} height={270} unoptimized className="aspect-video w-full object-cover sm:w-72" />
             )}
             <div className="p-5">
-              <h2 className="text-lg font-bold">{selectedSource.title}</h2>
-              <p className="mt-2 text-sm text-neutral-400">{selectedSource.channelName}</p>
+              <h2 data-i18n-skip className="text-lg font-bold">{selectedSource.title}</h2>
+              <p data-i18n-skip className="mt-2 text-sm text-neutral-400">{selectedSource.channelName}</p>
               {!adminTemplateLayoutEnabled && (
                 <>
-                  <p className="mt-4 text-sm">원본 영상 {formatDuration(selectedSource.durationSeconds)} · 예상 쇼츠 {selectedPlannedShortCount}개</p>
+                  <p className="mt-4 text-sm">{t("home.sourceSummary", { duration: formatDuration(selectedSource.durationSeconds, locale), count: selectedPlannedShortCount })}</p>
                   <p className="mt-1 text-xs text-neutral-500">{sourceRangeSelectionEnabled
                     ? planEnforcementEnabled
-                      ? `선택한 ${formatDuration(selectedSourceDurationSeconds)}만 사용량으로 계산됩니다.`
-                      : `선택한 ${formatDuration(selectedSourceDurationSeconds)}만 전사·분석됩니다.`
+                      ? t("home.selectedUsage", { duration: formatDuration(selectedSourceDurationSeconds, locale) })
+                      : t("home.selectedAnalysis", { duration: formatDuration(selectedSourceDurationSeconds, locale) })
                     : planEnforcementEnabled
-                      ? `전체 영상 길이 ${formatDuration(selectedSource.durationSeconds)}가 사용량으로 계산됩니다.`
+                      ? t("home.fullUsage", { duration: formatDuration(selectedSource.durationSeconds, locale) })
                       : "현재는 플랜 처리시간 차감 없이 생성됩니다."}</p>
                 </>
               )}
@@ -14771,7 +14778,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
               {!sourceRangeIsValid && (
                 <div role="alert" className="rounded-xl border border-amber-400/25 bg-amber-400/[.07] px-4 py-3 text-sm font-medium text-amber-100">
                   {selectedSourceExceedsUsage
-                    ? `선택 사용량 ${formatDuration(selectedSourceUsageSeconds)}가 남은 시간 ${formatDuration(state?.usage.remainingSeconds || 0)}을 초과합니다.`
+                    ? t("home.insufficientTime", { duration: formatDuration(selectedSourceUsageSeconds, locale), remaining: formatDuration(state?.usage.remainingSeconds || 0, locale) })
                     : selectedSourceDurationSeconds < MIN_SELECTED_SOURCE_SECONDS
                       ? "최소 4분 이상 선택해야 쇼츠를 만들 수 있습니다."
                       : "한 작업에서 최대 60분까지 선택할 수 있습니다."}

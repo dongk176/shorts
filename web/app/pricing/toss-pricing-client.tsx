@@ -1,5 +1,9 @@
 "use client";
 
+import { formatSeoulDate } from "@/lib/i18n/format";
+import { translateLegacyText } from "@/lib/i18n/legacy-phrases";
+import { useI18n } from "@/lib/i18n/provider";
+
 import { localePath, localizedReturnUrl } from "@/lib/i18n/routing";
 
 import Link from "@/lib/i18n/navigation";
@@ -24,15 +28,6 @@ type PackageTerm = (typeof PACKAGE_TERMS)[number];
 
 function won(value: number) {
   return new Intl.NumberFormat("ko-KR").format(value);
-}
-
-function date(value: string) {
-  return new Intl.DateTimeFormat("ko-KR", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    timeZone: "Asia/Seoul",
-  }).format(new Date(value));
 }
 
 function billingCycleLabel(contractMonths: TossCatalogPlan["contractMonths"]) {
@@ -109,6 +104,8 @@ export function TossPricingClient({
   guestCatalog: TossCatalogPlan[] | null;
   onRequireLogin: () => void;
 }) {
+  const { locale, t } = useI18n();
+  const date = (value: string) => formatSeoulDate(value, locale);
   const router = useRouter();
   const { refreshUsage } = useUsageState();
   const [state, setState] = useState(initialState);
@@ -222,21 +219,21 @@ export function TossPricingClient({
         await Promise.all([refresh(), refreshUsage()]);
       }
       router.refresh();
-      const selectedName = selection.plan.displayName;
+      const selectedName = translateLegacyText(selection.plan.displayName, locale);
       setSelection(null);
       if (response.state === "scheduled") {
         const effectiveAt = response.effectiveAt ?? state?.subscription?.currentPeriodEnd;
         setResult({
-          title: `${selectedName}로 변경 예약되었습니다`,
+          title: t("pricing.changeScheduled", { plan: selectedName }),
           detail: effectiveAt
-            ? `현재 구독 혜택은 ${date(effectiveAt)}까지 유지됩니다.\n그 다음 결제일부터 새 요금제가 적용됩니다.`
+            ? t("pricing.changeTiming", { date: date(effectiveAt) })
             : "현재 구독 혜택은 계약 기간까지 유지됩니다.\n그 다음 결제일부터 새 요금제가 적용됩니다.",
         });
       } else {
         const remainingMinutes = Math.max(0, Math.floor((response.remainingSeconds ?? 0) / 60));
         setResult({
-          title: `${selectedName}로 전환이 완료되었습니다`,
-          detail: `남은 사용량 ${remainingMinutes}분`,
+          title: t("pricing.changeComplete", { plan: selectedName }),
+          detail: t("common.remainingMinutes", { minutes: remainingMinutes }),
           remainingMinutes,
         });
       }
@@ -273,10 +270,9 @@ export function TossPricingClient({
       {state?.subscription?.plan.tier === "easycut_pro"
       && state.subscription.plan.contractMonths !== 1 ? (
         <section className={styles.localLegacyNotice} aria-label="기존 이지컷 프로 계약 안내">
-          <strong>이지컷 프로 {state.subscription.plan.contractMonths}개월 기존 계약 이용 중</strong>
+          <strong>{t("pricing.legacyContract", { months: state.subscription.plan.contractMonths })}</strong>
           <p>
-            기존 계약은 현재 조건과 결제 금액으로 계속 유지됩니다. 월간 이지컷 프로를 선택하면
-            {" "}{date(state.subscription.currentPeriodEnd)}부터 월간 계약으로 변경 예약됩니다.
+            {t("pricing.legacyChange", { date: date(state.subscription.currentPeriodEnd) })}
           </p>
         </section>
       ) : null}
@@ -292,7 +288,7 @@ export function TossPricingClient({
               className={months === term ? styles.packageTermActive : ""}
               onClick={() => setMonths(term)}
             >
-              {term}개월
+              {t("pricing.months", { count: term })}
             </button>
           ))}
         </div>
@@ -346,7 +342,7 @@ export function TossPricingClient({
                 <span className={`${styles.planEyebrow} ${styles.discountEyebrow} ${
                   plan.tier === "expert" ? styles.discountEyebrowViolet : ""
                 }`}>
-                  {plan.discountPercent}% 할인
+                  {translateLegacyText(`${plan.discountPercent}% 할인`, locale)}
                 </span>
               ) : null}
               <div className="pricing-plan-name"><h2>{plan.displayName}</h2></div>
@@ -408,7 +404,7 @@ export function TossPricingClient({
               {selection.action === "cancel_pending" ? (
                 <div className={styles.localPlanSummary}>
                   <div className={styles.localPlanSummaryCopy}>
-                    <strong>{selection.plan.displayName} {selection.plan.contractMonths}개월</strong>
+                    <strong>{selection.plan.displayName} {translateLegacyText(`${selection.plan.contractMonths}개월`, locale)}</strong>
                     <span>예약을 취소하면 현재 플랜이 그대로 유지됩니다.</span>
                   </div>
                 </div>
@@ -442,8 +438,9 @@ export function TossPricingClient({
                 <label className={styles.localConsent}>
                   <input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />
                   <span>
-                    <Link href="/purchase-terms" target="_blank">구매약관</Link> 및{" "}
-                    <Link href="/refund" target="_blank">취소·환불 정책</Link>에 동의합니다.
+                    {t("consent.prefix")}
+                    <Link href="/purchase-terms" target="_blank">{t("consent.purchaseTerms")}</Link>{t("consent.and")}
+                    <Link href="/refund" target="_blank">{t("consent.refundRules")}</Link>{t("consent.suffix")}
                   </span>
                 </label>
               ) : null}
@@ -484,7 +481,7 @@ export function TossPricingClient({
             <h2 id="plan-result-title">{result.title}</h2>
             {typeof result.remainingMinutes === "number" ? (
               <p className={styles.localResultUsage}>
-                남은 사용량 <strong>{won(result.remainingMinutes)}분</strong>
+                <strong>{t("common.remainingMinutes", { minutes: won(result.remainingMinutes) })}</strong>
               </p>
             ) : (
               <p className={styles.localResultSchedule}>

@@ -59,7 +59,7 @@ function TemplateCommentContents({
   const initial = comment?.initial || "소";
   const nickname = comment?.nickname || "소담기록24";
   const ageLabel = comment?.ageLabel || (locale === "ko" ? "2시간 전" : locale === "en" ? "2 hours ago" : "2時間前");
-  const text = comment?.text || "잠깐 보려고 눌렀는데 어느새 끝까지 다 봤네 ㅋㅋ";
+  const text = comment?.text || (locale === "ko" ? "잠깐 보려고 눌렀는데 어느새 끝까지 다 봤네 ㅋㅋ" : locale === "en" ? "I meant to watch a second and ended up watching the whole thing 😂" : "ちょっと見るつもりが、気づいたら最後まで見てた😂");
   const likeCount = comment?.likeCount ?? 121;
   const actions = commentActionLabels(likeCount, outputLanguage || locale);
   const formattedLikeCount = outputLanguage ? actions.likes : new Intl.NumberFormat(formatLocale(locale), {

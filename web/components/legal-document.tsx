@@ -67,7 +67,7 @@ export function LegalDocument({ eyebrow, title, description, effectiveDate, chil
           <p className="mt-5 text-xs font-semibold text-neutral-500">{t("legal.effectiveDate", { date: localizedEffectiveDate(effectiveDate, locale) })}</p>
           {showTranslationNotice && locale !== "ko" && (
             <p className="mt-5 rounded-xl border border-amber-300/20 bg-amber-300/[.06] px-4 py-3 text-xs leading-6 text-amber-100">
-              {t("legal.translationNotice")}
+              {t(translated ? "legal.translationNotice" : "legal.koreanOnlyNotice")}
             </p>
           )}
         </div>

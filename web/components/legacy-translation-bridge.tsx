@@ -91,10 +91,14 @@ export function LegacyTranslationBridge({ locale }: { locale: SiteLocale }) {
       for (const node of attributeTranslations.keys()) if (!node.isConnected) attributeTranslations.delete(node);
       for (const mutation of mutations) {
         if (mutation.type === "characterData") translateTree(mutation.target, locale);
+        if (mutation.type === "attributes") translateElement(mutation.target as Element, locale);
         for (const node of mutation.addedNodes) translateTree(node, locale);
       }
     });
-    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    observer.observe(document.body, {
+      childList: true, subtree: true, characterData: true,
+      attributes: true, attributeFilter: [...translatedAttributes],
+    });
     const titleObserver = new MutationObserver(translateTitle);
     titleObserver.observe(document.head, { childList: true, subtree: true, characterData: true });
     return () => {

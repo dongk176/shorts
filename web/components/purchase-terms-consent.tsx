@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "@/lib/i18n/navigation";
+import { useI18n } from "@/lib/i18n/provider";
 import { useId } from "react";
 
 export function PurchaseTermsConsent({
@@ -16,6 +17,7 @@ export function PurchaseTermsConsent({
     monthlyPriceKrw: number;
   };
 }) {
+  const { t } = useI18n();
   const consentId = useId();
   return (
     <div
@@ -33,26 +35,27 @@ export function PurchaseTermsConsent({
         checked={checked}
         onChange={(event) => onChange(event.target.checked)}
         className="mt-1 h-4 w-4 shrink-0 accent-[#ff715e]"
-        aria-label="[필수] 구매약관 및 취소·환불 규정 동의"
+        aria-label={t("consent.aria")}
       />
       <p className="min-w-0 text-xs font-medium leading-6 text-neutral-300">
         <span>
-          <strong className="text-[#ff9b8d]">[필수]</strong>{" "}
+          <strong className="text-[#ff9b8d]">{t("consent.required")}</strong>{" "}
         </span>
+        {t("consent.prefix")}
         <Link
           href="/purchase-terms"
           target="_blank"
           rel="noopener noreferrer"
           className="font-black text-[#ff9b8d] underline decoration-[#ff9b8d]/45 underline-offset-2"
         >
-          구매약관
+          {t("consent.purchaseTerms")}
         </Link>
         <span>
-          {" "}및{" "}
+          {t("consent.and")}
         </span>
-        <span className="font-black text-neutral-200">취소·환불 규정</span>
+        <span className="font-black text-neutral-200">{t("consent.refundRules")}</span>
         <span>
-          을 확인했으며 이에 동의합니다.
+          {t("consent.suffix")}
         </span>
       </p>
     </div>

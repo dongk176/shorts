@@ -1,5 +1,6 @@
 "use client";
 
+import { useI18n } from "@/lib/i18n/provider";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "@/lib/i18n/navigation";
 import { claimOnboardingWelcomeAnnouncement } from "@/app/actions/onboarding-welcome";
@@ -24,6 +25,7 @@ async function responseBody<T>(response: Response): Promise<T> {
 }
 
 export function UserOnboardingOverlay() {
+  const { t } = useI18n();
   const router = useRouter();
   const { accountId, authenticated, refreshUsage } = useUsageState();
   const {
@@ -244,11 +246,11 @@ export function UserOnboardingOverlay() {
             <div>
               <p className="text-5xl font-black tracking-[-0.06em] sm:text-6xl">
                 <span className="inline-block bg-gradient-to-r from-[#ff715e] via-[#ffb4a8] to-[#a078ff] bg-clip-text text-transparent">
-                  {welcomeMinutes}<span className="ml-1 text-2xl tracking-[-0.04em] sm:text-3xl">분</span>
+                  {welcomeMinutes}<span className="ml-1 text-2xl tracking-[-0.04em] sm:text-3xl">{t("common.minuteUnit")}</span>
                 </span>
               </p>
               <p className="mt-3 text-sm text-neutral-400">
-                원본 영상 길이 합계 {welcomeMinutes}분까지 쇼츠로 만들 수 있어요.
+                {t("onboarding.allowance", { minutes: welcomeMinutes })}
               </p>
             </div>
           )}
