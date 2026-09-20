@@ -1,5 +1,6 @@
 "use client";
 
+import { useI18n } from "@/lib/i18n/provider";
 import { useUiText } from "@/lib/i18n/use-ui-text";
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -14,6 +15,7 @@ export function ProjectList({
   initialPage: ProjectListPage;
 }) {
   const ui = useUiText();
+  const { locale } = useI18n();
   const [projects, setProjects] = useState(initialPage.projects);
   const [hasMore, setHasMore] = useState(initialPage.hasMore);
   const [nextCursor, setNextCursor] = useState(initialPage.nextCursor);
@@ -32,7 +34,7 @@ export function ProjectList({
     controllerRef.current = controller;
     const timeout = window.setTimeout(() => controller.abort(), 8_000);
     try {
-      const response = await fetch(`/api/projects?cursor=${encodeURIComponent(nextCursor)}`, {
+      const response = await fetch(`/api/projects?cursor=${encodeURIComponent(nextCursor)}&locale=${locale}`, {
         cache: "no-store",
         credentials: "same-origin",
         signal: controller.signal,
@@ -59,7 +61,7 @@ export function ProjectList({
       inFlight.current = false;
       setLoading(false);
     }
-  }, [authenticated, hasMore, nextCursor]);
+  }, [authenticated, hasMore, nextCursor, locale]);
 
   useEffect(() => {
     if (!authenticated || !hasMore || !sentinelRef.current) return;

@@ -13572,7 +13572,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const loadState = useCallback(async () => {
     if (stateLoadInFlight.current) return stateLoadInFlight.current;
     const task = (async () => {
-      const value = await requestJson<MvpState>("/api/mvp/state", undefined, STATE_REQUEST_TIMEOUT_MS);
+      const value = await requestJson<MvpState>(`/api/mvp/state?locale=${locale}`, undefined, STATE_REQUEST_TIMEOUT_MS);
       setState(value);
       publishUsageSnapshot(value.usage);
       setStateLoadStatus("ready");
@@ -13584,7 +13584,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     } finally {
       if (stateLoadInFlight.current === task) stateLoadInFlight.current = null;
     }
-  }, []);
+  }, [locale]);
 
   const retryStateLoad = () => {
     setStateLoadStatus("loading");

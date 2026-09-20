@@ -2052,6 +2052,14 @@ describe("MVP state visibility", () => {
     expect(mocks.publicExamples).toHaveBeenCalledWith(expect.anything(), "ko");
   });
 
+  it("uses the current page language for refresh even when cookies prefer Korean", async () => {
+    mocks.getDb.mockReturnValue(vi.fn());
+    mocks.recentJobs.mockResolvedValue([]);
+    const response = await getMvpState(new Request("http://localhost/api/mvp/state?locale=ja"));
+    expect(response.status).toBe(200);
+    expect(mocks.recentJobs).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ userId: "user-a" }), undefined, "ja");
+  });
+
   it("returns only the authenticated user's project query result", async () => {
     vi.mocked(getRequestLocale).mockResolvedValueOnce("en");
     mocks.getDb.mockReturnValue(vi.fn());

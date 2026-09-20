@@ -12,6 +12,7 @@ export const dynamic = "force-dynamic";
 
 const querySchema = z.object({
   cursor: z.string().max(2048).optional(),
+  locale: z.enum(["ko", "en", "ja"]).optional(),
 });
 
 export async function GET(request: Request) {
@@ -22,9 +23,10 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const query = querySchema.parse({
       cursor: url.searchParams.get("cursor") ?? undefined,
+      locale: url.searchParams.get("locale") ?? undefined,
     });
     const session = await requireMvpSession(user, { createIfMissing: false });
-    const page = await loadProjectListPage({ session, cursor: query.cursor, locale: await getRequestLocale() });
+    const page = await loadProjectListPage({ session, cursor: query.cursor, locale: query.locale ?? await getRequestLocale() });
     return NextResponse.json(page, {
       headers: { "Cache-Control": "private, no-store" },
     });

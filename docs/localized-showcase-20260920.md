@@ -47,3 +47,9 @@ candidate, protected routes and job-admission preflight before promoting the sam
 Verified locally: 2,814 web tests passed (132 skipped); after direct-ID access regression coverage, another 166 relevant tests passed. Type checking, ESLint and production build passed. Candidate and production source route manifests both contain 201 routes, with no removals and no publishing experiment routes. Production job-admission endpoint reports ready=true with five targets.
 
 New project numbers: English 14459 / 14464; Japanese 14465 / 14470. Production public-example activation is deferred until the candidate is ready.
+
+Browser verification found that an initial localized render could be replaced by the cookie's Korean
+examples during polling. Home refresh and project pagination now send the current page locale explicitly;
+API regression coverage verifies Japanese requests with a Korean cookie preference. Final checks:
+2,816 web tests passed (132 skipped), type checking and ESLint passed. Both demo pairs are exactly
+15 seconds at 30 fps, with no audio track. All 36 generated shorts completed; source cleanup recorded.
