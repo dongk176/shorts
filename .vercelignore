@@ -13,3 +13,12 @@ web/tsconfig.tsbuildinfo
 **/.pytest_cache/**
 infra/aws/cdk.out/**
 infra/aws/cdk.context.json
+
+# Credentials and local review tooling are never deployment inputs.
+.env
+.env.*
+.secrets/**
+.local-review/**
+test-tools/**
+web/test-tools/**
+**/node_modules/**
