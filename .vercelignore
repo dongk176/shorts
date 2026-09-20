@@ -22,3 +22,6 @@ infra/aws/cdk.context.json
 test-tools/**
 web/test-tools/**
 **/node_modules/**
+# Test suites run locally before release; their development fixtures are not shipped.
+web/**/*.test.ts
+web/**/*.test.tsx
