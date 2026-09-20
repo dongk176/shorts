@@ -1,6 +1,8 @@
 import { subtitleRatioCases } from "../../test/subtitle-ratio-cases";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
+vi.mock("@/lib/i18n/server", () => ({ getRequestLocale: vi.fn(async () => "ko") }));
+import { getRequestLocale } from "@/lib/i18n/server";
 import { readFileSync } from "node:fs";
 
 const mocks = vi.hoisted(() => ({
@@ -2047,10 +2049,11 @@ describe("MVP state visibility", () => {
     expect(mocks.session).not.toHaveBeenCalled();
     expect(mocks.usage).not.toHaveBeenCalled();
     expect(mocks.recentJobs).not.toHaveBeenCalled();
-    expect(mocks.publicExamples).toHaveBeenCalledWith(expect.anything());
+    expect(mocks.publicExamples).toHaveBeenCalledWith(expect.anything(), "ko");
   });
 
   it("returns only the authenticated user's project query result", async () => {
+    vi.mocked(getRequestLocale).mockResolvedValueOnce("en");
     mocks.getDb.mockReturnValue(vi.fn());
     mocks.recentJobs.mockResolvedValue([{ id: "job-a" }]);
     const response = await getMvpState(new Request("http://localhost/api/mvp/state"));
@@ -2063,7 +2066,7 @@ describe("MVP state visibility", () => {
       },
       recentJobs: [{ id: "job-a" }],
     });
-    expect(mocks.recentJobs).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ userId: "user-a" }));
+    expect(mocks.recentJobs).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ userId: "user-a" }), undefined, "en");
   });
 });
 

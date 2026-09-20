@@ -1,3 +1,5 @@
+import { BackgroundShowcase } from "@/components/background-showcase";
+import { TransformationShowcase } from "@/components/transformation-showcase";
 import { type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -46,6 +48,16 @@ const guestState: PricingState = {
 
 
 describe("localized first render without browser effects", () => {
+  it.each(["en", "ja"] as const)("renders only %s showcase media before hydration", (locale) => {
+    const html = render(<><BackgroundShowcase /><TransformationShowcase /></>, locale);
+    expect(html).toContain(`/home-showcase/${locale}/showcase-01.jpg`);
+    expect(html).toContain(`/transformation-showcase/${locale}-horizontal-v1.mp4`);
+    expect(html).toContain(`/transformation-showcase/${locale}-vertical-v1.mp4`);
+    expect(html).not.toContain("/ditto-");
+    expect(html).not.toContain("/home-showcase/showcase-");
+    expect(html).not.toMatch(/[가-힣]/);
+    expect(html).toContain("https://creativecommons.org/licenses/by/4.0/");
+  });
   it.each(["en", "ja"] as const)("renders the live Toss catalog in %s without relying on the DOM bridge", (locale) => {
     const html = render(<TossPricingClient initialState={null} guestCatalog={[...TOSS_SALE_PLAN_CATALOG]} onRequireLogin={noop} />, locale);
     expect(html).not.toMatch(/[가-힣]/);
@@ -72,7 +84,7 @@ describe("localized first render without browser effects", () => {
   });
 
   it.each(["en", "ja"] as const)("renders %s editor controls and accessible labels before hydration", (locale) => {
-    const html = render(<TemplateEditor baseTemplateId="dark-minimal" initialConfig={createDefaultTemplateConfig()} />, locale);
+    const html = render(<TemplateEditor initialTemplate={null} baseTemplateId="dark-minimal" initialConfig={createDefaultTemplateConfig()} />, locale);
     for (const korean of ["내 템플릿으로 저장", "후킹 제목 폰트", "완성 영상과 같은 9:16 비율로 배경을 비교하세요.", "이미지 배경"]) {
       expect(html).not.toContain(korean);
     }

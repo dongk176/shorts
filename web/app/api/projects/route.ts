@@ -1,3 +1,4 @@
+import { getRequestLocale } from "@/lib/i18n/server";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { ensureReadDbReady } from "@/lib/db";
@@ -23,7 +24,7 @@ export async function GET(request: Request) {
       cursor: url.searchParams.get("cursor") ?? undefined,
     });
     const session = await requireMvpSession(user, { createIfMissing: false });
-    const page = await loadProjectListPage({ session, cursor: query.cursor });
+    const page = await loadProjectListPage({ session, cursor: query.cursor, locale: await getRequestLocale() });
     return NextResponse.json(page, {
       headers: { "Cache-Control": "private, no-store" },
     });

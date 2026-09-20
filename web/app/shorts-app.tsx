@@ -1,5 +1,7 @@
 "use client";
 
+import { ShowcaseCredits } from "@/components/showcase-credits";
+
 import { useUiText } from "@/lib/i18n/use-ui-text";
 
 import { browserLocalizedHref } from "@/lib/i18n/routing";
@@ -12736,6 +12738,7 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
         <div className="min-w-0"><button data-project-guide="back" onClick={onBack} className="text-xs font-semibold text-neutral-400 hover:text-white">{locale === "ko" ? `← 프로젝트 /${job.projectNumber}` : locale === "en" ? `← Project /${job.projectNumber}` : `← プロジェクト /${job.projectNumber}`}</button><div className="mt-1 flex min-w-0 items-center gap-3"><h1 data-i18n-skip className="truncate text-base font-bold">{job.videoTitle}</h1>{job.isExample && <span className="shrink-0 rounded bg-red-500/15 px-2 py-1 text-[11px] font-extrabold text-red-300">{ui("예시 작업 · 읽기 전용")}</span>}<span className="shrink-0 text-xs text-neutral-500">{locale === "ko" ? `쇼츠 ${job.shorts.length}개` : locale === "en" ? `${job.shorts.length} Shorts` : `ショート動画 ${job.shorts.length}本`}</span></div></div>
         <ProjectDownloadButton key={job.id} projectNumber={job.projectNumber} disabled={job.isExample || !downloadableItems.length} canDownload={access.canDownload} onPaywall={() => setDownloadPaywallOpen(true)} locale={locale} />
       </header>
+      {job.isExample && <ShowcaseCredits locale={locale} videoTitle={job.videoTitle} />}
       <ProjectActionGuide
         enabled={!job.isExample && job.status === "completed"}
         editAvailable={Boolean(guideEditShortId)}

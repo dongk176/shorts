@@ -1,5 +1,7 @@
 "use client";
 
+import { ShowcaseCredits } from "./showcase-credits";
+import type { SiteLocale } from "@/lib/i18n/config";
 import { useUiText } from "@/lib/i18n/use-ui-text";
 
 import Image from "next/image";
@@ -29,6 +31,14 @@ const showcaseImages = [
   channel,
 }));
 
+function imagesForLocale(locale: SiteLocale) {
+  if (locale === "ko") return showcaseImages;
+  return Array.from({ length: 8 }, (_, index) => ({
+    src: `/home-showcase/${locale}/showcase-${String(index + 1).padStart(2, "0")}.jpg?v=20260920-1`,
+    channel: `${locale}-${index % 2}`,
+  }));
+}
+
 const AUTO_SCROLL_PIXELS_PER_SECOND = 72;
 const MANUAL_RESUME_DELAY_MS = 1_200;
 const CLICK_DRAG_THRESHOLD_PX = 4;
@@ -40,9 +50,9 @@ function hasSeparatedChannels(images: typeof showcaseImages) {
   ));
 }
 
-function shuffleShowcaseImages() {
+function shuffleShowcaseImages(sourceImages: typeof showcaseImages) {
   for (let attempt = 0; attempt < MAX_SHUFFLE_ATTEMPTS; attempt += 1) {
-    const images = [...showcaseImages];
+    const images = [...sourceImages];
     const randomValues = new Uint32Array(images.length);
     window.crypto.getRandomValues(randomValues);
 
@@ -56,7 +66,7 @@ function shuffleShowcaseImages() {
     }
   }
 
-  return showcaseImages;
+  return sourceImages;
 }
 
 export function BackgroundShowcase() {
@@ -71,11 +81,11 @@ export function BackgroundShowcase() {
   const desktopPausedRef = useRef(false);
   const resumeAtRef = useRef(0);
   const [dragging, setDragging] = useState(false);
-  const [imageOrder, setImageOrder] = useState(showcaseImages);
+  const [imageOrder, setImageOrder] = useState(() => imagesForLocale(locale));
 
   useEffect(() => {
-    setImageOrder(shuffleShowcaseImages());
-  }, []);
+    setImageOrder(shuffleShowcaseImages(imagesForLocale(locale)));
+  }, [locale]);
 
   useEffect(() => {
     const rail = railRef.current;
@@ -251,6 +261,7 @@ export function BackgroundShowcase() {
           ))}
         </div>
       </div>
+      <ShowcaseCredits locale={locale} />
     </section>
   );
 }

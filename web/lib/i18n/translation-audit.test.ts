@@ -11,7 +11,7 @@ describe("language audit regressions", () => {
     expect(translateLegacyText("1일", "en")).toBe("1 day");
   });
   it.each(["en", "ja"] as const)("translates data-driven %s onboarding, background and color labels", (locale) => {
-    const labels = [
+    const labels: string[] = [
       ...userOccupationOptions, ...userUsagePurposeOptions, ...userDiscoverySourceOptions,
       ...stockBackgrounds,
     ].map((item) => item.label);

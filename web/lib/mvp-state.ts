@@ -1,3 +1,4 @@
+import type { SiteLocale } from "./i18n/config";
 import { languageFeatureAllowed, languageTestStatus } from "./language-test";
 import type { User } from "@supabase/supabase-js";
 import { getBillingSummary } from "@/lib/billing";
@@ -29,13 +30,15 @@ import {
 export async function loadMvpState(
   authenticatedUser?: User | null,
   signal?: AbortSignal,
+  locale: SiteLocale = "ko",
 ): Promise<MvpState> {
-  return withReadRequest("mvp_state", (stage) => readMvpState(stage, authenticatedUser), signal);
+  return withReadRequest("mvp_state", (stage) => readMvpState(stage, authenticatedUser, locale), signal);
 }
 
 async function readMvpState(
   stage: ReadStage,
   authenticatedUser?: User | null,
+  locale: SiteLocale = "ko",
 ): Promise<MvpState> {
   const db = getDb();
   const [{ plans, generatedShortCount, reusableViewCounter }, user] = await Promise.all([
@@ -55,7 +58,7 @@ async function readMvpState(
     const { start, next } = currentKstPeriod();
     const [billing, recentJobs] = await Promise.all([
       stage("billing", () => getBillingSummary(db, null)),
-      stage("examples", () => getPublicExampleJobs(db)),
+      stage("examples", () => getPublicExampleJobs(db, locale)),
     ]);
 
     return {
@@ -110,7 +113,7 @@ async function readMvpState(
     customTemplateDesignAccess,
   ] = await Promise.all([
     stage("usage", () => getUsageSnapshot(db, session)),
-    stage("jobs", () => getRecentJobs(db, session)),
+    stage("jobs", () => getRecentJobs(db, session, undefined, locale)),
     stage("billing", () => getBillingSummary(db, session.userId)),
     stage("payment_method_action", () => getPaymentMethodAction(db, session.userId)),
     stage("subtitle_usage", () => getSubtitleTemplateUsage(db, session.userId)),

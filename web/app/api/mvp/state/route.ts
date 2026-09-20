@@ -1,3 +1,4 @@
+import { getRequestLocale } from "@/lib/i18n/server";
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { apiError } from "@/lib/http";
@@ -9,7 +10,7 @@ export async function GET(request: Request) {
   const requestId = randomUUID();
   try {
     const response = NextResponse.json(
-      await loadMvpState(undefined, request.signal),
+      await loadMvpState(undefined, request.signal, await getRequestLocale()),
       { headers: { "x-request-id": requestId } },
     );
     response.headers.set("Cache-Control", "private, no-store");

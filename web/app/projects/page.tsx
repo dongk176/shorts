@@ -21,14 +21,16 @@ export const metadata = createNoIndexMetadata(
 );
 
 export default async function ProjectsPage() {
-  const ui = createUiText(await getRequestLocale());
+  const locale = await getRequestLocale();
+  const ui = createUiText(locale);
   const user = await getAuthenticatedUser();
   await ensureReadDbReady();
   const projectPage = user
     ? await loadProjectListPage({
+        locale,
         session: await requireMvpSession(user, { createIfMissing: false }),
       })
-    : await loadPublicExampleProjectList();
+    : await loadPublicExampleProjectList(locale);
 
   return (
     <div className="app-shell site-chrome desktop-sidebar-layout flex min-h-screen flex-col text-neutral-100">

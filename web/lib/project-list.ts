@@ -1,4 +1,5 @@
 import "server-only";
+import type { SiteLocale } from "./i18n/config";
 
 import { unstable_cache } from "next/cache";
 import { z } from "zod";
@@ -79,6 +80,7 @@ async function selectProjectPage(
   db: Sql,
   userId: string,
   cursor: ProjectCursor | null,
+  locale: SiteLocale,
 ): Promise<ProjectListPage> {
   const rows = await db`
     with eligible as materialized (
@@ -88,7 +90,7 @@ async function selectProjectPage(
         job.created_at,job.expires_at
       from shorts_mvp.video_jobs job
       where job.user_deleted_at is null
-        and (job.user_id=${userId} or (job.is_example and job.status='completed'))
+        and (job.user_id=${userId} or (job.is_example and job.status='completed' and coalesce(job.output_language,'ko')=${locale}))
     ),
     paged as materialized (
       select *
@@ -149,17 +151,19 @@ async function selectProjectPage(
 export async function loadProjectListPage({
   session,
   cursor,
+  locale = "ko",
 }: {
   session: MvpSession;
   cursor?: string | null;
+  locale?: SiteLocale;
 }) {
   if (!session.userId) {
     throw new HttpError(401, "로그인이 필요합니다.");
   }
-  return selectProjectPage(getDb(), session.userId, decodeProjectCursor(cursor));
+  return selectProjectPage(getDb(), session.userId, decodeProjectCursor(cursor), locale);
 }
 
-export const loadPublicExampleProjectList = unstable_cache(async (): Promise<ProjectListPage> => {
+export const loadPublicExampleProjectList = unstable_cache(async (locale: SiteLocale = "ko"): Promise<ProjectListPage> => {
   const rows = await getDb()`
     select job.id,job.project_number,job.is_example,job.video_title,
       job.thumbnail_url,job.source_duration_seconds,job.status,job.stage,
@@ -183,6 +187,7 @@ export const loadPublicExampleProjectList = unstable_cache(async (): Promise<Pro
         and generated_short.status in ('ready','rerendering')
     ) short_list on true
     where job.is_example and job.status='completed' and job.user_deleted_at is null
+      and coalesce(job.output_language,'ko')=${locale}
     order by job.created_at desc,job.id desc
     limit 10
   `;
@@ -193,4 +198,4 @@ export const loadPublicExampleProjectList = unstable_cache(async (): Promise<Pro
     hasMore: false,
     nextCursor: null,
   };
-}, ["public-example-project-list-v1"], { revalidate: 300 });
+}, ["public-example-project-list-v2"], { revalidate: 300 });

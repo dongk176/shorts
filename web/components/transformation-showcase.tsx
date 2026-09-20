@@ -299,8 +299,9 @@ export function TransformationShowcase() {
         <div className="transformation-stage-glow transformation-stage-glow-left" aria-hidden="true" />
         <div className="transformation-stage-glow transformation-stage-glow-right" aria-hidden="true" />
         <TransformationExample
-          horizontalSrc="/transformation-showcase/ditto-horizontal.mp4"
-          verticalSrc="/transformation-showcase/ditto-vertical.mp4"
+          key={locale}
+          horizontalSrc={locale === "ko" ? "/transformation-showcase/ditto-horizontal.mp4" : `/transformation-showcase/${locale}-horizontal-v1.mp4`}
+          verticalSrc={locale === "ko" ? "/transformation-showcase/ditto-vertical.mp4" : `/transformation-showcase/${locale}-vertical-v1.mp4`}
           label={localizedValue(locale, { ko: "첫 번째 변환 예시", en: "First transformation example", ja: "1つ目の変換例" })}
           active
           inView={inView}

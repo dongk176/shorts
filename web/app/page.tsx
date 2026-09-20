@@ -23,15 +23,13 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function Home() {
-  const [locale, initialState] = await Promise.all([
-    getRequestLocale(),
-    loadMvpState().catch((error) => {
-      console.error("home_initial_state_failed", {
-        errorName: error instanceof Error ? error.name : "UnknownError",
-      });
-      return null;
-    }),
-  ]);
+  const locale = await getRequestLocale();
+  const initialState = await loadMvpState(undefined, undefined, locale).catch((error) => {
+    console.error("home_initial_state_failed", {
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    });
+    return null;
+  });
   const monthlyPlan = tossPlan("toss_easycut_pro_1m");
   const applicationData = {
     "@context": "https://schema.org",

@@ -1,3 +1,4 @@
+import type { SiteLocale } from "./i18n/config";
 import { subtitleTranslationOutcome } from "./subtitle-translation-outcome";
 import type { Row, Sql } from "postgres";
 import type { GeneratedShort, Plan, VideoJob } from "@/lib/contracts";
@@ -248,7 +249,7 @@ export async function getShortsForJobs(
   return result;
 }
 
-export async function getRecentJobs(db: Sql, session: MvpSession, onlyJobId?: string): Promise<VideoJob[]> {
+export async function getRecentJobs(db: Sql, session: MvpSession, onlyJobId?: string, locale: SiteLocale = "ko"): Promise<VideoJob[]> {
   const owner = sessionOwnership(session);
   const rows = onlyJobId
     ? await db`
@@ -263,7 +264,7 @@ export async function getRecentJobs(db: Sql, session: MvpSession, onlyJobId?: st
         select * from shorts_mvp.video_jobs
         where user_deleted_at is null and ((${owner.userId}::uuid is not null and user_id=${owner.userId})
           or (${owner.userId}::uuid is null and user_id is null and mvp_session_id=${owner.anonymousSessionId})
-          or (is_example and status='completed'))
+          or (is_example and status='completed' and coalesce(output_language,'ko')=${locale}))
         order by is_example desc, created_at desc limit 10
       `;
   return mapJobs(db, rows);
@@ -333,10 +334,11 @@ export async function getAuthenticatedProjectPageAccess(
   };
 }
 
-export async function getPublicExampleJobs(db: Sql): Promise<VideoJob[]> {
+export async function getPublicExampleJobs(db: Sql, locale: SiteLocale = "ko"): Promise<VideoJob[]> {
   const rows = await db`
     select * from shorts_mvp.video_jobs
     where is_example and status='completed' and user_deleted_at is null
+      and coalesce(output_language,'ko')=${locale}
     order by created_at desc limit 10
   `;
   return mapJobs(db, rows);

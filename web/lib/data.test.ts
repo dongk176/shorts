@@ -471,3 +471,37 @@ describe("all projects", () => {
     }]);
   });
 });
+
+
+describe("localized public examples", () => {
+  it.each(["ko", "en", "ja"] as const)("binds %s when selecting public examples", async (locale) => {
+    const query = vi.fn().mockResolvedValue([]);
+    await getPublicExampleJobs(query as unknown as Sql, locale);
+    const [parts, ...values] = query.mock.calls[0];
+    expect(parts.join("?")).toContain("coalesce(output_language,'ko')=?");
+    expect(values).toEqual([locale]);
+  });
+
+  it("filters shared examples without changing the user's ownership conditions", async () => {
+    const query = vi.fn().mockResolvedValue([]);
+    await getRecentJobs(query as unknown as Sql, { id: "session-a", selectedPlanCode: "free", userId: "user-a", user: null }, undefined, "ja");
+    const [parts, ...values] = query.mock.calls[0];
+    const sql = parts.join("?");
+    expect(sql).toContain("user_id=?");
+    expect(sql).toContain("or (is_example and status='completed' and coalesce(output_language,'ko')=?)");
+    expect(values.at(-1)).toBe("ja");
+    expect(values).toContain("user-a");
+  });
+});
+
+
+describe("direct example lookup", () => {
+  it("keeps a shared example reachable by its exact ID from any locale", async () => {
+    const query = vi.fn().mockResolvedValue([]);
+    await getRecentJobs(query as unknown as Sql, { id: "session-a", selectedPlanCode: "free", userId: "user-a", user: null }, "english-example", "ko");
+    const [parts, ...values] = query.mock.calls[0];
+    expect(parts.join("?")).not.toContain("output_language");
+    expect(parts.join("?")).toContain("or (is_example and status='completed')");
+    expect(values).toContain("english-example");
+  });
+});
