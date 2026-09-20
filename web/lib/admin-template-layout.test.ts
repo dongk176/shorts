@@ -50,7 +50,7 @@ describe("authorized subtitle template layout", () => {
     const standardSettings = shortsAppSource.indexOf(
       "{!settingsBelowRail && templateSettings}",
     );
-    const templateRail = shortsAppSource.indexOf('aria-label="템플릿 선택 레일"');
+    const templateRail = shortsAppSource.indexOf('aria-label={ui("템플릿 선택 레일")}');
     const adminSettings = shortsAppSource.indexOf(
       "{settingsBelowRail && templateSettings}",
     );
@@ -63,10 +63,10 @@ describe("authorized subtitle template layout", () => {
   it("hides the source usage copy from admins while preserving it for users", () => {
     expect(shortsAppSource).toContain("{!adminTemplateLayoutEnabled && (");
     expect(shortsAppSource).toContain(
-      "원본 영상 {formatDuration(selectedSource.durationSeconds)} · 예상 쇼츠 {selectedPlannedShortCount}개",
+      't("home.sourceSummary", { duration: formatDuration(selectedSource.durationSeconds, locale), count: selectedPlannedShortCount })',
     );
     expect(shortsAppSource).toContain(
-      "`선택한 ${formatDuration(selectedSourceDurationSeconds)}만 사용량으로 계산됩니다.`",
+      't("home.selectedUsage", { duration: formatDuration(selectedSourceDurationSeconds, locale) })',
     );
   });
 

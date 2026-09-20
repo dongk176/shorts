@@ -34,8 +34,8 @@ describe("editor direct text editing", () => {
   });
 
   it("offers direct editing from preview comments and active subtitles", () => {
-    expect(editorSource).toContain('title="더블클릭해서 댓글 수정"');
-    expect(editorSource).toContain('title="더블클릭해서 자막 수정"');
-    expect(editorSource).toContain('aria-label="현재 자막 수정"');
+    expect(editorSource).toContain('title={ui("더블클릭해서 댓글 수정")}');
+    expect(editorSource).toContain('title={ui("더블클릭해서 자막 수정")}');
+    expect(editorSource).toContain('aria-label={ui("현재 자막 수정")}');
   });
 });

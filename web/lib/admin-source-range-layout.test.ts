@@ -38,7 +38,7 @@ describe("authorized subtitle source range layout", () => {
       "showPlannedShortCount={!adminCompactSourceRangeEnabled}",
     );
     expect(shortsAppSource).toContain(
-      "{showPlannedShortCount ? ` · 예상 쇼츠 ${plannedShortCount}개` : \"\"}",
+      "{showPlannedShortCount ? ` · ${t(\"range.estimate\", { count: plannedShortCount })}` : \"\"}",
     );
   });
 
@@ -47,7 +47,7 @@ describe("authorized subtitle source range layout", () => {
     expect(shortsAppSource).not.toContain("어떤 느낌으로 만들까요?");
     expect(shortsAppSource).not.toContain("다른 스타일 보기");
     expect(shortsAppSource).not.toContain("직접 설정하기");
-    expect(shortsAppSource).toContain('<h2 className="text-xl font-bold">템플릿</h2>');
+    expect(shortsAppSource).toContain('<h2 className="text-xl font-bold">{ui("템플릿")}</h2>');
     expect(shortsAppSource).toContain("leadingFavoriteCards.map(renderFavoriteCard)");
   });
 });
