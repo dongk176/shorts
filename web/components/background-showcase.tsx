@@ -245,7 +245,7 @@ export function BackgroundShowcase() {
               aria-hidden={copyIndex === 1 ? undefined : true}
             >
               {imageOrder.map((image, imageIndex) => (
-                <figure className="background-showcase-item" key={`${copyIndex}-${image.src}`}>
+                <figure className={`background-showcase-item${locale === "ko" ? "" : " background-showcase-item-full-frame"}`} key={`${copyIndex}-${image.src}`}>
                   <Image
                     src={image.src}
                     alt={ui(copyIndex === 1 ? localizedValue(locale, { ko: `완성된 쇼츠 예시 ${imageIndex + 1}`, en: `Finished Shorts example ${imageIndex + 1}`, ja: `完成したショート動画の例 ${imageIndex + 1}` }) : "")}
