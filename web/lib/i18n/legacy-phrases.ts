@@ -5,6 +5,9 @@ type Phrase = readonly [ko: string, en: string, ja: string];
 // Legacy page copy is kept here while the product moves to semantic message keys.
 // User-provided and generated content is intentionally excluded from this table.
 const phrases: readonly Phrase[] = [
+  ["배경 이미지를 불러오지 못했습니다. 다시 시도해 주세요.", "Could not load your background images. Please try again.", "背景画像を読み込めませんでした。もう一度お試しください。"],
+  ["내 배경 목록을 불러오지 못했습니다.", "Could not load your background library.", "背景ライブラリを読み込めませんでした。"],
+  ["배경 이미지 처리 기능을 준비하지 못했습니다. 잠시 후 다시 시도해 주세요.", "Background image processing is temporarily unavailable. Please try again shortly.", "背景画像を一時的に処理できません。しばらくしてからもう一度お試しください。"],
   ["가이드북 포함", "Guidebook included", "ガイドブック付き"],
   ["가이드북 미포함", "Guidebook not included", "ガイドブックなし"],
   ["뉴스 블루", "News blue", "ニュース・ブルー"],

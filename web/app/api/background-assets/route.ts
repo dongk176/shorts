@@ -6,11 +6,10 @@ import {
   listBackgroundAssets,
   type BackgroundAssetReservation,
 } from "@/lib/background-assets";
-import { normalizeBackgroundAssetImage } from "@/lib/background-assets-image";
 import { assertBackgroundAssetMutationOrigin, readBackgroundAssetUpload } from "@/lib/background-assets-request";
 import { assertCustomTemplateDesignAccess, getCustomTemplateDesignAccess } from "@/lib/custom-template-design-access";
 import { getDb } from "@/lib/db";
-import { apiError } from "@/lib/http";
+import { apiError, HttpError } from "@/lib/http";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 
 export const runtime = "nodejs";
@@ -39,6 +38,11 @@ export async function POST(request: Request) {
     dbForUpload.current = db;
     assertCustomTemplateDesignAccess(await getCustomTemplateDesignAccess(db, session.userId));
     const file = await readBackgroundAssetUpload(request);
+    // Listing owned backgrounds must not initialize the native upload decoder.
+    // Load it only after authorization/validation and before reserving quota.
+    const { normalizeBackgroundAssetImage } = await import("@/lib/background-assets-image").catch(() => {
+      throw new HttpError(503, "배경 이미지 처리 기능을 준비하지 못했습니다. 잠시 후 다시 시도해 주세요.", "BACKGROUND_IMAGE_PROCESSOR_UNAVAILABLE");
+    });
     reservation = await beginBackgroundAssetUpload(db, session.userId, {
       originalByteSize: file.size, displayName: file.name,
     });
