@@ -348,8 +348,8 @@ export function TossPricingClient({
                   {translateLegacyText(`${plan.discountPercent}% 할인`, locale)}
                 </span>
               ) : null}
-              <div className="pricing-plan-name"><h2>{plan.displayName}</h2></div>
-              <p className={styles.localPlanDescription}>{subtitle(plan)}</p>
+              <div className="pricing-plan-name"><h2>{ui(plan.displayName)}</h2></div>
+              <p className={styles.localPlanDescription}>{ui(subtitle(plan))}</p>
               <div className={`pricing-price ${styles.localPlanPrice}`}>
                 <strong>₩{won(plan.monthlyEquivalentKrw)}</strong><span>{ui("/월")}</span>
               </div>
@@ -362,7 +362,7 @@ export function TossPricingClient({
                 {features(plan).map((feature, index) => (
                   <li key={feature} className={index === 5 && !plan.guidebookIncluded ? "pricing-feature-unavailable" : ""}>
                     <span>{index === 5 && !plan.guidebookIncluded ? "–" : "✓"}</span>
-                    <span>{index === 0 ? <strong>{ui(feature.replace(" 원본 영상 처리", ""))}</strong> : feature}{ui(index === 0 ? " 원본 영상 처리" : "")}</span>
+                    <span>{index === 0 ? <strong>{ui(feature.replace(" 원본 영상 처리", ""))}</strong> : ui(feature)}{ui(index === 0 ? " 원본 영상 처리" : "")}</span>
                   </li>
                 ))}
               </ul>
@@ -373,15 +373,15 @@ export function TossPricingClient({
                 onClick={() => choose(plan)}
               >
                 {current
-                  ? "이용 중"
+                  ? ui("이용 중")
                   : pending ? (
                     <span className={styles.planCtaPendingContent}>
                       <span className={styles.planCtaPendingIndicator} aria-hidden="true" />
                       <span className={styles.planCtaPendingCopy}><strong>{ui("이 플랜으로 변경 예약됨")}</strong></span>
                     </span>
                   ) : state?.subscription
-                    ? `${plan.displayName}로 전환하기`
-                    : `${plan.displayName} 구독 시작하기`}
+                    ? ui(`${plan.displayName}로 전환하기`)
+                    : ui(`${plan.displayName} 구독 시작하기`)}
               </button>
             </article>
           );
@@ -407,14 +407,14 @@ export function TossPricingClient({
               {selection.action === "cancel_pending" ? (
                 <div className={styles.localPlanSummary}>
                   <div className={styles.localPlanSummaryCopy}>
-                    <strong>{selection.plan.displayName} {translateLegacyText(`${selection.plan.contractMonths}개월`, locale)}</strong>
+                    <strong>{ui(selection.plan.displayName)} {translateLegacyText(`${selection.plan.contractMonths}개월`, locale)}</strong>
                     <span>{ui("예약을 취소하면 현재 플랜이 그대로 유지됩니다.")}</span>
                   </div>
                 </div>
               ) : (
                 <div className={styles.localPlanSummary}>
                   <div className={styles.localPlanSummaryCopy}>
-                    <strong>{selection.plan.displayName}</strong>
+                    <strong>{ui(selection.plan.displayName)}</strong>
                     {selection.action === "scheduled" && state.subscription ? (
                       <span>{ui("현재 구독 종료 후 적용됩니다")}</span>
                     ) : null}
@@ -424,7 +424,7 @@ export function TossPricingClient({
                           <span>✓</span>
                           <span>{index === 0
                             ? <><strong>{ui(feature.replace(" 원본 영상 처리", ""))}</strong> {ui(" 원본 영상 처리")}</>
-                            : feature}</span>
+                            : ui(feature)}</span>
                         </li>
                       ))}
                     </ul>

@@ -2,6 +2,9 @@ import { type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { PricingClient, type PricingState } from "@/app/pricing/pricing-client";
+import { TossPricingClient } from "@/app/pricing/toss-pricing-client";
+import { TOSS_SALE_PLAN_CATALOG } from "@/lib/toss-subscription";
+import { createUiText } from "./ui-text";
 import { AiShortsGuideContent } from "@/components/home-seo-content";
 import { TemplateEditor } from "@/app/templates/template-editor";
 import { CustomTemplateCanvasPreview } from "@/components/custom-template-canvas-preview";
@@ -43,6 +46,24 @@ const guestState: PricingState = {
 
 
 describe("localized first render without browser effects", () => {
+  it.each(["en", "ja"] as const)("renders the live Toss catalog in %s without relying on the DOM bridge", (locale) => {
+    const html = render(<TossPricingClient initialState={null} guestCatalog={[...TOSS_SALE_PLAN_CATALOG]} onRequireLogin={noop} />, locale);
+    expect(html).not.toMatch(/[가-힣]/);
+    for (const amount of ["9,900", "119,400", "288,000"]) expect(html).toContain(amount);
+    expect(html).toContain(locale === "en" ? "About 48 Shorts per month" : "毎月ショート動画約48本");
+    expect(html).toContain(locale === "en" ? "Subscribe to Easy Cut Pro" : "Easy Cut Proを申し込む");
+    const ui = createUiText(locale);
+    for (const plan of TOSS_SALE_PLAN_CATALOG) {
+      expect(ui(`${plan.displayName}로 전환하기`)).not.toMatch(/[가-힣]/);
+      expect(ui(`쇼츠 약 ${Math.round(plan.monthlyQuotaSeconds / 60 * 0.8 * plan.contractMonths)}개 · ${plan.contractMonths}개월`)).not.toMatch(/[가-힣]/);
+    }
+    for (const cycle of ["분기", "반기", "연간"]) {
+      const text = ui(`${cycle} 결제 · 총 ₩119,400`);
+      expect(text).not.toMatch(/[가-힣]/);
+      expect(text).toContain("119,400");
+    }
+  });
+
   it.each(["en", "ja"] as const)("renders %s pricing and guide copy in the initial HTML", (locale) => {
     const html = render(<><PricingClient initialState={guestState} onRequireLogin={noop} /><AiShortsGuideContent /></>, locale);
     expect(html).not.toMatch(/[가-힣]/);

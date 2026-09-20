@@ -1459,6 +1459,25 @@ function withOriginalWhitespace(original: string, translated: string) {
 function translateDynamicText(value: string, locale: Exclude<SiteLocale, "ko">) {
   const trimmed = value.trim();
   const translateKnown = (source: string) => phraseMaps[locale].get(source) || source;
+  const monthlyShortsMatch = /^쇼츠 매월 약 ([\d,]+)개$/.exec(trimmed);
+  if (monthlyShortsMatch) return withOriginalWhitespace(value, locale === "en"
+    ? `About ${monthlyShortsMatch[1]} Shorts per month`
+    : `毎月ショート動画約${monthlyShortsMatch[1]}本`);
+  const termShortsMatch = /^쇼츠 약 ([\d,]+)개 · (\d+)개월$/.exec(trimmed);
+  if (termShortsMatch) return withOriginalWhitespace(value, locale === "en"
+    ? `About ${termShortsMatch[1]} Shorts over ${termShortsMatch[2]} months`
+    : `${termShortsMatch[2]}か月でショート動画約${termShortsMatch[1]}本`);
+  const billingCycleMatch = /^(월간|분기|반기|연간) 결제(?: · 총 ₩([\d,]+))?$/.exec(trimmed);
+  if (billingCycleMatch) {
+    const cycle = ({ 월간: ["Billed monthly", "月払い"], 분기: ["Billed every 3 months", "3か月ごとのお支払い"], 반기: ["Billed every 6 months", "6か月ごとのお支払い"], 연간: ["Billed annually", "年払い"] } as Record<string, [string, string]>)[billingCycleMatch[1]];
+    return withOriginalWhitespace(value, `${cycle[locale === "en" ? 0 : 1]}${billingCycleMatch[2]
+      ? locale === "en" ? ` · ₩${billingCycleMatch[2]} total` : ` · 合計₩${billingCycleMatch[2]}`
+      : ""}`);
+  }
+  const planActionMatch = /^(이지컷 프로|스타터 패키지|전문가 패키지)( 구독 시작하기|로 전환하기)$/.exec(trimmed);
+  if (planActionMatch) return withOriginalWhitespace(value, locale === "en"
+    ? `${planActionMatch[2] === "로 전환하기" ? "Switch to" : "Subscribe to"} ${translateKnown(planActionMatch[1])}`
+    : `${translateKnown(planActionMatch[1])}${planActionMatch[2] === "로 전환하기" ? "に変更" : "を申し込む"}`);
   const draftSavedMatch = /^(\d+)(분|시간|일) 전 저장됨$/.exec(trimmed);
   if (draftSavedMatch) {
     const unit = draftSavedMatch[2] === "분" ? ["min", "分"]
