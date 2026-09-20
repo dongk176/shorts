@@ -33,3 +33,6 @@ venv/
 coverage/
 htmlcov/
 .tmp/creator-support-*
+
+# Local publishing review evidence and fixture media
+.local-review/
