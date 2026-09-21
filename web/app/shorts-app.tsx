@@ -1,5 +1,6 @@
 "use client";
 import dynamic from "next/dynamic";
+const YoutubeAccountConnections = dynamic(() => import("@/components/youtube-account-connections").then(module => module.YoutubeAccountConnections), { ssr: false });
 const AdminPublishingButton = dynamic(() => import("@/components/admin-publishing-button").then(module => module.AdminPublishingButton), { ssr: false });
 
 
@@ -12541,7 +12542,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
   return <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 sm:items-center sm:p-6" role="dialog" aria-modal="true" aria-labelledby="editor-title">{editorContent}</div>;
 }
 
-function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = false, unifiedTemplateSubtitleCanaryEnabled = false, adminPublishingEnabled = false, metaReviewerShortId = null }: { job: VideoJob; access: ProjectActionAccess; onBack: () => void; adminSubtitleLayoutEnabled?: boolean; unifiedTemplateSubtitleCanaryEnabled?: boolean; adminPublishingEnabled?: boolean; metaReviewerShortId?: string | null }) {
+function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = false, unifiedTemplateSubtitleCanaryEnabled = false, adminPublishingEnabled = false, metaReviewerShortId = null, youtubeReviewerShortId = null }: { job: VideoJob; access: ProjectActionAccess; onBack: () => void; adminSubtitleLayoutEnabled?: boolean; unifiedTemplateSubtitleCanaryEnabled?: boolean; adminPublishingEnabled?: boolean; metaReviewerShortId?: string | null; youtubeReviewerShortId?: string | null }) {
   const ui = useUiText();
   const { locale } = useI18n();
   const [playbackAssets, setPlaybackAssets] = useState<Record<string, {
@@ -12844,6 +12845,7 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
                         : access.canDownload
                           ? <a data-project-guide={item.id === guideDownloadShortId ? "download" : undefined} href={`/api/shorts/${encodeURIComponent(item.id)}/download`} download={shortDownloadFilename(item.hookTitle)} className="tool-button short-download-button flex items-center justify-center" aria-label={locale === "ko" ? `${item.hookTitle} 다운로드` : locale === "en" ? `Download ${item.hookTitle}` : `${item.hookTitle}をダウンロード`}>{ui("↓ 다운로드")}</a>
                           : <button data-project-guide={item.id === guideDownloadShortId ? "download" : undefined} type="button" onClick={() => setDownloadPaywallOpen(true)} className="tool-button short-download-button">{ui("↓ 다운로드")}</button>}
+                      {youtubeReviewerShortId === item.id && !job.isExample && !itemIsRerendering && item.status === "ready" && <YoutubeAccountConnections shortId={item.id} title={item.hookTitle} previewUrl={`/api/youtube/accounts/media/${item.id}`}/>}
                       {(adminPublishingEnabled || metaReviewerShortId === item.id) && !job.isExample && !itemIsRerendering && item.status === "ready" && <AdminPublishingButton shortId={item.id} title={item.hookTitle} metaOnly={!adminPublishingEnabled}/>}
                     </div>
                     {subtitleEditorUnavailable && (
@@ -12902,7 +12904,7 @@ export function ShortEditorPage({ projectNumber, shortId, rangeEditingEnabled = 
   return <Editor item={item} outputLanguage={project.outputLanguage} commentOutputLanguage={project.sourceLanguage ? project.outputLanguage : "ko"} channelThumbnailUrl={project.channelThumbnailUrl} standalone projectLabel={item.hookTitle} projectNumber={project.projectNumber} onClose={closeEditor} onChanged={loadProject} rangeEditingEnabled={rangeEditingEnabled} overlayPreviewEnabled={overlayPreviewEnabled} editorSaveEnabled={editorSaveEnabled} editorRelease={editorRelease} unifiedTemplateSubtitleCanaryEnabled={unifiedTemplateSubtitleCanaryEnabled} customTemplateDesignEnabled={customTemplateDesignEnabled} wordTimedSubtitlesAvailable={item.wordTimedSubtitlesAvailable} paidAccessBlocked={!access?.canEdit} />;
 }
 
-export function ProjectPage({ projectNumber, adminSubtitleLayoutEnabled = false, unifiedTemplateSubtitleCanaryEnabled = false, adminPublishingEnabled = false, metaReviewerShortId = null }: { projectNumber: number; adminSubtitleLayoutEnabled?: boolean; unifiedTemplateSubtitleCanaryEnabled?: boolean; adminPublishingEnabled?: boolean; metaReviewerShortId?: string | null }) {
+export function ProjectPage({ projectNumber, adminSubtitleLayoutEnabled = false, unifiedTemplateSubtitleCanaryEnabled = false, adminPublishingEnabled = false, metaReviewerShortId = null, youtubeReviewerShortId = null }: { projectNumber: number; adminSubtitleLayoutEnabled?: boolean; unifiedTemplateSubtitleCanaryEnabled?: boolean; adminPublishingEnabled?: boolean; metaReviewerShortId?: string | null; youtubeReviewerShortId?: string | null }) {
   const ui = useUiText();
   const [project, setProject] = useState<VideoJob | null>(null);
   const [access, setAccess] = useState<ProjectActionAccess>({ canEdit: false, canDownload: false });
@@ -12978,6 +12980,7 @@ export function ProjectPage({ projectNumber, adminSubtitleLayoutEnabled = false,
   return <ProjectWorkspace
     adminPublishingEnabled={adminPublishingEnabled}
     metaReviewerShortId={metaReviewerShortId}
+    youtubeReviewerShortId={youtubeReviewerShortId}
     job={project}
     access={access}
     onBack={returnToProjects}

@@ -1,3 +1,5 @@
+import { accountServices } from "@/lib/youtube-accounts/runtime";
+import { withYoutubeWithdrawal } from "@/lib/youtube-accounts/withdrawal";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -166,7 +168,10 @@ export async function POST(request: Request) {
       }
     }
 
-    await db.begin(async (tx) => {
+    const hasYoutubeConnections = process.env.YOUTUBE_ACCOUNTS_MODE === "review"
+      && (await db`select 1 from shorts_mvp.youtube_account_owners where user_id=${session.userId} limit 1`).length > 0;
+    const youtube = hasYoutubeConnections ? accountServices() : undefined;
+    const youtubeRevocation = await withYoutubeWithdrawal(db, session.userId, youtube, async (tx) => {
       await tx`
         insert into shorts_mvp.account_withdrawal_retention (
           user_id,withdrawn_at,contract_payment_records_until,
@@ -300,7 +305,7 @@ export async function POST(request: Request) {
       // The admin deletion already invalidates the account. Cookie cleanup is best effort.
     }
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, youtubeRevocation });
   } catch (error) {
     return apiError(error, "회원탈퇴를 처리하지 못했습니다.");
   }

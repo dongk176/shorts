@@ -1,0 +1,25 @@
+{
+  "appliedAt": "2026-09-21T16:08:16.999Z",
+  "database": "mvcprswvfybudtopepuj",
+  "schema": "shorts_mvp",
+  "file": "supabase/migrations/202609220001_youtube_reviewer_accounts.sql",
+  "sha256": "c527f91d78569c9d27e55463f0328539ce6302fbc03388bc09e2fbc79c19198b",
+  "tables": [
+    {
+      "relname": "youtube_account_links",
+      "relrowsecurity": true
+    },
+    {
+      "relname": "youtube_account_oauth",
+      "relrowsecurity": true
+    },
+    {
+      "relname": "youtube_account_owners",
+      "relrowsecurity": true
+    },
+    {
+      "relname": "youtube_account_uploads",
+      "relrowsecurity": true
+    }
+  ]
+}

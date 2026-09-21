@@ -10,6 +10,7 @@ import {
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 import { resolveUnifiedTemplateSubtitleEditorContext } from "@/lib/subtitle-template-release";
 import { ProjectPage } from "../../shorts-app";
+import { youtubeReviewerShortForProject } from "@/lib/youtube-accounts/review-access";
 import { canUseAdminPublishing, metaReviewerShortForProject } from "@/lib/social-publishing/access";
 
 export const dynamic = "force-dynamic";
@@ -62,15 +63,17 @@ export default async function ProjectNumberPage({
       && adminSubtitleLayoutEnabled;
   }
 
-  const [adminPublishingEnabled, metaReviewerShortId] = await Promise.all([
+  const [adminPublishingEnabled, metaReviewerShortId, youtubeReviewerShortId] = await Promise.all([
     canUseAdminPublishing(db, projectAccess.appUserId),
     metaReviewerShortForProject(db, projectAccess.appUserId, projectNumber),
+    youtubeReviewerShortForProject(db, projectAccess.appUserId, projectNumber),
   ]);
 
   return <ProjectPage
     projectNumber={projectNumber}
     adminPublishingEnabled={adminPublishingEnabled}
     metaReviewerShortId={metaReviewerShortId}
+    youtubeReviewerShortId={youtubeReviewerShortId}
     adminSubtitleLayoutEnabled={adminSubtitleLayoutEnabled}
     unifiedTemplateSubtitleCanaryEnabled={unifiedTemplateSubtitleCanaryEnabled}
   />;

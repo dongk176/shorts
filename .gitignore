@@ -40,3 +40,6 @@ htmlcov/
 # Existing isolated PostgreSQL test runtime (local symlink).
 /test-tools
 .vercel
+
+# Private reviewer credentials and local check scripts.
+.secrets/

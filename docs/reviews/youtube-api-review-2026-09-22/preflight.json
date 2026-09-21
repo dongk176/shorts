@@ -1,0 +1,13 @@
+{
+  "checkedAt": "2026-09-21T16:05:58.281Z",
+  "productionDatabase": "mvcprswvfybudtopepuj",
+  "schema": "shorts_mvp",
+  "authIdentityVerified": true,
+  "awsAccount": "181651591905",
+  "existingYoutubeTables": [],
+  "requiredColumns": [
+    "user_deleted_at",
+    "output_language",
+    "source_type"
+  ]
+}

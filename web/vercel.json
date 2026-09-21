@@ -41,6 +41,10 @@
     {
       "path": "/api/cron/youtube-japan",
       "schedule": "15 8 * * *"
+    },
+    {
+      "path": "/api/cron/youtube-accounts",
+      "schedule": "23 * * * *"
     }
   ]
 }

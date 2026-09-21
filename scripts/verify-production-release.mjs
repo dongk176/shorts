@@ -42,6 +42,18 @@ export const PROTECTED_APP_ROUTES = [
 // These routes are the only intentional additions relative to the currently
 // promoted production manifest. Everything else must still fail closed.
 export const ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE = [
+  // Explicit YouTube reviewer account and owned fixture only (2026-09-22).
+  "/api/youtube/accounts/[connectionId]/route",
+  "/api/youtube/accounts/eligibility/route",
+  "/api/youtube/accounts/maintenance/route",
+  "/api/youtube/accounts/media/[shortId]/route",
+  "/api/youtube/accounts/oauth/callback/route",
+  "/api/youtube/accounts/oauth/start/route",
+  "/api/youtube/accounts/route",
+  "/api/youtube/accounts/uploads/[uploadId]/resume/route",
+  "/api/youtube/accounts/uploads/route",
+  "/api/cron/youtube-accounts/route",
+  "/publish/channels/page",
   // Explicitly authorized administrator-only Instagram/Threads test release.
   "/api/social/[platform]/route",
   "/api/social/[platform]/connections/[connectionId]/route",
