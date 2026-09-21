@@ -47,7 +47,7 @@ const fetcher: typeof fetch = async (input, init) => {
   }
   if (url.pathname === "/oauth/access_token") {
     expect(body.get("redirect_uri")).toBe(config.redirectUri); expect(body.get("client_secret")).toBe("test-secret");
-    return new Response('{"access_token":"short-private-token","user_id":17841405793187219,"permissions":'+JSON.stringify((partial ? config.scopes.slice(0,1) : config.scopes).join(','))+'}');
+    return new Response('{"access_token":"short-private-token","user_id":17841405793187219,"permissions":'+JSON.stringify(partial ? config.scopes.slice(0,1) : config.scopes)+'}');
   }
   if (url.pathname === "/access_token") return longFails ? Response.json({error:{code:190}}, {status:400}) : Response.json({ access_token:"long-private-token",expires_in:60*86400 });
   if (url.pathname === "/refresh_access_token") { return Response.json({access_token:"rotated-private-token",expires_in:60*86400}); }

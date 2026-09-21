@@ -4,6 +4,27 @@ import { MetaApi } from "./api";
 import type { MetaConfig } from "./config";
 const config: MetaConfig = {platform:"instagram", clientId:"123", clientSecret:"never-log-app-secret", graphVersion:"v26.0", origin:"https://www.easycut.co.kr", appKey:"instagram:123", redirectUri:"https://www.easycut.co.kr/api/social/instagram/oauth/callback", scopes:["instagram_business_basic","instagram_business_content_publish"], oauthReady:true};
 describe("Meta OAuth diagnostics", () => {
+  it.each([
+    ["live string array", ["instagram_business_basic", "instagram_business_content_publish"]],
+    ["documented comma-separated string", "instagram_business_basic, instagram_business_content_publish"],
+  ])("accepts the two required permissions from a %s", async (_name, permissions) => {
+    const api = new MetaApi(config, vi.fn(async input => new URL(String(input)).pathname === "/oauth/access_token"
+      ? Response.json({data:[{access_token:"short-token",user_id:"123",permissions}]})
+      : Response.json({access_token:"long-token",expires_in:5000000})));
+    expect((await api.exchange("code")).scopes).toEqual(config.scopes);
+  });
+  it.each([
+    ["partial array", ["instagram_business_basic"]],
+    ["missing permissions", undefined],
+    ["malformed array", ["instagram_business_basic", {permission:"instagram_business_content_publish",status:"granted"}]],
+    ["empty array", []],
+  ])("rejects a %s without assuming requested scopes were granted", async (_name, permissions) => {
+    const api = new MetaApi(config, vi.fn(async (input, init) => init?.method === "DELETE" ? Response.json({success:true})
+      : new URL(String(input)).pathname === "/oauth/access_token"
+        ? Response.json({access_token:"short-token",user_id:"123",permissions})
+        : Response.json({access_token:"long-token",expires_in:5000000})));
+    await expect(api.exchange("code")).rejects.toMatchObject({code:"META_PERMISSION_REQUIRED"});
+  });
   it("identifies a provider rejection without exposing request or response secrets", async () => {
     const api = new MetaApi(config, vi.fn(async () => Response.json({error:{code:190,error_subcode:463,message:"never-log-access-token",error_data:{secret:"never-log-private-data"}}},{status:400})));
     const error = await api.exchange("never-log-authorization-code").catch(e => e);

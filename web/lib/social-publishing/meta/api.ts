@@ -6,6 +6,12 @@ import type { Tokens } from "./contracts";
 type Json = Record<string, unknown>;
 const object = (value: unknown): Json => value && typeof value === "object" && !Array.isArray(value) ? value as Json : {};
 const lifetime = (value: unknown) => Number.isSafeInteger(Number(value)) && Number(value) > 0 && Number(value) <= 366 * 86400;
+const grantedPermissions = (raw: unknown): string[] => {
+  // The documented response is comma-separated text; live Instagram responses
+  // also use a string array. Never coerce malformed entries into a grant.
+  const entries = typeof raw === "string" ? raw.split(",") : Array.isArray(raw) && raw.every(entry => typeof entry === "string") ? raw : [];
+  return entries.map(entry => entry.trim()).filter(Boolean);
+};
 const identifier = (raw: unknown) => { const value = typeof raw === "number" && Number.isSafeInteger(raw) ? String(raw) : raw; if (typeof value !== "string" || !/^\d{1,64}$/.test(value)) throw new MetaApiError("META_PROVIDER_RESPONSE", true); return value; };
 type MetaDiagnostic = {
   stage: "authorization_code" | "long_token" | "grant_validation" | "profile" | "permissions" | "graph";
@@ -68,7 +74,7 @@ export class MetaApi {
       const accessToken = typeof long.access_token === "string" ? long.access_token : "";
       if (!accessToken || !lifetime(long.expires_in)) throw new MetaApiError("META_PROVIDER_RESPONSE");
       const granted = this.config.platform === "instagram"
-        ? (typeof first.permissions === "string" ? first.permissions.split(",") : []).map(scope => scope.trim())
+        ? grantedPermissions(first.permissions)
         : await this.permissions(accessToken);
       if (this.config.scopes.some(scope => !granted.includes(scope))) throw new MetaApiError("META_PERMISSION_REQUIRED", false, {
         stage: "grant_validation", permissionsShape: typeof first.permissions === "string" ? "string" : Array.isArray(first.permissions) ? "array" : first.permissions == null ? "missing" : "other",
