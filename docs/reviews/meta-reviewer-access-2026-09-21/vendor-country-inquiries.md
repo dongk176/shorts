@@ -2,7 +2,15 @@
 
 작성일: 2026-09-21. 아직 발송하지 않았다. 아래 수신 주소는 각 업체의 공식 개인정보 페이지에서 확인했다. 실제 토큰, 앱 시크릿, 고객 정보, 데이터베이스 접속 정보는 포함하지 않는다.
 
-Meta 신청서는 보관 지역뿐 아니라 인터넷을 통한 원격 접근 위치를 포함한 모든 처리 국가를 요구한다. 현재 문서로 확인한 기본 서비스 지역만으로 전체 국가 목록을 단정하지 않는다. 두 업체의 답변이나 해당 서비스에 적용되는 공식 목록을 확보한 뒤 입력한다.
+Meta 신청서는 보관 지역뿐 아니라 인터넷을 통한 원격 접근 위치를 포함한 모든 처리 국가를 요구한다. 현재 문서로 확인한 기본 서비스 지역만으로 전체 국가 목록을 단정하지 않는다. **업체 이메일 회신이나 확인서 첨부가 Meta의 필수 요건인 것은 아니다.** 공식 공개 자료와 실제 서비스 설정을 먼저 대조한다. 아래 메일은 공개 자료에서 해결되지 않는 사항에 대한 선택적인 문의 초안이며, 답장을 모든 심사 준비의 선행 조건으로 삼지 않는다. 사용자는 공개 자료 우선 확인을 요청했으며 발송은 승인하지 않았다.
+
+## 공개 자료 재확인 — 2026-09-21
+
+- Vercel Trust Center의 공개 Subprocessors 표(표시된 갱신일 2026-08-21)는 업체별 Purpose와 Location을 제공한다. 미국 외에 Tinybird는 Spain, Plain은 United Kingdom으로 표시된다. 이 목록에는 선택형 제품과 지원·결제 업체도 있으므로 모든 업체가 EasyCut의 Meta Platform Data를 처리한다고 단정하지 않는다. https://security.vercel.com/subprocessors
+- Supabase의 현행 Subprocessor List 안내는 2026-06-01 PDF를 최신으로 연결한다. PDF는 업체명과 처리 설명을 제공하며 국가 열은 없다. https://supabase.com/legal/customer-resources/subprocessor-list
+- 추가로 발견한 Supabase 공식 TIA(2025-03-14), 4쪽은 개인 데이터가 이전될 수 있는 국가를 United States of America와 Singapore로 명시한다. 이는 회사 주소에서 추정한 국가가 아니라 해당 문서에 명시된 이전 국가다. 다만 2026년 DPA 및 업체 목록보다 오래된 문서이므로 이를 현재 EasyCut의 모든 처리·원격 접근 국가를 확정한 자료로 취급하지 않는다. https://supabase.com/downloads/docs/Supabase%2BTIA%2B250314.pdf
+- 앞서 확인한 EasyCut의 Vercel 함수 지역은 icn1/iad1, Supabase DB 지역은 Seoul이다. 이는 실제 기본 처리 지역에 대한 근거이며 업체의 모든 원격 지원 위치에 대한 근거는 아니다.
+- 이번 작업은 공개 자료 조사와 이 기록 수정뿐이다. 외부 메일 발송, Meta 국가 답변 저장, 배포, DB 변경은 하지 않았다.
 
 ## Vercel
 
