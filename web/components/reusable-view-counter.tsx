@@ -38,9 +38,15 @@ function visibleValue(value: number | null, locale: SiteLocale) {
 }
 
 function counterLabel(locale: SiteLocale) {
-  if (locale === "en") return "Cumulative views";
-  if (locale === "ja") return "累計再生回数";
-  return "누적 조회수";
+  if (locale === "en") return "CC BY cumulative views";
+  if (locale === "ja") return "CC BY 累計再生回数";
+  return "CC BY 누적 조회수";
+}
+
+function counterDescription(locale: SiteLocale) {
+  if (locale === "en") return "Cumulative views of videos licensed under CC BY.";
+  if (locale === "ja") return "CC BY ライセンス動画の累計再生回数です。";
+  return "CC BY 라이선스 영상의 누적 조회수입니다";
 }
 
 function generatedShortsLabel(locale: SiteLocale) {
@@ -57,17 +63,17 @@ function accessibleLabel(
 ) {
   if (locale === "en") {
     return showingViews
-      ? `Cumulative views of reuse-allowed videos: ${viewValue}. Show shorts created so far`
-      : `Shorts created so far: ${generatedValue}. Show cumulative views`;
+      ? `Cumulative views of CC BY-licensed videos: ${viewValue}. Show shorts created so far`
+      : `Shorts created so far: ${generatedValue}. Show CC BY cumulative views`;
   }
   if (locale === "ja") {
     return showingViews
-      ? `再利用可能な動画の累計再生回数 ${viewValue}。これまでに作成したショート動画を表示`
-      : `これまでに作成したショート動画 ${generatedValue}。累計再生回数を表示`;
+      ? `CC BY ライセンス動画の累計再生回数 ${viewValue}。これまでに作成したショート動画を表示`
+      : `これまでに作成したショート動画 ${generatedValue}。CC BY 累計再生回数を表示`;
   }
   return showingViews
-    ? `재사용 허용 영상 누적 조회수 ${viewValue}. 지금까지 생성된 쇼츠 보기`
-    : `지금까지 생성된 쇼츠 ${generatedValue}. 누적 조회수 보기`;
+    ? `CC BY 라이선스 영상의 누적 조회수 ${viewValue}. 지금까지 생성된 쇼츠 보기`
+    : `지금까지 생성된 쇼츠 ${generatedValue}. CC BY 누적 조회수 보기`;
 }
 
 export function ReusableViewCounter({
@@ -296,6 +302,11 @@ export function ReusableViewCounter({
         setRotationResetToken((current) => current + 1);
       }}
     >
+      {showingViews && (
+        <span className="home-metric-tooltip" aria-hidden="true">
+          {counterDescription(locale)}
+        </span>
+      )}
       <span className="home-metric-stage" aria-hidden="true">
         <span
           className={`home-metric-panel ${showingViews ? "is-active" : ""}`}

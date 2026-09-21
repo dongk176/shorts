@@ -30,6 +30,7 @@
 }
 
 .home-generated-shorts-count {
+  position: relative;
   appearance: none;
   display: flex;
   width: fit-content;
@@ -57,6 +58,34 @@
 .home-generated-shorts-count:focus-visible {
   outline: 2px solid #d5aaa4;
   outline-offset: 7px;
+}
+
+.home-metric-tooltip {
+  display: none;
+  position: absolute;
+  z-index: 10;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: min(320px, calc(100vw - 32px));
+  padding: 9px 12px;
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 8px;
+  background: #25232b;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+  box-shadow: 0 4px 16px rgba(0,0,0,.24);
+  pointer-events: none;
+}
+
+@media (min-width: 768px) and (hover: hover) and (pointer: fine) {
+  .home-generated-shorts-count:hover .home-metric-tooltip,
+  .home-generated-shorts-count:focus-visible .home-metric-tooltip {
+    display: block;
+  }
 }
 
 .home-metric-stage {

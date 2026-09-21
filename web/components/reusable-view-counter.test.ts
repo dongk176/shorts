@@ -16,7 +16,7 @@ describe("reusable view counter UI", () => {
     expect(source).toContain("setShowingViews((current) => !current)");
     expect(source).toContain('data-metric="views"');
     expect(source).toContain('data-metric="generated-shorts"');
-    expect(source).toContain('return "누적 조회수"');
+    expect(source).toContain('return "CC BY 누적 조회수"');
     expect(source).toContain('return "지금까지 생성된 쇼츠"');
     expect(source).toContain('return `${formatted}회`');
     expect(source).not.toContain('href="/popular"');
