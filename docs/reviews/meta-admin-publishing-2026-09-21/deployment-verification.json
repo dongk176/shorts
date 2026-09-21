@@ -1,0 +1,299 @@
+{
+  "source": "8aded1de84ec60732a4a96165676826c5520c8aa",
+  "promoted": {
+    "project": "prj_bQyHRVC3Pfzq2dvUnAqEDlw66GOw",
+    "deployment": "dpl_BJq3oCc2A92onbGasvQATUYEQWxm",
+    "url": "shorts-36hjk7gf1-artiroom.vercel.app",
+    "commit": "8aded1de84ec60732a4a96165676826c5520c8aa",
+    "state": "READY",
+    "aliases": []
+  },
+  "routeComparison": {
+    "baselineCount": 210,
+    "candidateCount": 219,
+    "missing": []
+  },
+  "candidateNonadmin": [
+    {
+      "role": "nonadmin",
+      "method": "GET",
+      "path": "/api/social/instagram",
+      "status": 403,
+      "code": "META_DISABLED"
+    },
+    {
+      "role": "nonadmin",
+      "method": "POST",
+      "path": "/api/social/instagram/oauth/start",
+      "status": 403
+    },
+    {
+      "role": "nonadmin",
+      "method": "POST",
+      "path": "/api/social/instagram/posts",
+      "status": 403
+    },
+    {
+      "role": "nonadmin",
+      "method": "GET",
+      "path": "/api/social/instagram/posts?shortId=1b8bc622-981a-4fd1-818a-1b99411e96b2",
+      "status": 403,
+      "code": "META_DISABLED"
+    },
+    {
+      "role": "nonadmin",
+      "method": "POST",
+      "path": "/api/social/instagram/posts/1b8bc622-981a-4fd1-818a-1b99411e96b2/check",
+      "status": 403
+    },
+    {
+      "role": "nonadmin",
+      "method": "DELETE",
+      "path": "/api/social/instagram/connections/1b8bc622-981a-4fd1-818a-1b99411e96b2",
+      "status": 403
+    },
+    {
+      "role": "nonadmin",
+      "method": "GET",
+      "path": "/api/social/instagram/preview/1b8bc622-981a-4fd1-818a-1b99411e96b2",
+      "status": 403
+    },
+    {
+      "role": "nonadmin",
+      "method": "GET",
+      "path": "/api/social/threads",
+      "status": 403,
+      "code": "META_DISABLED"
+    },
+    {
+      "role": "nonadmin",
+      "method": "POST",
+      "path": "/api/social/threads/oauth/start",
+      "status": 403
+    },
+    {
+      "role": "nonadmin",
+      "method": "POST",
+      "path": "/api/social/threads/posts",
+      "status": 403
+    },
+    {
+      "role": "nonadmin",
+      "method": "GET",
+      "path": "/api/social/threads/posts?shortId=1b8bc622-981a-4fd1-818a-1b99411e96b2",
+      "status": 403,
+      "code": "META_DISABLED"
+    },
+    {
+      "role": "nonadmin",
+      "method": "POST",
+      "path": "/api/social/threads/posts/1b8bc622-981a-4fd1-818a-1b99411e96b2/check",
+      "status": 403
+    },
+    {
+      "role": "nonadmin",
+      "method": "DELETE",
+      "path": "/api/social/threads/connections/1b8bc622-981a-4fd1-818a-1b99411e96b2",
+      "status": 403
+    },
+    {
+      "role": "nonadmin",
+      "method": "GET",
+      "path": "/api/social/threads/preview/1b8bc622-981a-4fd1-818a-1b99411e96b2",
+      "status": 403
+    },
+    {
+      "role": "nonadmin",
+      "method": "GET",
+      "path": "/en/projects",
+      "status": 200,
+      "uploadVisible": false
+    },
+    {
+      "role": "nonadmin",
+      "method": "GET",
+      "path": "/api/social/tiktok",
+      "status": 403,
+      "code": "TIKTOK_DISABLED"
+    }
+  ],
+  "candidateAdmin": [
+    {
+      "role": "admin",
+      "method": "GET",
+      "path": "/api/social/instagram?shortId=1b8bc622-981a-4fd1-818a-1b99411e96b2",
+      "status": 200,
+      "oauthReady": true,
+      "connectionCount": 0
+    },
+    {
+      "role": "admin",
+      "method": "GET",
+      "path": "/api/social/instagram/posts?shortId=1b8bc622-981a-4fd1-818a-1b99411e96b2",
+      "status": 200
+    },
+    {
+      "role": "admin",
+      "method": "HEAD",
+      "path": "/api/social/instagram/preview/1b8bc622-981a-4fd1-818a-1b99411e96b2",
+      "status": 200
+    },
+    {
+      "role": "admin",
+      "method": "POST",
+      "path": "/api/social/instagram/posts",
+      "status": 400
+    },
+    {
+      "role": "admin",
+      "method": "GET",
+      "path": "/api/social/threads?shortId=1b8bc622-981a-4fd1-818a-1b99411e96b2",
+      "status": 200,
+      "oauthReady": true,
+      "connectionCount": 0
+    },
+    {
+      "role": "admin",
+      "method": "GET",
+      "path": "/api/social/threads/posts?shortId=1b8bc622-981a-4fd1-818a-1b99411e96b2",
+      "status": 200
+    },
+    {
+      "role": "admin",
+      "method": "HEAD",
+      "path": "/api/social/threads/preview/1b8bc622-981a-4fd1-818a-1b99411e96b2",
+      "status": 200
+    },
+    {
+      "role": "admin",
+      "method": "POST",
+      "path": "/api/social/threads/posts",
+      "status": 400
+    },
+    {
+      "role": "admin",
+      "method": "GET",
+      "path": "/en/projects/14596",
+      "status": 200,
+      "uploadVisible": false,
+      "adminPublishingEnabled": true
+    },
+    {
+      "role": "admin",
+      "method": "GET",
+      "path": "/en/projects/14596/edit/1b8bc622-981a-4fd1-818a-1b99411e96b2",
+      "status": 200,
+      "uploadVisible": false
+    },
+    {
+      "role": "admin",
+      "method": "GET",
+      "path": "/api/social/tiktok",
+      "status": 200,
+      "oauthReady": true,
+      "connectionCount": 0
+    }
+  ],
+  "candidateAdmission": {
+    "origin": "https://shorts-36hjk7gf1-artiroom.vercel.app",
+    "fingerprint": "668676b0a45b9376e76461fdd8f11367524e4a2bf08695ddc13aa62c267964f4"
+  },
+  "liveAnonymous": [
+    {
+      "path": "/",
+      "status": 200,
+      "expected": 200,
+      "uploadVisible": false
+    },
+    {
+      "path": "/guidebook",
+      "status": 200,
+      "expected": 200,
+      "uploadVisible": false
+    },
+    {
+      "path": "/pricing",
+      "status": 200,
+      "expected": 200,
+      "uploadVisible": false
+    },
+    {
+      "path": "/privacy",
+      "status": 200,
+      "expected": 200,
+      "uploadVisible": false,
+      "metaNotice": true
+    },
+    {
+      "path": "/terms",
+      "status": 200,
+      "expected": 200,
+      "uploadVisible": false
+    },
+    {
+      "path": "/admin/easycutcutcutcutcutcut",
+      "status": 307,
+      "expected": 307,
+      "uploadVisible": false
+    },
+    {
+      "path": "/en/projects/14596/edit/1b8bc622-981a-4fd1-818a-1b99411e96b2",
+      "status": 200,
+      "expected": 200,
+      "uploadVisible": false
+    },
+    {
+      "path": "/api/social/instagram",
+      "status": 401,
+      "expected": 401,
+      "uploadVisible": false
+    },
+    {
+      "path": "/api/social/threads",
+      "status": 401,
+      "expected": 401,
+      "uploadVisible": false
+    },
+    {
+      "path": "/api/social/tiktok",
+      "status": 401,
+      "expected": 401,
+      "uploadVisible": false
+    },
+    {
+      "path": "/api/social/facebook",
+      "status": 400,
+      "expected": 400,
+      "uploadVisible": false
+    },
+    {
+      "path": "/content-calendar",
+      "status": 404,
+      "expected": 404,
+      "uploadVisible": false
+    },
+    {
+      "path": "/api/youtube/oauth/start",
+      "status": 404,
+      "expected": 404,
+      "uploadVisible": false
+    },
+    {
+      "path": "/api/internal/job-admission-preflight",
+      "status": 200,
+      "expected": 200,
+      "uploadVisible": false,
+      "admission": {
+        "ready": true,
+        "targetCount": 5,
+        "fingerprint": "668676b0a45b9376e76461fdd8f11367524e4a2bf08695ddc13aa62c267964f4"
+      }
+    }
+  ],
+  "limitations": [
+    "HTTP HTML does not render the dynamic ssr:false Upload component. The initial missing-Upload HTML assertion was invalid; the corrected check verifies the serialized adminPublishingEnabled flag, and the promoted browser UI displays Upload and both Meta tabs.",
+    "Live Instagram consent reached for k_dong176; no grant or actual post performed yet.",
+    "Threads callback did not persist through the Meta settings UI. Awaiting direct user save/check.",
+    "No new worker job, payment, general-user publishing, or Meta public post was performed."
+  ]
+}
