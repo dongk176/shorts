@@ -1427,9 +1427,6 @@ export function PopularVideosExplorer({
             disabled={loading}
             onChange={(period) => applyFilter(() => setDiscoveryPeriod(period))}
           />
-          {catalogEnabled && dataType !== "trending" && <p className="text-[11px] text-neutral-500">
-            {locale === "ko" ? "매일 오후 5:20 기준 · 수집 완료 후 갱신" : locale === "en" ? "Daily at 5:20 PM KST · after collection completes" : "毎日17:20（韓国時間）基準・収集完了後に更新"}
-          </p>}
         </div>
       </div>
 
