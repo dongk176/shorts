@@ -1,0 +1,106 @@
+{
+  "promoted": {
+    "project": "prj_bQyHRVC3Pfzq2dvUnAqEDlw66GOw",
+    "deployment": "dpl_DPH87bX5RBocaJm8ekWYmeQomHVX",
+    "url": "shorts-g4abtujrx-artiroom.vercel.app",
+    "source": "d18c2984e6f28ffa9cd4ba865ebda1b3a6218a36"
+  },
+  "checks": {
+    "origin": "https://shorts-g4abtujrx-artiroom.vercel.app",
+    "results": [
+      {
+        "path": "/",
+        "status": 200,
+        "expected": 200,
+        "uploadVisible": false
+      },
+      {
+        "path": "/guidebook",
+        "status": 200,
+        "expected": 200,
+        "uploadVisible": false
+      },
+      {
+        "path": "/pricing",
+        "status": 200,
+        "expected": 200,
+        "uploadVisible": false
+      },
+      {
+        "path": "/privacy",
+        "status": 200,
+        "expected": 200,
+        "uploadVisible": false,
+        "metaNotice": true
+      },
+      {
+        "path": "/terms",
+        "status": 200,
+        "expected": 200,
+        "uploadVisible": false
+      },
+      {
+        "path": "/admin/easycutcutcutcutcutcut",
+        "status": 307,
+        "expected": 307,
+        "uploadVisible": false
+      },
+      {
+        "path": "/en/projects/14596/edit/1b8bc622-981a-4fd1-818a-1b99411e96b2",
+        "status": 200,
+        "expected": 200,
+        "uploadVisible": false
+      },
+      {
+        "path": "/api/social/instagram",
+        "status": 401,
+        "expected": 401,
+        "uploadVisible": false
+      },
+      {
+        "path": "/api/social/threads",
+        "status": 401,
+        "expected": 401,
+        "uploadVisible": false
+      },
+      {
+        "path": "/api/social/tiktok",
+        "status": 401,
+        "expected": 401,
+        "uploadVisible": false
+      },
+      {
+        "path": "/api/social/facebook",
+        "status": 400,
+        "expected": 400,
+        "uploadVisible": false
+      },
+      {
+        "path": "/content-calendar",
+        "status": 404,
+        "expected": 404,
+        "uploadVisible": false
+      },
+      {
+        "path": "/api/youtube/oauth/start",
+        "status": 404,
+        "expected": 404,
+        "uploadVisible": false
+      },
+      {
+        "path": "/api/internal/job-admission-preflight",
+        "status": 200,
+        "expected": 200,
+        "uploadVisible": false,
+        "admission": {
+          "ready": true,
+          "targetCount": 5,
+          "fingerprint": "668676b0a45b9376e76461fdd8f11367524e4a2bf08695ddc13aa62c267964f4"
+        }
+      }
+    ]
+  },
+  "liveOAuth": "awaiting_action_time_user_confirmation",
+  "initialExpiredState": true,
+  "freshConnectionSucceeded": false
+}
