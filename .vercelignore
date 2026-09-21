@@ -25,3 +25,6 @@ web/test-tools/**
 # Test suites run locally before release; their development fixtures are not shipped.
 web/**/*.test.ts
 web/**/*.test.tsx
+
+# Existing isolated PostgreSQL test runtime (local symlink).
+/test-tools

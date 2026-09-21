@@ -1,0 +1,4 @@
+export { mediaGet as GET, mediaGet as HEAD } from "@/lib/social-publishing/meta/handlers";
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const maxDuration = 120;

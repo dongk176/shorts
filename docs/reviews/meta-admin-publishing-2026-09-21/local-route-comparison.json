@@ -1,0 +1,25 @@
+{
+  "baseline": "f168399ee8a7beb6785183817c338edc7365ced9",
+  "candidate": "local final build before commit",
+  "baselineRoutes": 210,
+  "candidateRoutes": 219,
+  "removed": [],
+  "added": [
+    "/api/social/[platform]",
+    "/api/social/[platform]/connections/[connectionId]",
+    "/api/social/[platform]/deauthorize",
+    "/api/social/[platform]/media/[capability]",
+    "/api/social/[platform]/oauth/callback",
+    "/api/social/[platform]/oauth/start",
+    "/api/social/[platform]/posts",
+    "/api/social/[platform]/posts/[postId]/check",
+    "/api/social/[platform]/preview/[shortId]"
+  ],
+  "protectedPaths": {
+    "/": true,
+    "/guidebook": true,
+    "/pricing": true,
+    "/admin/easycutcutcutcutcutcut": true,
+    "/projects/[projectNumber]/edit/[shortId]": true
+  }
+}

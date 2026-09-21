@@ -36,3 +36,6 @@ htmlcov/
 
 # Local publishing review evidence and fixture media
 .local-review/
+
+# Existing isolated PostgreSQL test runtime (local symlink).
+/test-tools
