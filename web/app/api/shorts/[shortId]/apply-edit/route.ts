@@ -3,6 +3,7 @@ import { subtitleTranslationOutcome } from "@/lib/subtitle-translation-outcome";
 import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import type { JSONValue } from "postgres";
 import { putEditorChannelAsset } from "@/lib/aws";
 import { getBillingSummary } from "@/lib/billing";
 import {
@@ -839,7 +840,7 @@ async function applyEditorDocument({
         and s.render_version=${document.baseRenderVersion}
         and (
           ${normalizedCaptionComposition === null}
-          or s.caption_render_spec=${JSON.stringify(existing.captionRenderSpec ?? null)}::jsonb
+          or s.caption_render_spec=${tx.json((existing.captionRenderSpec ?? null) as JSONValue)}::jsonb
         )
         and (
           ${requestedTimelineVersion === undefined}

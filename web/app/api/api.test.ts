@@ -4,6 +4,8 @@ vi.mock("server-only", () => ({}));
 vi.mock("@/lib/i18n/server", () => ({ getRequestLocale: vi.fn(async () => "ko") }));
 import { getRequestLocale } from "@/lib/i18n/server";
 import { readFileSync } from "node:fs";
+import postgres from "postgres";
+import { PGlite } from "../../../test-tools/node_modules/@electric-sql/pglite/dist/index.js";
 
 const mocks = vi.hoisted(() => ({
   session: vi.fn(),
@@ -1192,7 +1194,7 @@ describe("subtitle template edit isolation", () => {
     expect(mocks.wakeDispatcher).not.toHaveBeenCalled();
   });
 
-  it.each([false, true])("queues v4 on its assigned release with caption padding repair=%s", async (repairCaption) => {
+  it.each([[false, false], [true, false], [true, true]])("queues v4 with caption repair=%s and concurrent change=%s", async (repairCaption, concurrentChange) => {
     const captionFixture = JSON.parse(readFileSync(new URL("../../../test-fixtures/caption-composition-5x4.json", import.meta.url), "utf8"));
     process.env.EDITOR_RENDERING_V2_ENABLED = "true";
     process.env.EDITOR_RENDERING_V2_GLOBAL_ENABLED = "true";
@@ -1270,6 +1272,34 @@ describe("subtitle template edit isolation", () => {
       [{ id: shortId }],
       [],
     );
+    if (repairCaption) {
+      const driver = postgres({ prepare: false }); // No connection is opened.
+      Object.assign(tx, { json: driver.json });
+      tx.mockReset();
+      tx.mockResolvedValueOnce([releaseRow]);
+      tx.mockResolvedValueOnce([{ id: requestId }]);
+      tx.mockImplementationOnce(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+        const index = Array.from(strings).findIndex(part => part.includes("or s.caption_render_spec="));
+        expect(index).toBeGreaterThanOrEqual(0);
+        const parameter = values[index] as { type?: number; value?: unknown } | string;
+        // Reproduce postgres.js's actual JSON/JSONB wire serialization. A naked
+        // JSON.stringify string is serialized again after PostgreSQL infers JSONB.
+        const typed = typeof parameter === "object" && parameter !== null && "type" in parameter;
+        const serializer = driver.options.serializers[typed ? parameter.type! : 3802];
+        const serialized = serializer(typed ? parameter.value : parameter);
+        const stored = structuredClone(captionFixture.stored);
+        if (concurrentChange) stored.style.color = "#123456";
+        const pg = new PGlite();
+        try {
+          const result = await pg.query<{ matches: boolean }>(
+            "select $1::jsonb = $2::jsonb as matches",
+            [JSON.stringify(stored), serialized],
+          );
+          return result.rows[0].matches ? [{ id: shortId }] : [];
+        } finally { await pg.close(); }
+      });
+      tx.mockResolvedValueOnce([]);
+    }
     Object.assign(db, {
       begin: vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)),
     });
@@ -1289,14 +1319,20 @@ describe("subtitle template edit isolation", () => {
       { params: Promise.resolve({ shortId }) },
     );
 
+    if (concurrentChange) {
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({ code: "EDITOR_RENDER_VERSION_CONFLICT" });
+      expect(tx.mock.calls.some(([strings]) => Array.from(strings as TemplateStringsArray).join("").includes("insert into shorts_mvp.editor_render_outbox"))).toBe(false);
+      return;
+    }
     expect(response.status, await response.clone().text()).toBe(202);
     if (repairCaption) {
       const update = tx.mock.calls.find(([strings]) => Array.from(strings as TemplateStringsArray).join("").includes("update shorts_mvp.generated_shorts"));
-      expect(update?.slice(1)).toContainEqual(captionFixture.normalized);
-      expect(update?.slice(1)).toContain(JSON.stringify(captionFixture.stored));
+      expect(update?.slice(1)).toContainEqual(expect.objectContaining({ type: 3802, value: captionFixture.normalized }));
+      expect(update?.slice(1)).toContainEqual(expect.objectContaining({ type: 3802, value: captionFixture.stored }));
       expect(Array.from(update![0] as TemplateStringsArray).join("")).toContain("s.caption_render_spec=");
     }
-    const pendingDocument = tx.mock.calls.flat().find((value) => (
+    const pendingDocument = tx.mock.calls.flat().map(value => (repairCaption && value && typeof value === "object" && "type" in value && "value" in value) ? value.value : value).find((value) => (
       typeof value === "object"
       && value !== null
       && "renderSpec" in value
