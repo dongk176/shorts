@@ -158,12 +158,15 @@ describe("Meta publishing with real isolated PostgreSQL and provider protocol",(
     const c=await connect();await service.create(A,intent(c.id));
     const issuedAt=Math.floor(Date.now()/1000), receipt="1".repeat(64);
     await store.deauthorized("17841405793187219",issuedAt,receipt);
+    expect(await store.hasDeletionReceipt(receipt)).toBe(true);
     expect((await service.list(A,shortId)).connections).toEqual([]);
     expect((await service.listPosts(A,shortId))).toEqual([]);
     await connect();await store.deauthorized("17841405793187219",issuedAt,receipt);
     expect((await service.list(A,shortId)).connections).toHaveLength(1);
     await store.deauthorized("17841405793187219",issuedAt-86400,"2".repeat(64));
     expect((await service.list(A,shortId)).connections).toHaveLength(1);
+    await pg.query("update shorts_mvp.meta_callback_receipts set created_at=now()-interval '91 days' where request_hash=$1",[receipt]);
+    expect(await store.hasDeletionReceipt(receipt)).toBe(false);
   });
   it("expires delivery capabilities and fences disconnect, role removal and withdrawal",async () => {
     const c=await connect();await service.create(A,intent(c.id));const cap=capability();

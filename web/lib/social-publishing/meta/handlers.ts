@@ -1,4 +1,5 @@
 import "server-only";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { HttpError } from "@/lib/http";
@@ -94,6 +95,30 @@ export const deauthorizePost = (request: Request, context: Route) => handle(asyn
   catch { throw new HttpError(403, "Invalid signature.", "META_INVALID_REQUEST"); }
   // Old events cannot remove a newly reconnected account. Recent receipts fence retries.
   if (identity.issuedAt < Date.now()/1000 - 90*86400) throw new HttpError(400, "Expired request.", "META_INVALID_REQUEST");
-  await store.deauthorized(identity.userId, identity.issuedAt, hash(config.appKey+":"+signed));
-  return NextResponse.json({ success: true });
+  const confirmationCode = hash(config.appKey+":"+signed);
+  await store.deauthorized(identity.userId, identity.issuedAt, confirmationCode);
+  // Revocation and a data-deletion request remove the same grant and its posting
+  // history. Acknowledge only after the deletion and anonymous receipt commit.
+  const url = new URL(`/api/social/${config.platform}/deauthorize`, config.origin);
+  url.searchParams.set("confirmation_code", confirmationCode);
+  url.searchParams.set("proof", receiptProof(config.clientSecret, config.appKey, confirmationCode));
+  return NextResponse.json({ success: true, url: url.toString(), confirmation_code: confirmationCode });
+});
+
+function receiptProof(secret: string, appKey: string, code: string) {
+  return createHmac("sha256", secret).update(`meta-deletion-status:${appKey}:${code}`).digest("hex");
+}
+
+export const deletionStatusGet = (request: Request, context: Route) => handle(async () => {
+  const { config, store } = metaServices(platformSchema.parse((await context.params).platform));
+  const params = new URL(request.url).searchParams;
+  const code = params.get("confirmation_code") || "";
+  const proof = params.get("proof") || "";
+  const missing = () => new HttpError(404, "Deletion receipt unavailable.", "META_RECEIPT_UNAVAILABLE");
+  if (!config.clientSecret || !/^[a-f0-9]{64}$/.test(code) || !/^[a-f0-9]{64}$/.test(proof)) throw missing();
+  if (!timingSafeEqual(Buffer.from(proof, "hex"), Buffer.from(receiptProof(config.clientSecret, config.appKey, code), "hex"))
+      || !await store.hasDeletionReceipt(code)) throw missing();
+  return new Response(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EasyCut — Data deletion complete</title><body><main><h1>Data deletion complete</h1><p>EasyCut has removed the account connection data and posting history covered by this request.</p><p>Videos already published on Instagram or Threads remain on those platforms. A connection you authorize again after this request is separate.</p><p>Confirmation code: <code>${code}</code></p><p>문의: easycut@easycut.co.kr</p></main></body></html>`, {
+    headers: { "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'", "X-Content-Type-Options": "nosniff", "X-Robots-Tag": "noindex, nofollow" },
+  });
 });

@@ -125,6 +125,11 @@ export class MetaStore {
     return await this.db`select p.* from shorts_mvp.meta_posts p join shorts_mvp.meta_connections c on c.id=p.connection_id
       where p.user_id=${userId} and p.short_id=${shortId} and c.app_key=${this.appKey} order by p.created_at desc` as unknown as PostRow[];
   }
+  async hasDeletionReceipt(receiptHash: string) {
+    const rows = await this.db`select request_hash from shorts_mvp.meta_callback_receipts
+      where request_hash=${receiptHash} and created_at>=now()-interval '90 days'`;
+    return rows.length > 0;
+  }
   async post(userId: string, id: string, db: Db = this.db): Promise<PostRow> {
     const rows = await db`select p.* from shorts_mvp.meta_posts p join shorts_mvp.meta_connections c on c.id=p.connection_id
       where p.id=${id} and p.user_id=${userId} and c.app_key=${this.appKey}`;
