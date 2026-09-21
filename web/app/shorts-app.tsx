@@ -1,6 +1,5 @@
 "use client";
 import dynamic from "next/dynamic";
-const YoutubeAccountConnections = dynamic(() => import("@/components/youtube-account-connections").then(module => module.YoutubeAccountConnections), { ssr: false });
 const AdminPublishingButton = dynamic(() => import("@/components/admin-publishing-button").then(module => module.AdminPublishingButton), { ssr: false });
 
 
@@ -12845,8 +12844,7 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
                         : access.canDownload
                           ? <a data-project-guide={item.id === guideDownloadShortId ? "download" : undefined} href={`/api/shorts/${encodeURIComponent(item.id)}/download`} download={shortDownloadFilename(item.hookTitle)} className="tool-button short-download-button flex items-center justify-center" aria-label={locale === "ko" ? `${item.hookTitle} 다운로드` : locale === "en" ? `Download ${item.hookTitle}` : `${item.hookTitle}をダウンロード`}>{ui("↓ 다운로드")}</a>
                           : <button data-project-guide={item.id === guideDownloadShortId ? "download" : undefined} type="button" onClick={() => setDownloadPaywallOpen(true)} className="tool-button short-download-button">{ui("↓ 다운로드")}</button>}
-                      {youtubeReviewerShortId === item.id && !job.isExample && !itemIsRerendering && item.status === "ready" && <YoutubeAccountConnections shortId={item.id} title={item.hookTitle} previewUrl={`/api/youtube/accounts/media/${item.id}`}/>}
-                      {(adminPublishingEnabled || metaReviewerShortId === item.id) && !job.isExample && !itemIsRerendering && item.status === "ready" && <AdminPublishingButton shortId={item.id} title={item.hookTitle} metaOnly={!adminPublishingEnabled}/>}
+                      {(adminPublishingEnabled || metaReviewerShortId === item.id || youtubeReviewerShortId === item.id) && !job.isExample && !itemIsRerendering && item.status === "ready" && <AdminPublishingButton shortId={item.id} title={item.hookTitle} metaOnly={!adminPublishingEnabled} metaEnabled={adminPublishingEnabled || metaReviewerShortId === item.id} youtubeEnabled={youtubeReviewerShortId === item.id}/>}
                     </div>
                     {subtitleEditorUnavailable && (
                       <p className="mt-2 text-center text-xs font-medium text-neutral-400">

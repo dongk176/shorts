@@ -90,3 +90,19 @@ configuration script was not created and no seven environment keys were saved.
 Draft account instructions are in `.secrets/youtube-reviewer-instructions.txt`.
 The application draft lists remaining access/organization/routing questions;
 it is not a submitted form or a completed compliance attestation.
+
+## Shared upload window correction
+
+The user clarified that YouTube belongs in the existing TikTok/Instagram/Threads
+upload window, and requested YouTube first. The project now renders a single
+upload button and shared dialog. YouTube's connection/metadata panel is embedded
+in that dialog; its old standalone upload button/dialog and placeholder platform
+tabs are removed. Available tabs are ordered YouTube, TikTok, Instagram, Threads;
+manual opening selects the first available tab, while OAuth returns restore the
+corresponding provider. Existing per-account server grants remain unchanged.
+Localized YouTube return paths are normalized to the server's existing allowlist.
+
+105 tests passed across 12 files: one dialog/button, tab ordering and selection,
+YouTube OAuth restoration, existing Meta/TikTok panels, reviewer platform isolation,
+and the YouTube backend tests. No production settings or deployment were changed
+by this UI correction; the prior explicit approval block remains unresolved.
