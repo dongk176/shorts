@@ -8,6 +8,7 @@ import type { MetaConfig } from "./config";
 import type { TikTokMediaAccess } from "../tiktok/media";
 import { MetaStore, type Link, type PostRow } from "./store";
 import { hash, secret, MetaVault } from "./vault";
+import { metaReviewerGrant } from "./reviewer-access";
 
 export class MetaPublishing {
   constructor(readonly store: MetaStore, private vault: MetaVault, private api: MetaApi, private media: TikTokMediaAccess, private config: MetaConfig, private admin: (id: string) => Promise<void>) {}
@@ -169,10 +170,13 @@ export class MetaPublishing {
   }
   async publicMedia(capability: string) {
     if (!/^[A-Za-z0-9_-]{43}$/.test(capability)) throw new HttpError(404, "Media unavailable.");
+    const grant = metaReviewerGrant();
     const rows = await this.store.db`select p.* from shorts_mvp.meta_posts p join shorts_mvp.meta_connections c on c.id=p.connection_id
       join shorts_mvp.app_users u on u.id=p.user_id where p.media_hash=${hash(capability)} and p.media_expires_at>now()
         and p.status in ('initiating','processing','unknown') and c.app_key=${this.config.appKey} and c.user_id=p.user_id
-        and c.status='active' and c.version=p.connection_version and u.is_admin=true and u.withdrawn_at is null`;
+        and c.status='active' and c.version=p.connection_version and u.withdrawn_at is null
+        and (u.is_admin=true or (u.id=${grant?.userId ?? null} and p.short_id=${grant?.shortId ?? null}
+          and clock_timestamp()<${grant?.expiresAt ?? null}::timestamptz))`;
     if (!rows[0]) throw new HttpError(404, "Media unavailable.");
     const post = rows[0] as PostRow;
     await this.admin(post.userId);

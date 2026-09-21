@@ -4,6 +4,7 @@ import { HttpError } from "@/lib/http";
 import { localePath } from "@/lib/i18n/routing";
 import { hash } from "./vault";
 import { uuid, type Actor, type Connection, type Post } from "./contracts";
+import { metaReviewerGrant } from "./reviewer-access";
 
 type Db = Sql | TransactionSql;
 export type Pending = { userId: string; returnPath: string; shortId: string | null; epoch: number };
@@ -14,20 +15,25 @@ const missing = () => new HttpError(404, "The connected account or finished vide
 export class MetaStore {
   constructor(readonly db: Sql, readonly appKey: string) {}
   async source(userId: string, shortId: string, db: Db = this.db) {
+    const grant = metaReviewerGrant();
     const rows = await db`select s.id,j.project_number,s.output_s3_key,s.render_version
       from shorts_mvp.generated_shorts s join shorts_mvp.video_jobs j on j.id=s.job_id
       where s.id=${shortId} and s.user_id=${userId} and j.user_id=${userId}
         and j.is_example=false and j.status<>'deleted' and j.user_deleted_at is null
         and s.status='ready' and s.deleted_at is null and s.output_s3_key is not null
         and (s.expires_at is null or s.expires_at>now())
-        and exists(select 1 from shorts_mvp.app_users u where u.id=${userId} and u.withdrawn_at is null)
+        and exists(select 1 from shorts_mvp.app_users u where u.id=${userId} and u.withdrawn_at is null
+          and (u.is_admin=true or (u.id=${grant?.userId ?? null} and s.id=${grant?.shortId ?? null}
+            and clock_timestamp()<${grant?.expiresAt ?? null}::timestamptz)))
       for share of s,j`;
     if (!rows[0]) throw missing();
     return { id: String(rows[0].id), projectNumber: Number(rows[0].projectNumber), outputS3Key: String(rows[0].outputS3Key), renderVersion: Number(rows[0].renderVersion) };
   }
   async owner(tx: Db, userId: string) {
     uuid.parse(userId);
-    if (!(await tx`select id from shorts_mvp.app_users where id=${userId} and is_admin=true and withdrawn_at is null for update`).length) throw missing();
+    const grant = metaReviewerGrant();
+    if (!(await tx`select id from shorts_mvp.app_users where id=${userId} and withdrawn_at is null
+      and (is_admin=true or (id=${grant?.userId ?? null} and clock_timestamp()<${grant?.expiresAt ?? null}::timestamptz)) for update`).length) throw missing();
     await tx`insert into shorts_mvp.meta_owners(user_id) values(${userId}) on conflict do nothing`;
     return (await tx`select epoch,greatest(0,ceil(extract(epoch from disconnect_until-now())))::int as retry_after from shorts_mvp.meta_owners where user_id=${userId} for update`)[0];
   }

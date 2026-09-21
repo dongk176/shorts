@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, afterAll, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -11,7 +11,7 @@ import { MetaVault } from "./vault";
 import { TikTokMedia } from "@/test-tools/tiktok-local-media";
 import { MetaPublishing } from "./service";
 import { metaConfig } from "./config";
-import { HttpError } from "@/lib/http";
+import { canUseAdminPublishing, metaReviewerShortForProject, requireAdminPublishing, requireMetaAdminPublishing } from "../access";
 
 
 const A = { userId: "11111111-1111-4111-8111-111111111111", sessionId: "review-session-a" };
@@ -81,6 +81,12 @@ beforeAll(async () => {
   root=fs.mkdtempSync(path.join(os.tmpdir(),"easycut-meta-")); fs.mkdirSync(path.join(root,"outputs"));
 },30_000);
 beforeEach(async () => {
+  vi.stubEnv("META_PUBLISHING_MODE", "admin-review");
+  vi.stubEnv("TIKTOK_PUBLISHING_MODE", "admin-review");
+  vi.stubEnv("VERCEL_ENV", "production");
+  vi.stubEnv("VERCEL_PROJECT_ID", "prj_bQyHRVC3Pfzq2dvUnAqEDlw66GOw");
+  vi.stubEnv("DATABASE_URL", "postgres://postgres.mvcprswvfybudtopepuj:fake@aws-1-ap-northeast-2.pooler.supabase.com/postgres");
+  vi.stubEnv("META_REVIEWER_ACCESS", "");
   await pg.exec(`truncate shorts_mvp.app_users,shorts_mvp.generated_shorts,shorts_mvp.video_jobs cascade;
     insert into shorts_mvp.app_users values('${A.userId}',null,true),('${B.userId}',null,false);
     insert into shorts_mvp.video_jobs values('${jobA}','${A.userId}',1,'complete',false,null),('${jobB}','${B.userId}',2,'complete',false,null);
@@ -92,10 +98,9 @@ beforeEach(async () => {
 function setup(platform: "instagram" | "threads") {
   config=configFor(platform); store=new MetaStore(tag(pg),config.appKey); vault=new MetaVault(Buffer.alloc(32,9),config.appKey); media=new TikTokMedia(root);
   vi.spyOn(media,"inspect").mockImplementation(async key => { const file=await media.file(key); return {...file,duration:15,hash:await media.fingerprint(file.file)}; });
-  service=new MetaPublishing(store,vault,new MetaApi(config,fetcher),media,config,async userId => {
-    if (!(await tag(pg)`select id from shorts_mvp.app_users where id=${userId} and is_admin=true and withdrawn_at is null`).length) throw new HttpError(403,"Unavailable","META_DISABLED");
-  });
+  service=new MetaPublishing(store,vault,new MetaApi(config,fetcher),media,config,userId => requireMetaAdminPublishing(tag(pg),userId));
 }
+afterEach(() => vi.unstubAllEnvs());
 afterAll(async () => { await pg.close(); fs.rmSync(root,{recursive:true,force:true}); });
 async function start() { return new URL(await service.start(A,{returnPath:"/en/projects/1",shortId})).searchParams.get("state")!; }
 async function connect() { expect((await service.callback(A,new URLSearchParams({state:await start(),code:"owned"}))).outcome).toBe("connected"); return (await service.list(A,shortId)).connections[0]; }
@@ -104,6 +109,46 @@ const capability = () => new URL(lastUrl).pathname.split("/").at(-1)!;
 async function resetCheck() { await pg.exec("update shorts_mvp.meta_posts set checked_at=null"); }
 
 describe("Meta publishing with real isolated PostgreSQL and provider protocol",() => {
+  it.each(["instagram","threads"] as const)("%s reviewer can publish only its assigned owned clip, without admin or TikTok access", async platform => {
+    setup(platform);
+    await pg.query("update shorts_mvp.app_users set is_admin=false where id=$1",[A.userId]);
+    vi.stubEnv("META_REVIEWER_ACCESS",JSON.stringify({userId:A.userId,shortId,expiresAt:new Date(Date.now()+86400_000).toISOString()}));
+    expect(await canUseAdminPublishing(tag(pg),A.userId)).toBe(false);
+    await expect(requireAdminPublishing(tag(pg),A.userId)).rejects.toMatchObject({code:"TIKTOK_DISABLED"});
+    expect(await metaReviewerShortForProject(tag(pg),A.userId,1)).toBe(shortId);
+    expect(await metaReviewerShortForProject(tag(pg),A.userId,2)).toBeNull();
+    expect(await metaReviewerShortForProject(tag(pg),B.userId,1)).toBeNull();
+    const c=await connect();
+    await expect(service.create(A,{...intent(c.id),shortId:otherShort})).rejects.toThrow();
+    // Even another clip owned by the reviewer is outside the one-video grant.
+    await pg.query("update shorts_mvp.generated_shorts set user_id=$1,job_id=$2 where id=$3",[A.userId,jobA,otherShort]);
+    await expect(service.preview(A,otherShort)).rejects.toThrow();
+    await expect(service.create(A,{...intent(c.id),shortId:otherShort})).rejects.toThrow();
+    await expect(service.list(B,shortId)).rejects.toThrow();
+    expect(containers).toBe(0);
+    const p=await service.create(A,intent(c.id));
+    expect((await service.publicMedia(capability())).size).toBe(64);
+    expect((await service.check(A,p.id)).status).toBe("complete");
+    expect(publishes).toBe(1);
+    expect((await service.disconnect(A,c.id)).deleted).toBe(true);
+    expect((await service.list(A,shortId)).connections).toEqual([]);
+    expect((await pg.query<{is_admin:boolean}>("select is_admin from shorts_mvp.app_users where id=$1",[A.userId])).rows[0].is_admin).toBe(false);
+  });
+  it.each(["expired","revoked","withdrawn","wrong-video"])("%s reviewer grant prevents delayed callbacks and media delivery",async reason => {
+    await pg.query("update shorts_mvp.app_users set is_admin=false where id=$1",[A.userId]);
+    const grant={userId:A.userId,shortId,expiresAt:new Date(Date.now()+86400_000).toISOString()};
+    vi.stubEnv("META_REVIEWER_ACCESS",JSON.stringify(grant));
+    const c=await connect();await service.create(A,intent(c.id));const cap=capability(), state=await start();
+    if(reason==="withdrawn") await pg.query("update shorts_mvp.app_users set withdrawn_at=now() where id=$1",[A.userId]);
+    else vi.stubEnv("META_REVIEWER_ACCESS",reason==="revoked" ? "" : JSON.stringify({...grant,...(reason==="expired" ? {expiresAt:new Date(Date.now()-1000).toISOString()} : {shortId:otherShort})}));
+    await expect(service.preview(A,shortId)).rejects.toThrow();
+    await expect(service.publicMedia(cap)).rejects.toThrow();
+    const callback=service.callback(A,new URLSearchParams({state,code:"owned"}));
+    if(reason==="wrong-video") expect((await callback).outcome).not.toBe("connected");
+    else await expect(callback).rejects.toThrow();
+    expect(await metaReviewerShortForProject(tag(pg),A.userId,1)).toBeNull();
+    expect(publishes).toBe(0);
+  });
   it.each(["instagram","threads"] as const)("%s completes one publish and returns a verified permalink",async platform => {
     setup(platform); const c=await connect(), post=await service.create(A,intent(c.id));
     expect(post.status).toBe("processing"); expect(containers).toBe(1); expect(publishes).toBe(0);
