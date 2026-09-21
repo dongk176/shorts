@@ -295,5 +295,13 @@
     "Live Instagram consent reached for k_dong176; no grant or actual post performed yet.",
     "Threads callback did not persist through the Meta settings UI. Awaiting direct user save/check.",
     "No new worker job, payment, general-user publishing, or Meta public post was performed."
-  ]
+  ],
+  "threadsAuthorization": {
+    "origin": "https://www.easycut.co.kr",
+    "result": "provider_redirect_uri_not_allowlisted",
+    "providerErrorCode": 1349168,
+    "browserError": "ERR_BLOCKED_BY_CLIENT",
+    "callback": "https://www.easycut.co.kr/api/social/threads/oauth/callback",
+    "grantAccepted": false
+  }
 }
