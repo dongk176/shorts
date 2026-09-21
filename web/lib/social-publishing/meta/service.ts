@@ -48,6 +48,10 @@ export class MetaPublishing {
       await this.store.finish(pending, { ...profile, ciphertext: this.vault.seal(JSON.stringify(tokens), actor.userId, `connection:${profile.openId}`) });
       return { returnPath: path, outcome: "connected" };
     } catch (error) {
+      console.warn(JSON.stringify({ event: "meta_oauth_callback_failed", platform: this.config.platform,
+        code: error instanceof HttpError ? error.code : "META_UNAVAILABLE",
+        ...(error instanceof MetaApiError && error.diagnostic ? { diagnostic: error.diagnostic } : {}),
+      }));
       if (tokens) await this.api.revoke(tokens.accessToken);
       return { returnPath: path, outcome: error instanceof HttpError ? error.code : "failed" };
     }

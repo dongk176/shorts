@@ -7,8 +7,14 @@ type Json = Record<string, unknown>;
 const object = (value: unknown): Json => value && typeof value === "object" && !Array.isArray(value) ? value as Json : {};
 const lifetime = (value: unknown) => Number.isSafeInteger(Number(value)) && Number(value) > 0 && Number(value) <= 366 * 86400;
 const identifier = (raw: unknown) => { const value = typeof raw === "number" && Number.isSafeInteger(raw) ? String(raw) : raw; if (typeof value !== "string" || !/^\d{1,64}$/.test(value)) throw new MetaApiError("META_PROVIDER_RESPONSE", true); return value; };
+type MetaDiagnostic = {
+  stage: "authorization_code" | "long_token" | "grant_validation" | "profile" | "permissions" | "graph";
+  status?: number; providerCode?: number; providerSubcode?: number;
+  permissionsShape?: "string" | "array" | "missing" | "other";
+  requiredGranted?: boolean[];
+};
 export class MetaApiError extends HttpError {
-  constructor(code: string, readonly ambiguous = false) { super(502, "The platform could not complete this request.", code); }
+  constructor(code: string, readonly ambiguous = false, readonly diagnostic?: MetaDiagnostic) { super(502, "The platform could not complete this request.", code); }
 }
 
 export class MetaApi {
@@ -16,13 +22,15 @@ export class MetaApi {
   private get host() { return this.config.platform === "instagram" ? "https://graph.instagram.com" : "https://graph.threads.com"; }
   private get graph() { return this.host + (this.config.platform === "instagram" ? `/${this.config.graphVersion}` : "/v1.0"); }
   private async request(url: URL, method: string, params: Record<string, string> = {}, token?: string): Promise<Json> {
+    // Never record URL queries, response messages, account IDs, or token values.
+    const stage: MetaDiagnostic["stage"] = url.pathname === "/oauth/access_token" ? "authorization_code" : url.pathname === "/access_token" ? "long_token" : url.pathname.endsWith("/permissions") || url.pathname.endsWith("/debug_token") ? "permissions" : url.pathname.endsWith("/me") ? "profile" : "graph";
     const headers = new Headers({ Accept: "application/json" });
     if (token) headers.set("Authorization", `Bearer ${token}`);
     const init: RequestInit = { method, headers, redirect: "error", cache: "no-store", signal: AbortSignal.timeout(20_000) };
     if (method === "GET") for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
     else { headers.set("Content-Type", "application/x-www-form-urlencoded"); init.body = new URLSearchParams(params).toString(); }
     let response: Response;
-    try { response = await this.fetcher(url, init); } catch { throw new MetaApiError("META_RESULT_UNKNOWN", true); }
+    try { response = await this.fetcher(url, init); } catch { throw new MetaApiError("META_RESULT_UNKNOWN", true, { stage }); }
     let data: Json;
     try {
       // Meta returns numeric user IDs larger than JavaScript's safe integer range.
@@ -31,11 +39,12 @@ export class MetaApi {
       if (raw.length > 1_000_000) throw new Error("Oversized response");
       data = object(JSON.parse(raw.replace(/"(?:\\.|[^"\\])*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g,
         part => /^-?\d+$/.test(part) && !Number.isSafeInteger(Number(part)) ? JSON.stringify(part) : part)));
-    } catch { throw new MetaApiError("META_PROVIDER_RESPONSE", true); }
+    } catch { throw new MetaApiError("META_PROVIDER_RESPONSE", true, { stage, status: response.status }); }
     const error = object(data.error);
     if (!response.ok || data.error) {
-      const code = Number(error.code);
-      throw new MetaApiError(code === 190 || response.status === 401 ? "META_RECONNECT_REQUIRED" : code === 10 || code === 200 || response.status === 403 ? "META_PERMISSION_REQUIRED" : response.status === 429 || code === 4 || code === 32 ? "META_RATE_LIMIT" : "META_PROVIDER_REJECTED", response.status >= 500);
+      const code = Number(error.code ?? data.code), subcode = Number(error.error_subcode);
+      throw new MetaApiError(code === 190 || response.status === 401 ? "META_RECONNECT_REQUIRED" : code === 10 || code === 200 || response.status === 403 ? "META_PERMISSION_REQUIRED" : response.status === 429 || code === 4 || code === 32 ? "META_RATE_LIMIT" : "META_PROVIDER_REJECTED", response.status >= 500,
+        { stage, status: response.status, ...(Number.isSafeInteger(code) ? { providerCode: code } : {}), ...(Number.isSafeInteger(subcode) ? { providerSubcode: subcode } : {}) });
     }
     return data;
   }
@@ -61,7 +70,10 @@ export class MetaApi {
       const granted = this.config.platform === "instagram"
         ? (typeof first.permissions === "string" ? first.permissions.split(",") : []).map(scope => scope.trim())
         : await this.permissions(accessToken);
-      if (this.config.scopes.some(scope => !granted.includes(scope))) throw new MetaApiError("META_PERMISSION_REQUIRED");
+      if (this.config.scopes.some(scope => !granted.includes(scope))) throw new MetaApiError("META_PERMISSION_REQUIRED", false, {
+        stage: "grant_validation", permissionsShape: typeof first.permissions === "string" ? "string" : Array.isArray(first.permissions) ? "array" : first.permissions == null ? "missing" : "other",
+        requiredGranted: this.config.scopes.map(scope => granted.includes(scope)),
+      });
       return { accessToken, openId, scopes: granted, expiresAt: Date.now() + Number(long.expires_in) * 1000 };
     } catch (error) { await this.revoke(access); throw error; }
   }
