@@ -42,6 +42,17 @@ export const PROTECTED_APP_ROUTES = [
 // These routes are the only intentional additions relative to the currently
 // promoted production manifest. Everything else must still fail closed.
 export const ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE = [
+  // Explicitly authorized administrator-only Instagram/Threads test release.
+  "/api/social/[platform]/route",
+  "/api/social/[platform]/connections/[connectionId]/route",
+  "/api/social/[platform]/deauthorize/route",
+  "/api/social/[platform]/media/[capability]/route",
+  "/api/social/[platform]/oauth/callback/route",
+  "/api/social/[platform]/oauth/start/route",
+  "/api/social/[platform]/posts/route",
+  "/api/social/[platform]/posts/[postId]/check/route",
+  "/api/social/[platform]/preview/[shortId]/route",
+
   // Explicitly authorized administrator-only TikTok review release (2026-09-21).
   "/api/social/tiktok/connections/[connectionId]/route",
   "/api/social/tiktok/creator/route",

@@ -25,6 +25,14 @@ test("production release guard requires an exact baseline manifest", () => {
   );
 });
 
+test("Meta administrator release allows only its nine reviewed routes", () => {
+  const additions = ["/route", "/connections/[connectionId]/route", "/deauthorize/route", "/media/[capability]/route", "/oauth/callback/route", "/oauth/start/route", "/posts/route", "/posts/[postId]/check/route", "/preview/[shortId]/route"].map(suffix => `/api/social/[platform]${suffix}`);
+  assert.deepEqual(ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE.filter(route => route.startsWith("/api/social/[platform]")), additions);
+  assert.deepEqual(compareManifestRoutes([...PROTECTED_APP_ROUTES, ...additions, "/api/social/[platform]/public/route", "/api/youtube/oauth/start/route"], PROTECTED_APP_ROUTES, ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE), {
+    added: ["/api/social/[platform]/public/route", "/api/youtube/oauth/start/route"], removed: [],
+  });
+});
+
 test("production release guard rejects the isolated content calendar", () => {
   assert.deepEqual(
     validateTrackedFiles(["web/app/content-calendar/page.tsx"]),

@@ -39,3 +39,4 @@ htmlcov/
 
 # Existing isolated PostgreSQL test runtime (local symlink).
 /test-tools
+.vercel

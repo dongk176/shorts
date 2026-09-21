@@ -47,3 +47,11 @@ Rollback: promote the previous confirmed deployment, if it is still the precedin
 The Meta developer console requires the user's existing Facebook password before displaying the app secret. The user was asked to complete that reauthentication directly in the open Chrome EasyCut use-case page; no password was requested in chat. This is the remaining external authentication dependency, not a new cost or deployment approval request.
 
 No production Meta migration, environment change, candidate deployment, promotion, OAuth grant or real Meta publication has been performed at this handoff. Continue from the tested isolated source once reauthentication is complete. Obtain the two existing app secrets without logging them, configure the two minimum publishing permission sets and exact canonical callbacks, apply the guarded additive migration and server-only environment variables, then verify and promote an unaliased production candidate. General-user behavior remains the currently promoted f168399e release until that promotion.
+
+## Configuration applied after user reauthentication
+
+Both existing app secrets are saved as sensitive production-only Vercel variables, together with the separate encryption key, app IDs, graph version and administrator feature flag (7 variables). Secret values were not printed or committed. Instagram basic/content-publish and Threads content-publish were added to the app review draft and show ready for testing; Threads basic was already ready. No app review was submitted and no end-user grant was accepted.
+
+The guarded additive production migration completed on mvcprswvfybudtopepuj/shorts_mvp. All 5 Meta tables have RLS and no public/anon/authenticated grants. Migration SHA-256: 0bb46d101eb0ce8fa2666c82b757693a8e9db01880330d80beb387ec602dd459. Existing application data and worker settings were not modified. The exact 9 authorized Meta routes were added to the release guard; its 7 tests passed, including rejection of unrelated public/YouTube OAuth routes.
+
+Production remains f168399e until the candidate passes the deployed checks below and is explicitly promoted within the user's existing authorization.
