@@ -70,3 +70,23 @@ verification/promotion; do not call this an independent cloud environment.
   represent mock provider tests as live upload verification.
 - Prepare application screenshots, access instructions and truthful full-service
   description. Final legal acknowledgments and submission are not completed.
+
+## Local validation completed
+
+Feature commit `68a7cdc4384c10a284928fb970f649b5584f5895`:
+92 tests across 9 files passed, including the actual release migration, reviewer
+scope, source cleanup, OAuth/disconnect/retention and English/Japanese UI.
+The final Next build passed lint and type checking. Existing optional canvas
+warning remains. Release route verification passed against the prior local
+production-baseline build manifest; this is not a comparison of remote candidate
+and promoted deployment manifests. Remote validation is still required.
+
+The user was asked via the pending approval question to authorize persistent
+shared-production Vercel OAuth/key/grant configuration and reviewer-only deployment.
+No response has been received at the time of this record. This must not be treated
+as approval. The first environment command was rejected before execution, so its
+configuration script was not created and no seven environment keys were saved.
+
+Draft account instructions are in `.secrets/youtube-reviewer-instructions.txt`.
+The application draft lists remaining access/organization/routing questions;
+it is not a submitted form or a completed compliance attestation.
