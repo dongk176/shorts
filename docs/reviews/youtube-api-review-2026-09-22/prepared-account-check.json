@@ -1,0 +1,33 @@
+{
+  "checkedAt": "2026-09-21T16:15:48.480Z",
+  "origin": "https://www.easycut.co.kr",
+  "projectNumber": 14899,
+  "results": [
+    {
+      "check": "dedicated account login",
+      "status": 200
+    },
+    {
+      "path": "/en/projects/14899",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "path": "/api/projects/14899",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "path": "/api/admin/overview",
+      "status": 403,
+      "expected": 403
+    },
+    {
+      "path": "/api/youtube/accounts",
+      "status": 404,
+      "expected": 404
+    }
+  ],
+  "passed": true,
+  "publishingDeployed": false
+}
