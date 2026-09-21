@@ -10,6 +10,7 @@ import {
   captionSpecMatchesTemplate,
   parseCaptionRenderSpec,
 } from "@/lib/caption-render-spec";
+import { normalizeStoredCaptionComposition } from "@/lib/caption-composition-compat";
 import { templateIds } from "@/lib/contracts";
 import { getDb } from "@/lib/db";
 import { collectBackgroundAssetIds } from "@/lib/background-assets-contract";
@@ -400,7 +401,9 @@ async function applyEditorDocument({
     && requestedDocument.subtitles.enabled) {
     throw new HttpError(409, "번역이 완료되지 않아 자막을 켤 수 없습니다.", "SUBTITLE_TRANSLATION_UNAVAILABLE");
   }
-  const storedCaptionRenderSpec = parseCaptionRenderSpec(existing.captionRenderSpec);
+  const normalizedCaptionComposition = normalizeStoredCaptionComposition(existing.captionRenderSpec);
+  const storedCaptionRenderSpec = normalizedCaptionComposition
+    ?? parseCaptionRenderSpec(existing.captionRenderSpec);
   const cueEdits = (
     requestedDocument.version === 3 && "subtitles" in requestedDocument.renderSpec
       ? requestedDocument.renderSpec.subtitles?.cueEdits : undefined
@@ -821,6 +824,9 @@ async function applyEditorDocument({
       update shorts_mvp.generated_shorts s
       set status='rerendering',rerender_progress=5,
         pending_edit_snapshot=${tx.json(document)},
+        caption_render_spec=case when ${normalizedCaptionComposition !== null}
+          then ${normalizedCaptionComposition ? tx.json(normalizedCaptionComposition) : null}::jsonb
+          else s.caption_render_spec end,
         pending_render_hash=${snapshotHash},
         pending_edit_request_id=${requestId},
         rerender_batch_job_id=null,
@@ -831,6 +837,10 @@ async function applyEditorDocument({
         and s.user_id=${session.userId}
         and s.status='ready'
         and s.render_version=${document.baseRenderVersion}
+        and (
+          ${normalizedCaptionComposition === null}
+          or s.caption_render_spec=${JSON.stringify(existing.captionRenderSpec ?? null)}::jsonb
+        )
         and (
           ${requestedTimelineVersion === undefined}
           or coalesce(s.edit_timeline_version,0)=

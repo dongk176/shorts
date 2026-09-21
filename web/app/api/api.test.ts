@@ -1192,11 +1192,13 @@ describe("subtitle template edit isolation", () => {
     expect(mocks.wakeDispatcher).not.toHaveBeenCalled();
   });
 
-  it("queues and preserves an exact render spec v4 on its assigned release", async () => {
+  it.each([false, true])("queues v4 on its assigned release with caption padding repair=%s", async (repairCaption) => {
+    const captionFixture = JSON.parse(readFileSync(new URL("../../../test-fixtures/caption-composition-5x4.json", import.meta.url), "utf8"));
     process.env.EDITOR_RENDERING_V2_ENABLED = "true";
     process.env.EDITOR_RENDERING_V2_GLOBAL_ENABLED = "true";
     const stableReleaseId = "b0cd2a6b-5019-4b5c-87cb-57e2d0bdb4c0";
     const document = editorDocumentV4Fixture();
+    if (repairCaption) document.video.aspectRatio = "5:4";
     document.subtitles.enabled = false;
     document.subtitles.segments = [];
     if (document.version !== 3 || document.renderSpec.version !== 4) {
@@ -1243,7 +1245,7 @@ describe("subtitle template edit isolation", () => {
         templateId: "dark-minimal",
         customTemplateId: null,
         templateSnapshot: { presetVersion: 3 },
-        videoAspectRatio: "16:9",
+        videoAspectRatio: repairCaption ? "5:4" : "16:9",
         editTimelineS3Key: "edit-sources/timeline.mp4",
         editTimelineStartSeconds: 10,
         editTimelineEndSeconds: 20,
@@ -1252,7 +1254,7 @@ describe("subtitle template edit isolation", () => {
         endSeconds: 16,
         subtitleTemplateId: null,
         subtitleTemplateSnapshot: null,
-        captionRenderSpec: null,
+        captionRenderSpec: repairCaption ? captionFixture.stored : null,
         subtitlesEnabled: false,
         wordTimedSubtitlesAvailable: false,
         channelThumbnailUrl: "https://example.com/channel.png",
@@ -1287,7 +1289,13 @@ describe("subtitle template edit isolation", () => {
       { params: Promise.resolve({ shortId }) },
     );
 
-    expect(response.status).toBe(202);
+    expect(response.status, await response.clone().text()).toBe(202);
+    if (repairCaption) {
+      const update = tx.mock.calls.find(([strings]) => Array.from(strings as TemplateStringsArray).join("").includes("update shorts_mvp.generated_shorts"));
+      expect(update?.slice(1)).toContainEqual(captionFixture.normalized);
+      expect(update?.slice(1)).toContain(JSON.stringify(captionFixture.stored));
+      expect(Array.from(update![0] as TemplateStringsArray).join("")).toContain("s.caption_render_spec=");
+    }
     const pendingDocument = tx.mock.calls.flat().find((value) => (
       typeof value === "object"
       && value !== null

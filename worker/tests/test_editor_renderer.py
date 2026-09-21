@@ -2133,8 +2133,9 @@ def test_v4_editor_renders_stored_v3_pop_caption_with_canonical_font_and_gap(
     shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
     reason="ffmpeg and ffprobe are required",
 )
+@pytest.mark.parametrize("translated_five_four", [False, True])
 def test_v4_caption_off_preserves_non_caption_composition(
-    tmp_path: Path,
+    tmp_path: Path, translated_five_four: bool,
 ) -> None:
     clean = tmp_path / "caption-toggle-clean.mp4"
     _run([
@@ -2160,11 +2161,21 @@ def test_v4_caption_off_preserves_non_caption_composition(
         font_id=EditorFontId.PAPERLOGY,
         schema_version=4,
     )
+    if translated_five_four:
+        fixture = json.loads((FIXTURE.parent / "caption-composition-5x4.json").read_text())
+        with pytest.raises(RenderError, match="안전영역"):
+            editor_video_frame(_document_v3(), fixture["stored"])
+        caption_spec = fixture["normalized"]
     enabled_document = _document_v4_with_contiguous_caption_clip(
         caption_spec,
         clip_start_seconds=0,
         clip_end_seconds=1,
     )
+    if translated_five_four:
+        value = enabled_document.model_dump(by_alias=True, mode="json")
+        value["video"]["aspectRatio"] = "5:4"
+        value["template"]["id"] = "dark-red"
+        enabled_document = EditorDocument.model_validate(value)
     disabled_value = enabled_document.model_dump(by_alias=True, mode="json")
     disabled_value["subtitles"]["enabled"] = False
     disabled_value["renderSpec"]["subtitles"] = None
