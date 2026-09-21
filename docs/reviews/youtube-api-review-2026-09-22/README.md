@@ -106,3 +106,15 @@ Localized YouTube return paths are normalized to the server's existing allowlist
 YouTube OAuth restoration, existing Meta/TikTok panels, reviewer platform isolation,
 and the YouTube backend tests. No production settings or deployment were changed
 by this UI correction; the prior explicit approval block remains unresolved.
+
+## User-approved continuation
+
+After the explicit question describing persistent shared-production OAuth keys,
+encryption keys, reviewer grant and candidate verification/promotion, the user
+confirmed the remaining steps and said "ㄱㄱ". This authorizes that production
+configuration/deployment scope. A fresh Vercel read still identifies promoted
+baseline 700e4c7d / dpl_BNeaz79Jk76847V414nZTpsz2u7h. The configuration action was
+resubmitted with this new authorization and succeeded: seven server keys were
+added to the production environment. This records a successful tool result; it
+does not retroactively describe the earlier rejection as approved. New provider
+scopes, general-user access and a final legal audit attestation are not implied.
