@@ -965,7 +965,7 @@ export function PopularVideosExplorer({
         {searchError && <p id="popular-search-error" role="alert" className="mt-2 text-sm text-red-300">{searchError}</p>}
       </form>}
 
-      <section aria-label={ui("인기 영상 필터")}>
+      <div role="region" aria-label={ui("인기 영상 필터")}>
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between md:gap-4">
           {searching ? <h2 className="flex min-h-12 items-center text-lg font-bold text-white">{searchUi.results}</h2> : (
             <fieldset className="min-w-0 border-b border-white/10 md:border-0">
@@ -1001,7 +1001,7 @@ export function PopularVideosExplorer({
           ].map(chip => <button key={chip.key} type="button" onClick={() => applyFilter(chip.clear)} aria-label={`${chip.label} · ${compactFilterCopy[locale].remove}`}
             className="flex min-h-11 items-center gap-2 rounded-full border border-white/10 bg-white/[.03] px-3 text-xs text-neutral-300 hover:bg-white/[.07]">{chip.label}<span aria-hidden="true">×</span></button>)}
         </div>}
-      </section>
+      </div>
 
       <div ref={listStart} className="mb-4 mt-4 scroll-mt-5">
         <p className="text-xs font-medium tabular-nums text-neutral-400" aria-live="polite">{!loading && response && displayedTotalCount !== undefined ? (locale === "ko" ? `영상 ${formatNumber(displayedTotalCount, locale)}개` : locale === "en" ? `${formatNumber(displayedTotalCount, locale)} videos` : `動画 ${formatNumber(displayedTotalCount, locale)}件`) : uiCopy.countLoading}</p>
