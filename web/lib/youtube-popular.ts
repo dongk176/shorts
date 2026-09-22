@@ -74,6 +74,8 @@ export type PopularVideoResponse = {
   verifiedAt?: string | null;
   unavailableCount?: number;
   collectionStatus?: "complete" | "partial" | "none";
+  searchEnabled?: boolean;
+  includesSimilarResults?: boolean;
   catalogEnabled?: boolean;
   japaneseEnabled?: boolean;
   generation?: string;

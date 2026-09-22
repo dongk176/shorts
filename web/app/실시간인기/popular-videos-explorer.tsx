@@ -8,6 +8,7 @@ import { discoveryCopy } from "./trending-date-filter";
 import { reconcileCatalogVisibility, type CatalogVisibility } from "@/lib/youtube-catalog-visibility";
 
 import Image from "next/image";
+import { normalizePopularQuery } from "@/lib/popular-text-search";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { PopularFiltersPlanOverlay } from "@/components/popular-filters-plan-overlay";
@@ -23,6 +24,12 @@ import { formatLocale } from "@/lib/i18n/config";
 import { formatNumber } from "@/lib/i18n/format";
 import { useI18n } from "@/lib/i18n/provider";
 import { userFacingErrorMessage } from "@/lib/public-error";
+
+const searchCopy = {
+  ko: { placeholder: "제목이나 채널명을 검색하세요", submit: "검색", clear: "검색 지우기", results: "검색 결과", invalid: "검색어를 2~100자로 입력해 주세요.", empty: "검색 결과가 없습니다", hint: "검색어를 바꾸거나 필터를 조정해 보세요.", similar: "비슷한 검색 결과가 포함되어 있습니다.", error: "검색 결과를 불러오지 못했습니다." },
+  en: { placeholder: "Search titles or channels", submit: "Search", clear: "Clear search", results: "Search results", invalid: "Enter 2–100 characters.", empty: "No search results", hint: "Try another search or adjust your filters.", similar: "Similar matches are included.", error: "Could not load search results." },
+  ja: { placeholder: "タイトルやチャンネル名を検索", submit: "検索", clear: "検索をクリア", results: "検索結果", invalid: "検索語を2〜100文字で入力してください。", empty: "検索結果がありません", hint: "検索語を変えるか、フィルターを調整してください。", similar: "類似する検索結果を含みます。", error: "検索結果を読み込めませんでした。" },
+};
 
 const dataTypeOptions: Array<{ value: PopularVideoType }> = [
   { value: "trending" },
@@ -823,6 +830,7 @@ function popularVideoParams(
   discoveryPeriod: PopularDiscoveryPeriod,
   cursor?: string,
   interactionId?: string,
+  q?: string,
 ) {
   const params = new URLSearchParams({
     type,
@@ -834,14 +842,16 @@ function popularVideoParams(
   });
   params.set("period", discoveryPeriod);
   params.set("periodBasis", "collected");
+  if (q) params.set("q", q);
   if (cursor) params.set("cursor", cursor);
   if (interactionId) params.set("interactionId", interactionId);
   return params;
 }
 
-function VideoCard({ video, rank, active, onOpen, onClose }: {
+function VideoCard({ video, rank, searching = false, active, onOpen, onClose }: {
   video: PopularVideo;
   rank: number;
+  searching?: boolean;
   active: boolean;
   onOpen: () => void;
   onClose: () => void;
@@ -869,7 +879,7 @@ function VideoCard({ video, rank, active, onOpen, onClose }: {
     <article className="popular-video-card group relative flex min-w-0 flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#191c1e]/90 shadow-[0_18px_50px_rgba(0,0,0,.18)] transition duration-200 hover:-translate-y-1 hover:border-[#d0bcff]/40 hover:shadow-[0_22px_60px_rgba(0,0,0,.28)]">
       <button
         type="button"
-        aria-label={uiCopy.openActions(rank, video.title)}
+        aria-label={searching ? uiCopy.actions(video.title) : uiCopy.openActions(rank, video.title)}
         aria-expanded={active}
         aria-controls={`video-actions-${video.videoId}`}
         tabIndex={active ? -1 : 0}
@@ -878,7 +888,7 @@ function VideoCard({ video, rank, active, onOpen, onClose }: {
       />
       <div className="relative aspect-video overflow-hidden bg-[#0b0f10]">
         <Image src={video.thumbnailUrl} alt={uiCopy.thumbnail(video.title)} fill sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw" priority={rank === 1} unoptimized className="object-cover transition duration-300 group-hover:scale-[1.025]" />
-        <span className="absolute left-2.5 top-2.5 grid min-w-9 place-items-center rounded-lg bg-[#f04435] px-2 py-1.5 text-sm font-black text-white shadow-lg">{rank}</span>
+        {!searching && <span className="absolute left-2.5 top-2.5 grid min-w-9 place-items-center rounded-lg bg-[#f04435] px-2 py-1.5 text-sm font-black text-white shadow-lg">{rank}</span>}
         {video.license === "creativeCommon" && <span className="absolute right-2.5 top-2.5 inline-flex rounded-full border border-violet-200/40 bg-violet-950/85 px-2.5 py-1 text-[10px] font-black tracking-wide text-violet-100 shadow-lg backdrop-blur-sm">{uiCopy.reusableBadge}</span>}
         <span className="absolute bottom-2.5 right-2.5 rounded-md bg-black/85 px-2 py-1 text-xs font-bold tabular-nums text-white backdrop-blur-sm">{formatDuration(video.durationSeconds)}</span>
         <span className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-black/40 to-transparent" aria-hidden="true" />
@@ -936,6 +946,14 @@ export function PopularVideosExplorer({
   const { locale } = useI18n();
   const uiCopy = popularUiCopy[locale];
   const filterCopy = mobileFilterCopy[locale];
+  const searchUi = searchCopy[locale];
+  const [searchEnabled, setSearchEnabled] = useState(false);
+  const [searchInput, setSearchInput] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const composing = useRef(false);
+  const searching = Boolean(searchQuery);
   const [dataType, setDataType] = useState<PopularVideoType>("trending");
   const [japaneseOnly, setJapaneseOnly] = useState(false);
   const [koreanOnly, setKoreanOnly] = useState(false);
@@ -988,7 +1006,7 @@ export function PopularVideosExplorer({
     setLoadMoreError(null);
     setError(null);
     setResponse(null);
-    const endpoint = `/api/youtube/popular?${popularVideoParams(dataType, category, reusableOnly, longFormOnly, koreanOnly, japaneseOnly, discoveryPeriod, undefined, filterInteractionId || undefined)}`;
+    const endpoint = `/api/youtube/popular?${popularVideoParams(searching ? "views" : dataType, category, reusableOnly, longFormOnly, koreanOnly, japaneseOnly, discoveryPeriod, undefined, filterInteractionId || undefined, searchQuery)}`;
     fetch(endpoint, { cache: "no-store", signal: controller.signal })
       .then(async (result) => {
         if (!result.ok) {
@@ -1001,16 +1019,16 @@ export function PopularVideosExplorer({
         }
         return result.json() as Promise<PopularVideoResponse>;
       })
-      .then((result) => { if (!result || controller.signal.aborted) return; setResponse(result); setCatalogEnabled(Boolean(result.catalogEnabled)); setJapaneseEnabled(Boolean(result.japaneseEnabled)); setHasNewList(false); })
+      .then((result) => { if (!result || controller.signal.aborted) return; setResponse(result); setSearchEnabled(Boolean(result.searchEnabled)); setCatalogEnabled(Boolean(result.catalogEnabled)); setJapaneseEnabled(Boolean(result.japaneseEnabled)); setHasNewList(false); })
       .catch((cause: unknown) => {
-        if (cause instanceof DOMException && cause.name === "AbortError") return;
+        if (controller.signal.aborted || (cause instanceof DOMException && cause.name === "AbortError")) return;
         setError(userFacingErrorMessage(cause, uiCopy.loadFailed));
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [category, dataType, discoveryPeriod, filterInteractionId, koreanOnly, japaneseOnly, locale, longFormOnly, reusableOnly, retryCount, uiCopy.loadFailed]);
+  }, [searchQuery, searching, category, dataType, discoveryPeriod, filterInteractionId, koreanOnly, japaneseOnly, locale, longFormOnly, reusableOnly, retryCount, uiCopy.loadFailed]);
 
   const visibleVideoIds = response?.items.map(video => video.videoId).join(",") || "";
   useEffect(() => {
@@ -1022,7 +1040,7 @@ export function PopularVideosExplorer({
       checking = true;
       const ids = visibleVideoIds ? visibleVideoIds.split(",") : [];
       const chunks = Array.from({length: Math.max(1, Math.ceil(ids.length / 200))}, (_, index) => ids.slice(index * 200, index * 200 + 200));
-      Promise.all(chunks.map(chunk => fetch(`/api/youtube/popular/status?${new URLSearchParams({type:dataType, ...(chunk.length ? {ids:chunk.join(",")} : {})})}`, { cache: "no-store", signal: controller.signal })
+      Promise.all(chunks.map(chunk => fetch(`/api/youtube/popular/status?${new URLSearchParams({type:searching ? "views" : dataType, ...(chunk.length ? {ids:chunk.join(",")} : {})})}`, { cache: "no-store", signal: controller.signal })
         .then(async result => result.ok ? result.json() as Promise<{ generation?: string; collectionWindowStart?: string; collectionWindowKey?: string; japaneseEnabled?: boolean; delayed?: boolean; visibility?: CatalogVisibility[] }> : null)))
         .then(states => {
           if (controller.signal.aborted) return;
@@ -1042,13 +1060,13 @@ export function PopularVideosExplorer({
           setResponse(current => {
             if (!current) return current;
             const listDelayed = Boolean(current.delayed || delayed);
-            const items = reconcileCatalogVisibility(current.items, statuses, {type:dataType,reusable:reusableOnly,date:null,delayed:listDelayed,periodBasis:"collected"});
+            const items = reconcileCatalogVisibility(current.items, statuses, {type:dataType,reusable:reusableOnly,date:null,delayed:listDelayed,periodBasis:"collected",searching});
             return {...current, delayed:listDelayed, items, totalCount: current.totalCount === undefined ? undefined : Math.max(0,current.totalCount-current.items.length+items.length)};
           });
         }).catch(() => undefined).finally(() => { checking = false; });
     }, 60_000);
     return () => { clearInterval(timer); controller.abort(); };
-  }, [catalogEnabled, dataType, response?.generation, response?.collectionWindowStart, response?.collectionWindowKey, response?.japaneseEnabled, japaneseOnly, visibleVideoIds, reusableOnly]);
+  }, [searching, catalogEnabled, dataType, response?.generation, response?.collectionWindowStart, response?.collectionWindowKey, response?.japaneseEnabled, japaneseOnly, visibleVideoIds, reusableOnly]);
 
   const selectedTypeLabel = dataType === "trending"
     ? filterCopy.trending
@@ -1064,7 +1082,7 @@ export function PopularVideosExplorer({
     setLoadingMore(true);
     setLoadMoreError(null);
     try {
-      const endpoint = `/api/youtube/popular?${popularVideoParams(dataType, category, reusableOnly, longFormOnly, koreanOnly, japaneseOnly, discoveryPeriod, response.nextCursor, undefined)}`;
+      const endpoint = `/api/youtube/popular?${popularVideoParams(searching ? "views" : dataType, category, reusableOnly, longFormOnly, koreanOnly, japaneseOnly, discoveryPeriod, response.nextCursor, undefined, searchQuery)}`;
       const result = await fetch(endpoint, { cache: "no-store", signal: controller.signal });
       if (controller.signal.aborted) return;
       if (result.status === 410) {
@@ -1093,11 +1111,12 @@ export function PopularVideosExplorer({
           totalCount: next.totalCount ?? current.totalCount,
           periodCounts: next.periodCounts ?? current.periodCounts,
           reusablePeriodCounts: next.reusablePeriodCounts ?? current.reusablePeriodCounts,
+          includesSimilarResults: Boolean(current.includesSimilarResults || next.includesSimilarResults),
           nextCursor: next.nextCursor,
         };
       });
     } catch (cause) {
-      if (cause instanceof DOMException && cause.name === "AbortError") return;
+      if (controller.signal.aborted || (cause instanceof DOMException && cause.name === "AbortError")) return;
       setLoadMoreError(userFacingErrorMessage(cause, uiCopy.loadMoreFailed));
     } finally {
       if (!controller.signal.aborted) setLoadingMore(false);
@@ -1147,7 +1166,7 @@ export function PopularVideosExplorer({
     action?.();
   }, []);
 
-  const reusableFilterActive = dataType === "reusable" || reusableOnly;
+  const reusableFilterActive = (!searching && dataType === "reusable") || reusableOnly;
   const activeMobileFilterCount = Number(category !== "all") + Number(koreanOnly || japaneseOnly) + Number(longFormOnly) + Number(reusableFilterActive);
   const openMobileFilters = () => {
     if (!canUseFilters) {
@@ -1171,12 +1190,12 @@ export function PopularVideosExplorer({
     setMobileFiltersOpen(false);
 
     const commitMobileFilters = () => applyFilter(() => {
-      if (dataType === "reusable" && !nextFilters.reusableOnly) setDataType("views");
+      if (!searching && dataType === "reusable" && !nextFilters.reusableOnly) setDataType("views");
       setCategory(nextFilters.category);
       setKoreanOnly(nextFilters.koreanOnly);
       setJapaneseOnly(nextFilters.japaneseOnly);
       setLongFormOnly(nextFilters.longFormOnly);
-      setReusableOnly(dataType === "reusable" ? false : nextFilters.reusableOnly);
+      setReusableOnly(!searching && dataType === "reusable" ? false : nextFilters.reusableOnly);
     });
 
     if (enablingReusable) {
@@ -1197,6 +1216,24 @@ export function PopularVideosExplorer({
       return;
     }
     commitMobileRanking();
+  };
+
+  const clearSearch = () => {
+    loadMoreController.current?.abort();
+    setSearchInput(""); setSearchQuery(""); setSearchError(null); setCursorNotice(false);
+    setActiveVideoId(null);
+    searchInputRef.current?.focus();
+  };
+  const submitSearch = () => {
+    const query = normalizePopularQuery(searchInput);
+    if (!query) { clearSearch(); return; }
+    if ([...query].length < 2 || [...query].length > 100) { setSearchError(searchUi.invalid); return; }
+    applyFilter(() => {
+      loadMoreController.current?.abort();
+      if (!searching && dataType === "reusable") setReusableOnly(true);
+      setSearchError(null); setSearchQuery(query);
+      if (query === searchQuery) setRetryCount(value => value + 1);
+    });
   };
 
   const requestMore = () => {
@@ -1220,6 +1257,22 @@ export function PopularVideosExplorer({
         <p className="mt-3 text-xs font-semibold text-neutral-500" aria-live="polite"><span className="mr-2 inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,.7)]" aria-hidden="true" /><span className="text-neutral-400">{uiCopy.lastUpdated}</span> {formatUpdatedAt(response?.updatedAt || null, locale)}</p>
       </section>
 
+      {searchEnabled && <form role="search" onSubmit={event => { event.preventDefault(); if (!composing.current) submitSearch(); }} className="mb-4 mt-5">
+        <label htmlFor="popular-search" className="sr-only">{searchUi.placeholder}</label>
+        <div className="flex min-h-12 items-center gap-2 rounded-xl border border-white/15 bg-[#15191a] px-3 focus-within:border-violet-300/60">
+          <input ref={searchInputRef} id="popular-search" type="search" value={searchInput} maxLength={100}
+            placeholder={searchUi.placeholder} enterKeyHint="search" autoComplete="off"
+            aria-invalid={Boolean(searchError)} aria-describedby={searchError ? "popular-search-error" : undefined}
+            onChange={event => { setSearchInput(event.target.value); setSearchError(null); }}
+            onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }}
+            onKeyDown={event => { if (event.key === "Enter" && (event.nativeEvent.isComposing || event.keyCode === 229 || composing.current)) event.preventDefault(); }}
+            className="min-w-0 flex-1 bg-transparent py-3 text-base text-white outline-none placeholder:text-neutral-500 [&::-webkit-search-cancel-button]:appearance-none" />
+          {(searchInput || searching) && <button type="button" onClick={clearSearch} aria-label={searchUi.clear} className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-xl text-neutral-400 hover:text-white">×</button>}
+          <button type="submit" className="min-h-10 shrink-0 rounded-lg bg-[#ff715e] px-4 text-sm font-extrabold text-[#24100d]">{searchUi.submit}</button>
+        </div>
+        {searchError && <p id="popular-search-error" role="alert" className="mt-2 text-sm text-red-300">{searchError}</p>}
+      </form>}
+
       <section className="relative z-30 mt-4 !rounded-none !border-0 !bg-transparent !p-0 !shadow-none !backdrop-blur-none md:mt-2 md:!rounded-2xl md:!border md:!border-white/10 md:!bg-[#15191a]/90 md:!p-5 md:!shadow-[0_16px_50px_rgba(0,0,0,.22)] md:!backdrop-blur-2xl" aria-label={ui("인기 영상 필터")}>
         <div className={`${canUseFilters ? "hidden md:flex" : "mb-4 flex"} items-center justify-end gap-3 md:mb-4 md:justify-between`}>
           <h2 className="hidden text-base font-black text-white md:block">{uiCopy.filters}</h2>
@@ -1242,7 +1295,7 @@ export function PopularVideosExplorer({
         </div>
 
         <div className="md:hidden">
-          <fieldset>
+          <fieldset hidden={searching}>
             <legend className="sr-only">{filterCopy.ranking}</legend>
             <div className="grid grid-cols-3 rounded-xl border border-white/10 bg-black/20 p-1">
               {dataTypeOptions.map((option) => {
@@ -1296,7 +1349,7 @@ export function PopularVideosExplorer({
         </div>
 
         <div className="hidden flex-col gap-4 md:flex md:flex-row md:items-end md:justify-between">
-          <fieldset className="min-w-0">
+          <fieldset hidden={searching} className="min-w-0">
             <legend className="mb-2 text-sm font-black text-neutral-200">{filterCopy.ranking}</legend>
             <div className="flex flex-wrap gap-2 pb-1">
               {dataTypeOptions.map((option) => {
@@ -1375,7 +1428,7 @@ export function PopularVideosExplorer({
               </span>
               {uiCopy.longFormOnly}
             </button>
-            {dataType !== "reusable" && (
+            {(searching || dataType !== "reusable") && (
               <button
                 type="button"
                 role="switch"
@@ -1416,7 +1469,7 @@ export function PopularVideosExplorer({
 
       <div ref={listStart} className="mb-5 mt-8 scroll-mt-5 flex flex-wrap items-center justify-between gap-3">
         <div className="shrink-0">
-          <h2 className="text-xl font-black tracking-[-.025em] text-white">{selectedTypeLabel}</h2>
+          <h2 className="text-xl font-black tracking-[-.025em] text-white">{searching ? searchUi.results : selectedTypeLabel}</h2>
           <p className="mt-1 text-xs font-bold tabular-nums text-neutral-500" aria-live="polite">{ui(!loading && response && displayedTotalCount !== undefined ? (locale === "ko" ? `${formatNumber(displayedTotalCount, locale)}개` : locale === "en" ? formatNumber(displayedTotalCount, locale) : `${formatNumber(displayedTotalCount, locale)}件`) : uiCopy.countLoading)}</p>
         </div>
         <div className="flex flex-col items-end gap-2">
@@ -1430,18 +1483,19 @@ export function PopularVideosExplorer({
         </div>
       </div>
 
-      {catalogEnabled && ((dataType === "trending" && response?.delayed) || cursorNotice || hasNewList) && <div className="mb-5 space-y-2 text-xs text-neutral-400" aria-live="polite">
-        {dataType === "trending" && response?.delayed && <p className="text-amber-300">{discoveryCopy[locale].delayed}</p>}
+      {catalogEnabled && ((!searching && dataType === "trending" && response?.delayed) || cursorNotice || hasNewList) && <div className="mb-5 space-y-2 text-xs text-neutral-400" aria-live="polite">
+        {!searching && dataType === "trending" && response?.delayed && <p className="text-amber-300">{discoveryCopy[locale].delayed}</p>}
         {cursorNotice && <p>{discoveryCopy[locale].expired}</p>}
         {hasNewList && <button type="button" className="min-h-10 rounded-lg border border-violet-300/40 px-4 font-bold text-violet-100" onClick={() => setRetryCount(value => value + 1)}>{discoveryCopy[locale].fresh}</button>}
       </div>}
+      {searching && response?.includesSimilarResults && <p className="mb-4 text-xs text-neutral-400">{searchUi.similar}</p>}
       {loading ? <LoadingSkeleton /> : error ? (
         <section role="alert" className="grid min-h-64 place-items-center rounded-2xl border border-red-400/20 bg-red-950/15 px-6 py-12 text-center">
-          <div><div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-red-400/10 text-xl text-red-300" aria-hidden="true">!</div><h2 className="mt-4 text-lg font-extrabold">{uiCopy.loadFailed}</h2><p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-red-200/75">{ui(error)}</p><button type="button" onClick={() => setRetryCount((value) => value + 1)} className="mt-6 rounded-xl bg-white px-5 py-3 text-sm font-extrabold text-black transition hover:bg-neutral-200">{uiCopy.retry}</button></div>
+          <div><div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-red-400/10 text-xl text-red-300" aria-hidden="true">!</div><h2 className="mt-4 text-lg font-extrabold">{searching ? searchUi.error : uiCopy.loadFailed}</h2><p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-red-200/75">{ui(error)}</p><button type="button" onClick={() => setRetryCount((value) => value + 1)} className="mt-6 rounded-xl bg-white px-5 py-3 text-sm font-extrabold text-black transition hover:bg-neutral-200">{uiCopy.retry}</button></div>
         </section>
       ) : response?.items.length ? (
         <div>
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{response.items.map((video, index) => <VideoCard key={video.videoId} video={video} rank={index + 1} active={activeVideoId === video.videoId} onOpen={() => setActiveVideoId(video.videoId)} onClose={() => setActiveVideoId(null)} />)}</div>
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{response.items.map((video, index) => <VideoCard key={video.videoId} video={video} rank={index + 1} searching={searching} active={activeVideoId === video.videoId} onOpen={() => setActiveVideoId(video.videoId)} onClose={() => setActiveVideoId(null)} />)}</div>
           {response.nextCursor && (
             <div className="mt-10 flex flex-col items-center gap-3">
               <button
@@ -1460,8 +1514,8 @@ export function PopularVideosExplorer({
         <section className="grid min-h-64 place-items-center rounded-2xl border border-white/[.08] bg-white/[.025] px-6 py-12 text-center">
           <div>
             <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-violet-400/10 text-xl text-violet-200" aria-hidden="true">⌕</div>
-            <h2 className="mt-4 text-lg font-extrabold">{uiCopy.noResults}</h2>
-            <p className="mt-2 text-sm leading-6 text-neutral-500">{uiCopy.noResultsDescription}</p>
+            <h2 className="mt-4 text-lg font-extrabold">{searching ? searchUi.empty : uiCopy.noResults}</h2>
+            <p className="mt-2 text-sm leading-6 text-neutral-500">{searching ? searchUi.hint : uiCopy.noResultsDescription}</p>
             {response?.nextCursor && (
               <button type="button" disabled={loadingMore} onClick={requestMore} className="mt-6 min-h-12 rounded-xl border border-white/15 bg-white/[.06] px-7 text-sm font-extrabold text-white transition hover:border-[#d0bcff]/50 hover:bg-violet-400/10 disabled:cursor-wait disabled:opacity-60">
                 {loadingMore ? uiCopy.loadingMore : uiCopy.nextResults}

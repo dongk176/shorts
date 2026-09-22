@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   getBillingSummary: vi.fn(),
   getDb: vi.fn(),
   getCatalogVideos: vi.fn(),
+  searchCatalogVideos: vi.fn(),
   getTrendingCalendar: vi.fn(),
   authenticatedSession: vi.fn(),
   hasDirectPopularFilterAccess: vi.fn(),
@@ -46,7 +47,7 @@ vi.mock("@/lib/session", () => ({
 
 vi.mock("@/lib/youtube-catalog", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/youtube-catalog")>(),
-  getCatalogVideos: mocks.getCatalogVideos, getTrendingCalendar: mocks.getTrendingCalendar,
+  searchCatalogVideos: mocks.searchCatalogVideos, getCatalogVideos: mocks.getCatalogVideos, getTrendingCalendar: mocks.getTrendingCalendar,
 }));
 import { CatalogCursorExpiredError } from "@/lib/youtube-catalog";
 import { GET as calendarGET } from "./calendar/route";
@@ -444,5 +445,50 @@ describe("Japanese filter API", () => {
     const response = await GET(new Request("https://example.com/api/youtube/popular?type=trending&japanese=true"));
     expect(response.status).toBe(503);
     expect(mocks.getPopularVideos).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("DB-only text search API", () => {
+  beforeEach(() => {
+    vi.stubEnv("YOUTUBE_DISCOVERY_ENABLED", "true");
+    vi.stubEnv("YOUTUBE_CATALOG_READS_ENABLED", "true");
+    vi.stubEnv("YOUTUBE_POPULAR_SEARCH_ENABLED", "true");
+    mocks.searchCatalogVideos.mockResolvedValue({ items: [], updatedAt: "", totalCount: 0, includesSimilarResults: false });
+    mocks.getCatalogVideos.mockResolvedValue({ items: [], updatedAt: "", totalCount: 0 });
+  });
+  it("authorizes search even with otherwise public default filters and preserves reusable scope", async () => {
+    const response = await GET(new Request("http://localhost/api/youtube/popular?type=reusable&q=%20AI%20"));
+    expect(response.status).toBe(200);
+    expect(mocks.authenticatedSession).toHaveBeenCalledOnce();
+    expect(mocks.searchCatalogVideos).toHaveBeenCalledWith(expect.objectContaining({ q: "ai", reusable: true }), "database");
+    expect(mocks.getCatalogVideos).not.toHaveBeenCalled();
+    expect(mocks.getPopularSearchVideos).not.toHaveBeenCalled();
+    expect((await response.json()).searchEnabled).toBe(true);
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+  });
+  it.each([401, 402])("blocks search without access (%s)", async status => {
+    if (status === 401) mocks.authenticatedSession.mockRejectedValueOnce(new HttpError(401, "Login required"));
+    else mocks.getBillingSummary.mockResolvedValueOnce({ activeProducts: [] });
+    const response = await GET(new Request("http://localhost/api/youtube/popular?type=trending&q=축구"));
+    expect(response.status).toBe(status);
+    expect(mocks.searchCatalogVideos).not.toHaveBeenCalled();
+  });
+  it.each(["a", "a".repeat(101)])("rejects invalid search length", async q => {
+    expect((await GET(new Request(`http://localhost/api/youtube/popular?type=trending&q=${q}`))).status).toBe(400);
+    expect(mocks.searchCatalogVideos).not.toHaveBeenCalled();
+  });
+  it("treats whitespace as the unchanged listing, and keeps search disabled until rollout", async () => {
+    await GET(new Request("http://localhost/api/youtube/popular?type=trending&q=%20%20"));
+    expect(mocks.authenticatedSession).not.toHaveBeenCalled();
+    expect(mocks.getCatalogVideos).toHaveBeenCalledOnce();
+    vi.stubEnv("YOUTUBE_POPULAR_SEARCH_ENABLED", "false");
+    expect((await GET(new Request("http://localhost/api/youtube/popular?type=trending&q=축구"))).status).toBe(503);
+    expect(mocks.searchCatalogVideos).not.toHaveBeenCalled();
+  });
+  it("reports DB failure as unavailable, never an empty successful search", async () => {
+    mocks.searchCatalogVideos.mockRejectedValueOnce(new Error("DB unavailable"));
+    const response = await GET(new Request("http://localhost/api/youtube/popular?type=trending&q=축구"));
+    expect(response.status).toBe(503);
   });
 });

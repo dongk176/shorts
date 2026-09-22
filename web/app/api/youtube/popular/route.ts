@@ -1,6 +1,7 @@
+import { normalizePopularQuery } from "@/lib/popular-text-search";
 import { japanReadsEnabled } from "@/lib/youtube-japan-settings";
 import { catalogReadsEnabled } from "@/lib/youtube-quota";
-import { CatalogCursorExpiredError, getCatalogVideos } from "@/lib/youtube-catalog";
+import { CatalogCursorExpiredError, getCatalogVideos, searchCatalogVideos } from "@/lib/youtube-catalog";
 import { validKstDate } from "@/lib/youtube-discovery-time";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -31,6 +32,7 @@ export const dynamic = "force-dynamic";
 
 const querySchema = z.object({
   type: z.enum(popularVideoTypes),
+  q: z.string().max(300).transform(normalizePopularQuery).refine(value => !value || ([...value].length >= 2 && [...value].length <= 100)).optional(),
   category: z.enum(popularVideoCategories).default("all"),
   reusable: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
   longForm: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
@@ -47,6 +49,7 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const query = querySchema.safeParse({
     type: url.searchParams.get("type"),
+    q: url.searchParams.get("q") ?? undefined,
     category: url.searchParams.get("category") || undefined,
     reusable: url.searchParams.get("reusable") || undefined,
     longForm: url.searchParams.get("longForm") || undefined,
@@ -64,9 +67,13 @@ export async function GET(request: Request) {
     return NextResponse.json({ detail: "지원하지 않는 인기 영상 필터입니다." }, { status: 400 });
   }
   try {
+    const searchEnabled = catalogReadsEnabled() && process.env.YOUTUBE_POPULAR_SEARCH_ENABLED === "true";
+    if (query.data.q && (!searchEnabled || query.data.date)) {
+      return NextResponse.json({ detail: "검색 기능을 준비 중입니다.", code: "POPULAR_SEARCH_DISABLED" }, { status: 503 });
+    }
     const db = getDb();
     let paidFilterUserId: string | null = null;
-    const usesPaidFeature = Boolean(query.data.date) || Boolean(query.data.cursor)
+    const usesPaidFeature = Boolean(query.data.q) || Boolean(query.data.date) || Boolean(query.data.cursor)
       || query.data.type !== "trending"
       || query.data.category !== "all"
       || query.data.reusable
@@ -92,7 +99,9 @@ export async function GET(request: Request) {
     const reusableOnly = query.data.type === "reusable" || query.data.reusable;
     const effectiveType = query.data.type === "reusable" ? "views" : query.data.type;
     let result;
-    if (catalogReadsEnabled()) {
+    if (query.data.q) {
+      result = await searchCatalogVideos({ ...query.data, q: query.data.q, reusable: reusableOnly }, db);
+    } else if (catalogReadsEnabled()) {
       result = await getCatalogVideos(query.data, db);
     } else if (query.data.date) {
       return NextResponse.json({ detail: "날짜별 수집 기록을 준비 중입니다." }, { status: 503 });
@@ -171,7 +180,7 @@ export async function GET(request: Request) {
         ...(query.data.date ? { selectedDate: query.data.date } : {}),
       });
     }
-    const response = NextResponse.json({ ...result, japaneseEnabled: result.japaneseEnabled ?? japaneseEnabled });
+    const response = NextResponse.json({ ...result, ...(searchEnabled ? { searchEnabled: true } : {}), japaneseEnabled: result.japaneseEnabled ?? japaneseEnabled });
     response.headers.set("Cache-Control", "private, no-store");
     return response;
   } catch (error) {

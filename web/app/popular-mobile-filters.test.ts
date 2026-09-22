@@ -33,7 +33,7 @@ describe("popular mobile filters", () => {
 
   it("retains reusable-license confirmation when filters are applied", () => {
     expect(source).toContain("requestReusableFilter(commitMobileFilters)");
-    expect(source).toContain('if (dataType === "reusable" && !nextFilters.reusableOnly) setDataType("views")');
+    expect(source).toContain('if (!searching && dataType === "reusable" && !nextFilters.reusableOnly) setDataType("views")');
   });
 
   it("uses the same localized copy for desktop and mobile controls", () => {

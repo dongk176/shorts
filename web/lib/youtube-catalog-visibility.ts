@@ -18,6 +18,7 @@ export function reconcileCatalogVisibility(
     date: string | null;
     delayed: boolean;
     periodBasis?: "collected";
+    searching?: boolean;
   },
 ) {
   const byId = new Map(statuses.map((status) => [status.videoId, status]));
@@ -26,19 +27,19 @@ export function reconcileCatalogVisibility(
     if (status) {
       if (!status.available) return [];
       if (
-        filters.type === "trending" &&
+        !filters.searching && filters.type === "trending" &&
         !filters.date &&
         filters.periodBasis !== "collected" &&
         !status.recentTrending
       )
         return [];
       if (
-        (filters.type === "reusable" || filters.reusable) &&
+        ((!filters.searching && filters.type === "reusable") || filters.reusable) &&
         status.license !== "creativeCommon"
       )
         return [];
       if (
-        filters.type === "views" &&
+        !filters.searching && filters.type === "views" &&
         !filters.reusable &&
         status.license !== "youtube"
       )
@@ -46,7 +47,7 @@ export function reconcileCatalogVisibility(
     }
     const license = status?.license || video.license;
     const isCurrentTrending =
-      filters.delayed || filters.type !== "trending" || filters.date
+      filters.searching || filters.delayed || filters.type !== "trending" || filters.date
         ? false
         : (status?.currentTrending ?? video.isCurrentTrending);
     return [{ ...video, license, isCurrentTrending }];

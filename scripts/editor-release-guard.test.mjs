@@ -25,9 +25,10 @@ test("legacy editor global CSS remains byte-for-byte at the approved baseline", 
 
   assert.equal(
     digest,
-    // Promoted 51d911f: the tablet preview fix was reviewed at 390/707/1280px.
-    // See docs/youtube-discovery-production-preparation-20260909.md.
-    "1a314592ac1b8189374b6ff4608241e44cb3a4b291c13e6b3b68388d5bbb51b0",
+    // Promoted 9baf6bec (dpl_CWuWwXGXTYiVMPfYXUBZLBYBmrcp), checked 2026-09-23.
+    // Since 51d911f only the seven scoped full-frame showcase lines changed
+    // (bf137f86); legacy editor CSS is unchanged. See docs/localized-showcase-20260920.md.
+    "31c950d3825d06fed9e2334089ea0c70759e958e807c88aed83c055b8005efa0",
     "Do not change the approved global CSS baseline without a dedicated public UI review.",
   );
 });

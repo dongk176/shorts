@@ -1,3 +1,4 @@
+import { normalizePopularQuery, popularSearchSql } from "@/lib/popular-text-search";
 import { createHash } from "node:crypto";
 import type { Sql, TransactionSql } from "postgres";
 import type { CatalogVisibility } from "@/lib/youtube-catalog-visibility";
@@ -242,10 +243,21 @@ export type CatalogFilters = {
   periodBasis?: "collected";
   date?: string;
   cursor?: string;
+  q?: string;
 };
+/** Keep the fuzzy threshold scoped to this transaction, including count and page queries. */
+export async function searchCatalogVideos(
+  filters: CatalogFilters & { q: string }, db: Sql = getDb(), now = new Date(),
+): Promise<PopularVideoResponse> {
+  return db.begin(async tx => {
+    await tx`select set_config('pg_trgm.word_similarity_threshold','0.3',true)`;
+    return getCatalogVideos({ ...filters, type: "views", date: undefined }, tx, now);
+  }) as Promise<PopularVideoResponse>;
+}
+
 export async function getCatalogVideos(
   filters: CatalogFilters,
-  db: Sql = getDb(),
+  db: CatalogSql = getDb(),
   now = new Date(),
 ): Promise<PopularVideoResponse> {
   if (
@@ -253,6 +265,7 @@ export async function getCatalogVideos(
     (filters.type !== "trending" || !validKstDate(filters.date, now))
   )
     throw new Error("INVALID_CATALOG_DATE");
+  const search = filters.q ? popularSearchSql(db, filters.q) : null;
   const collectedPeriod = filters.periodBasis === "collected" && !filters.date;
   const exposedJapan = await japanReadsEnabled(db);
   let includeJapan = exposedJapan;
@@ -265,9 +278,10 @@ export async function getCatalogVideos(
     filters.period, filters.date || null, filters.periodBasis || null,
     ...(afternoonPeriod ? ["afternoon-1720-v1", filters.period === "all" ? null : today.toISOString()] : []),
   ]);
-  const filterKey = exposedJapan || filters.japanese
+  const baseFilterKey = exposedJapan || filters.japanese
     ? JSON.stringify([...JSON.parse(legacyFilterKey), "regions-v2", Boolean(filters.japanese), exposedJapan,
       afternoonPeriod && filters.period !== "all" ? state.collectionWindowKey : null]) : legacyFilterKey;
+  const filterKey = search ? JSON.stringify(["text-search-v1", normalizePopularQuery(filters.q!), baseFilterKey]) : baseFilterKey;
   let requestedVersion: { id: string; collectedAt: Date | null; currentRunIds: string[]; filterKey: string } | undefined;
   let cursorOffset = 0;
   if (filters.cursor) {
@@ -278,7 +292,7 @@ export async function getCatalogVideos(
         || !Number.isSafeInteger(cursor.offset) || cursor.offset < 0) throw new Error();
     } catch { throw new CatalogCursorExpiredError(); }
     const [version] = await db`select id,collected_at,current_run_ids,filter_key from shorts_mvp.youtube_list_versions
-      where id=${cursor.id} and expires_at>${now} and (filter_key=${filterKey} or (${!filters.japanese} and filter_key=${legacyFilterKey}))`;
+      where id=${cursor.id} and expires_at>${now} and (filter_key=${filterKey} or (${!search && !filters.japanese} and filter_key=${legacyFilterKey}))`;
     if (!version) throw new CatalogCursorExpiredError();
     requestedVersion = version as typeof requestedVersion;
     if (version.filterKey === legacyFilterKey) includeJapan = false;
@@ -310,15 +324,15 @@ export async function getCatalogVideos(
       or (not exists(select 1 from shorts_mvp.youtube_catalog_regions r where r.catalog_id=c.id)
         and ${collectionTime}>=${krSince}))`;
   };
-  const base = db`${regionMembership} and c.availability='public' and c.metadata is not null and c.video_id is not null
+  const base = db`${search?.match ?? db`true`} and ${regionMembership} and c.availability='public' and c.metadata is not null and c.video_id is not null
     and c.verified_at>${new Date(now.getTime() - 30 * DAY_MS)}
     and (${filters.category}='all' or c.metadata->>'category'=${filters.category})
     and (${filters.japanese ?? false}=false or coalesce((c.metadata->>'isJapanese')::boolean,false))
     and (${filters.korean}=false or (c.metadata->>'isKorean')::boolean)
     and (${filters.longForm}=false or (c.metadata->>'durationSeconds')::int>=240)
     and (${reusable}=false or c.metadata->>'license'='creativeCommon')
-    and (${filters.type !== "views" || reusable}=true or c.metadata->>'license'='youtube')
-    and (${filters.type !== "trending"}=true or
+    and (${Boolean(search) || filters.type !== "views" || reusable}=true or c.metadata->>'license'='youtube')
+    and (${Boolean(search) || filters.type !== "trending"}=true or
       (${filters.date || null}::date is null and (
         (${collectedPeriod} and (${reusable} or ${regionalTrendingAt} is not null)) or
         (${!collectedPeriod} and ${regionalTrendingAt}>${new Date(now.getTime() - DAY_MS)})
@@ -341,15 +355,17 @@ export async function getCatalogVideos(
     const version =
       cached ||
       (
-        await db`insert into shorts_mvp.youtube_list_versions(filter_key,generation,collected_at,current_run_ids,catalog_ids)
-      select ${filterKey},${state.generation},${state.updatedAt},${currentRunIds}::uuid[],coalesce(array_agg(id order by position),array[]::text[]) from (
+        await db`insert into shorts_mvp.youtube_list_versions(filter_key,generation,collected_at,current_run_ids,expires_at,catalog_ids)
+      select ${filterKey},${state.generation},${state.updatedAt},${currentRunIds}::uuid[],${new Date(now.getTime() + (search ? 15 * 60_000 : 48 * 3_600_000))},coalesce(array_agg(id order by position),array[]::text[]) from (
         select c.id,row_number() over(order by
+          ${search?.tier ?? db`0`} asc, ${search?.score ?? db`0`} desc,
           case when ${filters.type === "trending" && !filters.date} and exists(
             select 1 from shorts_mvp.youtube_trending_run_items ri where ri.run_id=any(${currentRunIds}::uuid[]) and ri.catalog_id=c.id
           ) then 0 else 1 end,
           case when ${filters.type === "trending" && !filters.date} then ${regionalRank} end asc nulls last,
           case when ${filters.type === "trending" && !filters.date} then ${regionalTrendingAt} end desc nulls last,
-          (c.metadata->>'viewCount')::bigint desc,(c.metadata->>'publishedAt')::timestamptz desc,c.id) as position
+          (c.metadata->>'viewCount')::bigint desc,(c.metadata->>'publishedAt')::timestamptz desc,
+          case when ${Boolean(search)} then c.video_id else c.id end) as position
         from shorts_mvp.youtube_catalog c where ${base}
           and ${filters.type === "trending" && !collectedPeriod ? db`true` : periodMatch(filters.period)}
       ) ranked returning id,current_run_ids`
@@ -360,18 +376,33 @@ export async function getCatalogVideos(
   // Materialize IDs once. OFFSET 0 below preserves ID-first lookups even before
   // ANALYZE has statistics; otherwise a 50k catalog can trigger quadratic rescans.
   // Advance by the original ordinal, not the visible row count.
-  const rows = await db`with entries as materialized (
-      select entry.id,entry.ordinal from shorts_mvp.youtube_list_versions v
-      cross join lateral unnest(v.catalog_ids) with ordinality entry(id,ordinal)
-      where v.id=${versionId} and entry.ordinal>${offset}
+  const [searchCount] = search ? await db`select cardinality(catalog_ids)::int as all_count from shorts_mvp.youtube_list_versions where id=${versionId}` : [];
+  const searchPageBatch = 192;
+  const readPage = (batchOffset: number, limit: number) => db`with entries as materialized (
+      select entry.id,entry.ordinal+${search ? batchOffset : 0} as ordinal from shorts_mvp.youtube_list_versions v
+      cross join lateral unnest(${search ? db`v.catalog_ids[${batchOffset + 1}:${batchOffset + searchPageBatch}]` : db`v.catalog_ids`}) with ordinality entry(id,ordinal)
+      where v.id=${versionId} and (${Boolean(search)} or entry.ordinal>${batchOffset})
     ) select c.metadata,c.verified_at,entry.ordinal,
+    ${search ? db`(${search.tier}=3)` : db`false`} as similar_match,
     (${filters.type === "trending" && !filters.date} and exists(
       select 1 from shorts_mvp.youtube_trending_run_items ri join shorts_mvp.youtube_collection_runs active on active.id=ri.run_id
       where ri.run_id=any(${currentRunIds}::uuid[]) and ri.catalog_id=c.id and ${freshTrendingCondition(db,now)})) as is_current
     from entries entry cross join lateral (
       select c.* from shorts_mvp.youtube_catalog c where c.id=entry.id and ${base} offset 0
-    ) c order by entry.ordinal limit 49`;
-  const [counts] = await db`select count(*)::int as all_count,
+    ) c order by entry.ordinal limit ${limit}`;
+  const rows = await readPage(offset, 49);
+  if (search) {
+    // Small ID slices prevent common queries from rechecking tens of thousands
+    // of rows just to serve 48 cards. Scan further only if safety filters removed rows.
+    for (let batchOffset=offset+searchPageBatch; rows.length<49 && batchOffset<Number(searchCount.allCount); batchOffset+=searchPageBatch) {
+      rows.push(...await readPage(batchOffset,49-rows.length));
+    }
+  }
+  // Search counts belong to the frozen result set. Avoid re-running the entire
+  // fuzzy query on every page (and counting newly collected videos outside it).
+  const [counts] = search
+    ? [searchCount]
+    : await db`select count(*)::int as all_count,
     count(*) filter(where ${periodMatch("today")})::int as today_count,
     count(*) filter(where ${periodMatch("week")})::int as week_count
     from shorts_mvp.youtube_catalog c where ${base}`;
@@ -390,6 +421,7 @@ export async function getCatalogVideos(
       verifiedAt: new Date(row.verifiedAt).toISOString(),
       isCurrentTrending: Boolean(row.isCurrent),
     })),
+    ...(search ? { includesSimilarResults: rows.slice(0, 48).some(row => row.similarMatch) } : {}),
     updatedAt: collectedAt || "",
     verifiedAt: state.verifiedAt,
     generation: state.generation,
@@ -401,8 +433,8 @@ export async function getCatalogVideos(
     collectionWindowKey: state.collectionWindowKey,
     collectionWindows: state.collectionWindows,
     date: filters.date || null,
-    periodCounts,
-    totalCount:
+    ...(search ? {} : { periodCounts }),
+    totalCount: search ? Number(counts.allCount) :
       periodCounts[filters.type === "trending" && !collectedPeriod ? "all" : filters.period],
     collectionStatus: day?.status,
     unavailableCount: day?.unavailableCount,

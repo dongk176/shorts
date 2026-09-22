@@ -30,6 +30,13 @@ const filters = {
   delayed: false,
 };
 describe("visible catalog safety updates", () => {
+  it("keeps mixed-license search results while enforcing availability and an explicit CC filter", () => {
+    const statuses=[status(items[0].videoId,{recentTrending:false}),status(items[1].videoId,{license:"youtube"}),status(items[2].videoId,{available:false})];
+    const found=reconcileCatalogVisibility(items,statuses,{...filters,type:"views",searching:true});
+    expect(found.map(v=>v.videoId)).toEqual([items[0].videoId,items[1].videoId]);
+    expect(found.every(v=>!v.isCurrentTrending)).toBe(true);
+    expect(reconcileCatalogVisibility(items,statuses,{...filters,type:"views",searching:true,reusable:true}).map(v=>v.videoId)).toEqual([items[0].videoId]);
+  });
   it("removes unavailable cards and updates licenses without inserting or reordering videos", () => {
     const result = reconcileCatalogVisibility(
       items,
