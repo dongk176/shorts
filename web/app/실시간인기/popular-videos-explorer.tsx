@@ -942,7 +942,10 @@ export function PopularVideosExplorer({
     <main className="relative mx-auto w-full max-w-6xl px-4 pb-24 pt-5 sm:px-8 sm:pt-7">
       <header className="mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 sm:mb-5 md:pr-36">
         <h1 className="flex items-center gap-2 text-2xl font-black tracking-tight text-white sm:text-3xl">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-7 w-7 shrink-0 text-[#ff715e]" aria-hidden="true"><path d="M13 3c1 5-4 5-2 9 2-1 3-3 3-5 4 4 6 7 4 11a7 7 0 0 1-12-1c-1-3 1-6 3-8-1 4 1 5 2 5-1-5 3-6 2-11Z" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className="h-7 w-7 shrink-0 text-[#ff715e]" aria-hidden="true">
+            <path d="M12.1 21.25c4.35 0 7.65-2.95 7.65-7.15 0-3.15-1.8-5.9-4.75-8.2.15 2.35-.75 4.05-2.4 4.95.2-3.95-1.55-6.9-4.5-9.1.25 3.75-4.35 6.25-4.35 12.35 0 4.2 3.45 7.15 8.35 7.15Z" />
+            <path d="M9.1 16.2c0 2.15 1.35 3.55 3.2 3.55 1.9 0 3.25-1.35 3.25-3.35 0-1.45-.7-2.65-2.05-3.7-.05 1.1-.5 1.85-1.2 2.3-.2-1.75-.95-3.05-2.15-4 .05 1.65-1.05 3.15-1.05 5.2Z" />
+          </svg>
           {ui("실시간 인기")}
         </h1>
         <p className="text-[11px] text-neutral-500 sm:text-xs" aria-live="polite"><span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-emerald-400" aria-hidden="true" /><span className="sr-only">{uiCopy.lastUpdated} </span>{formatUpdatedAt(response?.updatedAt || null, locale)}</p>
