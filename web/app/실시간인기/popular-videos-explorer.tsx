@@ -34,23 +34,7 @@ const searchCopy = {
 const dataTypeOptions: Array<{ value: PopularVideoType }> = [
   { value: "trending" },
   { value: "views" },
-  { value: "reusable" },
 ];
-
-const mobileRankingButtonTone: Record<PopularVideoType, { selected: string; idle: string }> = {
-  trending: {
-    selected: "bg-[#ff715e] text-[#24100d] shadow-[inset_0_0_0_1px_rgba(255,255,255,.22),0_7px_22px_rgba(255,85,64,.22)]",
-    idle: "text-neutral-400 active:bg-white/[.05]",
-  },
-  views: {
-    selected: "bg-[#ffb4a8] text-[#2b1511] shadow-[inset_0_0_0_1px_rgba(255,255,255,.22),0_7px_22px_rgba(255,180,168,.18)]",
-    idle: "text-neutral-400 active:bg-white/[.05]",
-  },
-  reusable: {
-    selected: "bg-[#a078ff] text-[#181123] shadow-[inset_0_0_0_1px_rgba(255,255,255,.2),0_7px_22px_rgba(160,120,255,.2)]",
-    idle: "text-neutral-400 active:bg-white/[.05]",
-  },
-};
 
 const discoveryPeriodOptions: Array<{ value: PopularDiscoveryPeriod; labels: Record<SiteLocale, string> }> = [
   { value: "all", labels: { ko: "전체", en: "All", ja: "すべて" } },
@@ -69,34 +53,28 @@ const categoryOptions: Array<{ value: PopularVideoCategory }> = [
   { value: "howto" },
 ];
 
+const compactFilterCopy = {
+  ko: { title: "필터", language: "영상 언어", allLanguages: "전체", korean: "한국어", japanese: "일본어", period: "수집 기간", remove: "조건 해제", shortSearch: "제목·채널 검색" },
+  en: { title: "Filters", language: "Video language", allLanguages: "All", korean: "Korean", japanese: "Japanese", period: "Collection period", remove: "Remove filter", shortSearch: "Search titles or channels" },
+  ja: { title: "フィルター", language: "動画の言語", allLanguages: "すべて", korean: "韓国語", japanese: "日本語", period: "収集期間", remove: "条件を解除", shortSearch: "タイトル・チャンネル検索" },
+};
+
 const reusableGuideDismissedKey = "easycut:reusable-license-guide-dismissed:v1";
 
-type MobilePopularFiltersDraft = {
+type PopularFiltersDraft = {
   category: PopularVideoCategory;
   koreanOnly: boolean;
   japaneseOnly: boolean;
   longFormOnly: boolean;
-  reusableOnly: boolean;
+  period: PopularDiscoveryPeriod;
 };
 
-const mobileFilterCopy: Record<SiteLocale, {
+const filterLabels: Record<SiteLocale, {
   ranking: string;
   trending: string;
   views: string;
-  reusableRanking: string;
   category: string;
-  details: string;
-  title: string;
-  description: string;
-  additional: string;
-  korean: string;
-  koreanDescription: string;
-  japanese: string;
-  japaneseDescription: string;
   longForm: string;
-  longFormDescription: string;
-  reusable: string;
-  reusableDescription: string;
   reset: string;
   apply: string;
   close: string;
@@ -106,20 +84,8 @@ const mobileFilterCopy: Record<SiteLocale, {
     ranking: "인기 기준",
     trending: "인기 급상승",
     views: "조회수 상위",
-    reusableRanking: "재사용 허용",
     category: "카테고리",
-    details: "상세 조건",
-    title: "세부 설정",
-    description: "카테고리와 세부 조건을 선택한 뒤 한 번에 적용하세요.",
-    additional: "추가 조건",
-    korean: "한국어 영상만",
-    japanese: "일본어 영상만",
-    japaneseDescription: "일본어로 된 영상만 모아봅니다.",
-    koreanDescription: "한국어로 된 영상만 모아봅니다.",
     longForm: "롱폼만",
-    longFormDescription: "긴 형식의 영상만 표시합니다.",
-    reusable: "재사용 허용 영상만",
-    reusableDescription: "급상승·조회수 결과에서 재사용 허용 영상만 골라봅니다.",
     reset: "초기화",
     apply: "적용",
     close: "필터 닫기",
@@ -138,20 +104,8 @@ const mobileFilterCopy: Record<SiteLocale, {
     ranking: "Ranking",
     trending: "Trending",
     views: "Most viewed",
-    reusableRanking: "Reuse allowed",
     category: "Category",
-    details: "More filters",
-    title: "Details",
-    description: "Choose a category and conditions, then apply them together.",
-    additional: "Additional filters",
-    korean: "Korean only",
-    japanese: "Japanese only",
-    japaneseDescription: "Show only videos in Japanese.",
-    koreanDescription: "Show only videos in Korean.",
     longForm: "Long-form only",
-    longFormDescription: "Show only long-form videos.",
-    reusable: "Reuse allowed only",
-    reusableDescription: "Narrow trending or most-viewed results to reusable videos.",
     reset: "Reset",
     apply: "Apply",
     close: "Close filters",
@@ -170,20 +124,8 @@ const mobileFilterCopy: Record<SiteLocale, {
     ranking: "人気基準",
     trending: "急上昇",
     views: "再生回数順",
-    reusableRanking: "再利用可能",
     category: "カテゴリー",
-    details: "詳細条件",
-    title: "詳細設定",
-    description: "カテゴリーと条件を選択して、一度に適用できます。",
-    additional: "追加条件",
-    korean: "韓国語のみ",
-    japanese: "日本語のみ",
-    japaneseDescription: "日本語の動画のみ表示します。",
-    koreanDescription: "韓国語の動画のみ表示します。",
     longForm: "長尺のみ",
-    longFormDescription: "長尺動画のみ表示します。",
-    reusable: "再利用可能のみ",
-    reusableDescription: "急上昇・再生回数順の結果を再利用可能な動画に絞ります。",
     reset: "リセット",
     apply: "適用",
     close: "フィルターを閉じる",
@@ -464,154 +406,87 @@ function ReusableLicenseGuide({
   );
 }
 
-function MobilePopularFiltersSheet({
-  japaneseEnabled,
-  open,
-  locale,
-  draft,
-  onDraftChange,
-  onClose,
-  onReset,
-  onApply,
-}: {
+function PopularFiltersDialog({ open, japaneseEnabled, locale, draft, onDraftChange, onClose, onReset, onApply }: {
   open: boolean;
   japaneseEnabled: boolean;
   locale: SiteLocale;
-  draft: MobilePopularFiltersDraft;
-  onDraftChange: (draft: MobilePopularFiltersDraft) => void;
+  draft: PopularFiltersDraft;
+  onDraftChange: (draft: PopularFiltersDraft) => void;
   onClose: () => void;
   onReset: () => void;
   onApply: () => void;
 }) {
-  const ui = useUiText();
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const closeButtonRef = useRef<HTMLButtonElement>(null);
-  const copy = mobileFilterCopy[locale];
+  const copy = filterLabels[locale];
+  const compact = compactFilterCopy[locale];
 
   useEffect(() => {
     const dialog = dialogRef.current;
-    if (!dialog || !open || dialog.open) return;
+    if (!dialog || !open) return;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     dialog.showModal();
-    window.requestAnimationFrame(() => closeButtonRef.current?.focus());
+    return () => {
+      dialog.close();
+      document.body.style.overflow = previousOverflow;
+      previousFocus?.focus();
+    };
   }, [open]);
 
   if (!open) return null;
-
-  const detailOptions: Array<{
-    key: "japaneseOnly" | "koreanOnly" | "longFormOnly" | "reusableOnly";
-    label: string;
-    description: string;
-  }> = [
-    { key: "koreanOnly", label: copy.korean, description: copy.koreanDescription },
-    ...(japaneseEnabled ? [{ key: "japaneseOnly" as const, label: copy.japanese, description: copy.japaneseDescription }] : []),
-    { key: "longFormOnly", label: copy.longForm, description: copy.longFormDescription },
-    { key: "reusableOnly", label: copy.reusable, description: copy.reusableDescription },
-  ];
-
+  const selectClass = "mt-2 min-h-11 w-full rounded-xl border border-white/15 bg-[#202628] px-3 text-sm text-white outline-none focus-visible:ring-2 focus-visible:ring-[#ff715e]";
   return (
-    <dialog
-      ref={dialogRef}
-      aria-labelledby="mobile-popular-filters-title"
-      aria-describedby="mobile-popular-filters-description"
-      onCancel={(event) => {
-        event.preventDefault();
-        onClose();
-      }}
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-      className="fixed inset-x-0 bottom-0 top-auto m-0 max-h-[92dvh] w-full max-w-none overflow-y-auto rounded-t-[30px] border border-b-0 border-white/10 bg-[#15191a] p-0 text-white shadow-[0_-24px_80px_rgba(0,0,0,.58)] backdrop:bg-black/75 backdrop:backdrop-blur-sm md:hidden"
-    >
-      <div className="mx-auto h-1.5 w-11 rounded-full bg-white/20" aria-hidden="true" />
-      <header className="flex items-start justify-between gap-5 px-5 pb-5 pt-5">
-        <div>
-          <h2 id="mobile-popular-filters-title" className="text-xl font-black tracking-[-.035em] text-white">
-            {ui(copy.title)}
-          </h2>
-          <p id="mobile-popular-filters-description" className="mt-1.5 text-xs font-semibold leading-5 text-neutral-400">
-            {ui(copy.description)}
-          </p>
+    <dialog ref={dialogRef} aria-modal="true" aria-labelledby="popular-filters-title"
+      onCancel={event => { event.preventDefault(); onClose(); }}
+      onClick={event => { if (event.target === event.currentTarget) onClose(); }}
+      className="fixed inset-x-0 bottom-0 top-auto m-0 max-h-[90dvh] w-full max-w-none overflow-y-auto rounded-t-2xl border border-white/10 bg-[#15191a] p-0 text-white shadow-2xl backdrop:bg-black/70 md:inset-0 md:m-auto md:max-w-md md:rounded-2xl">
+      <div className="px-5 pb-5 pt-3 md:pt-5" onClick={event => event.stopPropagation()}>
+        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/20 md:hidden" aria-hidden="true" />
+        <header className="mb-4 flex items-center justify-between gap-3">
+          <h2 id="popular-filters-title" className="text-xl font-bold">{compact.title}</h2>
+          <button type="button" onClick={onClose} aria-label={copy.close} className="grid h-11 w-11 place-items-center rounded-lg text-2xl text-neutral-400 hover:bg-white/5 hover:text-white">×</button>
+        </header>
+        <div className="space-y-5">
+          <label className="block text-sm font-semibold text-neutral-300">{copy.category}
+            <select aria-label={copy.category} value={draft.category} onChange={event => onDraftChange({ ...draft, category: event.target.value as PopularVideoCategory })} className={selectClass}>
+              {categoryOptions.map(option => <option key={option.value} value={option.value}>{copy.categories[option.value]}</option>)}
+            </select>
+          </label>
+          <fieldset>
+            <legend className="mb-2 text-sm font-semibold text-neutral-300">{compact.language}</legend>
+            <div className="flex gap-2">
+              {[{ value: "all", label: compact.allLanguages }, { value: "ko", label: compact.korean }, ...(japaneseEnabled ? [{ value: "ja", label: compact.japanese }] : [])].map(option => {
+                const selected = option.value === (draft.koreanOnly ? "ko" : draft.japaneseOnly ? "ja" : "all");
+                return <button key={option.value} type="button" aria-pressed={selected}
+                  onClick={() => onDraftChange({ ...draft, koreanOnly: option.value === "ko", japaneseOnly: option.value === "ja" })}
+                  className={`min-h-11 flex-1 rounded-xl border px-2 text-sm font-semibold ${selected ? "border-[#ff715e]/60 bg-[#ff715e]/10 text-[#ff9b8d]" : "border-white/10 text-neutral-300 hover:bg-white/5"}`}>{option.label}</button>;
+              })}
+            </div>
+          </fieldset>
+          <label className="block text-sm font-semibold text-neutral-300">{compact.period}
+            <select aria-label={compact.period} value={draft.period} onChange={event => onDraftChange({ ...draft, period: event.target.value as PopularDiscoveryPeriod })} className={selectClass}>
+              {discoveryPeriodOptions.map(option => <option key={option.value} value={option.value}>{option.labels[locale]}</option>)}
+            </select>
+          </label>
+          <button type="button" role="switch" aria-checked={draft.longFormOnly} onClick={() => onDraftChange({ ...draft, longFormOnly: !draft.longFormOnly })}
+            className="flex min-h-11 w-full items-center justify-between gap-3 text-sm font-semibold text-neutral-200">
+            {copy.longForm}<FilterSwitch checked={draft.longFormOnly} />
+          </button>
         </div>
-        <button
-          ref={closeButtonRef}
-          type="button"
-          aria-label={copy.close}
-          onClick={onClose}
-          className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[.05] text-neutral-300 transition active:scale-95 active:bg-white/10"
-        >
-          <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-            <path d="m6 6 12 12M18 6 6 18" />
-          </svg>
-        </button>
-      </header>
-
-      <div className="border-t border-white/[.07] px-5 py-5">
-        <fieldset>
-          <legend className="mb-3 text-sm font-black text-neutral-200">{copy.category}</legend>
-          <div className="grid grid-cols-2 gap-2.5">
-            {categoryOptions.map((option) => {
-              const selected = draft.category === option.value;
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  aria-pressed={selected}
-                  onClick={() => onDraftChange({ ...draft, category: option.value })}
-                  className={`min-h-12 rounded-xl border px-3 text-sm font-extrabold transition active:scale-[.98] ${selected ? "border-violet-300/60 bg-violet-400/15 text-violet-50 shadow-[inset_0_0_0_1px_rgba(196,181,253,.08)]" : "border-white/10 bg-white/[.035] text-neutral-300 active:bg-white/[.07]"}`}
-                >
-                  {copy.categories[option.value]}
-                </button>
-              );
-            })}
-          </div>
-        </fieldset>
-
-        <fieldset className="mt-6">
-          <legend className="mb-3 text-sm font-black text-neutral-200">{copy.additional}</legend>
-          <div className="overflow-hidden rounded-2xl border border-white/[.08] bg-white/[.025]">
-            {detailOptions.map((option, index) => {
-              const checked = draft[option.key];
-              return (
-                <button
-                  key={option.key}
-                  type="button"
-                  role="switch"
-                  aria-checked={checked}
-                  onClick={() => onDraftChange({ ...draft, [option.key]: !checked, ...(option.key === "koreanOnly" && !checked ? { japaneseOnly: false } : {}), ...(option.key === "japaneseOnly" && !checked ? { koreanOnly: false } : {}) })}
-                  className={`flex min-h-[74px] w-full items-center justify-between gap-4 px-4 py-3 text-left transition active:bg-white/[.055] ${index ? "border-t border-white/[.07]" : ""}`}
-                >
-                  <span className="min-w-0">
-                    <strong className="block text-sm font-extrabold text-neutral-100">{ui(option.label)}</strong>
-                    <span className="mt-1 block text-[11px] font-semibold leading-[1.55] text-neutral-500">{ui(option.description)}</span>
-                  </span>
-                  <span className={`relative h-6 w-11 shrink-0 rounded-full transition ${checked ? "bg-[#ff715e]" : "bg-white/15"}`} aria-hidden="true">
-                    <span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${checked ? "translate-x-6" : "translate-x-1"}`} />
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </fieldset>
       </div>
-
-      <footer className="sticky bottom-0 grid grid-cols-[.8fr_1.2fr] gap-2.5 border-t border-white/[.08] bg-[#15191a]/95 px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-4 backdrop-blur-xl">
-        <button
-          type="button"
-          onClick={onReset}
-          className="min-h-12 rounded-xl border border-white/15 bg-white/[.035] text-sm font-extrabold text-neutral-200 transition active:scale-[.98] active:bg-white/[.08]"
-        >
-          {copy.reset}
-        </button>
-        <button
-          type="button"
-          onClick={onApply}
-          className="min-h-12 rounded-xl bg-[#ff715e] text-sm font-black text-white shadow-[0_10px_28px_rgba(255,85,64,.22)] transition active:scale-[.98] active:bg-[#ff806f]"
-        >
-          {copy.apply}
-        </button>
+      <footer className="sticky bottom-0 grid grid-cols-2 gap-3 border-t border-white/10 bg-[#15191a] px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-4">
+        <button type="button" onClick={onReset} className="min-h-11 rounded-xl border border-white/15 text-sm font-bold text-neutral-300 hover:bg-white/5">{copy.reset}</button>
+        <button type="button" onClick={onApply} className="min-h-11 rounded-xl bg-[#ff715e] text-sm font-bold text-[#24100d] hover:bg-[#ff8a78]">{copy.apply}</button>
       </footer>
     </dialog>
   );
+}
+
+function FilterSwitch({ checked }: { checked: boolean }) {
+  return <span className={`relative h-6 w-11 shrink-0 rounded-full transition ${checked ? "bg-[#ff715e]" : "bg-white/15"}`} aria-hidden="true">
+    <span className={`absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${checked ? "translate-x-5" : ""}`} />
+  </span>;
 }
 
 function formatDuration(seconds: number) {
@@ -661,163 +536,6 @@ function formatUpdatedAt(value: string | null, locale: SiteLocale) {
     minute: "2-digit",
     hour12: false,
   }).format(new Date(value));
-}
-
-function discoveryPeriodOptionLabel(
-  period: (typeof discoveryPeriodOptions)[number],
-  count: number | undefined,
-  locale: SiteLocale,
-) {
-  if (count === undefined) return period.labels[locale];
-  const formattedCount = formatNumber(count, locale);
-  return `${period.labels[locale]} ${formattedCount}${locale === "ko" ? "개" : locale === "ja" ? "件" : ""}`;
-}
-
-function DiscoveryPeriodDropdown({
-  value,
-  counts,
-  locale,
-  disabled,
-  onChange,
-}: {
-  value: PopularDiscoveryPeriod;
-  counts: PopularVideoResponse["periodCounts"];
-  locale: SiteLocale;
-  disabled: boolean;
-  onChange: (value: PopularDiscoveryPeriod) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const selectedIndex = Math.max(
-    0,
-    discoveryPeriodOptions.findIndex((option) => option.value === value),
-  );
-  const selected = discoveryPeriodOptions[selectedIndex];
-  const listboxId = "popular-discovery-period-listbox";
-
-  const focusOption = useCallback((index: number) => {
-    const itemCount = discoveryPeriodOptions.length;
-    const nextIndex = (index + itemCount) % itemCount;
-    optionRefs.current[nextIndex]?.focus();
-  }, []);
-
-  const openAndFocus = (index: number) => {
-    if (disabled) return;
-    setOpen(true);
-    window.requestAnimationFrame(() => focusOption(index));
-  };
-
-  useEffect(() => {
-    if (!open) return;
-    const closeOnOutsidePointer = (event: PointerEvent) => {
-      if (event.target instanceof Node && !rootRef.current?.contains(event.target)) {
-        setOpen(false);
-      }
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setOpen(false);
-        triggerRef.current?.focus();
-      }
-    };
-    document.addEventListener("pointerdown", closeOnOutsidePointer);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeOnOutsidePointer);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [open]);
-
-  return (
-    <div ref={rootRef} className="relative shrink-0">
-      <button
-        ref={triggerRef}
-        type="button"
-        disabled={disabled}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-controls={open ? listboxId : undefined}
-        onClick={() => setOpen((current) => !current)}
-        onKeyDown={(event) => {
-          if (event.key === "ArrowDown") {
-            event.preventDefault();
-            openAndFocus(selectedIndex + 1);
-          } else if (event.key === "ArrowUp") {
-            event.preventDefault();
-            openAndFocus(selectedIndex - 1);
-          }
-        }}
-        className="group flex min-h-11 min-w-36 items-center justify-between gap-3 rounded-xl border border-violet-300/30 bg-[#1d2022] py-2.5 pl-3.5 pr-3 text-left text-sm font-extrabold text-violet-50 shadow-[0_10px_30px_rgba(0,0,0,.16)] outline-none transition hover:border-violet-300/55 focus-visible:border-violet-300/70 focus-visible:ring-2 focus-visible:ring-violet-300/20 disabled:cursor-wait disabled:opacity-60"
-      >
-        <span className="flex min-w-0 items-center gap-2">
-          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" className="h-4 w-4 shrink-0 text-violet-200" aria-hidden="true">
-            <circle cx="10" cy="10" r="7" />
-            <path d="M10 6v4l2.5 1.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          <span className="truncate">
-            {discoveryPeriodOptionLabel(selected, counts?.[selected.value], locale)}
-          </span>
-        </span>
-        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className={`h-4 w-4 shrink-0 text-violet-200 transition ${open ? "rotate-180" : ""}`} aria-hidden="true">
-          <path d="m6 8 4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </button>
-
-      {open && (
-        <div
-          id={listboxId}
-          role="listbox"
-          aria-label={locale === "ko" ? "영상 발견 기간" : locale === "en" ? "Video discovery period" : "動画の発見期間"}
-          className="absolute right-0 top-full z-50 mt-2 w-56 overflow-hidden rounded-xl border border-violet-300/25 bg-[#202326] p-1.5 shadow-[0_22px_60px_rgba(0,0,0,.55)]"
-        >
-          {discoveryPeriodOptions.map((period, index) => {
-            const selectedOption = period.value === value;
-            return (
-              <button
-                key={period.value}
-                ref={(element) => {
-                  optionRefs.current[index] = element;
-                }}
-                type="button"
-                role="option"
-                aria-selected={selectedOption}
-                onClick={() => {
-                  setOpen(false);
-                  triggerRef.current?.focus();
-                  if (!selectedOption) onChange(period.value);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "ArrowDown") {
-                    event.preventDefault();
-                    focusOption(index + 1);
-                  } else if (event.key === "ArrowUp") {
-                    event.preventDefault();
-                    focusOption(index - 1);
-                  } else if (event.key === "Home") {
-                    event.preventDefault();
-                    focusOption(0);
-                  } else if (event.key === "End") {
-                    event.preventDefault();
-                    focusOption(discoveryPeriodOptions.length - 1);
-                  }
-                }}
-                className={`flex min-h-11 w-full items-center justify-between gap-3 rounded-lg px-3 text-left text-sm font-bold outline-none transition focus-visible:ring-2 focus-visible:ring-violet-300/40 ${selectedOption ? "bg-violet-400/15 text-violet-50" : "text-neutral-200 hover:bg-white/[.07] hover:text-white"}`}
-              >
-                <span>{discoveryPeriodOptionLabel(period, counts?.[period.value], locale)}</span>
-                {selectedOption && (
-                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4 shrink-0 text-violet-200" aria-hidden="true">
-                    <path d="m5.5 10 3 3 6-6" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
 }
 
 function popularVideoParams(
@@ -945,7 +663,7 @@ export function PopularVideosExplorer({
   const ui = useUiText();
   const { locale } = useI18n();
   const uiCopy = popularUiCopy[locale];
-  const filterCopy = mobileFilterCopy[locale];
+  const filterCopy = filterLabels[locale];
   const searchUi = searchCopy[locale];
   const [searchEnabled, setSearchEnabled] = useState(false);
   const [searchInput, setSearchInput] = useState("");
@@ -954,7 +672,7 @@ export function PopularVideosExplorer({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const composing = useRef(false);
   const searching = Boolean(searchQuery);
-  const [dataType, setDataType] = useState<PopularVideoType>("trending");
+  const [dataType, setDataType] = useState<"trending" | "views">("trending");
   const [japaneseOnly, setJapaneseOnly] = useState(false);
   const [koreanOnly, setKoreanOnly] = useState(false);
   const [longFormOnly, setLongFormOnly] = useState(false);
@@ -976,13 +694,13 @@ export function PopularVideosExplorer({
   const [planOverlayFeature, setPlanOverlayFeature] = useState<"filters" | "more">("filters");
   const [reusableGuideOpen, setReusableGuideOpen] = useState(false);
   const [filterInteractionId, setFilterInteractionId] = useState<string | null>(null);
-  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
-  const [mobileFilterDraft, setMobileFilterDraft] = useState<MobilePopularFiltersDraft>({
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filterDraft, setFilterDraft] = useState<PopularFiltersDraft>({
     category: "all",
     japaneseOnly: false,
     koreanOnly: false,
     longFormOnly: false,
-    reusableOnly: false,
+    period: "all",
   });
   const loadMoreController = useRef<AbortController | null>(null);
   const listStart = useRef<HTMLDivElement | null>(null);
@@ -1067,12 +785,6 @@ export function PopularVideosExplorer({
     }, 60_000);
     return () => { clearInterval(timer); controller.abort(); };
   }, [searching, catalogEnabled, dataType, response?.generation, response?.collectionWindowStart, response?.collectionWindowKey, response?.japaneseEnabled, japaneseOnly, visibleVideoIds, reusableOnly]);
-
-  const selectedTypeLabel = dataType === "trending"
-    ? filterCopy.trending
-    : dataType === "views"
-      ? filterCopy.views
-      : filterCopy.reusableRanking;
 
   const loadMore = async () => {
     if (!response?.nextCursor || loadingMore) return;
@@ -1166,56 +878,36 @@ export function PopularVideosExplorer({
     action?.();
   }, []);
 
-  const reusableFilterActive = (!searching && dataType === "reusable") || reusableOnly;
-  const activeMobileFilterCount = Number(category !== "all") + Number(koreanOnly || japaneseOnly) + Number(longFormOnly) + Number(reusableFilterActive);
-  const openMobileFilters = () => {
+  const activeFilterCount = Number(category !== "all") + Number(koreanOnly || japaneseOnly) + Number(longFormOnly) + Number(discoveryPeriod !== "all");
+  const openFilters = () => {
     if (!canUseFilters) {
       setPlanOverlayFeature("filters");
       setPlanOverlayOpen(true);
       return;
     }
-    setMobileFilterDraft({
-      category,
-      koreanOnly,
-      japaneseOnly,
-      longFormOnly,
-      reusableOnly: reusableFilterActive,
-    });
-    setMobileFiltersOpen(true);
+    setFilterDraft({ category, koreanOnly, japaneseOnly, longFormOnly, period: discoveryPeriod });
+    setFiltersOpen(true);
   };
-
-  const applyMobileFilters = () => {
-    const nextFilters = mobileFilterDraft;
-    const enablingReusable = nextFilters.reusableOnly && !reusableFilterActive;
-    setMobileFiltersOpen(false);
-
-    const commitMobileFilters = () => applyFilter(() => {
-      if (!searching && dataType === "reusable" && !nextFilters.reusableOnly) setDataType("views");
-      setCategory(nextFilters.category);
-      setKoreanOnly(nextFilters.koreanOnly);
-      setJapaneseOnly(nextFilters.japaneseOnly);
-      setLongFormOnly(nextFilters.longFormOnly);
-      setReusableOnly(!searching && dataType === "reusable" ? false : nextFilters.reusableOnly);
+  const applyFilters = () => {
+    applyFilter(() => {
+      setCategory(filterDraft.category);
+      setKoreanOnly(filterDraft.koreanOnly);
+      setJapaneseOnly(filterDraft.japaneseOnly);
+      setLongFormOnly(filterDraft.longFormOnly);
+      setDiscoveryPeriod(filterDraft.period);
     });
-
-    if (enablingReusable) {
-      requestReusableFilter(commitMobileFilters);
-      return;
-    }
-    commitMobileFilters();
+    setFiltersOpen(false);
   };
-
-  const applyMobileRanking = (nextType: PopularVideoType) => {
-    if (nextType === dataType) return;
-    const commitMobileRanking = () => applyFilter(() => {
-      setReusableOnly(false);
-      setDataType(nextType);
-    });
-    if (nextType === "reusable") {
-      requestReusableFilter(commitMobileRanking);
-      return;
-    }
-    commitMobileRanking();
+  const applyRanking = (nextType: PopularVideoType) => {
+    if (nextType === dataType || nextType === "reusable") return;
+    applyFilter(() => setDataType(nextType));
+  };
+  const toggleReusable = () => {
+    // Check access before opening the existing CC BY explanation.
+    if (!canUseFilters) { applyFilter(() => {}); return; }
+    const commit = () => applyFilter(() => setReusableOnly(current => !current));
+    if (reusableOnly) commit();
+    else requestReusableFilter(commit);
   };
 
   const clearSearch = () => {
@@ -1230,7 +922,6 @@ export function PopularVideosExplorer({
     if ([...query].length < 2 || [...query].length > 100) { setSearchError(searchUi.invalid); return; }
     applyFilter(() => {
       loadMoreController.current?.abort();
-      if (!searching && dataType === "reusable") setReusableOnly(true);
       setSearchError(null); setSearchQuery(query);
       if (query === searchQuery) setRetryCount(value => value + 1);
     });
@@ -1245,242 +936,75 @@ export function PopularVideosExplorer({
     void loadMore();
   };
 
-  const periodCounts = response?.periodCounts ?? response?.reusablePeriodCounts;
   const displayedTotalCount = response?.totalCount ?? response?.items.length;
 
   return (
-    <main className="relative mx-auto w-full max-w-6xl px-5 pb-24 pt-7 sm:px-8 sm:pt-10">
-      <section className="hero relative isolate mx-auto flex max-w-4xl flex-col items-center px-4 pb-2 text-center sm:pb-3">
-        <span className="pointer-events-none absolute left-[8%] top-5 -z-10 h-40 w-40 rounded-full bg-[#ff5540]/20 blur-[70px] sm:h-56 sm:w-56" aria-hidden="true" />
-        <span className="pointer-events-none absolute right-[7%] top-14 -z-10 h-44 w-44 rounded-full bg-[#a078ff]/20 blur-[80px] sm:h-60 sm:w-60" aria-hidden="true" />
-        <h1 className="hero-title"><span>{ui("실시간 인기")}</span></h1>
-        <p className="mt-3 text-xs font-semibold text-neutral-500" aria-live="polite"><span className="mr-2 inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,.7)]" aria-hidden="true" /><span className="text-neutral-400">{uiCopy.lastUpdated}</span> {formatUpdatedAt(response?.updatedAt || null, locale)}</p>
-      </section>
+    <main className="relative mx-auto w-full max-w-6xl px-4 pb-24 pt-5 sm:px-8 sm:pt-7">
+      <header className="mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 sm:mb-5 md:pr-36">
+        <h1 className="flex items-center gap-2 text-2xl font-black tracking-tight text-white sm:text-3xl">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-7 w-7 shrink-0 text-[#ff715e]" aria-hidden="true"><path d="M13 3c1 5-4 5-2 9 2-1 3-3 3-5 4 4 6 7 4 11a7 7 0 0 1-12-1c-1-3 1-6 3-8-1 4 1 5 2 5-1-5 3-6 2-11Z" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          {ui("실시간 인기")}
+        </h1>
+        <p className="text-[11px] text-neutral-500 sm:text-xs" aria-live="polite"><span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-emerald-400" aria-hidden="true" /><span className="sr-only">{uiCopy.lastUpdated} </span>{formatUpdatedAt(response?.updatedAt || null, locale)}</p>
+      </header>
 
-      {searchEnabled && <form role="search" onSubmit={event => { event.preventDefault(); if (!composing.current) submitSearch(); }} className="mb-4 mt-5">
+      {searchEnabled && <form role="search" onSubmit={event => { event.preventDefault(); if (!composing.current) submitSearch(); }} className="mb-3">
         <label htmlFor="popular-search" className="sr-only">{searchUi.placeholder}</label>
-        <div className="flex min-h-12 items-center gap-2 rounded-xl border border-white/15 bg-[#15191a] px-3 focus-within:border-violet-300/60">
+        <div className="flex min-h-12 items-center gap-1 rounded-xl border border-white/15 bg-[#15191a] p-1 pl-3 focus-within:border-[#ff715e]/70 sm:gap-2">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="mr-1 h-5 w-5 shrink-0 text-neutral-500" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 5 5" /></svg>
           <input ref={searchInputRef} id="popular-search" type="search" value={searchInput} maxLength={100}
-            placeholder={searchUi.placeholder} enterKeyHint="search" autoComplete="off"
+            placeholder={compactFilterCopy[locale].shortSearch} enterKeyHint="search" autoComplete="off"
             aria-invalid={Boolean(searchError)} aria-describedby={searchError ? "popular-search-error" : undefined}
             onChange={event => { setSearchInput(event.target.value); setSearchError(null); }}
             onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }}
             onKeyDown={event => { if (event.key === "Enter" && (event.nativeEvent.isComposing || event.keyCode === 229 || composing.current)) event.preventDefault(); }}
-            className="min-w-0 flex-1 bg-transparent py-3 text-base text-white outline-none placeholder:text-neutral-500 [&::-webkit-search-cancel-button]:appearance-none" />
+            className="min-w-0 flex-1 bg-transparent py-2 text-base text-white outline-none placeholder:text-neutral-500 [&::-webkit-search-cancel-button]:appearance-none" />
           {(searchInput || searching) && <button type="button" onClick={clearSearch} aria-label={searchUi.clear} className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-xl text-neutral-400 hover:text-white">×</button>}
-          <button type="submit" className="min-h-10 shrink-0 rounded-lg bg-[#ff715e] px-4 text-sm font-extrabold text-[#24100d]">{searchUi.submit}</button>
+          <button type="submit" className="min-h-11 shrink-0 rounded-lg bg-[#ff715e] px-4 text-sm font-extrabold text-[#24100d] hover:bg-[#ff8a78]">{searchUi.submit}</button>
         </div>
         {searchError && <p id="popular-search-error" role="alert" className="mt-2 text-sm text-red-300">{searchError}</p>}
       </form>}
 
-      <section className="relative z-30 mt-4 !rounded-none !border-0 !bg-transparent !p-0 !shadow-none !backdrop-blur-none md:mt-2 md:!rounded-2xl md:!border md:!border-white/10 md:!bg-[#15191a]/90 md:!p-5 md:!shadow-[0_16px_50px_rgba(0,0,0,.22)] md:!backdrop-blur-2xl" aria-label={ui("인기 영상 필터")}>
-        <div className={`${canUseFilters ? "hidden md:flex" : "mb-4 flex"} items-center justify-end gap-3 md:mb-4 md:justify-between`}>
-          <h2 className="hidden text-base font-black text-white md:block">{uiCopy.filters}</h2>
-          {!canUseFilters && (
-            <button
-              type="button"
-              onClick={() => {
-                setPlanOverlayFeature("filters");
-                setPlanOverlayOpen(true);
-              }}
-              className="inline-flex min-h-8 items-center gap-1.5 rounded-full border border-[#ff9b8d]/25 bg-[#ff715e]/10 px-3 text-[11px] font-black text-[#ffc4bb] transition hover:border-[#ff9b8d]/45 hover:bg-[#ff715e]/15"
-            >
-              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                <rect x="5" y="10" width="14" height="10" rx="2" />
-                <path d="M8 10V7a4 4 0 0 1 8 0v3" />
-              </svg>
-              {uiCopy.activePlanOnly}
-            </button>
+      <section aria-label={ui("인기 영상 필터")}>
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between md:gap-4">
+          {searching ? <h2 className="flex min-h-12 items-center text-lg font-bold text-white">{searchUi.results}</h2> : (
+            <fieldset className="min-w-0 border-b border-white/10 md:border-0">
+              <legend className="sr-only">{filterCopy.ranking}</legend>
+              <div className="flex gap-5">
+                {dataTypeOptions.map(option => <button key={option.value} type="button" aria-pressed={dataType === option.value}
+                  aria-haspopup={canUseFilters ? undefined : "dialog"} onClick={() => applyRanking(option.value)}
+                  className={`min-h-12 border-b-2 px-0.5 text-sm font-bold transition sm:text-base ${dataType === option.value ? "border-[#ff715e] text-[#ff8a78]" : "border-transparent text-neutral-400 hover:text-white"}`}>
+                  {option.value === "trending" ? filterCopy.trending : filterCopy.views}
+                </button>)}
+              </div>
+            </fieldset>
           )}
-        </div>
-
-        <div className="md:hidden">
-          <fieldset hidden={searching}>
-            <legend className="sr-only">{filterCopy.ranking}</legend>
-            <div className="grid grid-cols-3 rounded-xl border border-white/10 bg-black/20 p-1">
-              {dataTypeOptions.map((option) => {
-                const selected = dataType === option.value;
-                return (
-                  <button
-                    key={option.value}
-                    type="button"
-                    aria-pressed={selected}
-                    aria-haspopup={canUseFilters ? undefined : "dialog"}
-                    onClick={() => applyMobileRanking(option.value)}
-                    className={`min-h-11 rounded-[10px] px-1 text-[14px] font-black tracking-[-.055em] transition active:scale-[.98] ${selected ? mobileRankingButtonTone[option.value].selected : mobileRankingButtonTone[option.value].idle}`}
-                  >
-                    {option.value === "trending"
-                      ? filterCopy.trending
-                      : option.value === "views"
-                        ? filterCopy.views
-                        : filterCopy.reusableRanking}
-                  </button>
-                );
-              })}
-            </div>
-          </fieldset>
-
-          <button
-            type="button"
-            aria-haspopup="dialog"
-            onClick={openMobileFilters}
-            className={`mt-3 flex min-h-[58px] w-full items-center gap-3 rounded-xl border px-3.5 text-left transition active:scale-[.99] ${activeMobileFilterCount ? "border-[#ff8a78]/40 bg-[#ff8a78]/10 shadow-[inset_0_0_0_1px_rgba(255,138,120,.04)]" : "border-white/10 bg-black/20"}`}
-          >
-            <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl border text-[#202426] shadow-[inset_0_1px_0_rgba(255,255,255,.24)] ${activeMobileFilterCount ? "border-[#ff8a78] bg-[#ff8a78]" : "border-[#ff9b8d] bg-[#ff9b8d]"}`} aria-hidden="true">
-              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M4 6h4M12 6h8M4 12h9M17 12h3M4 18h2M10 18h10" />
-                <circle cx="10" cy="6" r="2" />
-                <circle cx="15" cy="12" r="2" />
-                <circle cx="8" cy="18" r="2" />
-              </svg>
-            </span>
-            <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
-              <strong className="shrink-0 text-sm font-black text-neutral-400">{ui(filterCopy.title)}</strong>
-              <span className="min-w-0 truncate text-right text-sm font-bold tracking-[-.025em] text-neutral-500">
-                {ui(activeMobileFilterCount
-                  ? (locale === "ko" ? `${filterCopy.categories[category]} · ${activeMobileFilterCount}개 적용` : locale === "ja" ? `${filterCopy.categories[category]} · ${activeMobileFilterCount}件適用` : `${filterCopy.categories[category]} · ${activeMobileFilterCount} active`)
-                  : (locale === "ko" ? "전체 · 선택한 조건 없음" : locale === "ja" ? "すべて · 選択条件なし" : "All · No filters selected"))}
-              </span>
-            </span>
-            <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 text-neutral-500" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-              <path d="m9 18 6-6-6-6" />
-            </svg>
-          </button>
-        </div>
-
-        <div className="hidden flex-col gap-4 md:flex md:flex-row md:items-end md:justify-between">
-          <fieldset hidden={searching} className="min-w-0">
-            <legend className="mb-2 text-sm font-black text-neutral-200">{filterCopy.ranking}</legend>
-            <div className="flex flex-wrap gap-2 pb-1">
-              {dataTypeOptions.map((option) => {
-                const reusable = option.value === "reusable";
-                return (
-                  <div key={option.value} className={reusable ? "group/reusable relative shrink-0" : "shrink-0"}>
-                    <button
-                      type="button"
-                      aria-pressed={dataType === option.value}
-                      aria-haspopup={canUseFilters ? undefined : "dialog"}
-                      aria-describedby={reusable ? "reusable-filter-help" : undefined}
-                      onClick={() => reusable
-                        ? requestReusableFilter(() => applyFilter(() => setDataType(option.value)))
-                        : applyFilter(() => setDataType(option.value))}
-                      className={`shrink-0 rounded-full border px-4 py-2.5 text-sm font-extrabold transition ${dataType === option.value ? "border-[#ff715e] bg-[#ff715e]/15 text-[#ffd0c9] shadow-[0_0_18px_rgba(255,85,64,.1)]" : "border-white/15 bg-white/[.025] text-neutral-200 hover:border-white/30 hover:text-white"}`}
-                    >
-                      {option.value === "trending" ? filterCopy.trending : option.value === "views" ? filterCopy.views : filterCopy.reusableRanking}
-                    </button>
-                    {reusable && (
-                      <div
-                        id="reusable-filter-help"
-                        role="tooltip"
-                        className="pointer-events-none invisible absolute left-1/2 top-full z-50 mt-3 w-[min(24rem,calc(100vw-3rem))] -translate-x-1/2 rounded-xl border border-violet-300/25 bg-[#25212d] p-4 text-left text-xs font-semibold leading-5 text-violet-50 opacity-0 shadow-[0_20px_55px_rgba(0,0,0,.5)] transition group-hover/reusable:visible group-hover/reusable:opacity-100 group-focus-within/reusable:visible group-focus-within/reusable:opacity-100"
-                      >
-                        <strong className="block text-sm font-black text-white">{ui("YouTube의 CC BY 표시 영상")}</strong>
-                        <span className="mt-2 block">
-                          {ui("실제 의미는 “YouTube에서 CC BY로 표시됨”입니다. 이용자는 제목·저작자·URL·CC BY 라이선스를 표시해야 하며, 제3자 음악·방송 화면 등의 권리도 별도로 확인해야 합니다.")}</span>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </fieldset>
-
-          <div className="flex flex-wrap gap-2 self-start sm:justify-end sm:self-auto">
-            <button
-              type="button"
-              role="switch"
-              aria-checked={koreanOnly}
-              aria-haspopup={canUseFilters ? undefined : "dialog"}
-              onClick={() => applyFilter(() => { setKoreanOnly((current) => !current); setJapaneseOnly(false); })}
-              className={`flex shrink-0 items-center gap-2.5 rounded-full border px-3.5 py-2.5 text-sm font-extrabold transition ${koreanOnly ? "border-emerald-300/60 bg-emerald-400/15 text-emerald-50" : "border-white/15 bg-white/[.025] text-neutral-200 hover:border-white/30 hover:text-white"}`}
-            >
-              <span className={`relative h-5 w-9 rounded-full transition ${koreanOnly ? "bg-emerald-400" : "bg-white/15"}`} aria-hidden="true">
-                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition ${koreanOnly ? "left-[18px]" : "left-0.5"}`} />
-              </span>
-              {uiCopy.koreanOnly}
+          <div className="flex min-w-0 items-center justify-between gap-3 md:justify-end md:gap-5">
+            <button type="button" role="switch" aria-label={uiCopy.reusableOnlyAria} aria-checked={reusableOnly}
+              aria-haspopup={canUseFilters ? undefined : "dialog"} onClick={toggleReusable}
+              className="flex min-h-11 items-center gap-2 text-sm font-semibold text-neutral-300 hover:text-white">
+              <FilterSwitch checked={reusableOnly} />{uiCopy.reusableOnly}
             </button>
-            {japaneseEnabled && (
-            <button
-              type="button"
-              role="switch"
-              aria-checked={japaneseOnly}
-              aria-haspopup={canUseFilters ? undefined : "dialog"}
-              onClick={() => applyFilter(() => { setJapaneseOnly((current) => !current); setKoreanOnly(false); })}
-              className={`flex shrink-0 items-center gap-2.5 rounded-full border px-3.5 py-2.5 text-sm font-extrabold transition ${japaneseOnly ? "border-sky-300/60 bg-sky-400/15 text-sky-50" : "border-white/15 bg-white/[.025] text-neutral-200 hover:border-white/30 hover:text-white"}`}
-            >
-              <span className={`relative h-5 w-9 rounded-full transition ${japaneseOnly ? "bg-sky-400" : "bg-white/15"}`} aria-hidden="true">
-                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition ${japaneseOnly ? "left-[18px]" : "left-0.5"}`} />
-              </span>
-              {uiCopy.japaneseOnly}
+            <button type="button" aria-haspopup="dialog" aria-expanded={filtersOpen} onClick={openFilters}
+              className={`flex min-h-11 shrink-0 items-center gap-2 rounded-xl border px-3 text-sm font-bold hover:bg-white/5 ${activeFilterCount ? "border-[#ff715e]/50 text-[#ff9b8d]" : "border-white/20 text-neutral-200"}`}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5" aria-hidden="true"><path d="M4 7h7m4 0h5M4 17h3m4 0h9" /><circle cx="13" cy="7" r="2" /><circle cx="9" cy="17" r="2" /></svg>
+              {compactFilterCopy[locale].title}{activeFilterCount > 0 && <span className="text-xs tabular-nums">{activeFilterCount}</span>}
             </button>
-            )}
-            <button
-              type="button"
-              role="switch"
-              aria-label={uiCopy.longFormOnlyAria}
-              aria-checked={longFormOnly}
-              aria-haspopup={canUseFilters ? undefined : "dialog"}
-              onClick={() => applyFilter(() => setLongFormOnly((current) => !current))}
-              className={`flex shrink-0 items-center gap-2.5 rounded-full border px-3.5 py-2.5 text-sm font-extrabold transition ${longFormOnly ? "border-[#ff8b7c]/60 bg-[#ff715e]/15 text-[#ffd0c9]" : "border-white/15 bg-white/[.025] text-neutral-200 hover:border-violet-300/45 hover:text-white"}`}
-            >
-              <span className={`relative h-5 w-9 rounded-full transition ${longFormOnly ? "bg-[#ff715e]" : "bg-white/15"}`} aria-hidden="true">
-                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition ${longFormOnly ? "left-[18px]" : "left-0.5"}`} />
-              </span>
-              {uiCopy.longFormOnly}
-            </button>
-            {(searching || dataType !== "reusable") && (
-              <button
-                type="button"
-                role="switch"
-                aria-label={uiCopy.reusableOnlyAria}
-                aria-checked={reusableOnly}
-                aria-haspopup={canUseFilters ? undefined : "dialog"}
-                onClick={() => requestReusableFilter(() => applyFilter(() => setReusableOnly((current) => !current)))}
-                className={`flex shrink-0 items-center gap-2.5 rounded-full border px-3.5 py-2.5 text-sm font-extrabold transition ${reusableOnly ? "border-violet-300/60 bg-violet-400/15 text-violet-50" : "border-white/15 bg-white/[.025] text-neutral-200 hover:border-violet-300/45 hover:text-white"}`}
-              >
-                <span className={`relative h-5 w-9 rounded-full transition ${reusableOnly ? "bg-violet-400" : "bg-white/15"}`} aria-hidden="true">
-                  <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition ${reusableOnly ? "left-[18px]" : "left-0.5"}`} />
-                </span>
-                {uiCopy.reusableOnly}
-              </button>
-            )}
           </div>
         </div>
-
-        <fieldset className="mt-4 hidden min-w-0 border-t border-white/[.07] pt-4 md:block">
-          <legend className="mb-2 text-sm font-black text-neutral-200">{filterCopy.category}</legend>
-          <div className="flex flex-wrap gap-2 pb-1">
-            {categoryOptions.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                aria-label={uiCopy.categoryAria(filterCopy.categories[option.value])}
-                aria-pressed={category === option.value}
-                aria-haspopup={canUseFilters ? undefined : "dialog"}
-                onClick={() => applyFilter(() => setCategory(option.value))}
-                className={`shrink-0 rounded-full border px-4 py-2.5 text-sm font-extrabold transition ${category === option.value ? "border-violet-300/60 bg-violet-400/15 text-violet-50 shadow-[0_0_18px_rgba(160,120,255,.1)]" : "border-white/15 bg-white/[.025] text-neutral-200 hover:border-violet-300/45 hover:text-white"}`}
-              >
-                {filterCopy.categories[option.value]}
-              </button>
-            ))}
-          </div>
-        </fieldset>
+        {activeFilterCount > 0 && <div className="mt-2 flex flex-wrap gap-2">
+          {[
+            ...(category !== "all" ? [{ key: "category", label: filterCopy.categories[category], clear: () => setCategory("all") }] : []),
+            ...(koreanOnly || japaneseOnly ? [{ key: "language", label: koreanOnly ? uiCopy.koreanOnly : uiCopy.japaneseOnly, clear: () => { setKoreanOnly(false); setJapaneseOnly(false); } }] : []),
+            ...(longFormOnly ? [{ key: "length", label: uiCopy.longFormOnly, clear: () => setLongFormOnly(false) }] : []),
+            ...(discoveryPeriod !== "all" ? [{ key: "period", label: discoveryPeriodOptions.find(option => option.value === discoveryPeriod)!.labels[locale], clear: () => setDiscoveryPeriod("all") }] : []),
+          ].map(chip => <button key={chip.key} type="button" onClick={() => applyFilter(chip.clear)} aria-label={`${chip.label} · ${compactFilterCopy[locale].remove}`}
+            className="flex min-h-11 items-center gap-2 rounded-full border border-white/10 bg-white/[.03] px-3 text-xs text-neutral-300 hover:bg-white/[.07]">{chip.label}<span aria-hidden="true">×</span></button>)}
+        </div>}
       </section>
 
-      <div ref={listStart} className="mb-5 mt-8 scroll-mt-5 flex flex-wrap items-center justify-between gap-3">
-        <div className="shrink-0">
-          <h2 className="text-xl font-black tracking-[-.025em] text-white">{searching ? searchUi.results : selectedTypeLabel}</h2>
-          <p className="mt-1 text-xs font-bold tabular-nums text-neutral-500" aria-live="polite">{ui(!loading && response && displayedTotalCount !== undefined ? (locale === "ko" ? `${formatNumber(displayedTotalCount, locale)}개` : locale === "en" ? formatNumber(displayedTotalCount, locale) : `${formatNumber(displayedTotalCount, locale)}件`) : uiCopy.countLoading)}</p>
-        </div>
-        <div className="flex flex-col items-end gap-2">
-          <DiscoveryPeriodDropdown
-            value={discoveryPeriod}
-            counts={periodCounts}
-            locale={locale}
-            disabled={loading}
-            onChange={(period) => applyFilter(() => setDiscoveryPeriod(period))}
-          />
-        </div>
+      <div ref={listStart} className="mb-4 mt-4 scroll-mt-5">
+        <p className="text-xs font-medium tabular-nums text-neutral-400" aria-live="polite">{!loading && response && displayedTotalCount !== undefined ? (locale === "ko" ? `영상 ${formatNumber(displayedTotalCount, locale)}개` : locale === "en" ? `${formatNumber(displayedTotalCount, locale)} videos` : `動画 ${formatNumber(displayedTotalCount, locale)}件`) : uiCopy.countLoading}</p>
       </div>
 
       {catalogEnabled && ((!searching && dataType === "trending" && response?.delayed) || cursorNotice || hasNewList) && <div className="mb-5 space-y-2 text-xs text-neutral-400" aria-live="polite">
@@ -1525,21 +1049,21 @@ export function PopularVideosExplorer({
           </div>
         </section>
       )}
-      <MobilePopularFiltersSheet
+      <PopularFiltersDialog
         japaneseEnabled={japaneseEnabled}
-        open={mobileFiltersOpen}
+        open={filtersOpen}
         locale={locale}
-        draft={mobileFilterDraft}
-        onDraftChange={setMobileFilterDraft}
-        onClose={() => setMobileFiltersOpen(false)}
-        onReset={() => setMobileFilterDraft({
+        draft={filterDraft}
+        onDraftChange={setFilterDraft}
+        onClose={() => setFiltersOpen(false)}
+        onReset={() => setFilterDraft({
           category: "all",
           japaneseOnly: false,
-    koreanOnly: false,
+          koreanOnly: false,
           longFormOnly: false,
-          reusableOnly: false,
+          period: "all",
         })}
-        onApply={applyMobileFilters}
+        onApply={applyFilters}
       />
       <PopularFiltersPlanOverlay
         open={planOverlayOpen}
