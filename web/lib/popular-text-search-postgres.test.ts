@@ -53,13 +53,16 @@ integration("popular search on isolated PostgreSQL", () => {
       fixture("search00003", "축구 경기"), fixture("search00004", "Elon Musk 인터뷰"), fixture("search00005", "인공지능 강의"),
       fixture("search00006", "새 영상", { channelName: "일론 머스크" }), fixture("search00007", "ChatGPT 사용법"),
       fixture("search00008", "축구 농구", { license: "creativeCommon" }),
+      fixture("search00009", "인공지늉 강의"),
     ]);
     expect((await search("손흥민")).items[0].videoId).toBe("search00001");
     expect((await search("손흥밍")).items.map(v => v.videoId)).toContain("search00001");
     expect((await search("손흥밍")).includesSimilarResults).toBe(true);
     expect((await search("축구 실수")).items.map(v => v.videoId)).toEqual(["search00002"]);
     expect((await search("일론머스크")).items.map(v => v.videoId)).toEqual(expect.arrayContaining(["search00004", "search00006"]));
-    expect((await search("AI 강의")).items.map(v => v.videoId)).toContain("search00005");
+    expect((await search("AI 강의")).items.map(v => v.videoId)).toEqual(["search00005"]);
+    expect((await search("AI")).items.map(v => v.videoId)).toEqual(["search00005"]);
+    expect((await search("인공지능")).items.map(v => v.videoId)).toContain("search00009");
     expect((await search("챗지피티 사용법")).items.map(v => v.videoId)).toContain("search00007");
     expect((await search("축구")).items.map(v => v.videoId)).toContain("search00008");
     expect((await search("완전히없는단어")).items).toEqual([]);

@@ -11,23 +11,27 @@ const aliases = [
 ] as const;
 
 /** Match multi-word aliases before splitting, without expanding substrings (e.g. 'ai' in 'train'). */
-export function popularQueryGroups(query: string): string[][] {
+function popularQueryTerms(query: string): { typed: string; variants: string[] }[] {
   let remaining = normalizePopularQuery(query);
-  const groups: string[][] = [];
+  const groups: { typed: string; variants: string[] }[] = [];
   while (remaining) {
     const group = aliases.find(values => values.some(value => remaining === value || remaining.startsWith(`${value} `)));
     if (group) {
       const matched = [...group].sort((a, b) => b.length - a.length)
         .find(value => remaining === value || remaining.startsWith(`${value} `))!;
-      groups.push([...group]);
+      groups.push({ typed: matched, variants: [...group] });
       remaining = remaining.slice(matched.length).trimStart();
     } else {
       const [word] = remaining.split(" ");
-      groups.push([word]);
+      groups.push({ typed: word, variants: [word] });
       remaining = remaining.slice(word.length).trimStart();
     }
   }
   return groups;
+}
+
+export function popularQueryGroups(query: string): string[][] {
+  return popularQueryTerms(query).map(group => group.variants);
 }
 
 export const escapeSearchLike = (value: string) => value.replace(/[\\%_]/g, "\\$&");
@@ -42,14 +46,16 @@ export function popularSearchSql(db: Sql | TransactionSql, query: string) {
   const phrase = `%${escapeSearchLike(text)}%`;
   const exactPhrase = db`(${compactTitle}=${text} or ${compactChannel}=${text})`;
   const containsPhrase = db`(${compactTitle} like ${phrase} or ${compactChannel} like ${phrase})`;
-  const groups = popularQueryGroups(query);
-  const checks = groups.map(variants => {
+  const groups = popularQueryTerms(query);
+  const checks = groups.map(({ typed, variants }) => {
     const exact = variants.map(value => {
       const pattern = `%${escapeSearchLike(value.replace(/ /g, ""))}%`;
       return db`(${compactTitle} like ${pattern} or ${compactChannel} like ${pattern})`;
     }).reduce((a, b) => db`(${a} or ${b})`);
     // Fully qualified wrappers resolve pg_trgm wherever the installed extension lives.
-    const fuzzy = variants.filter(value => [...value.replace(/ /g, "")].length >= 3 && /^[\p{L}\p{N} ]+$/u.test(value)).map(value =>
+    // Eligibility uses the typed term, so a two-character alias such as AI
+    // never silently becomes fuzzy just because its expansion is longer.
+    const fuzzy = variants.filter(value => [...typed.replace(/ /g, "")].length >= 3 && [...value.replace(/ /g, "")].length >= 3 && /^[\p{L}\p{N} ]+$/u.test(value)).map(value =>
       db`(shorts_mvp.popular_search_word_match(${value},${title}) or shorts_mvp.popular_search_word_match(${value},${channel}))`,
     );
     const match = fuzzy.reduce((a, b) => db`(${a} or ${b})`, exact);

@@ -69,6 +69,21 @@ describe("simple popular search UI",()=>{
     await page.type("");await page.submit();
     expect(page.requests.at(-1)!.url.searchParams.has("q")).toBe(false);
   });
+  it("cancels load more when a new search changes the result set",async()=>{
+    const page=await setup();await page.type("축구");await page.submit();
+    const video={videoId:"fixture0001",title:"축구 영상",channelName:"테스트",viewCount:100,category:"sports",license:"youtube",durationSeconds:300,publishedAt:new Date().toISOString(),thumbnailUrl:"/test.jpg"};
+    await page.respond(1,{items:[video],nextCursor:"previous-page"});
+    const more=Array.from(page.container.querySelectorAll("button")).find(button=>button.textContent==="더 보기")!;
+    await act(async()=>props(more).onClick());
+    expect(page.requests[2].url.searchParams.get("cursor")).toBe("previous-page");
+    await page.type("요리");await page.submit();
+    expect(page.requests[2].signal.aborted).toBe(true);
+    expect(page.requests[3].url.searchParams.has("cursor")).toBe(false);
+    await page.respond(3,{items:[{...video,videoId:"fixture0002",title:"요리 영상"}]});
+    await page.respond(2,{items:[{...video,videoId:"fixture0003",title:"오래된 다음 페이지"}]});
+    expect(page.container.textContent).toContain("요리 영상");
+    expect(page.container.textContent).not.toContain("오래된 다음 페이지");
+  });
   it.each([["en","Search titles or channels"],["ja","タイトルやチャンネル名を検索"]])("localizes the search field in %s",async(locale,placeholder)=>{
     const page=await setup(true,locale);expect(page.input().getAttribute("placeholder")).toBe(placeholder);
   });

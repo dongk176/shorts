@@ -105,3 +105,13 @@ Next production build and production-context CDK synthesis. PostgreSQL-enabled
 focused run: 58 passed, one opt-in benchmark skipped (benchmark passed separately).
 Actual promoted deployment outputs reconstruct 230 application routes; local
 candidate has the same 230 routes, including all protected paths.
+
+Production additive migration completed: pg_trgm 1.6 in `extensions`; all four
+indexes are ready/valid and total 76,808,192 bytes (73.3 MiB). The migration runner
+confirmed no existing `public` objects changed. Initial candidate
+`dpl_C3x1tezzyQEPCjkk6feZkfpcDZYT` retained all 462 deployed outputs / 230 routes.
+It is not promoted: final review tightened fuzzy eligibility to the user's typed
+term, so the 2-character `AI` alias cannot become fuzzy through `인공지능` expansion.
+The ordinary reviewer account is intentionally denied the admin page (404);
+protected admin entry must be tested as an anonymous login entry, not mistaken
+for an administrator session. No reviewer permissions were expanded.
