@@ -33,3 +33,42 @@ Bounded existing-service candidate build and read-only HTTP checks only; no new
 fixed commitment. Estimate: one normal web build, no paid AI/video jobs.
 Verify route parity, five protected paths and admission fingerprint on the
 unaliased candidate, then promote that same deployment without rebuilding.
+
+## Final verification and release
+
+Full web suite: 3,028 passed, 139 conditional skips. All 209 repository script
+tests, worker tests/static checks, 36 CDK tests and production-context CDK synthesis
+passed. Frontend lint, type checking and production build passed. Initial local
+integration tests could not find the existing PGlite dependency; linking the
+existing test runtime fixed this, after which the complete suite passed.
+
+Initial UI source `524f4ba17a179c600fa4ddd54161063859d1cc77` was promoted as
+`dpl_HjEgq8PmAuKiUFASY8zHByAXebHM`. Actual app-shell visual inspection found the
+global `main > section` style adding an unwanted panel and 22px padding. Final
+source changes only that wrapper to a named region div; no global styles change.
+The local visual check was repeated with the real app-shell classes, and final
+lint/type checks, all 10 mounted search/filter cases and production build passed.
+Unchanged worker/CDK/backend tests were not repeated for this wrapper-only fix.
+
+Final application source `f0dfa82cc1b8862fa5d91dc061bc23fa5ba96285`, deployment
+`dpl_7VjqumyfPYZNQLwXW3ZoqN3Ammn9`, candidate
+`https://shorts-jz1josowc-artiroom.vercel.app`. Actual output manifest matches all
+462 production outputs / 230 routes. Both candidates started with no aliases;
+each baseline was rechecked immediately before promoting that exact deployment.
+Production domain now resolves to the final ID. No rebuild during promotion.
+
+Final candidate and production both passed protected-path checks (anonymous admin
+login entry and owned reviewer editor), five-target admission fingerprint, search
+and next page, literal wildcard/length validation, unauthenticated rejection, and
+CC-only items in both ranking modes. Existing reviewer access was reused.
+The final typo query returned 239 results; both reuse modes returned 12,451.
+The candidate browser required Vercel SSO; verification used the existing CLI
+access without changing deployment protection. Final public production UI was
+visually checked in the signed-in browser at desktop and 390px mobile. First card
+starts around 246px desktop / 355px mobile, versus about 579px / 479px before.
+The real mobile filter dialog and applied category/language chips also worked.
+
+Two bounded Vercel builds used existing resources; no fixed-cost resource or plan
+change. Temporary local servers stopped, test login cookie files removed, browser
+viewport overrides reset and task-created tabs closed. Evidence JSON contains
+only sanitized check outcomes, not credentials or private fixture identifiers.

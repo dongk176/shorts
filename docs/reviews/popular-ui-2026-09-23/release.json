@@ -1,0 +1,11 @@
+{
+  "baseline": "43622d2906a01de9e31867399090635cc3f5b518",
+  "applicationCommit": "f0dfa82cc1b8862fa5d91dc061bc23fa5ba96285",
+  "deploymentId": "dpl_7VjqumyfPYZNQLwXW3ZoqN3Ammn9",
+  "candidateUrl": "https://shorts-jz1josowc-artiroom.vercel.app",
+  "productionUrl": "https://www.easycut.co.kr/popular",
+  "projectId": "prj_bQyHRVC3Pfzq2dvUnAqEDlw66GOw",
+  "outputCount": 462,
+  "applicationRouteCount": 230,
+  "sameDeploymentPromoted": true
+}

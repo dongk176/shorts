@@ -1,0 +1,80 @@
+{
+  "checkedAt": "2026-09-22T17:49:25.769Z",
+  "origin": "https://www.easycut.co.kr",
+  "phase": "production",
+  "results": [
+    {
+      "check": "unauthenticated search",
+      "status": 401
+    },
+    {
+      "check": "/",
+      "status": 200
+    },
+    {
+      "check": "/guidebook",
+      "status": 200
+    },
+    {
+      "check": "/pricing",
+      "status": 200
+    },
+    {
+      "check": "/admin/easycutcutcutcutcutcut",
+      "status": 200
+    },
+    {
+      "check": "owned fixture editor",
+      "status": 200
+    },
+    {
+      "check": "job admission",
+      "status": 200,
+      "ready": true,
+      "targetCount": 5,
+      "fingerprint": "668676b0a45b9376e76461fdd8f11367524e4a2bf08695ddc13aa62c267964f4"
+    },
+    {
+      "check": "reuse toggle",
+      "type": "trending",
+      "count": 48,
+      "total": 12451,
+      "status": 200
+    },
+    {
+      "check": "reuse toggle",
+      "type": "views",
+      "count": 48,
+      "total": 12451,
+      "status": 200
+    },
+    {
+      "check": "search",
+      "q": "손흥밍",
+      "count": 48,
+      "total": 239,
+      "similar": true
+    },
+    {
+      "check": "next page",
+      "q": "손흥밍",
+      "count": 48,
+      "status": 200
+    },
+    {
+      "check": "literal wildcards",
+      "status": 200,
+      "count": 0
+    },
+    {
+      "check": "short-query validation",
+      "status": 400
+    }
+  ],
+  "timings": {
+    "손흥밍": [
+      272
+    ]
+  },
+  "passed": true
+}
