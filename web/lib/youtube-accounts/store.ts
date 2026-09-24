@@ -10,7 +10,7 @@ export type Pending = { userId: string; epoch: number; verifierCiphertext: strin
 const missing = () => new HttpError(404, "이 계정에서 사용할 수 있는 채널 또는 완성 영상을 찾을 수 없습니다.");
 
 export class YoutubeAccountStore {
-  constructor(private db: Sql, private sourceAccess?: (userId: string, shortId: string) => void) {}
+  constructor(private db: Sql, private sourceAccess?: (userId: string, shortId: string, db: Db) => void | Promise<void>) {}
   private async owner(tx: Db, userId: string) {
     const users = await tx`select id from shorts_mvp.app_users where id=${userId} and withdrawn_at is null for update`;
     if (!users.length) throw missing();
@@ -36,7 +36,7 @@ export class YoutubeAccountStore {
     return (await this.disconnectState(userId)).status;
   }
   async source(userId: string, shortId: string, db: Db = this.db): Promise<Source> {
-    this.sourceAccess?.(userId, shortId);
+    await this.sourceAccess?.(userId, shortId, db);
     const rows = await db`
       select s.id,j.project_number,s.output_s3_key,s.render_version
       from shorts_mvp.generated_shorts s join shorts_mvp.video_jobs j on j.id=s.job_id
@@ -67,7 +67,7 @@ export class YoutubeAccountStore {
   }
   async start(actor: Actor, input: StartInput, stateHash: string, verifierCiphertext: string) {
     await this.db.begin(async tx => {
-      this.sourceAccess?.(actor.userId, input.shortId || "");
+      await this.sourceAccess?.(actor.userId, input.shortId || "", tx);
       const epoch = await this.owner(tx, actor.userId) + 1;
       await this.assertNotDisconnecting(tx, actor.userId);
       if (input.shortId) {

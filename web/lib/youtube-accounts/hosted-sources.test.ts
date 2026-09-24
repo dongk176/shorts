@@ -20,6 +20,6 @@ it("rejects traversal before fetching and rejects oversized or partial streams",
   expect(fetcher).not.toHaveBeenCalled();
   await expect(sources.file("outputs/video.mp4")).rejects.toThrow();
   await sources.cleanup();
-  const oversized = new HostedYoutubeSources(async () => new Response("x",{headers:{"Content-Length":String(26*1024*1024)}}));
+  const oversized = new HostedYoutubeSources(async () => new Response("x",{headers:{"Content-Length":String(251*1024*1024)}}));
   await expect(oversized.file("outputs/video.mp4")).rejects.toThrow(); await oversized.cleanup();
 });

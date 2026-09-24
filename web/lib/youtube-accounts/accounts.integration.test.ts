@@ -434,6 +434,21 @@ describe("retention and account withdrawal", () => {
 });
 
 describe("hosted reviewer source boundary", () => {
+  it("awaits administrator role checks and still enforces source ownership", async () => {
+    let allowed = true;
+    const guarded = new YoutubeAccountStore(tag(pg), async () => {
+      await Promise.resolve();
+      if (!allowed) throw Error("Admin access removed");
+    });
+    expect((await guarded.source(A.userId, SA)).id).toBe(SA);
+    await expect(guarded.source(A.userId, SB)).rejects.toMatchObject({ status: 404 });
+    await expect(guarded.source(A.userId, MISMATCH)).rejects.toMatchObject({ status: 404 });
+    allowed = false;
+    await expect(guarded.source(A.userId, SA)).rejects.toThrow("Admin access removed");
+    await expect(guarded.start(A, { returnPath: "/projects/1", shortId: SA }, "b".repeat(64), "encrypted")).rejects.toThrow("Admin access removed");
+    expect((await pg.query("select * from shorts_mvp.youtube_account_oauth")).rows).toEqual([]);
+  });
+
   it("rejects other owned clips, wrong users and soft-deleted projects before publication", async () => {
     const guarded = new YoutubeAccountStore(tag(pg), (userId, shortId) => { if (userId !== A.userId || shortId !== SA) throw new Error("Review grant denied"); });
     expect((await guarded.source(A.userId,SA)).id).toBe(SA);

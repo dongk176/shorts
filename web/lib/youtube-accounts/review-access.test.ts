@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
-import { assertReviewAccess, reviewConfig, REVIEW_CLIENT_ID } from "./review-access";
+import { assertReviewAccess, assertHostedYoutubeAccess, canUseYoutubeAdminPublishing, reviewConfig, REVIEW_CLIENT_ID } from "./review-access";
 const userId = "11111111-1111-4111-8111-111111111111", shortId = "22222222-2222-4222-8222-222222222222";
 const grant = { userId, shortId, expiresAt: "2026-10-20T00:00:00Z" };
 const env: NodeJS.ProcessEnv = { NODE_ENV: "production", YOUTUBE_ACCOUNTS_MODE: "review", YOUTUBE_ACCOUNTS_CLIENT_ID: REVIEW_CLIENT_ID, YOUTUBE_ACCOUNTS_CLIENT_SECRET: "test", VERCEL_ENV: "production", VERCEL_PROJECT_ID: "prj_bQyHRVC3Pfzq2dvUnAqEDlw66GOw", DATABASE_URL: "postgres://postgres.mvcprswvfybudtopepuj:test@aws-1-ap-northeast-2.pooler.supabase.com/postgres", YOUTUBE_REVIEWER_ACCESS: JSON.stringify(grant) };
@@ -21,25 +21,24 @@ it("expires upload access while permitting the existing reviewer to delete conne
   expect(() => assertReviewAccess(userId,undefined,true)).not.toThrow();
   expect(() => assertReviewAccess(shortId,undefined,true)).toThrow();
 });
-it("keeps the reviewer and demo owner isolated to their own clips", () => {
-  const demo = { userId: "33333333-3333-4333-8333-333333333333", shortId: "44444444-4444-4444-8444-444444444444", expiresAt: "2026-09-28T00:00:00Z" };
-  vi.stubEnv("YOUTUBE_DEMO_ACCESS", JSON.stringify(demo));
-  expect(reviewConfig().allowedUsers).toEqual(new Set([userId, demo.userId]));
-  expect(assertReviewAccess(demo.userId, demo.shortId)).toEqual(demo);
-  expect(assertReviewAccess(userId, shortId)).toEqual(grant);
-  expect(() => assertReviewAccess(userId, demo.shortId)).toThrow();
-  expect(() => assertReviewAccess(demo.userId, shortId)).toThrow();
-  expect(() => assertReviewAccess(shortId)).toThrow();
+
+const adminId = "33333333-3333-4333-8333-333333333333";
+const db = (admin: boolean) => vi.fn(async () => admin ? [{ id: adminId }] : []) as unknown as Parameters<typeof canUseYoutubeAdminPublishing>[0];
+it("permits administrator-owned sources only when explicitly enabled and rechecks role", async () => {
+  expect(await canUseYoutubeAdminPublishing(db(true), adminId)).toBe(false);
+  vi.stubEnv("YOUTUBE_ADMIN_REVIEW_ENABLED", "true");
+  expect(await canUseYoutubeAdminPublishing(db(true), adminId)).toBe(true);
+  await expect(assertHostedYoutubeAccess(db(true), adminId, shortId)).resolves.toBeUndefined();
+  await expect(assertHostedYoutubeAccess(db(false), adminId, shortId)).rejects.toThrow();
+  expect(await canUseYoutubeAdminPublishing(db(false), adminId)).toBe(false);
   vi.stubEnv("YOUTUBE_ACCOUNTS_ALLOW_NON_PRIVATE_UPLOADS", "true");
   expect(reviewConfig().allowNonPrivateUploads).toBe(false);
-  vi.setSystemTime(new Date(demo.expiresAt));
-  expect(() => assertReviewAccess(demo.userId, demo.shortId)).toThrow();
-  expect(() => assertReviewAccess(demo.userId, undefined, true)).not.toThrow();
-  expect(() => assertReviewAccess(userId, shortId)).not.toThrow();
 });
-it("rejects invalid or duplicate demo grants without broadening access", () => {
-  for (const value of ["{}", "[]", JSON.stringify(grant), JSON.stringify({ ...grant, userId: "*" })]) {
-    vi.stubEnv("YOUTUBE_DEMO_ACCESS", value);
-    expect(() => reviewConfig()).toThrow();
-  }
+it("preserves reviewer clip and expiry restrictions with admin publishing enabled", async () => {
+  vi.stubEnv("YOUTUBE_ADMIN_REVIEW_ENABLED", "true");
+  await expect(assertHostedYoutubeAccess(db(false), userId, shortId)).resolves.toBeUndefined();
+  await expect(assertHostedYoutubeAccess(db(false), userId, adminId)).rejects.toThrow();
+  vi.setSystemTime(new Date(grant.expiresAt));
+  await expect(assertHostedYoutubeAccess(db(false), userId, shortId)).rejects.toThrow();
+  await expect(assertHostedYoutubeAccess(db(false), userId, undefined, true)).resolves.toBeUndefined();
 });

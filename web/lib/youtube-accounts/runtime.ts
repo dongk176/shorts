@@ -1,6 +1,6 @@
 import "server-only";
 import path from "node:path";
-import { reviewConfig, assertReviewAccess } from "./review-access";
+import { reviewConfig, assertHostedYoutubeAccess } from "./review-access";
 import { HostedYoutubeSources } from "./hosted-sources";
 import { YoutubeAccountUploads } from "./uploads";
 import { getDb } from "@/lib/db";
@@ -35,10 +35,10 @@ export function accountServices() {
   const keyring = JSON.parse(process.env.YOUTUBE_ACCOUNTS_KEYRING || "{}");
   const keys = Object.fromEntries(Object.entries(keyring).map(([key, value]) => [key, Buffer.from(String(value), "base64")]));
   const vault = new TokenVault(keys, process.env.YOUTUBE_ACCOUNTS_ACTIVE_KEY || "");
-  const store = new YoutubeAccountStore(getDb(), config.hosted ? (userId, shortId) => assertReviewAccess(userId, shortId) : undefined);
+  const store = new YoutubeAccountStore(getDb(), config.hosted ? (userId, shortId, db) => assertHostedYoutubeAccess(db, userId, shortId) : undefined);
   const google = new YoutubeAccountGoogle(config);
   const service = new YoutubeAccounts(store, vault, google, async userId => {
-    if (config.hosted) { assertReviewAccess(userId); return; }
+    if (config.hosted) { await assertHostedYoutubeAccess(getDb(), userId); return; }
     // Publishing must retain the same paid entitlement as downloading this output.
     assertPaidProjectActionAccess(await getBillingSummary(getDb(), userId), "download");
   });
@@ -49,8 +49,8 @@ export function accountServices() {
 export async function accountContext(allowExpired = false) {
   const config = accountConfig();
   const session = await requireAuthenticatedMvpSession({ allowPaymentMethodRemediation: true });
-  if (!config.allowedUsers.has(session.userId)) throw new HttpError(403, "아직 이 계정에서 사용할 수 없는 기능입니다.");
-  if (config.hosted) assertReviewAccess(session.userId, undefined, allowExpired);
+  if (!config.hosted && !config.allowedUsers.has(session.userId)) throw new HttpError(403, "아직 이 계정에서 사용할 수 없는 기능입니다.");
+  if (config.hosted) await assertHostedYoutubeAccess(getDb(), session.userId, undefined, allowExpired);
   const { service, uploads } = accountServices();
   return { service, uploads, actor: { userId: session.userId, sessionId: session.id }, origin: config.origin };
 }

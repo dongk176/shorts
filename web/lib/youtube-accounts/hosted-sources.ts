@@ -21,10 +21,10 @@ export class HostedYoutubeSources {
     const signed = await getShortPlaybackAccess({ outputKey: key, thumbnailKey: null, expiresAt: new Date(Date.now() + 120_000) });
     const response = await this.fetcher(signed.url, { redirect: "error", cache: "no-store", signal: AbortSignal.timeout(60_000), headers: { "Accept-Encoding": "identity" } });
     const size = Number(response.headers.get("content-length"));
-    // Reviewer fixture is small. Keep a bounded 25 MiB limit for this review release.
-    const max = 25 * 1024 * 1024;
+    // Match the bounded finished-video limit used by the local upload path.
+    const max = 250 * 1024 * 1024;
     if (!response.ok || !response.body || !Number.isSafeInteger(size) || size < 12 || size > max) {
-      await response.body?.cancel(); throw new HttpError(400, "The review video is unavailable or exceeds 25 MiB.");
+      await response.body?.cancel(); throw new HttpError(400, "The finished video is unavailable or exceeds 250 MiB.");
     }
     if (!this.directory) this.directory = await fs.mkdtemp(path.join(os.tmpdir(), "easycut-youtube-"));
     const file = path.join(this.directory, `${randomUUID()}.mp4`);

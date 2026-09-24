@@ -1,6 +1,6 @@
 import "server-only";
 import { z } from "zod";
-import type { Sql } from "postgres";
+import type { Sql, TransactionSql } from "postgres";
 import { HttpError } from "@/lib/http";
 import { uuid } from "./contracts";
 
@@ -17,20 +17,14 @@ export function reviewConfig(env: NodeJS.ProcessEnv = process.env) {
     throw new HttpError(503, "YouTube review configuration is incomplete.");
   }
   const grant = grantSchema.parse(JSON.parse(env.YOUTUBE_REVIEWER_ACCESS || ""));
-  // A second exact owner/clip grant supports the owner’s recorded demo without
-  // replacing the reviewer account or enabling publishing for other users.
-  const demoGrant = env.YOUTUBE_DEMO_ACCESS
-    ? grantSchema.parse(JSON.parse(env.YOUTUBE_DEMO_ACCESS)) : undefined;
-  if (demoGrant?.userId === grant.userId) throw new HttpError(503, "YouTube demo grant must have a distinct owner.");
-  const grants = demoGrant ? [grant, demoGrant] : [grant];
   const origin = "https://www.easycut.co.kr";
-  return { origin, grant, grants, clientId: REVIEW_CLIENT_ID, clientSecret: env.YOUTUBE_ACCOUNTS_CLIENT_SECRET,
-    allowedUsers: new Set(grants.map(item => item.userId)), allowNonPrivateUploads: false,
+  return { origin, grant, adminReviewEnabled: env.YOUTUBE_ADMIN_REVIEW_ENABLED === "true", clientId: REVIEW_CLIENT_ID, clientSecret: env.YOUTUBE_ACCOUNTS_CLIENT_SECRET,
+    allowedUsers: new Set([grant.userId]), allowNonPrivateUploads: false,
     redirectUri: `${origin}/api/youtube/accounts/oauth/callback`, hosted: true as const };
 }
 export function assertReviewAccess(userId: string, shortId?: string, allowExpired = false) {
-  const grant = reviewConfig().grants.find(item => item.userId === userId);
-  if (!grant || (shortId && grant.shortId !== shortId)
+  const { grant } = reviewConfig();
+  if (grant.userId !== userId || (shortId && grant.shortId !== shortId)
     || (!allowExpired && Date.parse(grant.expiresAt) <= Date.now())) throw new HttpError(403, "YouTube review access is unavailable.");
   return grant;
 }
@@ -45,4 +39,17 @@ export async function youtubeReviewerShortForProject(db: Sql, userId: string, pr
       and (s.expires_at is null or s.expires_at>now()) and clock_timestamp()<${grant.expiresAt}::timestamptz limit 1`;
     return rows.length ? grant.shortId : null;
   } catch { return null; }
+}
+
+export async function canUseYoutubeAdminPublishing(db: Sql | TransactionSql, userId: string) {
+  try {
+    if (!reviewConfig().adminReviewEnabled) return false;
+    const rows = await db`select id from shorts_mvp.app_users where id=${userId} and is_admin=true and withdrawn_at is null limit 1`;
+    return rows.length === 1;
+  } catch { return false; }
+}
+
+export async function assertHostedYoutubeAccess(db: Sql | TransactionSql, userId: string, shortId?: string, allowExpired = false) {
+  if (await canUseYoutubeAdminPublishing(db, userId)) return;
+  assertReviewAccess(userId, shortId, allowExpired);
 }
