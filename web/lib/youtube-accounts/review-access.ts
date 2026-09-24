@@ -17,20 +17,26 @@ export function reviewConfig(env: NodeJS.ProcessEnv = process.env) {
     throw new HttpError(503, "YouTube review configuration is incomplete.");
   }
   const grant = grantSchema.parse(JSON.parse(env.YOUTUBE_REVIEWER_ACCESS || ""));
+  // A second exact owner/clip grant supports the owner’s recorded demo without
+  // replacing the reviewer account or enabling publishing for other users.
+  const demoGrant = env.YOUTUBE_DEMO_ACCESS
+    ? grantSchema.parse(JSON.parse(env.YOUTUBE_DEMO_ACCESS)) : undefined;
+  if (demoGrant?.userId === grant.userId) throw new HttpError(503, "YouTube demo grant must have a distinct owner.");
+  const grants = demoGrant ? [grant, demoGrant] : [grant];
   const origin = "https://www.easycut.co.kr";
-  return { origin, grant, clientId: REVIEW_CLIENT_ID, clientSecret: env.YOUTUBE_ACCOUNTS_CLIENT_SECRET,
-    allowedUsers: new Set([grant.userId]), allowNonPrivateUploads: false,
+  return { origin, grant, grants, clientId: REVIEW_CLIENT_ID, clientSecret: env.YOUTUBE_ACCOUNTS_CLIENT_SECRET,
+    allowedUsers: new Set(grants.map(item => item.userId)), allowNonPrivateUploads: false,
     redirectUri: `${origin}/api/youtube/accounts/oauth/callback`, hosted: true as const };
 }
 export function assertReviewAccess(userId: string, shortId?: string, allowExpired = false) {
-  const { grant } = reviewConfig();
-  if (grant.userId !== userId || (shortId && grant.shortId !== shortId)
+  const grant = reviewConfig().grants.find(item => item.userId === userId);
+  if (!grant || (shortId && grant.shortId !== shortId)
     || (!allowExpired && Date.parse(grant.expiresAt) <= Date.now())) throw new HttpError(403, "YouTube review access is unavailable.");
+  return grant;
 }
 export async function youtubeReviewerShortForProject(db: Sql, userId: string, projectNumber: number) {
   try {
-    assertReviewAccess(userId);
-    const { grant } = reviewConfig();
+    const grant = assertReviewAccess(userId);
     const rows = await db`select s.id from shorts_mvp.generated_shorts s join shorts_mvp.video_jobs j on j.id=s.job_id
       join shorts_mvp.app_users u on u.id=s.user_id
       where s.id=${grant.shortId} and s.user_id=${userId} and j.user_id=${userId} and j.project_number=${projectNumber}

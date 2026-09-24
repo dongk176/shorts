@@ -21,3 +21,25 @@ it("expires upload access while permitting the existing reviewer to delete conne
   expect(() => assertReviewAccess(userId,undefined,true)).not.toThrow();
   expect(() => assertReviewAccess(shortId,undefined,true)).toThrow();
 });
+it("keeps the reviewer and demo owner isolated to their own clips", () => {
+  const demo = { userId: "33333333-3333-4333-8333-333333333333", shortId: "44444444-4444-4444-8444-444444444444", expiresAt: "2026-09-28T00:00:00Z" };
+  vi.stubEnv("YOUTUBE_DEMO_ACCESS", JSON.stringify(demo));
+  expect(reviewConfig().allowedUsers).toEqual(new Set([userId, demo.userId]));
+  expect(assertReviewAccess(demo.userId, demo.shortId)).toEqual(demo);
+  expect(assertReviewAccess(userId, shortId)).toEqual(grant);
+  expect(() => assertReviewAccess(userId, demo.shortId)).toThrow();
+  expect(() => assertReviewAccess(demo.userId, shortId)).toThrow();
+  expect(() => assertReviewAccess(shortId)).toThrow();
+  vi.stubEnv("YOUTUBE_ACCOUNTS_ALLOW_NON_PRIVATE_UPLOADS", "true");
+  expect(reviewConfig().allowNonPrivateUploads).toBe(false);
+  vi.setSystemTime(new Date(demo.expiresAt));
+  expect(() => assertReviewAccess(demo.userId, demo.shortId)).toThrow();
+  expect(() => assertReviewAccess(demo.userId, undefined, true)).not.toThrow();
+  expect(() => assertReviewAccess(userId, shortId)).not.toThrow();
+});
+it("rejects invalid or duplicate demo grants without broadening access", () => {
+  for (const value of ["{}", "[]", JSON.stringify(grant), JSON.stringify({ ...grant, userId: "*" })]) {
+    vi.stubEnv("YOUTUBE_DEMO_ACCESS", value);
+    expect(() => reviewConfig()).toThrow();
+  }
+});
