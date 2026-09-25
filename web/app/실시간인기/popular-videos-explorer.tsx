@@ -1009,16 +1009,16 @@ export function PopularVideosExplorer({
               }) },
               { tone: "coral", label: uiCopy.longFormOnly, checked: longFormOnly, toggle: () => applyFilter(() => setLongFormOnly(current => !current)) },
             ].map(({ label, checked, toggle, tone }) => {
-              const colors = {
-                violet: checked ? "border-violet-300/60 bg-violet-400/20 text-violet-100" : "border-violet-300/20 bg-violet-400/5 text-violet-300 hover:bg-violet-400/10",
-                emerald: checked ? "border-emerald-300/60 bg-emerald-400/20 text-emerald-100" : "border-emerald-300/20 bg-emerald-400/5 text-emerald-300 hover:bg-emerald-400/10",
-                sky: checked ? "border-sky-300/60 bg-sky-400/20 text-sky-100" : "border-sky-300/20 bg-sky-400/5 text-sky-300 hover:bg-sky-400/10",
-                coral: checked ? "border-[#ff8b7c]/60 bg-[#ff715e]/20 text-[#ffd0c9]" : "border-[#ff8b7c]/20 bg-[#ff715e]/5 text-[#ff9b8d] hover:bg-[#ff715e]/10",
-              }[tone];
+              const colors = checked ? {
+                violet: "border-violet-300/60 bg-violet-400/20 text-violet-100",
+                emerald: "border-emerald-300/60 bg-emerald-400/20 text-emerald-100",
+                sky: "border-sky-300/60 bg-sky-400/20 text-sky-100",
+                coral: "border-[#ff8b7c]/60 bg-[#ff715e]/20 text-[#ffd0c9]",
+              }[tone] : "border-white/20 bg-white/[.035] text-neutral-200 hover:border-white/35 hover:bg-white/[.07]";
               return <button key={label} type="button" role="switch" aria-checked={checked}
                 aria-haspopup={canUseFilters ? undefined : "dialog"} onClick={toggle}
-                className={`flex h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-full border px-3 text-xs font-bold transition ${colors}`}>
-                <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full bg-current transition-opacity ${checked ? "opacity-100" : "opacity-35"}`} />{label}
+                className={`flex h-11 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-full border px-3.5 text-sm font-bold transition ${colors}`}>
+                <span aria-hidden="true" className={`h-2 w-2 rounded-full bg-current transition-opacity ${checked ? "opacity-100" : "opacity-40"}`} />{label}
               </button>;
             })}
           </div>
