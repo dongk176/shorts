@@ -1,3 +1,7 @@
+import { getRequestLocale } from "@/lib/i18n/server";
+import { paddleEnabled, paddleConfigured } from "@/lib/paddle/config";
+import { getPaddleState } from "@/lib/paddle/service";
+import { PaddlePage } from "@/components/paddle-page";
 import { createLocalizedPageMetadata } from "@/lib/i18n/metadata";
 import { getBillingSummary } from "@/lib/billing";
 import {
@@ -28,6 +32,30 @@ export async function generateMetadata() {
 export default async function PricingPage() {
   const user = await getAuthenticatedUser();
   const profile = user ? authProfile(user) : null;
+  const locale = await getRequestLocale();
+  if (paddleConfigured()) {
+    const session = user ? await requireMvpSession(user, { createIfMissing: false }) : null;
+    const billing = session?.userId ? await getBillingSummary(getDb(), session.userId) : null;
+    const paddle = billing?.paymentProvider === "paddle";
+    const domestic = billing && billing.paymentProvider !== "paddle"
+      && ["pending", "active", "past_due"].includes(billing.status);
+    if (paddle || (paddleEnabled() && locale !== "ko" && !domestic && !session?.isEnterprise)) {
+      const state = session?.userId ? await getPaddleState(session.userId) : null;
+      return (
+        <PaddlePage
+          user={profile}
+          locale={locale}
+          checkoutEnabled={paddleEnabled()}
+          subscription={state ? {
+            providerStatus: state.providerStatus,
+            planCode: state.planCode,
+            currentPeriodEnd: new Date(state.currentPeriodEnd).toISOString(),
+            cancelAtPeriodEnd: state.cancelAtPeriodEnd,
+          } : null}
+        />
+      );
+    }
+  }
   let initialState = null;
   let tossExperience = false;
   let initialTossState: TossBillingState | null = null;

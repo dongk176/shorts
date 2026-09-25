@@ -1,3 +1,7 @@
+import { getRequestLocale } from "@/lib/i18n/server";
+import { paddleConfigured } from "@/lib/paddle/config";
+import { getPaddleState } from "@/lib/paddle/service";
+import { PaddlePage } from "@/components/paddle-page";
 import { localizedRedirectPath } from "@/lib/i18n/server";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
@@ -105,6 +109,27 @@ export default async function PlanManagementPage() {
         today={seoulToday()}
       />
     );
+  }
+  if (paddleConfigured()) {
+    const state = await getPaddleState(session.userId);
+    const billing = state ? await getBillingSummary(db, session.userId) : null;
+    const hasDomesticSubscription = billing && billing.paymentProvider !== "paddle"
+      && ["pending", "active", "past_due"].includes(billing.status);
+    if (state && !hasDomesticSubscription) {
+      return (
+        <PaddlePage
+          user={authProfile(user)}
+          locale={await getRequestLocale()}
+          managementOnly
+          subscription={{
+            providerStatus: state.providerStatus,
+            planCode: state.planCode,
+            currentPeriodEnd: new Date(state.currentPeriodEnd).toISOString(),
+            cancelAtPeriodEnd: state.cancelAtPeriodEnd,
+          }}
+        />
+      );
+    }
   }
   const cohort = await resolveBillingCustomerCohort(session.userId, db);
   if (shouldUseTossBillingExperience(cohort)) {

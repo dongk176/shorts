@@ -75,7 +75,7 @@ export async function POST(request: Request) {
     if (!account) throw new HttpError(404, "탈퇴할 계정을 찾을 수 없습니다.");
 
     const subscriptionRows = await db`
-      select status,billing_cycle,payment_method_id,cancel_at_period_end,
+      select status,billing_cycle,payment_method_id,cancel_at_period_end,payment_provider,
         provider_schedule_status
       from shorts_mvp.user_subscriptions
       where user_id=${session.userId}

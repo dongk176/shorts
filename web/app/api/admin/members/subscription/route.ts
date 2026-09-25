@@ -73,6 +73,9 @@ export async function POST(request: Request) {
       `;
       const subscription = rows[0];
       if (!subscription) throw new HttpError(404, "변경할 회원 구독을 찾을 수 없습니다.");
+      if (subscription.paymentProvider === "paddle") {
+        throw new HttpError(409, "Paddle 구독은 Paddle 대시보드에서 변경해 주세요. 승인된 변경은 자동으로 반영됩니다.", "PADDLE_MANAGED_SUBSCRIPTION");
+      }
       if (subscription.status === body.targetStatus) {
         throw new HttpError(409, "이미 선택한 구독 상태입니다.");
       }

@@ -386,7 +386,7 @@ export async function prepareTossCheckout(input: {
     const subscriptions = await tx`
       select id
       from shorts_mvp.user_subscriptions
-      where user_id=${input.userId} and payment_provider='toss'
+      where user_id=${input.userId} and payment_provider in ('toss','paddle')
         and status in ('pending','trialing','active','past_due')
       limit 1 for update
     `;

@@ -14,6 +14,10 @@ const base: WithdrawalSubscription = {
 };
 
 describe("account withdrawal subscription guard", () => {
+  it("blocks Paddle without a local card until cancellation completes", () => {
+    expect(blocksAccountWithdrawal({...base,paymentProvider:"paddle",paymentMethodId:null,cancelAtPeriodEnd:true})).toBe(true);
+    expect(blocksAccountWithdrawal({...base,paymentProvider:"paddle",paymentMethodId:null,status:"canceled"})).toBe(false);
+  });
   it("blocks an active recurring charge and an in-flight subscription", () => {
     expect(blocksAccountWithdrawal(base)).toBe(true);
     expect(blocksAccountWithdrawal({ ...base, status: "pending" })).toBe(true);

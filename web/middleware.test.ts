@@ -162,9 +162,14 @@ describe("locale routing boundaries", () => {
       ? NextResponse.rewrite(rewriteUrl, { request: { headers } })
       : NextResponse.next({ request: { headers } }));
   });
-  it.each([["/jp/pricing?cycle=yearly", "ja", "/pricing?cycle=yearly"], ["/en", "en", "/"]])("rewrites %s with a validated locale", async (path, locale, target) => {
+  it.each([["/jp/faq?cycle=yearly", "ja", "/faq?cycle=yearly"], ["/en", "en", "/"]])("rewrites %s with a validated locale", async (path, locale, target) => {
     const response = await middleware(new NextRequest(`https://www.easycut.co.kr${path}`, { headers: { "x-easycut-site-locale": "ko", cookie: "easycut_locale=ko" } }));
     expect(response.headers.get("x-middleware-rewrite")).toBe(`https://www.easycut.co.kr${target}`);
+    expect(response.headers.get("x-middleware-request-x-easycut-site-locale")).toBe(locale);
+  });
+  it.each([["/jp/pricing","ja"],["/en/pricing","en"],["/jp/settings/plan","ja"],["/en/billing/paddle","en"]])("keeps billing alias %s without a second rewrite",async (path,locale)=> {
+    const response=await middleware(new NextRequest(`https://www.easycut.co.kr${path}`,{headers:{"x-easycut-site-locale":"ko"}}));
+    expect(response.headers.get("x-middleware-rewrite")).toBeNull();
     expect(response.headers.get("x-middleware-request-x-easycut-site-locale")).toBe(locale);
   });
   it("keeps root Korean even with a foreign cookie or spoofed locale header", async () => {
