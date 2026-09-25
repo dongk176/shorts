@@ -973,6 +973,7 @@ export function PopularVideosExplorer({
 
       <div role="region" aria-label={ui("인기 영상 필터")}>
         <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center md:justify-between md:gap-x-4">
+          <div className="flex min-w-0 items-center gap-4">
           {searching ? <h2 className="flex min-h-12 items-center text-lg font-bold text-white">{searchUi.results}</h2> : (
             <fieldset className="min-w-0 shrink-0 border-b border-white/10 md:border-0">
               <legend className="sr-only">{filterCopy.ranking}</legend>
@@ -985,6 +986,18 @@ export function PopularVideosExplorer({
               </div>
             </fieldset>
           )}
+          <label className="hidden shrink-0 md:block">
+            <span className="sr-only">{compactFilterCopy[locale].period}</span>
+            <select aria-label={compactFilterCopy[locale].period} value={discoveryPeriod}
+              onChange={event => {
+                const period = event.target.value as PopularDiscoveryPeriod;
+                applyFilter(() => setDiscoveryPeriod(period));
+              }}
+              className="h-11 rounded-xl border border-white/20 bg-[#15191a] px-3 text-sm font-semibold text-neutral-200 outline-none focus-visible:border-[#ff715e] focus-visible:ring-2 focus-visible:ring-[#ff715e]/30">
+              {discoveryPeriodOptions.map(option => <option key={option.value} value={option.value}>{option.labels[locale]}</option>)}
+            </select>
+          </label>
+          </div>
           <div className="flex min-w-0 items-center justify-between gap-3 md:hidden">
             <button type="button" role="switch" aria-label={uiCopy.reusableOnlyAria} aria-checked={reusableOnly}
               aria-haspopup={canUseFilters ? undefined : "dialog"} onClick={toggleReusable}
