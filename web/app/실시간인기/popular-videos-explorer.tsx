@@ -1015,10 +1015,19 @@ export function PopularVideosExplorer({
                 sky: "border-sky-300/60 bg-sky-400/20 text-sky-100",
                 coral: "border-[#ff8b7c]/60 bg-[#ff715e]/20 text-[#ffd0c9]",
               }[tone] : "border-white/20 bg-white/[.035] text-neutral-200 hover:border-white/35 hover:bg-white/[.07]";
+              const switchColor = checked ? {
+                violet: "bg-violet-400",
+                emerald: "bg-emerald-400",
+                sky: "bg-sky-400",
+                coral: "bg-[#ff715e]",
+              }[tone] : "bg-white/20";
               return <button key={label} type="button" role="switch" aria-checked={checked}
                 aria-haspopup={canUseFilters ? undefined : "dialog"} onClick={toggle}
                 className={`flex h-11 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-full border px-3.5 text-sm font-bold transition ${colors}`}>
-                <span aria-hidden="true" className={`h-2 w-2 rounded-full bg-current transition-opacity ${checked ? "opacity-100" : "opacity-40"}`} />{label}
+                <span aria-hidden="true" className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${switchColor}`}>
+                  <span className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${checked ? "translate-x-4" : "translate-x-0"}`} />
+                </span>
+                {label}
               </button>;
             })}
           </div>
