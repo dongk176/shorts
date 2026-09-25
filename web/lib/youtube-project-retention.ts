@@ -62,9 +62,10 @@ export async function refreshProjectMetadata(options: {
         and coalesce(youtube_metadata_refresh_after,created_at+interval '25 days')<=clock_timestamp()
       order by coalesce(youtube_metadata_verified_at,created_at),id
       for update skip locked limit 50`;
+    // Bind as text before casting: postgres.js otherwise JSON-encodes the string again.
     if (rows.length) await tx`update shorts_mvp.video_jobs
       set youtube_metadata_refresh_after=clock_timestamp()+interval '1 hour'
-      where id::text in (select jsonb_array_elements_text(${JSON.stringify(rows.map(r => String(r.id)))}::jsonb))`;
+      where id::text in (select jsonb_array_elements_text(${JSON.stringify(rows.map(r => String(r.id)))}::text::jsonb))`;
     return rows;
   });
   let refreshed = 0, failed = false;
@@ -85,7 +86,7 @@ export async function refreshProjectMetadata(options: {
             thumbnail_url=c.thumbnail,channel_thumbnail_url=c.channel_thumbnail,
             youtube_metadata_verified_at=clock_timestamp(),
             youtube_metadata_refresh_after=clock_timestamp()+interval '25 days'
-            from jsonb_to_recordset(${JSON.stringify(changes)}::jsonb)
+            from jsonb_to_recordset(${JSON.stringify(changes)}::text::jsonb)
               as c(id text,video_id text,title text,channel text,thumbnail text,channel_thumbnail text)
             where j.id::text=c.id and j.source_type='youtube' and j.youtube_video_id=c.video_id`;
       });
