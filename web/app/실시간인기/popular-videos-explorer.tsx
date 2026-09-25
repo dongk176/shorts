@@ -982,7 +982,7 @@ export function PopularVideosExplorer({
               </div>
             </fieldset>
           )}
-          <div className="flex min-w-0 items-center justify-between gap-3 md:justify-end md:gap-5">
+          <div className="flex min-w-0 items-center justify-between gap-3 md:hidden">
             <button type="button" role="switch" aria-label={uiCopy.reusableOnlyAria} aria-checked={reusableOnly}
               aria-haspopup={canUseFilters ? undefined : "dialog"} onClick={toggleReusable}
               className="flex min-h-11 items-center gap-2 text-sm font-semibold text-neutral-300 hover:text-white md:hidden">
@@ -994,30 +994,36 @@ export function PopularVideosExplorer({
               {compactFilterCopy[locale].title}{activeFilterCount > 0 && <span className="text-xs tabular-nums">{activeFilterCount}</span>}
             </button>
           </div>
-        </div>
-        <fieldset className="mt-3 hidden md:block">
+        <fieldset className="hidden shrink-0 md:ml-auto md:block">
           <legend className="sr-only">{compactFilterCopy[locale].title}</legend>
-          <div className="grid grid-cols-4 gap-2">
+          <div className="flex items-center justify-end gap-2">
             {[
-              { label: uiCopy.reusableOnly, checked: reusableOnly, toggle: toggleReusable },
-              { label: uiCopy.koreanOnly, checked: koreanOnly, toggle: () => applyFilter(() => {
+              { tone: "violet", label: uiCopy.reusableOnly, checked: reusableOnly, toggle: toggleReusable },
+              { tone: "emerald", label: uiCopy.koreanOnly, checked: koreanOnly, toggle: () => applyFilter(() => {
                 setKoreanOnly(current => !current);
                 setJapaneseOnly(false);
               }) },
-              { label: uiCopy.japaneseOnly, checked: japaneseOnly, toggle: () => applyFilter(() => {
+              { tone: "sky", label: uiCopy.japaneseOnly, checked: japaneseOnly, toggle: () => applyFilter(() => {
                 setJapaneseOnly(current => !current);
                 setKoreanOnly(false);
               }) },
-              { label: uiCopy.longFormOnly, checked: longFormOnly, toggle: () => applyFilter(() => setLongFormOnly(current => !current)) },
-            ].map(({ label, checked, toggle }) => (
-              <button key={label} type="button" role="switch" aria-checked={checked}
+              { tone: "coral", label: uiCopy.longFormOnly, checked: longFormOnly, toggle: () => applyFilter(() => setLongFormOnly(current => !current)) },
+            ].map(({ label, checked, toggle, tone }) => {
+              const colors = {
+                violet: checked ? "border-violet-300/60 bg-violet-400/20 text-violet-100" : "border-violet-300/20 bg-violet-400/5 text-violet-300 hover:bg-violet-400/10",
+                emerald: checked ? "border-emerald-300/60 bg-emerald-400/20 text-emerald-100" : "border-emerald-300/20 bg-emerald-400/5 text-emerald-300 hover:bg-emerald-400/10",
+                sky: checked ? "border-sky-300/60 bg-sky-400/20 text-sky-100" : "border-sky-300/20 bg-sky-400/5 text-sky-300 hover:bg-sky-400/10",
+                coral: checked ? "border-[#ff8b7c]/60 bg-[#ff715e]/20 text-[#ffd0c9]" : "border-[#ff8b7c]/20 bg-[#ff715e]/5 text-[#ff9b8d] hover:bg-[#ff715e]/10",
+              }[tone];
+              return <button key={label} type="button" role="switch" aria-checked={checked}
                 aria-haspopup={canUseFilters ? undefined : "dialog"} onClick={toggle}
-                className={`flex min-h-11 min-w-0 items-center justify-center gap-2 whitespace-nowrap rounded-full border px-3 py-2.5 text-sm font-bold transition ${checked ? "border-[#ff715e]/60 bg-[#ff715e]/15 text-[#ffb4a8]" : "border-white/15 bg-white/[.025] text-neutral-300 hover:border-white/30 hover:text-white"}`}>
-                <FilterSwitch checked={checked} />{label}
-              </button>
-            ))}
+                className={`flex h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-full border px-3 text-xs font-bold transition ${colors}`}>
+                <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full bg-current transition-opacity ${checked ? "opacity-100" : "opacity-35"}`} />{label}
+              </button>;
+            })}
           </div>
         </fieldset>
+        </div>
         {activeFilterCount > 0 && <div className="mt-2 flex flex-wrap gap-2">
           {[
             ...(category !== "all" ? [{ key: "category", label: filterCopy.categories[category], clear: () => setCategory("all") }] : []),
