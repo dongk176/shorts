@@ -653,10 +653,12 @@ function LoadingSkeleton() {
 
 export function PopularVideosExplorer({
   canUseFilters,
+  searchEnabled,
   isAuthenticated,
   onRequireLogin,
 }: {
   canUseFilters: boolean;
+  searchEnabled: boolean;
   isAuthenticated: boolean;
   onRequireLogin: () => void;
 }) {
@@ -665,7 +667,6 @@ export function PopularVideosExplorer({
   const uiCopy = popularUiCopy[locale];
   const filterCopy = filterLabels[locale];
   const searchUi = searchCopy[locale];
-  const [searchEnabled, setSearchEnabled] = useState(false);
   const [searchInput, setSearchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchError, setSearchError] = useState<string | null>(null);
@@ -683,6 +684,7 @@ export function PopularVideosExplorer({
   const [cursorNotice, setCursorNotice] = useState(false);
   const [discoveryPeriod, setDiscoveryPeriod] = useState<PopularDiscoveryPeriod>("all");
   const [category, setCategory] = useState<PopularVideoCategory>("all");
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
   const [response, setResponse] = useState<PopularVideoResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -737,7 +739,7 @@ export function PopularVideosExplorer({
         }
         return result.json() as Promise<PopularVideoResponse>;
       })
-      .then((result) => { if (!result || controller.signal.aborted) return; setResponse(result); setSearchEnabled(Boolean(result.searchEnabled)); setCatalogEnabled(Boolean(result.catalogEnabled)); setJapaneseEnabled(Boolean(result.japaneseEnabled)); setHasNewList(false); })
+      .then((result) => { if (!result || controller.signal.aborted) return; setResponse(result); setLastUpdatedAt(result.updatedAt); setCatalogEnabled(Boolean(result.catalogEnabled)); setJapaneseEnabled(Boolean(result.japaneseEnabled)); setHasNewList(false); })
       .catch((cause: unknown) => {
         if (controller.signal.aborted || (cause instanceof DOMException && cause.name === "AbortError")) return;
         setError(userFacingErrorMessage(cause, uiCopy.loadFailed));
@@ -948,7 +950,7 @@ export function PopularVideosExplorer({
           </svg>
           {ui("실시간 인기")}
         </h1>
-        <p className="text-[11px] text-neutral-500 sm:text-xs" aria-live="polite"><span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-emerald-400" aria-hidden="true" /><span className="sr-only">{uiCopy.lastUpdated} </span>{formatUpdatedAt(response?.updatedAt || null, locale)}</p>
+        <p className="text-[11px] text-neutral-500 sm:text-xs" aria-live="polite"><span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-emerald-400" aria-hidden="true" /><span className="sr-only">{uiCopy.lastUpdated} </span>{(error && !lastUpdatedAt ? "—" : formatUpdatedAt(lastUpdatedAt, locale))}</p>
       </header>
 
       {searchEnabled && <form role="search" onSubmit={event => { event.preventDefault(); if (!composing.current) submitSearch(); }} className="mb-3">
@@ -962,7 +964,8 @@ export function PopularVideosExplorer({
             onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }}
             onKeyDown={event => { if (event.key === "Enter" && (event.nativeEvent.isComposing || event.keyCode === 229 || composing.current)) event.preventDefault(); }}
             className="min-w-0 flex-1 bg-transparent py-2 text-base text-white outline-none placeholder:text-neutral-500 [&::-webkit-search-cancel-button]:appearance-none" />
-          {(searchInput || searching) && <button type="button" onClick={clearSearch} aria-label={searchUi.clear} className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-xl text-neutral-400 hover:text-white">×</button>}
+          <button type="button" onClick={clearSearch} aria-label={searchUi.clear} disabled={!searchInput && !searching}
+            className={`grid h-11 w-11 shrink-0 place-items-center rounded-lg text-xl text-neutral-400 hover:text-white ${!searchInput && !searching ? "invisible" : ""}`}>×</button>
           <button type="submit" className="min-h-11 shrink-0 rounded-lg bg-[#ff715e] px-4 text-sm font-extrabold text-[#24100d] hover:bg-[#ff8a78]">{searchUi.submit}</button>
         </div>
         {searchError && <p id="popular-search-error" role="alert" className="mt-2 text-sm text-red-300">{searchError}</p>}
@@ -1045,7 +1048,7 @@ export function PopularVideosExplorer({
       </div>
 
       <div ref={listStart} className="mb-4 mt-4 scroll-mt-5">
-        <p className="text-xs font-medium tabular-nums text-neutral-400" aria-live="polite">{!loading && response && displayedTotalCount !== undefined ? (locale === "ko" ? `영상 ${formatNumber(displayedTotalCount, locale)}개` : locale === "en" ? `${formatNumber(displayedTotalCount, locale)} videos` : `動画 ${formatNumber(displayedTotalCount, locale)}件`) : uiCopy.countLoading}</p>
+        <p className="text-xs font-medium tabular-nums text-neutral-400" aria-live="polite">{!loading && response && displayedTotalCount !== undefined ? (locale === "ko" ? `영상 ${formatNumber(displayedTotalCount, locale)}개` : locale === "en" ? `${formatNumber(displayedTotalCount, locale)} videos` : `動画 ${formatNumber(displayedTotalCount, locale)}件`) : error ? "—" : uiCopy.countLoading}</p>
       </div>
 
       {catalogEnabled && ((!searching && dataType === "trending" && response?.delayed) || cursorNotice || hasNewList) && <div className="mb-5 space-y-2 text-xs text-neutral-400" aria-live="polite">

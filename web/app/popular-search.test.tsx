@@ -17,7 +17,7 @@ function props(element: Element | null) {
   const key=Object.keys(element!).find(key=>key.startsWith("__reactProps$"))!;
   return (element as unknown as Record<string, Record<string, (...args: unknown[])=>void>>)[key];
 }
-async function setup(access=true, locale="ko") {
+async function setup(access=true, locale="ko", { deferInitial=false, searchEnabled=true } = {}) {
   language.locale=locale;
   const {window,document}=parseHTML("<html><body><div id='app'></div></body></html>");
   vi.stubGlobal("window",window);vi.stubGlobal("document",document);vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT",true);
@@ -28,9 +28,9 @@ async function setup(access=true, locale="ko") {
   vi.stubGlobal("fetch",vi.fn((url:string, options:RequestInit)=>new Promise<Response>(resolve=>requests.push({url:new URL(url,"http://localhost"),signal:options.signal!,resolve}))));
   const container=document.getElementById("app")!;
   root=createRoot(container as unknown as Element);
-  await act(async()=>{root!.render(<PopularVideosExplorer canUseFilters={access} isAuthenticated={access} onRequireLogin={()=>{}}/>);});
+  await act(async()=>{root!.render(<PopularVideosExplorer searchEnabled={searchEnabled} canUseFilters={access} isAuthenticated={access} onRequireLogin={()=>{}}/>);});
   const respond=async(index:number,body:Record<string,unknown>={},status=200)=>act(async()=>requests[index].resolve(Response.json({items:[],updatedAt:new Date().toISOString(),searchEnabled:true,...body},{status})));
-  await respond(0);
+  if (!deferInitial) await respond(0);
   const input=()=>container.querySelector("#popular-search")!;
   const type=async(value:string)=>act(async()=>props(input()).onChange({target:{value}}));
   const submit=async()=>act(async()=>props(container.querySelector('form[role="search"]')).onSubmit({preventDefault(){}}));
@@ -38,6 +38,41 @@ async function setup(access=true, locale="ko") {
   const click = async (element: Element) => act(async () => props(element).onClick());
   return {container,requests,respond,input,type,submit,button,click};
 }
+describe("stable popular loading UI", () => {
+  it("shows search before the first response and preserves text through a failed load", async () => {
+    const page = await setup(true, "ko", { deferInitial: true });
+    const input = page.input();
+    expect(input).not.toBeNull();
+    await page.type("축구");
+    await page.respond(0, { detail: "일시적 오류" }, 503);
+    expect(page.input()).toBe(input);
+    expect((page.input() as HTMLInputElement).value).toBe("축구");
+    expect(page.container.textContent).not.toContain("개수 확인 중");
+    await page.submit();
+    expect(page.requests[1].url.searchParams.get("q")).toBe("축구");
+    await page.respond(1);
+    expect(page.input()).toBe(input);
+  });
+  it("honors the server search gate independently of the video response", async () => {
+    const page = await setup(true, "ko", { deferInitial: true, searchEnabled: false });
+    expect(page.input()).toBeNull();
+    await page.respond(0);
+    expect(page.input()).toBeNull();
+  });
+  it("keeps the clear button slot and last update time stable during another request", async () => {
+    const page = await setup();
+    const clear = page.container.querySelector('[aria-label="검색 지우기"]')!;
+    const updatedAt = page.container.querySelector("header p")!.textContent;
+    expect(clear.hasAttribute("disabled")).toBe(true);
+    await page.type("축구");
+    expect(page.container.querySelector('[aria-label="검색 지우기"]')).toBe(clear);
+    expect(clear.hasAttribute("disabled")).toBe(false);
+    await page.submit();
+    expect(page.container.querySelector("header p")!.textContent).toBe(updatedAt);
+    expect(page.input()).not.toBeNull();
+  });
+});
+
 describe("simple popular search UI",()=>{
   it("submits explicitly, validates length, hides ranking and clears back to the previous list",async()=>{
     const page=await setup();

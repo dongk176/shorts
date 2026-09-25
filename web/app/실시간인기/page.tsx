@@ -1,4 +1,5 @@
 import { createLocalizedPageMetadata } from "@/lib/i18n/metadata";
+import { catalogReadsEnabled } from "@/lib/youtube-quota";
 import { getBillingSummary } from "@/lib/billing";
 import { getDb } from "@/lib/db";
 import {
@@ -58,6 +59,7 @@ export default async function PopularVideosPage() {
     <PopularPageShell
       user={user ? authProfile(user) : null}
       canUseFilters={canUseFilters}
+      searchEnabled={catalogReadsEnabled() && process.env.YOUTUBE_POPULAR_SEARCH_ENABLED === "true"}
     />
   );
 }

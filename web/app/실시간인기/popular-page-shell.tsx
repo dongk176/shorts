@@ -10,9 +10,11 @@ import { PopularVideosExplorer } from "./popular-videos-explorer";
 export function PopularPageShell({
   user,
   canUseFilters,
+  searchEnabled,
 }: {
   user: AuthProfile | null;
   canUseFilters: boolean;
+  searchEnabled: boolean;
 }) {
   const [loginOpen, setLoginOpen] = useState(false);
 
@@ -28,6 +30,7 @@ export function PopularPageShell({
       </SiteHeader>
       <PopularVideosExplorer
         canUseFilters={canUseFilters}
+        searchEnabled={searchEnabled}
         isAuthenticated={Boolean(user)}
         onRequireLogin={() => setLoginOpen(true)}
       />
