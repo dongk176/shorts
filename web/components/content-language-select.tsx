@@ -12,14 +12,16 @@ export function ContentLanguageSelect<Value extends string>({
   options,
   onChange,
   disabled = false,
+  className = "mt-3",
 }: {
   id: string;
   labelledBy: string;
-  describedBy: string;
+  describedBy?: string;
   value: Value;
   options: readonly { value: Value; label: string }[];
   onChange: (value: Value) => void;
   disabled?: boolean;
+  className?: string;
 }) {
   const ui = useUiText();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -55,7 +57,7 @@ export function ContentLanguageSelect<Value extends string>({
   return (
     <div
       ref={rootRef}
-      className={`relative mt-3 ${expanded ? "z-40" : ""}`}
+      className={`relative ${className} ${expanded ? "z-40" : ""}`}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
       }}

@@ -12,6 +12,7 @@ import { normalizePopularQuery } from "@/lib/popular-text-search";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { PopularFiltersPlanOverlay } from "@/components/popular-filters-plan-overlay";
+import { ContentLanguageSelect } from "@/components/content-language-select";
 import type {
   PopularDiscoveryPeriod,
   PopularVideo,
@@ -986,17 +987,15 @@ export function PopularVideosExplorer({
               </div>
             </fieldset>
           )}
-          <label className="hidden shrink-0 md:block">
-            <span className="sr-only">{compactFilterCopy[locale].period}</span>
-            <select aria-label={compactFilterCopy[locale].period} value={discoveryPeriod}
-              onChange={event => {
-                const period = event.target.value as PopularDiscoveryPeriod;
-                applyFilter(() => setDiscoveryPeriod(period));
-              }}
-              className="h-11 rounded-xl border border-white/20 bg-[#15191a] px-3 text-sm font-semibold text-neutral-200 outline-none focus-visible:border-[#ff715e] focus-visible:ring-2 focus-visible:ring-[#ff715e]/30">
-              {discoveryPeriodOptions.map(option => <option key={option.value} value={option.value}>{option.labels[locale]}</option>)}
-            </select>
-          </label>
+          <div className="hidden shrink-0 md:block">
+            <span id="popular-period-label" className="sr-only">{compactFilterCopy[locale].period}</span>
+            <ContentLanguageSelect
+              id="popular-period" labelledBy="popular-period-label" value={discoveryPeriod}
+              options={discoveryPeriodOptions.map(option => ({ value: option.value, label: option.labels[locale] }))}
+              onChange={period => applyFilter(() => setDiscoveryPeriod(period))}
+              className="min-w-32"
+            />
+          </div>
           </div>
           <div className="flex min-w-0 items-center justify-between gap-3 md:hidden">
             <button type="button" role="switch" aria-label={uiCopy.reusableOnlyAria} aria-checked={reusableOnly}
