@@ -11,6 +11,7 @@ import {
 } from "@/lib/youtube-discovery-collector";
 import { purgeExpiredCatalog } from "@/lib/youtube-catalog";
 import { discoverySlot } from "@/lib/youtube-discovery-time";
+import { refreshProjectMetadata } from "@/lib/youtube-project-retention";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -42,11 +43,18 @@ export async function GET(request: Request) {
     );
   try {
     if (lane === "refresh") {
+      // Authenticated, bounded rollout refresh uses deployed credentials. The
+      // scheduled URL never defers expiry; no operator receives API secrets.
+      if (new URL(request.url).searchParams.get("maintenance") === "projects") {
+        const result = await refreshProjectMetadata({ deferExpiry: true });
+        return NextResponse.json(result, { status: result.failed ? 503 : 200 });
+      }
+      const projects = await refreshProjectMetadata();
       const result = await refreshCatalogBatch();
       await purgeExpiredCatalog();
       await cleanupImportedSnapshots();
-      return NextResponse.json(result, {
-        status: "failed" in result && result.failed ? 503 : 200,
+      return NextResponse.json({ ...result, projects }, {
+        status: projects.failed || ("failed" in result && result.failed) ? 503 : 200,
       });
     }
     if (!(await expandedDiscoveryEnabled()))

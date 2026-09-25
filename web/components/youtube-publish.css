@@ -41,3 +41,8 @@
 .publish-status-actions{display:flex;flex-direction:column;gap:10px;margin-top:24px}.publish-status-actions .publish-primary,.publish-status-actions .publish-outline{width:100%;box-sizing:border-box;padding:12px;font-size:13px!important}
 @media(max-width:520px){.publish-status-dialog{padding:24px 20px}.publish-status-dialog h2{font-size:21px}.publish-status-symbol{margin-top:22px}}
 @media(prefers-reduced-motion:reduce){.publish-status-spinner{animation-duration:2.5s}}
+
+/* Official asset includes its required clear space; visible mark is 25.85px high. */
+.publish-platform-icon.publish-youtube-icon{width:56.04px;height:48px;min-width:56.04px;flex-shrink:0}
+.publish-youtube-icon img{display:block;width:56.04px;height:48px;max-width:none;object-fit:contain}
+.publish-connect-symbol:has(.publish-youtube-icon){background:transparent;border:0}

@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import Image from "next/image";
 export const platforms = [
  {name:"YouTube",color:"#f04444",mark:"▶",note:""},
  {name:"Instagram",color:"#d163a5",mark:"◎",note:"비즈니스 또는 크리에이터 계정"},
@@ -8,8 +9,8 @@ export const platforms = [
 ];
 export function PlatformIcon({name="YouTube"}:{name?:string}) {
  const p=platforms.find(x=>x.name===name)||platforms[0];
- const icon=name==="YouTube"?<svg viewBox="0 0 24 24" fill="currentColor"><rect y="3" width="24" height="18" rx="5"/><path d="m10 8 6 4-6 4Z" fill="#0b0f15"/></svg>
-  :name==="Instagram"?<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg>
+ if(name==="YouTube") return <span aria-hidden="true" className="publish-platform-icon publish-youtube-icon"><Image src="/brands/youtube/yt_icon_red_digital.png" alt="" width={1255} height={1075} unoptimized /></span>;
+ const icon=name==="Instagram"?<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg>
   :name==="TikTok"?<svg viewBox="0 0 24 24" fill="currentColor"><path d="M14 2h3a5 5 0 0 0 5 5v3a8 8 0 0 1-5-1.7V16a6 6 0 1 1-6-6v3a3 3 0 1 0 3 3Z"/></svg>
   :name==="Facebook"?<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/><path d="M13.5 22v-8h3l.5-3h-3.5V9c0-1 .5-1.5 1.5-1.5H17V4.7a15 15 0 0 0-2.5-.2c-2.8 0-4.5 1.7-4.5 4.6V11H7v3h3v8Z" fill="#0b0f15"/></svg>:p.mark;
  return <span aria-hidden="true" className="publish-platform-icon" style={{"--platform-color":p.color} as CSSProperties}>{icon}</span>;

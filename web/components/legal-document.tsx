@@ -31,7 +31,7 @@ function localizedEffectiveDate(value: string, locale: "ko" | "en" | "ja") {
     .format(new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))));
 }
 
-export function LegalDocument({ eyebrow, title, description, effectiveDate, children, translations, sectionIds, supplement, showTranslationNotice = true, preventTextSelection = true }: {
+export function LegalDocument({ eyebrow, title, description, effectiveDate, children, translations, sectionIds, introduction, supplement, showTranslationNotice = true, preventTextSelection = true }: {
   eyebrow: string;
   title: string;
   description: string;
@@ -39,6 +39,7 @@ export function LegalDocument({ eyebrow, title, description, effectiveDate, chil
   children: ReactNode;
   translations?: Partial<Record<SiteLocale, LegalTranslation>>;
   sectionIds?: Partial<Record<number, string>>;
+  introduction?: ReactNode;
   supplement?: ReactNode;
   showTranslationNotice?: boolean;
   preventTextSelection?: boolean;
@@ -72,6 +73,7 @@ export function LegalDocument({ eyebrow, title, description, effectiveDate, chil
           )}
         </div>
         <article className="legal-document mt-10 space-y-10">
+          {introduction}
           {translated
             ? translated.sections.map((section, index) => (
                 <LegalSection key={section.title} id={sectionIds?.[index]} title={section.title}>

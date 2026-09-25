@@ -5,7 +5,7 @@ const policy = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
 
 describe("current privacy policy payment processors", () => {
   it("keeps ThePayOne and adds the Toss billing data flow", () => {
-    expect(policy).toContain("2026년 9월 20일");
+    expect(policy).toContain("2026년 9월 26일");
     expect(policy).toContain("더페이원 카드 ID 또는 토스 빌링키");
     expect(policy).toContain("<tr><td>더페이원</td>");
     expect(policy).toContain("<tr><td>토스페이먼츠 주식회사</td>");
