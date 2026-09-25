@@ -985,7 +985,7 @@ export function PopularVideosExplorer({
           <div className="flex min-w-0 items-center justify-between gap-3 md:justify-end md:gap-5">
             <button type="button" role="switch" aria-label={uiCopy.reusableOnlyAria} aria-checked={reusableOnly}
               aria-haspopup={canUseFilters ? undefined : "dialog"} onClick={toggleReusable}
-              className="flex min-h-11 items-center gap-2 text-sm font-semibold text-neutral-300 hover:text-white">
+              className="flex min-h-11 items-center gap-2 text-sm font-semibold text-neutral-300 hover:text-white md:hidden">
               <FilterSwitch checked={reusableOnly} />{uiCopy.reusableOnly}
             </button>
             <button type="button" aria-haspopup="dialog" aria-expanded={filtersOpen} onClick={openFilters}
@@ -995,6 +995,29 @@ export function PopularVideosExplorer({
             </button>
           </div>
         </div>
+        <fieldset className="mt-3 hidden md:block">
+          <legend className="sr-only">{compactFilterCopy[locale].title}</legend>
+          <div className="grid grid-cols-4 gap-2">
+            {[
+              { label: uiCopy.reusableOnly, checked: reusableOnly, toggle: toggleReusable },
+              { label: uiCopy.koreanOnly, checked: koreanOnly, toggle: () => applyFilter(() => {
+                setKoreanOnly(current => !current);
+                setJapaneseOnly(false);
+              }) },
+              { label: uiCopy.japaneseOnly, checked: japaneseOnly, toggle: () => applyFilter(() => {
+                setJapaneseOnly(current => !current);
+                setKoreanOnly(false);
+              }) },
+              { label: uiCopy.longFormOnly, checked: longFormOnly, toggle: () => applyFilter(() => setLongFormOnly(current => !current)) },
+            ].map(({ label, checked, toggle }) => (
+              <button key={label} type="button" role="switch" aria-checked={checked}
+                aria-haspopup={canUseFilters ? undefined : "dialog"} onClick={toggle}
+                className={`flex min-h-11 min-w-0 items-center justify-center gap-2 whitespace-nowrap rounded-full border px-3 py-2.5 text-sm font-bold transition ${checked ? "border-[#ff715e]/60 bg-[#ff715e]/15 text-[#ffb4a8]" : "border-white/15 bg-white/[.025] text-neutral-300 hover:border-white/30 hover:text-white"}`}>
+                <FilterSwitch checked={checked} />{label}
+              </button>
+            ))}
+          </div>
+        </fieldset>
         {activeFilterCount > 0 && <div className="mt-2 flex flex-wrap gap-2">
           {[
             ...(category !== "all" ? [{ key: "category", label: filterCopy.categories[category], clear: () => setCategory("all") }] : []),
