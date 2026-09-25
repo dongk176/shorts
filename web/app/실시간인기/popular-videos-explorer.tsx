@@ -969,14 +969,14 @@ export function PopularVideosExplorer({
       </form>}
 
       <div role="region" aria-label={ui("인기 영상 필터")}>
-        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between md:gap-4">
+        <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center md:justify-between md:gap-x-4">
           {searching ? <h2 className="flex min-h-12 items-center text-lg font-bold text-white">{searchUi.results}</h2> : (
-            <fieldset className="min-w-0 border-b border-white/10 md:border-0">
+            <fieldset className="min-w-0 shrink-0 border-b border-white/10 md:border-0">
               <legend className="sr-only">{filterCopy.ranking}</legend>
               <div className="flex gap-5">
                 {dataTypeOptions.map(option => <button key={option.value} type="button" aria-pressed={dataType === option.value}
                   aria-haspopup={canUseFilters ? undefined : "dialog"} onClick={() => applyRanking(option.value)}
-                  className={`min-h-12 border-b-2 px-0.5 text-sm font-bold transition sm:text-base ${dataType === option.value ? "border-[#ff715e] text-[#ff8a78]" : "border-transparent text-neutral-400 hover:text-white"}`}>
+                  className={`min-h-12 whitespace-nowrap border-b-2 px-0.5 text-sm font-bold transition sm:text-base ${dataType === option.value ? "border-[#ff715e] text-[#ff8a78]" : "border-transparent text-neutral-400 hover:text-white"}`}>
                   {option.value === "trending" ? filterCopy.trending : filterCopy.views}
                 </button>)}
               </div>
