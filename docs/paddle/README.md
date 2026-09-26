@@ -1,6 +1,15 @@
 # Paddle 해외 월 구독
 
-## 작업 상태 (2026-09-26)
+## 최신 운영 상태 (2026-09-26 15:50 KST)
+
+- **운영 반영 완료:** [production-release-20260926.md](production-release-20260926.md). 승인된 운영 DB migration, 11개 운영 환경변수, 실제 웹훅과 결제 링크 설정을 완료하고 검증한 동일 후보를 운영으로 승격했다.
+- 운영 배포 `dpl_Ctns7j7f2gjt4bwkkfwj5sBrQ3Wc`, 소스 `0c15742ef14e70544e0b82234b386088f17799a0`. `/en/pricing`, `/jp/pricing`의 승인 가격과 운영 웹훅 서명 검사를 통과했다.
+- **실제 돈이 오가는 결제·환불은 사용자가 직접 확인한다. 아직 실행/검증하지 않았다.** 기존 국내 유료 이용자는 중복 가입 방지를 위해 국내 상품이 유지되므로, 해외 결제 점검에는 국내 활성 상품이 없는 계정을 사용한다.
+- API 키 만료일 2026-12-25. 결제 비밀값은 운영 서버 환경변수로만 사용한다.
+
+## 과거 준비 기록 (아래 미배포·미설정 표기는 해당 시점의 상태)
+
+### 초기 작업 상태 (2026-09-26)
 
 - **후속 실제 앱 검증 완료 범위:** [fullapp-verification-20260926.md](fullapp-verification-20260926.md). 실제 로컬 로그인 → 영어/일본어 Paddle 카드 결제 → 실제 서명 웹훅 → 각 60분 지급, 알림 재전송 중복 방지, 고객 포털 해지 예약을 확인했다. 아래의 독립 검사 화면 기록과 구분한다. 결제 직후 잔여시간을 즉시 갱신하도록 보완했다. 운영 배포는 하지 않았다.
 
@@ -56,7 +65,7 @@
 2. 샌드박스는 별도 Paddle 계정/상품/가격/키를 사용한다. 별도 로컬 PostgreSQL 및 필요한 앱 schema/auth 구성에서 검증한다. 이 코드의 sandbox 환경은 원격 DB 및 Vercel production에 연결할 수 없다. lab의 `shorts_lab`용 코드가 아니므로 기존 lab DB에 그대로 적용하면 안 된다.
 3. 실제 운영 계정/DB/schema/배포 기준을 다시 확인하고, `202609260010_paddle_billing.sql`만 검토·적용한다. 결제 기능을 먼저 켜지 않는다. 기존 데이터/스키마 전체 복사 금지.
 4. 서버 환경변수 준비: `PADDLE_ENVIRONMENT=live`, `PADDLE_ENABLED=false`, `PADDLE_API_KEY`, `PADDLE_CLIENT_TOKEN`, `PADDLE_WEBHOOK_SECRET`, 6개 가격 식별자. 예시의 공개 가격은 live 전용이다. secret은 Git/로그/문서/채팅에 쓰지 않는다.
-5. Paddle 기본 payment link를 배포된 `https://www.easycut.co.kr/en/billing/paddle`로 설정한다. `/jp/billing/paddle`도 같은 화면이다. `_ptxn`의 소유권은 로그인한 고객과 서버 매핑으로 확인한다.
+5. Paddle 기본 payment link를 배포된 `https://www.easycut.co.kr/billing/paddle`로 설정한다. `/jp/billing/paddle`도 같은 화면이다. `_ptxn`의 소유권은 로그인한 고객과 서버 매핑으로 확인한다.
 6. Notifications URL: `https://www.easycut.co.kr/api/paddle/webhook`, 실제 이벤트 delivery. 구독 이벤트, transaction.completed/canceled, adjustment.created/updated를 선택한다. 새 webhook 수신 설정도 보안/개인정보 전달 범위에 맞는 확인 후 적용한다. simulator 이벤트로 운영 사용자 시간을 지급하지 않는다.
 7. 현재 운영 기준과 후보 route manifest, 보호 경로, 기존 실험 제외 기준을 확인한다. clean commit의 unaliased 후보를 먼저 검사한 뒤 정확히 그 배포를 승격한다. 가격/수량/세금(사업자 VAT ID 면세 포함)/언어/환불/해지/중복 알림을 샌드박스에서 검증한 후 결제 기능을 켠다.
 8. 실제 결제·환불 점검은 비용 한계와 실제 결제수단 소유자의 참여를 확인한 후 별도로 시행한다. 환불을 해도 수수료가 모두 복구된다고 가정하지 않는다.
