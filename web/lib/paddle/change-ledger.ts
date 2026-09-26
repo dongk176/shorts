@@ -60,6 +60,13 @@ export async function paidPlanCode(tx:Db,t:PaddleTransaction,mapped:{paddleId:st
  const [pending]=await tx`select * from shorts_mvp.paddle_plan_changes where paddle_subscription_id=${mapped.paddleId}
    and timing='renewal' and status in ('processing','unknown','scheduled') order by created_at desc limit 1 for update`;
  if(pending && +new Date(t.billing_period?.starts_at||'')>=+new Date(pending.effectiveAt)) {
+   // A cancellation may have reached Paddle before a process crash. Honor only the
+   // canonical paid item; the caller still validates totals, dates and ownership.
+   if(pending.cancelRequestedAt && t.items.length===1 && t.currency_code===pending.currency &&
+      t.items[0].price.id===paddlePriceId(pending.fromCode,pending.currency)) {
+     await tx`update shorts_mvp.paddle_plan_changes set status='superseded',canceled_at=now(),updated_at=now() where id=${pending.id}`;
+     return {code:pending.fromCode,changeId:null};
+   }
    if(t.items.length!==1 || t.items[0].price.id!==paddlePriceId(pending.toCode,pending.currency) || t.currency_code!==pending.currency)
      throw Error('Scheduled renewal mismatch');
    return {code:pending.toCode,changeId:pending.id};

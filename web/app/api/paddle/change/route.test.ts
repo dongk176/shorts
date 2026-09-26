@@ -1,8 +1,8 @@
 import {beforeEach,it,expect,vi} from 'vitest';
 vi.mock('@/lib/session',()=>({requireAuthenticatedMvpSession:vi.fn()}));
-vi.mock('@/lib/paddle/changes',()=>({quotePaddleChange:vi.fn(),confirmPaddleChange:vi.fn()}));
+vi.mock('@/lib/paddle/changes',()=>({quotePaddleChange:vi.fn(),confirmPaddleChange:vi.fn(),cancelPaddleChange:vi.fn()}));
 import {requireAuthenticatedMvpSession} from '@/lib/session';
-import {quotePaddleChange,confirmPaddleChange} from '@/lib/paddle/changes';
+import {quotePaddleChange,confirmPaddleChange,cancelPaddleChange} from '@/lib/paddle/changes';
 import {HttpError} from '@/lib/http';
 import {POST} from './route';
 const request=(body:unknown,origin='https://www.easycut.co.kr')=>new Request('https://www.easycut.co.kr/api/paddle/change',{method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify(body)});
@@ -22,4 +22,13 @@ it('takes ownership from the session and rejects price or owner tampering',async
  const response=await POST(request({action:'confirm',quoteId:id}));
  expect(response.status).toBe(200);expect(response.headers.get('cache-control')).toContain('no-store');
  expect(confirmPaddleChange).toHaveBeenCalledWith('owner',id);
+});
+
+it('authenticates cancellation ownership and rejects extra fields',async()=>{
+ const id='00000000-0000-4000-8000-000000000003';
+ expect((await POST(request({action:'cancel',changeId:id},'https://evil.test'))).status).toBe(403);
+ expect((await POST(request({action:'cancel',changeId:id,userId:'other'}))).status).toBe(400);
+ expect(cancelPaddleChange).not.toHaveBeenCalled();
+ expect((await POST(request({action:'cancel',changeId:id}))).status).toBe(200);
+ expect(cancelPaddleChange).toHaveBeenCalledWith('owner',id);
 });

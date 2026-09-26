@@ -3,7 +3,7 @@ import Script from "next/script";
 import { formatChangeAmount } from "@/lib/paddle/change-policy";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { paddlePlans, paddleDisplayPlans, paddlePackageTerms, formatPaddlePrice } from "@/lib/paddle/catalog";
+import { paddlePlans, paddleDisplayPlans, paddlePackageTerms, formatPaddlePrice, paddleInitialTerm, paddleDiscount } from "@/lib/paddle/catalog";
 import { localizedHref } from "@/lib/i18n/routing";
 import { useUsageState } from "@/components/usage-provider";
 import styles from "@/app/pricing/pricing.module.css";
@@ -15,7 +15,7 @@ type Subscription = {
   currentPeriodEnd: string;
   cancelAtPeriodEnd: boolean;
   currency?: "USD"|"JPY"|null;
-  pendingChange?: {planCode:string;timing:string;status:string;effectiveAt:string}|null;
+  pendingChange?: {id:string;planCode:string;timing:string;status:string;effectiveAt:string}|null;
 };
 type PaddleJs = {
   Environment: { set: (env: "sandbox") => void };
@@ -41,6 +41,7 @@ declare global {
     Paddle?: PaddleJs;
   }
 }
+type Change = {id:string;planCode:string;timing:string;amountMinor:number;currency:'USD'|'JPY';effectiveAt:string;status:string};
 const copy = {
   en: {
     title: "Choose the plan that fits your needs",
@@ -48,7 +49,21 @@ const copy = {
     tax: "Tax included · Billed monthly",
     recommend: "Best value",
     maximumSaving: "Biggest savings",
-    equivalent: "/ month, equivalent",
+    equivalent: "/ month",
+    monthlyEquivalent: "Monthly equivalent",
+    discount: (n:number) => `${n}% off vs. the 3-month plan`,
+    currencyNote: (c:string) => `Your subscription is billed in ${c}. Changing the site language does not change its currency.`,
+    working: "Processing…",
+    checking: "Checking…",
+    cancelChange: "Cancel scheduled change",
+    cancelQuestion: "Cancel your scheduled plan change?",
+    cancelDetail: "You’ll keep your current plan and renewal date. No payment or refund today.",
+    changeCanceled: "Scheduled change canceled. You can now choose another plan.",
+    scheduledPlan: "Scheduled plan",
+    keep: "Go back",
+    proceed: "Confirm change",
+    clips: (n:number) => `About ${n} short clips / month*`,
+    clipsNote: "*Estimate based on source content and clip settings. Actual output varies.",
     nextPayment: "Next payment",
     includedTax: "Tax included",
     term: "Package duration",
@@ -73,6 +88,7 @@ const copy = {
     minutes: (n: number) => `${n} source-video minutes each month`,
     jobs: (n: number) => `${n} concurrent ${n === 1 ? "job" : "jobs"}`,
     retention: "Projects stored for 30 days",
+    popular: "Trending-video search filters",
     terms:
       "EasyCut Pro renews monthly. Packages are paid upfront and renew every 3, 6 or 12 months, as selected. Editing minutes reset each month and do not roll over. Manage payment methods or cancel before renewal in Settings → Billing management.",
     confirm: "Payment received. Confirming your editing time…",
@@ -106,6 +122,20 @@ const copy = {
     recommend: "おすすめ・高コスパ",
     maximumSaving: "最大割引",
     equivalent: "/ 月換算",
+    monthlyEquivalent: "月額換算",
+    discount: (n:number) => `3か月プラン比 ${n}%OFF`,
+    currencyNote: (c:string) => `ご契約の決済通貨は${c}です。サイトの言語を変更しても通貨は変わりません。`,
+    working: "処理中…",
+    checking: "確認中…",
+    cancelChange: "変更予約を取り消す",
+    cancelQuestion: "プランの変更予約を取り消しますか？",
+    cancelDetail: "現在のプランと次回のお支払い日は変わりません。本日の請求・返金はありません。",
+    changeCanceled: "変更予約を取り消しました。別のプランをお選びいただけます。",
+    scheduledPlan: "変更予定のプラン",
+    keep: "戻る",
+    proceed: "変更を確定",
+    clips: (n:number) => `月約${n}本のショート動画を作成*`,
+    clipsNote: "*元動画やクリップの設定による目安です。実際の作成本数は異なります。",
     nextPayment: "次回のお支払い日",
     includedTax: "税込",
     term: "パッケージの契約期間",
@@ -130,6 +160,7 @@ const copy = {
     minutes: (n: number) => `毎月${n}分の元動画を処理`,
     jobs: (n: number) => `同時に${n}件まで処理`,
     retention: "プロジェクトを30日間保存",
+    popular: "人気動画の検索フィルター",
     terms:
       "EasyCut Proは毎月、パッケージは選択した3・6・12か月ごとの一括払いで自動更新されます。処理時間は毎月リセットされ、翌月に繰り越されません。お支払い方法の変更・解約は、設定の「お支払い・契約管理」から行えます。",
     confirm: "お支払いを確認し、処理時間を反映しています…",
@@ -178,10 +209,17 @@ export function PaddlePricing({
   const { refreshUsage } = useUsageState();
   const t = copy[language];
   const currency = initial?.currency || (language === "ja" ? "JPY" : "USD");
-  const [months, setMonths] = useState<(typeof paddlePackageTerms)[number]>(6);
+  const [months, setMonths] = useState<(typeof paddlePackageTerms)[number]>(() => paddleInitialTerm(initial?.providerStatus !== "canceled" ? initial?.planCode : undefined));
   const displayedPlans = paddleDisplayPlans(months);
   const [scriptReady, setScriptReady] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [actionPlan, setActionPlan] = useState<string | null>(null);
+  const [confirmation, setConfirmation] = useState<{quote:Change} | {cancelId:string} | null>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    if (confirmation) dialogRef.current?.showModal();
+    else dialogRef.current?.close();
+  }, [confirmation]);
   const [message, setMessage] = useState("");
   const [pending, setPending] = useState(false);
   const [subscription, setSubscription] = useState(initial);
@@ -229,6 +267,7 @@ export function PaddlePricing({
       return;
     }
     setBusy(true);
+    setActionPlan(planCode ?? null);
     setMessage("");
     try {
       if (!window.Paddle) throw Error("sdk");
@@ -283,6 +322,7 @@ export function PaddlePricing({
       setMessage(t.error);
     } finally {
       setBusy(false);
+      setActionPlan(null);
     }
   }
   useEffect(() => {
@@ -298,26 +338,35 @@ export function PaddlePricing({
     return `${label} · ${p.billingMonths===1?(language==='ja'?'月額':'Monthly'):t.duration(p.billingMonths)}`;
   }
   const displayDate=(value:string)=>new Date(value).toLocaleDateString(language==='ja'?'ja-JP':'en-US');
+  async function requestChange(body:unknown) {
+    const response=await fetch('/api/paddle/change',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const data=await response.json();
+    if(!response.ok) throw new Error(data.code);
+    return data.change as Change;
+  }
+  async function refreshSubscription() {
+    const response=await fetch('/api/paddle/state',{cache:'no-store'});
+    if(response.ok) {const body=await response.json();setSubscription(body.subscription);await refreshUsage();}
+  }
+  function changeError(error:unknown) {
+    setMessage(error instanceof Error && ['CHANGE_UNCONFIRMED','CHANGE_PENDING'].includes(error.message)?t.changing:t.changeError);
+  }
   async function changePlan(planCode:string) {
     if(busy) return;
-    setBusy(true); setMessage('');
+    setBusy(true); setActionPlan(planCode); setMessage('');
+    try {setConfirmation({quote:await requestChange({action:'preview',planCode})});}
+    catch(error) {changeError(error);}
+    finally {setBusy(false);setActionPlan(null);}
+  }
+  async function confirmChange() {
+    if(!confirmation || busy) return;
+    setBusy(true);setMessage('');
     try {
-      const request=async(body:unknown)=>{
-        const r=await fetch('/api/paddle/change',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-        const data=await r.json();
-        if(!r.ok) throw new Error(data.code);
-        return data.change as {id:string;planCode:string;timing:string;amountMinor:number;currency:'USD'|'JPY';effectiveAt:string;status:string};
-      };
-      const quote=await request({action:'preview',planCode});
-      const detail=quote.timing==='immediate'?t.nowCharge(formatChangeAmount(quote.amountMinor,quote.currency,language)):t.renewalChange(displayDate(quote.effectiveAt));
-      if(!window.confirm(`${t.changeQuestion(planName(planCode))}\n\n${detail}`)) return;
-      const result=await request({action:'confirm',quoteId:quote.id});
-      setMessage(result.status==='applied'||result.status==='scheduled'?t.changed:t.changing);
-      const r=await fetch('/api/paddle/state',{cache:'no-store'});
-      if(r.ok) {const body=await r.json();setSubscription(body.subscription);await refreshUsage();}
-    } catch(error) {
-      setMessage(error instanceof Error && ['CHANGE_UNCONFIRMED','CHANGE_PENDING'].includes(error.message)?t.changing:t.changeError);
-    } finally {setBusy(false);}
+      const cancel='cancelId' in confirmation;
+      const result=await requestChange(cancel?{action:'cancel',changeId:confirmation.cancelId}:{action:'confirm',quoteId:confirmation.quote.id});
+      setMessage(cancel?(result.status==='superseded'?t.changeCanceled:t.changing):(['applied','scheduled'].includes(result.status)?t.changed:t.changing));
+    } catch(error) {changeError(error);}
+    finally {await refreshSubscription().catch(()=>{});setBusy(false);setConfirmation(null);}
   }
   async function portal() {
     setBusy(true);
@@ -364,6 +413,19 @@ export function PaddlePricing({
       <section className={`hero pricing-hero ${styles.hero}`}>
         <h1><span>{managementOnly ? t.manage : t.title}</span></h1>
       </section>
+      <dialog ref={dialogRef} className={styles.paddleDialog} aria-labelledby="paddle-confirm-title"
+        onCancel={(event) => {if(busy) event.preventDefault();else setConfirmation(null);}}>
+        {confirmation && <>
+          <h2 id="paddle-confirm-title">{'cancelId' in confirmation ? t.cancelQuestion : t.changeQuestion(planName(confirmation.quote.planCode))}</h2>
+          <p>{'cancelId' in confirmation ? t.cancelDetail : confirmation.quote.timing === 'immediate'
+            ? t.nowCharge(formatChangeAmount(confirmation.quote.amountMinor,confirmation.quote.currency,language))
+            : t.renewalChange(displayDate(confirmation.quote.effectiveAt))}</p>
+          <div className={styles.paddleDialogActions}>
+            <button type="button" disabled={busy} onClick={()=>setConfirmation(null)}>{t.keep}</button>
+            <button type="button" disabled={busy} onClick={()=>void confirmChange()}>{busy?t.working:'cancelId' in confirmation?t.cancelChange:t.proceed}</button>
+          </div>
+        </>}
+      </dialog>
       {subscription && (
         <div className={managementOnly ? styles.paddleManagement : styles.paddleSubscription}>
           <h2>
@@ -375,6 +437,7 @@ export function PaddlePricing({
               language === "ja" ? "ja-JP" : "en-US",
             )}
           </p>
+          {subscription.currency && subscription.currency !== (language==='ja'?'JPY':'USD') && <p className={styles.paddleCurrencyNote}>{t.currencyNote(subscription.currency)}</p>}
           {subscription.cancelAtPeriodEnd && (
             <p className="mt-2">{t.scheduled}</p>
           )}
@@ -385,19 +448,22 @@ export function PaddlePricing({
             <p className="mt-2">{t.canceled}</p>
           )}
           {subscription.pendingChange && <p className="mt-3 text-sm text-neutral-300">{subscription.pendingChange.timing==='renewal' && subscription.pendingChange.status==='scheduled'?t.pendingChange(planName(subscription.pendingChange.planCode),displayDate(subscription.pendingChange.effectiveAt)):t.changing}</p>}
+          {subscription.pendingChange?.timing==='renewal' && subscription.pendingChange.status==='scheduled' && (
+            <button className={styles.paddleCancelChange} disabled={busy} onClick={()=>setConfirmation({cancelId:subscription.pendingChange!.id})}>{t.cancelChange}</button>
+          )}
           {managementOnly && <button
             disabled={busy}
             onClick={() => void portal()}
             className="mt-5 rounded-xl bg-white px-5 py-3 font-semibold text-black disabled:opacity-50"
           >
-            {t.manage}
+            {busy?t.working:t.manage}
           </button>}
           {managementOnly && <Link className="ml-5 underline" href={localizedHref("/pricing",locale)}>{t.compare}</Link>}
         </div>
       )}
       {!managementOnly && (
         <>
-          <div className={`${styles.planToolbar} ${styles.localPlanToolbar}`}>
+          <div className={`${styles.planToolbar} ${styles.localPlanToolbar} ${styles.paddleToolbar}`}>
             <span>{t.term}</span>
             <div className={`${styles.packageTermPicker} ${styles.localTermPicker}`} role="group" aria-label={t.term}>
               {paddlePackageTerms.map((term) => (
@@ -408,7 +474,9 @@ export function PaddlePricing({
             </div>
           </div>
           <section id="pricing-plans" className={`pricing-grid ${styles.localPlanGrid} ${styles.paddlePlanGrid}`} aria-label={t.title}>
-            {displayedPlans.map((p, i) => (
+            {displayedPlans.map((p, i) => {
+              const discount=paddleDiscount(p.code,currency);
+              return (
               <article key={p.code}
                 className={`pricing-card ${i === 1 ? "pricing-card-popular" : i === 2 ? "pricing-card-pro" : ""} ${styles.planCard} ${styles.localPlanCard} ${styles.paddlePlanCard} ${i === 1 ? styles.mobilePlanStarter : i === 2 ? styles.mobilePlanExpert : styles.mobilePlanPro}`}>
                 {i === 1 && (months === 6 || months === 12) && (
@@ -416,30 +484,35 @@ export function PaddlePricing({
                 )}
                 <div className="pricing-plan-name"><h2>{t.names[i]}</h2></div>
                 <p className={styles.localPlanDescription}>{t.descriptions[i]}</p>
+                <div className={styles.paddleDiscount}>
+                  {discount && <><span>{t.discount(discount.percent)}</span><del>{formatPaddlePrice(discount.baseline,currency,true)} {t.month}</del></>}
+                </div>
                 <div className={`pricing-price ${styles.localPlanPrice}`}>
                   <strong>{formatPaddlePrice(p.code, currency, true)}</strong><span>{p.billingMonths === 1 ? t.month : t.equivalent}</span>
                 </div>
                 <div className={styles.paddleBilling}>
+                  {p.billingMonths !== 1 && language==='en' && <span>{t.monthlyEquivalent}</span>}
                   <p>{p.billingMonths === 1 ? t.tax : t.billed(p.billingMonths, formatPaddlePrice(p.code, currency))}</p>
                   {p.billingMonths !== 1 && <span>{t.includedTax}</span>}
                 </div>
                 <ul>
-                  {[t.minutes(p.minutes), t.jobs(p.jobs), t.retention].map((feature) => (
+                  {[t.minutes(p.minutes), t.clips(Math.floor(p.minutes * .8)), t.jobs(p.jobs), t.retention, t.popular].map((feature) => (
                     <li key={feature}><span>✓</span><span>{feature}</span></li>
                   ))}
                 </ul>
                 <button type="button" onClick={() => void (current ? changePlan(p.code) : checkout(p.code))}
                   disabled={busy || !checkoutEnabled || (!current && !scriptReady) || !!(current && (subscription.planCode===p.code || subscription.pendingChange || subscription.cancelAtPeriodEnd || subscription.providerStatus!=="active"))}
                   className={`pricing-cta ${i === 1 ? "pricing-cta-primary" : ""} ${styles.planCta} ${styles.paddleCta}`}>
-                  {current ? subscription.planCode===p.code?t.current:t.change : t.start}
+                  {busy && actionPlan===p.code ? t.checking : current ? subscription.planCode===p.code?t.current:subscription.pendingChange?.planCode===p.code?t.scheduledPlan:t.change : t.start}
                 </button>
               </article>
-            ))}
+            );})}
           </section>
+          <p className={styles.paddleEstimate}>{t.clipsNote}</p>
         </>
       )}
-      <div role="status" aria-live="polite" className={message || paid ? "mt-6 text-center" : undefined}>
-        <p>{message}</p>
+      <div role="status" aria-live="polite" className={message || paid || busy ? "mt-6 text-center" : undefined}>
+        <p>{busy && !confirmation ? t.working : message}</p>
         {paid && (
           <Link
             className="mt-3 inline-block underline"

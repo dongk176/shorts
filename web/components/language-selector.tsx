@@ -13,7 +13,7 @@ const languageLabels: Record<SiteLocale, string> = {
   ja: "日本語",
 };
 
-export function LanguageSelector() {
+export function LanguageSelector({ placement = "floating" }: { placement?: "floating" | "menu" }) {
   const router = useRouter();
   const pathname = localePath(usePathname()).pathname;
   const { locale, t } = useI18n();
@@ -80,7 +80,7 @@ export function LanguageSelector() {
   return (
     <div
       ref={rootRef}
-      className="language-selector-floating"
+      className={placement === "menu" ? "language-selector-in-menu" : "language-selector-floating"}
       data-i18n-skip
       onBlur={() => {
         window.requestAnimationFrame(() => {

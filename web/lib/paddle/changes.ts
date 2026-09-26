@@ -1,3 +1,4 @@
+import type { TransactionSql } from 'postgres';
 import { getDb } from '@/lib/db';
 import { HttpError } from '@/lib/http';
 import { paddleRequest } from './api';
@@ -11,6 +12,7 @@ type ChangeRow = {
  currency: PaddleCurrency; timing: 'immediate'|'renewal'; status: string;
  sourceUpdatedAt: Date; periodStart: Date; periodEnd: Date; effectiveAt: Date;
  amountMinor: number; expiresAt: Date; transactionId: string|null;
+ cancelRequestedAt: Date|null; canceledAt: Date|null;
 };
 type Preview = Pick<PaddleSubscription,'items'|'next_billed_at'> & {
  currency_code: string; immediate_transaction: PaddleTransaction|null;
@@ -18,7 +20,7 @@ type Preview = Pick<PaddleSubscription,'items'|'next_billed_at'> & {
 };
 const conflict = () => new HttpError(409,'Subscription changed. Refresh and try again.','CHANGE_CONFLICT');
 export function publicChange(row: ChangeRow) {
- return {id:row.id,planCode:row.toCode,timing:row.timing,status:row.status,currency:row.currency,
+ return {id:row.id,planCode:row.toCode,timing:row.timing,status:row.cancelRequestedAt && !row.canceledAt && row.status==='unknown'?'canceling':row.status,currency:row.currency,
    amountMinor:Number(row.amountMinor),effectiveAt:new Date(row.effectiveAt).toISOString()};
 }
 function sameInstant(a: string|Date|null, b: string|Date) {return a !== null && +new Date(a) === +new Date(b);}
@@ -139,6 +141,7 @@ export async function reconcileRenewalChange(id:string,db=getDb()) {
     return stopped;
   }
   if(sub.status!=='active' || sub.scheduled_change || +new Date(row.periodEnd)-Date.now()<35*60000) throw Error('Change requires review');
+  if(row.cancelRequestedAt) return reconcileCancellation(tx,row,sub);
   const oldPrice=paddlePriceId(row.fromCode,row.currency),price=paddlePriceId(row.toCode,row.currency);
   if(sub.items[0].price.id===oldPrice) {
     if(!sameInstant(sub.updated_at,row.sourceUpdatedAt) || !sameInstant(sub.next_billed_at,row.periodEnd)) throw Error('Stale renewal change');
@@ -167,4 +170,50 @@ export async function reconcilePendingPaddleChanges(db=getDb()) {
  let failures=0;
  for(const row of rows) {try {await reconcileRenewalChange(row.id,db);}catch {failures++;}}
  return {checked:rows.length,failures};
+}
+
+/** Claim cancellation durably before touching Paddle. Retries recover only do_not_bill writes. */
+export async function cancelPaddleChange(userId:string,id:string,db=getDb()) {
+ assertPaddleEnabled();
+ const row=await db.begin(async tx=>{
+  await tx`select pg_advisory_xact_lock(hashtextextended(${userId},0))`;
+  const [c]=await tx<ChangeRow[]>`select c.* from shorts_mvp.paddle_plan_changes c
+   join shorts_mvp.paddle_subscriptions ps on ps.paddle_id=c.paddle_subscription_id
+   join shorts_mvp.app_users u on u.id=c.user_id
+   where c.id=${id} and c.user_id=${userId} and ps.environment=${paddleEnvironment()} and u.withdrawn_at is null for update of c`;
+  if(!c) throw new HttpError(404,'Change not found.');
+  if(c.canceledAt || (c.cancelRequestedAt && c.status==='unknown')) return c;
+  if(c.timing!=='renewal' || c.status!=='scheduled' || +new Date(c.periodEnd)-Date.now()<35*60000) throw conflict();
+  const [owner]=await tx`select s.plan_code,s.current_period_end from shorts_mvp.paddle_subscriptions ps
+   join shorts_mvp.user_subscriptions s on s.id=ps.subscription_id where ps.paddle_id=${c.paddleSubscriptionId} and s.status='active'`;
+  if(!owner || owner.planCode!==c.fromCode || !sameInstant(owner.currentPeriodEnd,c.periodEnd)) throw conflict();
+  const [claimed]=await tx<ChangeRow[]>`update shorts_mvp.paddle_plan_changes set cancel_requested_at=now(),status='unknown',updated_at=now() where id=${id} returning *`;
+  return claimed;
+ });
+ if(row.canceledAt) return publicChange(row);
+ try {return publicChange(await reconcileRenewalChange(id,db));}
+ catch {throw new HttpError(503,'Cancellation is being confirmed.','CHANGE_UNCONFIRMED');}
+}
+async function reconcileCancellation(tx:TransactionSql,row:ChangeRow,initial:PaddleSubscription) {
+ let sub=initial;
+ const price=paddlePriceId(row.fromCode,row.currency),target=paddlePriceId(row.toCode,row.currency);
+ if(sub.custom_data?.easycut_change_id!==row.id) throw Error('Cancellation marker mismatch');
+ if(sub.items[0].price.id===target) {
+  if(!sameInstant(sub.next_billed_at,row.periodEnd)) throw Error('Cancellation date changed');
+  const body={items:[{price_id:price,quantity:1}],proration_billing_mode:'do_not_bill',on_payment_failure:'prevent_change',
+   custom_data:{...sub.custom_data,easycut_change_id:row.id,easycut_change_canceled:row.id}};
+  const preview=await paddleRequest<Preview>(`/subscriptions/${sub.id}/preview`,body,'PATCH');
+  if(preview.immediate_transaction!==null || preview.items.length!==1 || preview.items[0].price.id!==price) throw Error('Cancellation preview mismatch');
+  sub=await paddleRequest<PaddleSubscription>(`/subscriptions/${sub.id}`,body,'PATCH');
+ }
+ if(sub.items.length!==1 || sub.items[0].price.id!==price || sub.custom_data?.easycut_change_canceled!==row.id) throw Error('Cancellation unconfirmed');
+ if(!sameInstant(sub.next_billed_at,row.periodEnd)) {
+  const body={next_billed_at:new Date(row.periodEnd).toISOString(),proration_billing_mode:'do_not_bill',on_payment_failure:'prevent_change'};
+  const preview=await paddleRequest<Preview>(`/subscriptions/${sub.id}/preview`,body,'PATCH');
+  if(preview.immediate_transaction!==null || !sameInstant(preview.next_billed_at,row.periodEnd)) throw Error('Cancellation boundary mismatch');
+  sub=await paddleRequest<PaddleSubscription>(`/subscriptions/${sub.id}`,body,'PATCH');
+ }
+ if(!sameInstant(sub.next_billed_at,row.periodEnd) || sub.items[0]?.price.id!==price) throw Error('Cancellation boundary unconfirmed');
+ const [saved]=await tx<ChangeRow[]>`update shorts_mvp.paddle_plan_changes set status='superseded',canceled_at=now(),updated_at=now() where id=${row.id} returning *`;
+ return saved;
 }

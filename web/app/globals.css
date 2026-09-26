@@ -2477,3 +2477,10 @@ main#top > section#results { border: 0; border-radius: 0; padding: 0; background
   }
   .transformation-source-message.is-visible strong::after { animation: none; opacity: 1; transform: scaleX(1); }
 }
+
+.language-selector-in-menu { display: none; }
+@media (max-width: 767px) {
+ body:has(.site-header) .language-selector-floating { display: none; }
+ .language-selector-in-menu { display: block; position: relative; margin: 10px 12px; }
+ .language-selector-in-menu .language-selector-menu { bottom: auto; top: calc(100% + 6px); z-index: 5; }
+}

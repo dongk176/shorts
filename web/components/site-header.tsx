@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { LanguageSelector } from "@/components/language-selector";
 import Link from "@/lib/i18n/navigation";
 import { usePathname } from "@/lib/i18n/navigation";
 import type { ReactNode } from "react";
@@ -138,7 +139,7 @@ export function SiteHeader({
   desktopSidebar?: boolean;
 }) {
   const pathname = usePathname();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { isEnterprise } = useUsageState();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -159,7 +160,7 @@ export function SiteHeader({
     };
   }, [menuOpen]);
 
-  useEffect(() => setMenuOpen(false), [pathname]);
+  useEffect(() => setMenuOpen(false), [pathname, locale]);
 
   return (
     <header className={`site-header${desktopSidebar ? " site-header-sidebar" : ""}`}>
@@ -191,6 +192,7 @@ export function SiteHeader({
             <nav aria-label={t("nav.mobilePrimary")} className="grid gap-1 md:hidden">
               <NavigationLinks pathname={pathname} mobile isEnterprise={isEnterprise} onNavigate={() => setMenuOpen(false)} />
             </nav>
+            <LanguageSelector placement="menu" />
             <div className="site-header-menu-account" onClick={() => setMenuOpen(false)}>
               {children}
             </div>

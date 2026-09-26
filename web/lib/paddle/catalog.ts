@@ -56,3 +56,15 @@ export const paddlePackageTerms = [3, 6, 12] as const;
 export function paddleDisplayPlans(months: (typeof paddlePackageTerms)[number]) {
   return [paddlePlan("paddle_lite"), paddlePlan(`paddle_creator_${months}m`), paddlePlan(`paddle_pro_${months}m`)];
 }
+
+export function paddleInitialTerm(code?: string) {
+ const months=paddlePlans.find(p=>p.code===code)?.billingMonths;
+ return months===3 || months===12 ? months : 6;
+}
+export function paddleDiscount(code:string,currency:PaddleCurrency) {
+ const plan=paddlePlan(code);
+ if(plan.billingMonths<=3) return null;
+ const baseline=paddlePlan(code.replace(/_(6|12)m$/, '_3m'));
+ const savings=1-paddleAmount(code,currency)*baseline.billingMonths/(paddleAmount(baseline.code,currency)*plan.billingMonths);
+ return {percent:Math.floor(savings*1000)/10,baseline:baseline.code};
+}

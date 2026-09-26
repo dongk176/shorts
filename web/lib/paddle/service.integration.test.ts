@@ -85,6 +85,8 @@ beforeAll(async () => {
   await pg.exec(packages);
   const changes=fs.readFileSync(path.resolve("../supabase/migrations/202609260030_paddle_plan_changes.sql"),"utf8");
   await pg.exec(changes); await pg.exec(changes);
+  const cancellation=fs.readFileSync(path.resolve("../supabase/migrations/202609260040_paddle_change_cancellation.sql"),"utf8");
+  await pg.exec(cancellation); await pg.exec(cancellation);
 }, 30000);
 beforeEach(async () => {
   vi.useFakeTimers({ toFake: ["Date"] });
@@ -596,7 +598,7 @@ describe("Paddle recurring packages", () => {
 });
 
 // Exercise the authenticated change service against SQL, including uncertain dispatches.
-import { quotePaddleChange, confirmPaddleChange, reconcileRenewalChange } from './changes';
+import { quotePaddleChange, confirmPaddleChange, cancelPaddleChange, reconcileRenewalChange } from './changes';
 import { changePayload, changeTiming, upgradeAllowances } from './change-policy';
 const creatorPrice='pri_'+'c'.repeat(26);
 function installChangeProvider() {
@@ -749,4 +751,67 @@ describe('Plan changes without duplicate charges or lost paid allowances',()=>{
   transaction.origin='subscription_update';transaction.id='txn_'+'v'.repeat(26);
   await expect(processPaddleEvent(event('transaction.completed',transaction.id,2),tag(pg))).rejects.toThrow('Unexpected upgrade');
  });
+});
+
+describe('Canceling deferred changes',()=>{
+ it.each(['none','items','date'])('restores price and paid date without charge; resumes after %s timeout',async failure=>{
+  await processPaddleEvent(event(),tag(pg));installChangeProvider();
+  const q=await quotePaddleChange(user,'paddle_creator_3m',tag(pg));
+  await confirmPaddleChange(user,q.id,tag(pg));
+  const before=await rows('usage_grants');
+  const paidEnd=subscription.next_billed_at;
+  const impl=vi.mocked(paddleRequest).getMockImplementation()!;
+  let itemWrites=0,dateWrites=0;
+  vi.mocked(paddleRequest).mockImplementation(async(p,b,m)=>{
+   const body=b as {next_billed_at?:string;items?:{price_id:string}[];proration_billing_mode?:string;custom_data?:Record<string,unknown>}|undefined;
+   if(p.endsWith('/preview')) return {...subscription,items:body?.items?[{price:{id:body.items[0].price_id},quantity:1}]:subscription.items,
+     next_billed_at:body?.next_billed_at||subscription.next_billed_at,immediate_transaction:null};
+   if(p===`/subscriptions/${sub}`&&m==='PATCH') {
+    expect(body?.proration_billing_mode).toBe('do_not_bill');
+    if(body?.items) {
+     itemWrites++;subscription={...subscription,items:[{price:{id:body.items[0].price_id},quantity:1}],custom_data:body.custom_data,next_billed_at:'2026-11-26T00:00:00Z'};
+     if(failure==='items'&&itemWrites===1)throw Error('Response lost after provider accepted');
+    } else {
+     dateWrites++;
+     if(failure==='date'&&dateWrites===1)throw Error('Timeout before date accepted');
+     subscription={...subscription,next_billed_at:body!.next_billed_at!};
+    }
+    return subscription;
+   }
+   return impl(p,b,m);
+  });
+  await expect(cancelPaddleChange(other,q.id,tag(pg))).rejects.toThrow('not found');
+  if(failure!=='none') {
+   await expect(cancelPaddleChange(user,q.id,tag(pg))).rejects.toThrow('being confirmed');
+   expect((await rows('paddle_plan_changes'))[0].status).toBe('unknown');
+   await expect(quotePaddleChange(user,'paddle_creator',tag(pg))).rejects.toThrow('already pending');
+   await reconcileRenewalChange(q.id,tag(pg));
+  } else await cancelPaddleChange(user,q.id,tag(pg));
+  await cancelPaddleChange(user,q.id,tag(pg));
+  expect(itemWrites).toBe(1);expect(dateWrites).toBe(failure==='date'?2:1);
+  expect(subscription.items[0].price.id).toBe(price);
+  expect(+new Date(subscription.next_billed_at!)).toBe(+new Date(paidEnd!));
+  expect(await rows('usage_grants')).toEqual(before);
+  expect((await rows('user_subscriptions'))[0].plan_code).toBe('paddle_lite');
+  expect((await rows('paddle_plan_changes'))[0].canceled_at).toBeTruthy();
+  installChangeProvider();
+  expect((await quotePaddleChange(user,'paddle_creator_3m',tag(pg))).status).toBe('quoted');
+ });
+ it('rejects cancellation near renewal or of an immediate operation',async()=>{
+  await processPaddleEvent(event(),tag(pg));installChangeProvider();
+  const q=await quotePaddleChange(user,'paddle_creator_3m',tag(pg));await confirmPaddleChange(user,q.id,tag(pg));
+  vi.setSystemTime(new Date('2026-10-25T23:40:00Z'));
+  await expect(cancelPaddleChange(user,q.id,tag(pg))).rejects.toThrow('Refresh');
+  expect((await rows('paddle_plan_changes'))[0].cancel_requested_at).toBeNull();
+ });
+});
+
+it('uses the actual paid item if renewal arrives after cancellation but before recovery',async()=>{
+ await processPaddleEvent(event(),tag(pg));installChangeProvider();
+ const q=await quotePaddleChange(user,'paddle_creator_3m',tag(pg));await confirmPaddleChange(user,q.id,tag(pg));
+ await pg.query("update shorts_mvp.paddle_plan_changes set cancel_requested_at=now(),status='unknown' where id=$1",[q.id]);
+ const {paidPlanCode}=await import('./change-ledger');
+ const paid={...transaction,id:'txn_'+'r'.repeat(26),billing_period:{starts_at:'2026-10-26T00:00:00Z',ends_at:'2026-11-26T00:00:00Z'}};
+ expect(await paidPlanCode(tag(pg),paid,{paddleId:sub},'paddle_lite')).toEqual({code:'paddle_lite',changeId:null});
+ expect((await rows('paddle_plan_changes'))[0].status).toBe('superseded');
 });

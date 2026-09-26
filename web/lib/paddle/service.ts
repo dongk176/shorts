@@ -425,12 +425,12 @@ export async function getPaddleState(userId: string, db = getDb()) {
   where ps.user_id=${userId} and ps.environment=${paddleEnvironment()} order by ps.created_at desc limit 1`;
   if (!rows[0]) return null;
   const [payment] = await db`select currency from shorts_mvp.paddle_payments where paddle_subscription_id=${rows[0].paddleId} order by period_end desc,created_at desc limit 1`;
-  const [change] = await db`select to_code as plan_code,timing,status,effective_at from shorts_mvp.paddle_plan_changes
+  const [change] = await db`select id,to_code as plan_code,timing,status,effective_at,cancel_requested_at from shorts_mvp.paddle_plan_changes
     where paddle_subscription_id=${rows[0].paddleId} and status in ('processing','unknown','scheduled') order by created_at desc limit 1`;
   return {paddleId:rows[0].paddleId as string,providerStatus:rows[0].providerStatus as string,
     planCode:rows[0].planCode as string,currentPeriodEnd:rows[0].currentPeriodEnd as Date,cancelAtPeriodEnd:rows[0].cancelAtPeriodEnd as boolean,
     currency:(payment?.currency??null) as PaddleCurrency|null,
-    pendingChange:change?{planCode:change.planCode as string,timing:change.timing as string,status:change.status as string,effectiveAt:change.effectiveAt as Date}:null};
+    pendingChange:change?{id:change.id as string,planCode:change.planCode as string,timing:change.timing as string,status:change.cancelRequestedAt && change.status==='unknown'?'canceling':change.status as string,effectiveAt:change.effectiveAt as Date}:null};
 }
 export async function createPaddlePortal(userId: string, db = getDb()) {
   paddleEnvironment();

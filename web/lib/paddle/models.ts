@@ -7,7 +7,7 @@ export type PaddleSubscription = {
   current_billing_period: PaddlePeriod | null;
   next_billed_at: string | null;
   scheduled_change: { action: string; effective_at: string } | null;
-  custom_data?: {easycut_change_id?:string;easycut_checkout_id?:string}|null;
+  custom_data?: {easycut_change_canceled?:string;easycut_change_id?:string;easycut_checkout_id?:string}|null;
   items: { price: { id: string }; quantity: number }[];
 };
 export type PaddleTransaction = {
