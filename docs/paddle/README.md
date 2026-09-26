@@ -1,5 +1,9 @@
 # Paddle 해외 월 구독
 
+## 최신 수정 (2026-09-26 16:07 KST)
+
+결제창을 닫고 다른 플랜을 고를 때 미결제 주문을 안전하게 취소하고 새 창을 여는 수정을 운영 반영했다. 실제 샌드박스 UI 전환과 회귀 검증 기록: [checkout-switch-20260926.md](checkout-switch-20260926.md). 현재 운영 소스 `a1dccbf43a6061bce6fcd208b84e3527e01123a3`, 배포 `dpl_BiCXrJUEwEUtzE7hznczzG2wiBv3`. 아래 15:50 기록은 최초 출시 기록이다.
+
 ## 최신 운영 상태 (2026-09-26 15:50 KST)
 
 - **운영 반영 완료:** [production-release-20260926.md](production-release-20260926.md). 승인된 운영 DB migration, 11개 운영 환경변수, 실제 웹훅과 결제 링크 설정을 완료하고 검증한 동일 후보를 운영으로 승격했다.

@@ -18,4 +18,12 @@ Official provider behavior: https://developer.paddle.com/api-reference/transacti
 - Read-only sandbox API + local DB verification: previous Creator `txn_01m3e8av5fhvcf7agvrayyhybb` canceled in both systems; new Lite `txn_01m3e8bm74j9rceprywbwyqqhr` local ready / provider draft, amount 590 JPY. No usage grants and no payment attempts. Evidence captured at 2026-09-26T07:03:00Z.
 - Live card approval/refund remains a user-performed check. This regression opens and switches unpaid checkout only.
 
-Deployment evidence will be appended after the clean candidate is verified and promoted without rebuilding.
+## Production release
+
+- Candidate source `a1dccbf43a6061bce6fcd208b84e3527e01123a3`, deployment `dpl_BiCXrJUEwEUtzE7hznczzG2wiBv3`, `shorts-867clf5rx-artiroom.vercel.app`; initially READY with no aliases. Existing deployment protection remained enabled.
+- Current baseline was unchanged immediately before promotion. Release guard passed; no route source files changed and protected route definitions remain present.
+- Candidate public pages/prices, authentication behavior, all five job-admission targets and webhook signature probes passed. The nonexistent editor fixture returned 404; authenticated editor editing was not tested.
+- Promoted this exact deployment without rebuilding. At 2026-09-26T07:07:22Z (16:07 KST), the production domain resolved to the candidate/source above and repeated public page/signature checks passed.
+- No production DB migration/configuration/worker changes or actual payment/refund were performed for this fix. Existing unfinished live orders are reconciled only when their owner selects another plan.
+- Sandbox cleanup: both test transactions confirmed canceled; zero usage grants. Closed the test tab and stopped the dedicated port 3424 process. Prior local resources were retained.
+- Deployment/read-only evidence: [checkout-switch-verification-20260926.json](checkout-switch-verification-20260926.json). This report commit occurs after deployment and does not replace the deployed source.
