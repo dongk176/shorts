@@ -1,6 +1,7 @@
 "use client";
 
 import { ShowcaseCredits } from "./showcase-credits";
+import { categoryShowcase, categoryShowcaseMedia, showcaseStyleLabels } from "@/lib/category-showcase";
 import type { SiteLocale } from "@/lib/i18n/config";
 import { useUiText } from "@/lib/i18n/use-ui-text";
 
@@ -11,7 +12,8 @@ import { localizedValue } from "@/lib/i18n/config";
 import { useI18n } from "@/lib/i18n/provider";
 
 const SHOWCASE_ASSET_VERSION = "20260726-2";
-const showcaseImages = [
+type ShowcaseImage = { src: string; channel: string; alt?: string };
+const showcaseImages: ShowcaseImage[] = [
   { path: "/home-showcase/showcase-02.png", channel: "chimchak" },
   { path: "/home-showcase/showcase-01.png", channel: "malwang" },
   { path: "/home-showcase/showcase-05.png", channel: "chimchak" },
@@ -31,11 +33,16 @@ const showcaseImages = [
   channel,
 }));
 
-function imagesForLocale(locale: SiteLocale) {
+function imagesForLocale(locale: SiteLocale): ShowcaseImage[] {
   if (locale === "ko") return showcaseImages;
-  return Array.from({ length: 8 }, (_, index) => ({
-    src: `/home-showcase/${locale}/showcase-${String(index + 1).padStart(2, "0")}.jpg?v=20260920-1`,
-    channel: `${locale}-${index % 2}`,
+  // Alternate subjects and styles, including across the looping rail boundary.
+  const order = ["talk", "entertainment", "education", "review", "gaming", "vlog"] as const;
+  return [0, 1, 2].flatMap((round) => order.flatMap((id, index) => {
+    const media = categoryShowcaseMedia[locale][id];
+    if (!media) return [];
+    const short = media.shorts[(round + index) % 3];
+    const category = categoryShowcase.find((item) => item.id === id)!;
+    return [{ src: short.poster, channel: media.author, alt: `${category.label[locale]} · ${showcaseStyleLabels[short.style][locale]} — ${media.author}` }];
   }));
 }
 
@@ -84,7 +91,14 @@ export function BackgroundShowcase() {
   const [imageOrder, setImageOrder] = useState(() => imagesForLocale(locale));
 
   useEffect(() => {
-    setImageOrder(shuffleShowcaseImages(imagesForLocale(locale)));
+    const images = imagesForLocale(locale);
+    if (locale === "ko") {
+      setImageOrder(shuffleShowcaseImages(images));
+    } else {
+      // Vary the starting point without losing the deliberate style mix.
+      const offset = window.crypto.getRandomValues(new Uint32Array(1))[0] % images.length;
+      setImageOrder([...images.slice(offset), ...images.slice(0, offset)]);
+    }
   }, [locale]);
 
   useEffect(() => {
@@ -221,7 +235,7 @@ export function BackgroundShowcase() {
           {localizedValue(locale, { ko: "AI가 만들었어요", en: "by AI", ja: "AIで。" })}
         </h2>
         <p className="mx-auto mt-5 max-w-2xl text-sm leading-6 text-[#d5aaa4] sm:text-base">
-          {localizedValue(locale, { ko: "⬇ 소름 돋게 자연스러운 AI의 실제 댓글 ⬇", en: "See how AI-generated comment overlays bring each clip to life.", ja: "AIが作成したコメント風テキストで、動画をアレンジ。" })}
+          {localizedValue(locale, { ko: "⬇ 소름 돋게 자연스러운 AI의 실제 댓글 ⬇", en: "Comment overlays, bold captions, clean edits. Find your style.", ja: "コメント風も、強調字幕も、シンプルも。好きなスタイルで。" })}
         </p>
       </div>
       <div
@@ -248,7 +262,7 @@ export function BackgroundShowcase() {
                 <figure className={`background-showcase-item${locale === "ko" ? "" : " background-showcase-item-full-frame"}`} key={`${copyIndex}-${image.src}`}>
                   <Image
                     src={image.src}
-                    alt={ui(copyIndex === 1 ? localizedValue(locale, { ko: `완성된 쇼츠 예시 ${imageIndex + 1}`, en: `Finished Shorts example ${imageIndex + 1}`, ja: `完成したショート動画の例 ${imageIndex + 1}` }) : "")}
+                    alt={ui(copyIndex === 1 ? image.alt ?? localizedValue(locale, { ko: `완성된 쇼츠 예시 ${imageIndex + 1}`, en: `Finished Shorts example ${imageIndex + 1}`, ja: `完成したショート動画の例 ${imageIndex + 1}` }) : "")}
                     fill
                     unoptimized
                     sizes="(max-width: 640px) 44vw, (max-width: 1200px) 20vw, 250px"
@@ -261,7 +275,10 @@ export function BackgroundShowcase() {
           ))}
         </div>
       </div>
-      <ShowcaseCredits locale={locale} />
+      <ShowcaseCredits locale={locale} sources={locale === "ko" ? undefined : categoryShowcase.flatMap(({ id }) => {
+        const media = categoryShowcaseMedia[locale][id];
+        return media?.originalUrl ? [{ url: media.originalUrl, author: media.author, title: media.title }] : [];
+      })} />
     </section>
   );
 }

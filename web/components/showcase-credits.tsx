@@ -1,10 +1,13 @@
 import { type SiteLocale, localizedValue } from "@/lib/i18n/config";
 import { showcaseSources } from "@/lib/showcase-sources";
 
-export function ShowcaseCredits({ locale, videoTitle }: { locale: SiteLocale; videoTitle?: string }) {
-  const sources = videoTitle
+type ShowcaseCredit = { url: string; author: string; title: string };
+
+export function ShowcaseCredits({ locale, videoTitle, sources: suppliedSources }: { locale: SiteLocale; videoTitle?: string; sources?: ShowcaseCredit[] }) {
+  const legacySources = videoTitle
     ? [...showcaseSources.en, ...showcaseSources.ja].filter((source) => source.title === videoTitle)
     : locale === "ko" ? [] : showcaseSources[locale];
+  const sources = suppliedSources ?? legacySources.map((source) => ({ ...source, url: `https://www.youtube.com/watch?v=${source.videoId}` }));
   if (!sources.length) return null;
   return (
     <details className="mx-auto mt-5 max-w-3xl px-5 text-xs leading-6 text-neutral-400">
@@ -13,8 +16,8 @@ export function ShowcaseCredits({ locale, videoTitle }: { locale: SiteLocale; vi
       </summary>
       <ul className="mt-3 space-y-2">
         {sources.map((source) => (
-          <li key={source.videoId}>
-            <a className="underline hover:text-white" href={`https://www.youtube.com/watch?v=${source.videoId}`} target="_blank" rel="noreferrer">
+          <li key={source.url}>
+            <a className="underline hover:text-white" href={source.url} target="_blank" rel="noreferrer">
               {source.author} — {source.title}
             </a>
           </li>

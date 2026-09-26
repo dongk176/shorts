@@ -50,7 +50,12 @@ const guestState: PricingState = {
 describe("localized first render without browser effects", () => {
   it.each(["en", "ja"] as const)("renders only %s showcase media before hydration", (locale) => {
     const html = render(<><BackgroundShowcase /><TransformationShowcase /></>, locale);
-    expect(html).toContain(`/home-showcase/${locale}/showcase-01.jpg`);
+    for (const category of ["talk", "entertainment", "review", "education", "gaming", "vlog"]) {
+      for (const style of [1, 2, 3]) {
+        expect(html).toContain(`/showcase-examples/curated-pilot-v1/${locale}-${category}-${style}.jpg`);
+      }
+    }
+    expect(html).not.toContain(`/home-showcase/${locale}/`);
     expect(html).toContain(locale === "ja" ? "/showcase-examples/curated-pilot-v1/ja-talk-source.mp4" : "/showcase-examples/curated-pilot-v1/en-talk-source.mp4");
     // One source plus three actual renderer outputs, with no in-video controls.
     expect(html.match(/<video\b/g)).toHaveLength(4);

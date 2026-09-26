@@ -129,9 +129,7 @@ function Showcase({ locale }: { locale: SiteLocale }) {
   }
   return <section ref={sectionRef} id="category-showcase" className={styles.section} aria-labelledby={`${id}-heading`} data-i18n-skip data-reduced-motion={reducedMotion}>
     <header className={styles.heading}>
-      <p className={styles.eyebrow}>ONE VIDEO · MORE POSSIBILITIES</p>
       <h2 id={`${id}-heading`}>{localizedValue(locale, { ko: "긴 영상 하나 넣으면,", en: "Start with one long video", ja: "長い動画を1本入れると、" })}<br /><span>{localizedValue(locale, { ko: "쇼츠가 이렇게 나와요", en: "Get Shorts like these", ja: "こんなショートが作れます" })}</span></h2>
-      <p className={styles.description}>{localizedValue(locale, { ko: "어떤 영상인지 골라보고, 세 가지 편집 스타일을 비교해 보세요", en: "Pick a category and see how the same video looks in three styles", ja: "ジャンルを選んで、3つの編集スタイルを見比べてみてください" })}</p>
     </header>
     <div className={styles.tabs} role="tablist" aria-label={localizedValue(locale, { ko: "영상 카테고리", en: "Video categories", ja: "動画のジャンル" })}>
       {categoryShowcase.map((item, index) => <button key={item.id} ref={(element) => { tabsRef.current[index] = element; }} type="button" role="tab" id={`${id}-tab-${item.id}`} aria-controls={`${id}-panel`} aria-selected={selected === item.id} tabIndex={selected === item.id ? 0 : -1} onClick={() => { setSelected(item.id); setCenteredShort(1); setSoundEnabled(false); }} onKeyDown={(event) => selectTab(event, index)}><CategoryIcon category={item.id} />{item.label[locale]}</button>)}
