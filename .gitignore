@@ -5,6 +5,7 @@
 !.env.example
 .vercel/
 .secrets/
+.tmp/paddle-fullapp/
 *.pem
 *.key
 

@@ -967,7 +967,7 @@ function ThreeStepProcess() {
 
         <div className="three-step-process-cta">
           <Link href="/pricing">{localizedValue(locale, { ko: "지금 시작하기", en: "Get started", ja: "今すぐ始める" })}</Link>
-          <p><span aria-hidden="true">✓</span> {localizedValue(locale, { ko: "월 9,900원부터 시작 · 언제든 해지 가능", en: "From ₩9,900/month · Cancel anytime", ja: "月額₩9,900から・いつでも解約可能" })}</p>
+          <p><span aria-hidden="true">✓</span> {localizedValue(locale, { ko: "월 9,900원부터 시작 · 언제든 해지 가능", en: "Choose your monthly plan · Cancel anytime", ja: "使い方に合った月額プラン・いつでも解約可能" })}</p>
         </div>
       </div>
     </section>

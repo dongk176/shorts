@@ -4,7 +4,7 @@ import { useUiText } from "@/lib/i18n/use-ui-text";
 
 import { useI18n } from "@/lib/i18n/provider";
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { useRouter } from "@/lib/i18n/navigation";
+import { usePathname, useRouter } from "@/lib/i18n/navigation";
 import { claimOnboardingWelcomeAnnouncement } from "@/app/actions/onboarding-welcome";
 import { useUsageState } from "@/components/usage-provider";
 import { useWelcomeOverlayStage } from "@/components/welcome-overlay-queue";
@@ -30,6 +30,7 @@ export function UserOnboardingOverlay() {
   const ui = useUiText();
   const { locale, t } = useI18n();
   const router = useRouter();
+  const pathname = usePathname();
   const { accountId, authenticated, refreshUsage } = useUsageState();
   const {
     active: queueActive,
@@ -133,7 +134,8 @@ export function UserOnboardingOverlay() {
     setWelcome(null);
     setError(null);
     completeQueueStage();
-    router.push("/");
+    // Keep the selected checkout (including its query) after first-time setup.
+    if (pathname !== "/pricing" && pathname !== "/billing/paddle") router.push("/");
   };
 
   const submit = async (event: FormEvent) => {
