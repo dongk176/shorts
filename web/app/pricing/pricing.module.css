@@ -1645,3 +1645,135 @@
     padding: 22px;
   }
 }
+
+/* Paddle uses the same page tokens, hero and plan grid as Korean pricing.
+   Keep its shorter feature list compact without changing the Korean cards. */
+.paddleSubscription {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: baseline;
+  gap: 8px 20px;
+  margin: -20px auto 30px;
+  color: #aeb2b4;
+  font-size: 13px;
+  text-align: center;
+}
+
+.paddleSubscription h2 {
+  color: #e0e3e4;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.paddleSubscription > p:nth-of-type(n + 2) {
+  flex-basis: 100%;
+}
+
+.paddleManagement {
+  max-width: 720px;
+  margin: 0 auto 32px;
+  border: 1px solid var(--pricing-border);
+  border-radius: 20px;
+  padding: 24px;
+  background: var(--pricing-surface);
+}
+
+.paddleManagement h2 {
+  margin-bottom: 8px;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+:global(.app-shell .pricing-main) > section.paddlePlanGrid {
+  margin-bottom: 32px;
+}
+
+.paddlePlanGrid .paddlePlanCard {
+  min-height: 0;
+  overflow: visible;
+  padding-top: 34px;
+}
+
+.paddlePlanCard :global(.pricing-plan-name) {
+  min-height: 58px;
+}
+
+.paddlePlanCard :global(.pricing-plan-name) h2 {
+  font-size: clamp(19px, 1.8vw, 24px);
+  letter-spacing: -.025em;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.paddlePlanCard .localPlanDescription {
+  min-height: 36px;
+}
+
+.paddlePlanGrid .paddleBadge {
+  z-index: 3;
+  background: linear-gradient(110deg, #f04435, #ff715e);
+  color: #fff;
+}
+
+.paddleBilling {
+  min-height: 64px;
+  padding-top: 12px;
+  color: #e0e3e4;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.paddleBilling span {
+  color: var(--pricing-muted);
+  font-size: 12px;
+}
+
+.paddlePlanGrid .paddlePlanCard ul {
+  margin-bottom: 24px;
+}
+
+.paddlePlanCard .paddleCta {
+  margin-top: auto;
+  flex-shrink: 0;
+}
+
+.paddleCta:disabled,
+.paddleCta:disabled:hover {
+  cursor: default;
+  border-color: rgba(255, 255, 255, .08);
+  background: rgba(255, 255, 255, .025);
+  color: #808789;
+  box-shadow: none;
+  transform: none;
+}
+
+.paddleCta:enabled:not(:global(.pricing-cta-primary)) {
+  border-color: rgba(255, 255, 255, .35);
+  background: rgba(255, 255, 255, .08);
+  color: #f5f5f5;
+}
+
+.paddleCta:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 4px;
+}
+
+.paddleTerms {
+  max-width: 760px;
+  margin: 28px auto 0;
+  color: var(--pricing-muted);
+  font-size: 13px;
+  line-height: 1.7;
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .paddlePlanGrid > .mobilePlanStarter { order: 1; }
+  .paddlePlanGrid > .mobilePlanExpert { order: 2; }
+  .paddlePlanGrid > .mobilePlanPro { order: 3; }
+  .paddlePlanCard :global(.pricing-plan-name),
+  .paddlePlanCard .localPlanDescription { min-height: 0; }
+  .paddleBilling { min-height: 0; padding-bottom: 14px; }
+  .paddleSubscription { flex-direction: column; align-items: center; gap: 4px; }
+}

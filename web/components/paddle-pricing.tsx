@@ -43,18 +43,20 @@ declare global {
 }
 const copy = {
   en: {
-    title: "Make more from every video",
-    subtitle:
-      "Choose your monthly editing time. All plans include subtitles, vertical layouts and video exports.",
+    title: "Choose the plan that fits your needs",
     month: "/ month",
     tax: "Tax included · Billed monthly",
     recommend: "Best value",
+    maximumSaving: "Biggest savings",
+    equivalent: "/ month, equivalent",
+    nextPayment: "Next payment",
+    includedTax: "Tax included",
     term: "Package duration",
     duration: (n: number) => `${n} months`,
     package: "Package",
     names: ["EasyCut Pro", "Starter package", "Expert package"],
     descriptions: ["Start with a monthly plan", "More editing time for regular creators", "For creators with a larger workflow"],
-    billed: (n: number, total: string) => `Tax included · ${total} every ${n} months`,
+    billed: (n: number, total: string) => `${total} billed upfront every ${n} months`,
     start: "Choose plan",
     current: "Current plan",
     change: "Change plan",
@@ -98,18 +100,20 @@ const copy = {
       "Unable to open subscription management. Please contact support.",
   },
   ja: {
-    title: "ひとつの動画から、もっと多くのショート動画を",
-    subtitle:
-      "毎月の動画処理時間に合わせて選べます。全プランに字幕、縦型レイアウト、動画の書き出しが含まれます。",
+    title: "必要な分だけ、選べるプラン",
     month: "/ 月",
     tax: "税込・毎月のお支払い",
-    recommend: "おすすめ",
+    recommend: "おすすめ・高コスパ",
+    maximumSaving: "最大割引",
+    equivalent: "/ 月換算",
+    nextPayment: "次回のお支払い日",
+    includedTax: "税込",
     term: "パッケージの契約期間",
     duration: (n: number) => `${n}か月`,
     package: "パッケージ",
     names: ["EasyCut Pro", "スターターパッケージ", "エキスパートパッケージ"],
     descriptions: ["月額プランで気軽にスタート", "定期的に動画を制作する方に", "より多くの動画を制作する方に"],
-    billed: (n: number, total: string) => `税込・${n}か月ごとに${total}を一括払い`,
+    billed: (n: number, total: string) => `${n}か月ごとに${total}を一括払い`,
     start: "このプランを選ぶ",
     current: "ご利用中のプラン",
     change: "プランを変更",
@@ -350,28 +354,23 @@ export function PaddlePricing({
   }
   const current = subscription && subscription.providerStatus !== "canceled";
   return (
-    <section className="mx-auto max-w-6xl px-5 py-12 md:py-20">
+    <>
       <Script
         src="https://cdn.paddle.com/paddle/v2/paddle.js"
         strategy="afterInteractive"
         onReady={() => setScriptReady(true)}
         onError={() => setMessage(t.error)}
       />
-      <h1 className="text-center text-3xl font-semibold tracking-tight md:text-4xl">
-        {managementOnly ? t.manage : t.title}
-      </h1>
-      {!managementOnly && (
-        <p className="mx-auto mt-4 max-w-2xl text-center text-neutral-400">
-          {t.subtitle}
-        </p>
-      )}
+      <section className={`hero pricing-hero ${styles.hero}`}>
+        <h1><span>{managementOnly ? t.manage : t.title}</span></h1>
+      </section>
       {subscription && (
-        <div className="mx-auto mt-8 max-w-2xl rounded-2xl border border-white/15 bg-white/5 p-6">
-          <h2 className="text-xl font-semibold">
+        <div className={managementOnly ? styles.paddleManagement : styles.paddleSubscription}>
+          <h2>
             {planName(subscription.planCode)}
           </h2>
-          <p className="mt-2 text-neutral-300">
-            {t.end}:{" "}
+          <p>
+            {subscription.providerStatus === "active" && !subscription.cancelAtPeriodEnd ? t.nextPayment : t.end}:{" "}
             {new Date(subscription.currentPeriodEnd).toLocaleDateString(
               language === "ja" ? "ja-JP" : "en-US",
             )}
@@ -398,7 +397,7 @@ export function PaddlePricing({
       )}
       {!managementOnly && (
         <>
-          <div className={`${styles.planToolbar} ${styles.localPlanToolbar} mt-10`}>
+          <div className={`${styles.planToolbar} ${styles.localPlanToolbar}`}>
             <span>{t.term}</span>
             <div className={`${styles.packageTermPicker} ${styles.localTermPicker}`} role="group" aria-label={t.term}>
               {paddlePackageTerms.map((term) => (
@@ -408,19 +407,22 @@ export function PaddlePricing({
               ))}
             </div>
           </div>
-          <section id="pricing-plans" className={`pricing-grid ${styles.localPlanGrid}`} aria-label={t.title}>
+          <section id="pricing-plans" className={`pricing-grid ${styles.localPlanGrid} ${styles.paddlePlanGrid}`} aria-label={t.title}>
             {displayedPlans.map((p, i) => (
               <article key={p.code}
-                className={`pricing-card ${i === 1 ? "pricing-card-popular" : i === 2 ? "pricing-card-pro" : ""} ${styles.planCard} ${styles.localPlanCard} ${styles.packagePlanCard} ${i === 1 ? styles.mobilePlanStarter : i === 2 ? styles.mobilePlanExpert : styles.mobilePlanPro}`}>
-                {i === 1 && months === 6 && (
-                  <span className={`pricing-badge ${styles.localReasonableBadge}`}>{t.recommend}</span>
+                className={`pricing-card ${i === 1 ? "pricing-card-popular" : i === 2 ? "pricing-card-pro" : ""} ${styles.planCard} ${styles.localPlanCard} ${styles.paddlePlanCard} ${i === 1 ? styles.mobilePlanStarter : i === 2 ? styles.mobilePlanExpert : styles.mobilePlanPro}`}>
+                {i === 1 && (months === 6 || months === 12) && (
+                  <span className={`pricing-badge ${styles.localReasonableBadge} ${styles.paddleBadge}`}>{months === 12 ? t.maximumSaving : t.recommend}</span>
                 )}
                 <div className="pricing-plan-name"><h2>{t.names[i]}</h2></div>
                 <p className={styles.localPlanDescription}>{t.descriptions[i]}</p>
                 <div className={`pricing-price ${styles.localPlanPrice}`}>
-                  <strong>{formatPaddlePrice(p.code, currency, true)}</strong><span>{t.month}</span>
+                  <strong>{formatPaddlePrice(p.code, currency, true)}</strong><span>{p.billingMonths === 1 ? t.month : t.equivalent}</span>
                 </div>
-                <p className="pricing-billing">{p.billingMonths === 1 ? t.tax : t.billed(p.billingMonths, formatPaddlePrice(p.code, currency))}</p>
+                <div className={styles.paddleBilling}>
+                  <p>{p.billingMonths === 1 ? t.tax : t.billed(p.billingMonths, formatPaddlePrice(p.code, currency))}</p>
+                  {p.billingMonths !== 1 && <span>{t.includedTax}</span>}
+                </div>
                 <ul>
                   {[t.minutes(p.minutes), t.jobs(p.jobs), t.retention].map((feature) => (
                     <li key={feature}><span>✓</span><span>{feature}</span></li>
@@ -428,7 +430,7 @@ export function PaddlePricing({
                 </ul>
                 <button type="button" onClick={() => void (current ? changePlan(p.code) : checkout(p.code))}
                   disabled={busy || !checkoutEnabled || (!current && !scriptReady) || !!(current && (subscription.planCode===p.code || subscription.pendingChange || subscription.cancelAtPeriodEnd || subscription.providerStatus!=="active"))}
-                  className={`pricing-cta ${i === 1 ? "pricing-cta-primary" : ""} ${styles.planCta}`}>
+                  className={`pricing-cta ${i === 1 ? "pricing-cta-primary" : ""} ${styles.planCta} ${styles.paddleCta}`}>
                   {current ? subscription.planCode===p.code?t.current:t.change : t.start}
                 </button>
               </article>
@@ -436,7 +438,7 @@ export function PaddlePricing({
           </section>
         </>
       )}
-      <div role="status" aria-live="polite" className="mt-6 text-center">
+      <div role="status" aria-live="polite" className={message || paid ? "mt-6 text-center" : undefined}>
         <p>{message}</p>
         {paid && (
           <Link
@@ -464,7 +466,7 @@ export function PaddlePricing({
           {t.discard}
         </button>
       )}
-      <p className="mx-auto mt-8 max-w-2xl text-center text-sm leading-6 text-neutral-400">
+      <p className={styles.paddleTerms}>
         {t.terms}
       </p>
       <div className="mt-4 flex flex-wrap justify-center gap-5 text-sm text-neutral-300">
@@ -473,6 +475,6 @@ export function PaddlePricing({
         <Link href={localizedHref("/terms", locale)}>{t.legal}</Link>
         <a href="mailto:easycut@easycut.co.kr">{t.support}</a>
       </div>
-    </section>
+    </>
   );
 }

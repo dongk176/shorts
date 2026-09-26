@@ -7,6 +7,7 @@ import { PaddlePricing } from "@/components/paddle-pricing";
 import type { AuthProfile } from "@/lib/session";
 import type { SiteLocale } from "@/lib/i18n/config";
 import type { ComponentProps } from "react";
+import styles from "@/app/pricing/pricing.module.css";
 import { localizedHref } from "@/lib/i18n/routing";
 export function PaddlePage({
   user,
@@ -18,7 +19,7 @@ export function PaddlePage({
 >) {
   const [loginOpen, setLoginOpen] = useState(false);
   return (
-    <div className="app-shell site-chrome desktop-sidebar-layout min-h-screen text-neutral-100">
+    <div className={`app-shell site-chrome desktop-sidebar-layout pricing-page min-h-screen text-neutral-100 ${styles.page}`}>
       <SiteHeader desktopSidebar>
         <AuthControls
           user={user}
