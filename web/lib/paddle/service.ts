@@ -15,6 +15,13 @@ import type {
   PaddleAdjustment,
 } from "./models";
 type Db = Sql | TransactionSql;
+type CheckoutRow = {
+  id: string;
+  transactionId: string | null;
+  planCode: string;
+  currency: PaddleCurrency;
+  status: string;
+};
 
 export function validatePaidTransaction(
   transaction: PaddleTransaction,
@@ -109,7 +116,7 @@ export async function preparePaddleCheckout(
         "CHECKOUT_PENDING",
       );
     const pending =
-      await tx`select * from shorts_mvp.paddle_checkouts where user_id=${userId} and environment=${environment}
+      await tx<CheckoutRow[]>`select * from shorts_mvp.paddle_checkouts where user_id=${userId} and environment=${environment}
    and status in ('creating','ready','unknown') order by created_at desc limit 1 for update`;
     if (pending[0]) {
       if (
@@ -118,11 +125,16 @@ export async function preparePaddleCheckout(
         pending[0].currency === currency
       )
         return pending[0];
-      throw new HttpError(
-        409,
-        "An earlier checkout is still open. Please contact support.",
-        "CHECKOUT_PENDING",
-      );
+      if (pending[0].status !== "ready" || !pending[0].transactionId)
+        throw new HttpError(
+          409,
+          "An earlier checkout could not be confirmed. Please contact support.",
+          "CHECKOUT_UNCONFIRMED",
+        );
+      // Closing the overlay does not cancel its payable transaction. A new
+      // plan selection replaces it only after Paddle confirms cancellation.
+      // Hold the user lock throughout so two tabs cannot create two checkouts.
+      await cancelUnpaidCheckout(tx, pending[0]);
     }
     const rows =
       await tx`insert into shorts_mvp.paddle_checkouts(user_id,environment,plan_code,currency,price_id)
@@ -438,33 +450,42 @@ export async function cancelPaddleCheckout(userId: string, db = getDb()) {
   return db.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtextextended(${userId},0))`;
     const rows =
-      await tx`select * from shorts_mvp.paddle_checkouts where user_id=${userId} and environment=${paddleEnvironment()} and status in ('creating','ready','unknown') order by created_at desc limit 1 for update`;
+      await tx<CheckoutRow[]>`select * from shorts_mvp.paddle_checkouts where user_id=${userId} and environment=${paddleEnvironment()} and status in ('creating','ready','unknown') order by created_at desc limit 1 for update`;
     const row = rows[0];
     if (!row) return;
-    if (!row.transactionId)
-      throw new HttpError(
-        409,
-        "Please contact support to reconcile this checkout.",
-        "CHECKOUT_UNCONFIRMED",
-      );
-    const current = await paddleRequest<PaddleTransaction>(
-      `/transactions/${row.transactionId}`,
-    );
-    if (!["draft", "ready", "canceled"].includes(current.status))
-      throw new HttpError(
-        409,
-        "Payment is being processed. Please wait.",
-        "CHECKOUT_PROCESSING",
-      );
-    if (current.status !== "canceled") {
-      const canceled = await paddleRequest<PaddleTransaction>(
-        `/transactions/${row.transactionId}`,
-        { status: "canceled" },
-        "PATCH",
-      );
-      if (canceled.status !== "canceled")
-        throw new Error("Checkout cancellation unconfirmed");
-    }
-    await tx`update shorts_mvp.paddle_checkouts set status='canceled' where id=${row.id}`;
+    await cancelUnpaidCheckout(tx, row);
   });
+}
+
+async function cancelUnpaidCheckout(
+  tx: Db,
+  row: { id: string; transactionId: string | null },
+) {
+  if (!row.transactionId)
+    throw new HttpError(
+      409,
+      "Please contact support to reconcile this checkout.",
+      "CHECKOUT_UNCONFIRMED",
+    );
+  const current = await paddleRequest<PaddleTransaction>(
+    `/transactions/${row.transactionId}`,
+  );
+  if (current.id !== row.transactionId)
+    throw new Error("Checkout identity mismatch");
+  if (!["draft", "ready", "canceled"].includes(current.status))
+    throw new HttpError(
+      409,
+      "Payment is being processed. Please wait.",
+      "CHECKOUT_PROCESSING",
+    );
+  if (current.status !== "canceled") {
+    const canceled = await paddleRequest<PaddleTransaction>(
+      `/transactions/${row.transactionId}`,
+      { status: "canceled" },
+      "PATCH",
+    );
+    if (canceled.id !== row.transactionId || canceled.status !== "canceled")
+      throw new Error("Checkout cancellation unconfirmed");
+  }
+  await tx`update shorts_mvp.paddle_checkouts set status='canceled' where id=${row.id}`;
 }

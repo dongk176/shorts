@@ -432,6 +432,56 @@ describe("Paddle ledger using real SQL and migration", () => {
     expect(paddleRequest).toHaveBeenCalledTimes(1);
     expect((await rows("paddle_checkouts"))[0].status).toBe("unknown");
   });
+  it.each(["draft", "ready", "canceled"])(
+    "switches plan after confirming the previous %s checkout is canceled",
+    async (oldStatus) => {
+      const nextId = "txn_" + "b".repeat(26);
+      const creatorPrice = "pri_" + "c".repeat(26);
+      vi.stubEnv("PADDLE_PRICE_CREATOR_USD", creatorPrice);
+      vi.mocked(paddleRequest).mockImplementation(async (path, body, method) => {
+        if (path === "/transactions") {
+          expect((await rows("paddle_checkouts")).find(r => r.id === checkout)?.status).toBe("canceled");
+          expect(body).toMatchObject({ items: [{ price_id: creatorPrice, quantity: 1 }] });
+          return { id: nextId };
+        }
+        expect(path).toBe(`/transactions/${txn}`);
+        if (method === "PATCH") {
+          expect(body).toEqual({ status: "canceled" });
+          return { ...transaction, status: "canceled" };
+        }
+        return { ...transaction, status: oldStatus };
+      });
+      expect(await preparePaddleCheckout(user, "paddle_creator", "USD", tag(pg))).toBe(nextId);
+      const checkouts = await rows("paddle_checkouts");
+      expect(checkouts).toHaveLength(2);
+      expect(checkouts.find(r => r.id === checkout)?.status).toBe("canceled");
+      expect(checkouts.find(r => r.transaction_id === nextId)).toMatchObject({status: "ready", plan_code: "paddle_creator"});
+      expect(await rows("usage_grants")).toHaveLength(0);
+    },
+  );
+  it.each(["paid", "billed", "completed", "past_due"])(
+    "does not replace a %s payment even before its webhook arrives",
+    async (status) => {
+      vi.mocked(paddleRequest).mockResolvedValue({ ...transaction, status });
+      await expect(preparePaddleCheckout(user, "paddle_lite", "JPY", tag(pg))).rejects.toMatchObject({ code: "CHECKOUT_PROCESSING" });
+      expect(paddleRequest).toHaveBeenCalledTimes(1);
+      expect(await rows("paddle_checkouts")).toHaveLength(1);
+      expect((await rows("paddle_checkouts"))[0].status).toBe("ready");
+    },
+  );
+  it("does not create a replacement when cancellation cannot be confirmed", async () => {
+    vi.mocked(paddleRequest).mockResolvedValue({ ...transaction, status: "ready" });
+    await expect(preparePaddleCheckout(user, "paddle_lite", "JPY", tag(pg))).rejects.toThrow("unconfirmed");
+    expect(paddleRequest).toHaveBeenCalledTimes(2);
+    expect(await rows("paddle_checkouts")).toHaveLength(1);
+    expect((await rows("paddle_checkouts"))[0].status).toBe("ready");
+  });
+  it("keeps an uncertain creation blocked when choosing another plan", async () => {
+    await pg.exec("update shorts_mvp.paddle_checkouts set status='unknown',transaction_id=null");
+    await expect(preparePaddleCheckout(user, "paddle_lite", "JPY", tag(pg))).rejects.toMatchObject({ code: "CHECKOUT_UNCONFIRMED" });
+    expect(paddleRequest).not.toHaveBeenCalled();
+    expect(await rows("paddle_checkouts")).toHaveLength(1);
+  });
   it("does not cancel a payment that is already completed", async () => {
     await expect(cancelPaddleCheckout(user, tag(pg))).rejects.toThrow(
       "processed",

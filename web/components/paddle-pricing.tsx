@@ -61,6 +61,7 @@ const copy = {
       "You already have a subscription. Manage it before starting another.",
     pending:
       "You have an unfinished checkout. Continue with the same plan or discard it to choose another.",
+    processing: "Your payment is being processed. Please wait and check your payment status before choosing another plan.",
     discard: "Discard unfinished checkout",
     retry: "Check payment status",
     refund: "Refund policy",
@@ -99,6 +100,7 @@ const copy = {
       "ご利用中の契約があります。新しい契約の前に現在の契約をご確認ください。",
     pending:
       "未完了の決済があります。同じプランで続行するか、未完了の決済を取り消してから別のプランを選んでください。",
+    processing: "お支払いを処理中です。しばらく待って決済状況を確認してから、別のプランをお選びください。",
     discard: "未完了の決済を取り消す",
     retry: "お支払い状況を確認",
     refund: "返金ポリシー",
@@ -201,10 +203,13 @@ export function PaddlePricing({
             ? t.existing
             : body.code === "CHECKOUT_PENDING"
               ? t.pending
-              : t.error,
+              : body.code === "CHECKOUT_PROCESSING"
+                ? t.processing
+                : t.error,
         );
         return;
       }
+      setPending(false);
       if (!initialized.current) {
         if (body.environment === "sandbox")
           window.Paddle.Environment.set("sandbox");
