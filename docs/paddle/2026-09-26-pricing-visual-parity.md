@@ -34,3 +34,22 @@ mobile Starter-first ordering and horizontal overflow. Candidate checks must
 also cover the five protected paths, localized pricing and job admission before
 promotion of that exact unaliased deployment. No payment tests are needed for
 this presentation-only change.
+
+## Released
+
+- Source `9748986fffc408658d7c6f270d53421f632f1f94`.
+- Exact candidate promoted: `dpl_DTULS9X5rwDpyXdKVWa46CCvBYnq`,
+  `https://shorts-e31ytpx0b-artiroom.vercel.app`.
+- Optimized build/type checks and targeted ESLint passed; 15 existing pricing
+  tests and 8 release guard tests passed. Route manifest unchanged.
+- Local browser inspected active and canceled fixture states, EN/JP desktop and
+  390px/320px layouts. Measured 24px feature-to-button spacing on final build;
+  no horizontal overflow. Settings management screen remained usable.
+- Actual deployment browser confirmed transparent/borderless outer sections,
+  opaque gradient badge, working CTA theme and localized JPY/USD prices.
+- Candidate protected path/localization checks and job admission fingerprint
+  `668676b0a45b9376e76461fdd8f11367524e4a2bf08695ddc13aa62c267964f4` passed.
+- Promotion performed without rebuilding. Production source identity, protected
+  paths and EN/JP pricing checks passed. Production browser shows new UI.
+- Local fixture restored to canceled; local server stopped. No actual charge,
+  refund, provider subscription change or production data mutation was tested.
