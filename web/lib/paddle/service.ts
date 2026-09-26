@@ -99,9 +99,9 @@ export async function preparePaddleCheckout(
       );
     const domestic =
       await tx`select 1 from shorts_mvp.billing_orders where user_id=${userId}
-   and (status in ('processing','manual_review') or (status='pending' and (checkout_expires_at is null or checkout_expires_at>now())))
+   and (status in ('processing','unknown','manual_review') or (status='pending' and (checkout_expires_at is null or checkout_expires_at>now())))
    union all select 1 from shorts_mvp.billing_toss_checkout_intents where user_id=${userId}
-   and status not in ('succeeded','failed','expired','canceled') and expires_at>now() limit 1`;
+   and (status in ('processing','payment_method_registered','manual_review') or (status='prepared' and expires_at>now())) limit 1`;
     if (domestic.length)
       throw new HttpError(
         409,

@@ -184,6 +184,21 @@ describe("Paddle ledger using real SQL and migration", () => {
       preparePaddleCheckout(user, "paddle_lite", "USD", tag(pg)),
     ).rejects.toThrow("pending");
   });
+  it("does not overlap an uncertain domestic payment or a review intent whose checkout expired", async () => {
+    await pg.exec("truncate shorts_mvp.paddle_checkouts");
+    await pg.exec(
+      `insert into shorts_mvp.billing_orders(user_id,status) values('${user}','unknown')`,
+    );
+    await expect(
+      preparePaddleCheckout(user, "paddle_lite", "USD", tag(pg)),
+    ).rejects.toThrow("pending");
+    await pg.exec(`truncate shorts_mvp.billing_orders;
+      insert into shorts_mvp.billing_toss_checkout_intents(user_id,status,expires_at) values('${user}','manual_review',now()-interval '1 day')`);
+    await expect(
+      preparePaddleCheckout(user, "paddle_lite", "USD", tag(pg)),
+    ).rejects.toThrow("pending");
+    expect(paddleRequest).not.toHaveBeenCalled();
+  });
   it("handles JPY zero-decimal amounts without multiplying by 100", async () => {
     const jpy = "pri_" + "j".repeat(26);
     await pg.exec(

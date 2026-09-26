@@ -1,23 +1,30 @@
 begin;
 set local lock_timeout = '3s';
 -- Additive, provider-isolated storage. Never store foreign minor units as KRW.
-do $$ declare expression text; begin
- select pg_get_expr(conbin,conrelid) into expression from pg_constraint
- where conrelid='shorts_mvp.plans'::regclass and conname='plans_code_check';
- if expression is null then raise exception 'Missing plans code boundary'; end if;
- if position('paddle_lite' in expression)=0 then
-  alter table shorts_mvp.plans drop constraint plans_code_check;
-  execute 'alter table shorts_mvp.plans add constraint plans_code_check check ((' || expression || ') or code in (''paddle_lite'',''paddle_creator'',''paddle_pro''))';
- end if;
+-- Retain each existing constraint's validation state. Production has legacy
+-- NOT VALID boundaries; widening them must not scan/reject unrelated old rows.
+do $$ declare target record; expression text; was_validated boolean; begin
+ for target in select * from (values
+  ('plans','plans_code_check', 'code in (''paddle_lite'',''paddle_creator'',''paddle_pro'')'),
+  ('user_subscriptions','user_subscriptions_payment_provider_check', 'payment_provider = ''paddle''')
+ ) as boundaries(table_name,constraint_name,addition) loop
+  select pg_get_expr(conbin,conrelid),convalidated into expression,was_validated
+   from pg_constraint where conrelid=format('shorts_mvp.%I',target.table_name)::regclass
+   and conname=target.constraint_name;
+  if expression is null then raise exception 'Missing boundary %',target.constraint_name; end if;
+  if position('paddle' in expression)=0 then
+   execute format('alter table shorts_mvp.%I drop constraint %I',target.table_name,target.constraint_name);
+   execute format('alter table shorts_mvp.%I add constraint %I check ((%s) or %s)%s',
+    target.table_name,target.constraint_name,expression,target.addition,
+    case when was_validated then '' else ' not valid' end);
+  end if;
+ end loop;
 end $$;
 insert into shorts_mvp.plans(code,display_name,monthly_source_seconds,retention_days,sort_order,monthly_price_krw,yearly_price_krw,max_active_jobs,is_active,prepaid_months)
 values ('paddle_lite','EasyCut Lite',3600,30,901,0,0,1,false,1),
  ('paddle_creator','EasyCut Creator',12000,30,902,0,0,2,false,1),
  ('paddle_pro','EasyCut Pro',36000,30,903,0,0,3,false,1)
 on conflict (code) do nothing;
-alter table shorts_mvp.user_subscriptions drop constraint if exists user_subscriptions_payment_provider_check;
-alter table shorts_mvp.user_subscriptions add constraint user_subscriptions_payment_provider_check
- check(payment_provider is null or payment_provider in ('nicepay','thepayone','toss','paddle'));
 create table if not exists shorts_mvp.paddle_checkouts(
  id uuid primary key default gen_random_uuid(), user_id uuid not null references shorts_mvp.app_users(id),
  environment text not null check(environment in ('sandbox','live')), plan_code text not null references shorts_mvp.plans(code),

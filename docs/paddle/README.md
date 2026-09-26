@@ -3,10 +3,10 @@
 ## 작업 상태 (2026-09-26)
 
 - 운영 조회로 확인한 기준: 배포 `dpl_8241YpSbQiNaFDcg5tbeAB6UXPJb`, 커밋 `3a60f90a6b70088485a49e2ca56dad0d339882cd`.
-- Vercel 운영 프로젝트 `prj_bQyHRVC3Pfzq2dvUnAqEDlw66GOw`. 운영 DB는 `mvcprswvfybudtopepuj` / `shorts_mvp`이나 이 작업에서는 아직 접속하거나 변경하지 않았다.
+- Vercel 운영 프로젝트 `prj_bQyHRVC3Pfzq2dvUnAqEDlw66GOw`. 운영 DB는 `mvcprswvfybudtopepuj` / `shorts_mvp`. 2026-09-26 후속 작업에서 `transaction_read_only=on`으로 관련 테이블 구조만 조회했고 데이터/스키마는 변경하지 않았다.
 - 작업트리 `.tmp/paddle-integration-20260926`, 브랜치 `codex/paddle-integration-20260926`. 기존 작업트리 변경은 보존.
 - Paddle live Vendor 427481: 상품 3개, 가격 6개 등록 완료. 공개 식별자는 `live-catalog.json` 참조.
-- API 키는 기존 것이 없었다. 브라우저 새 API 키 양식을 최소 권한으로 준비했으나 **저장하지 않았다**. 새 보안 권한 생성은 브라우저 도구에서 실행 시점 확인을 요구하여 사용자에게 질문했다. 공개 토큰/웹훅 설정, 운영 비밀값 등록은 미완료.
+- API 키는 기존 것이 없었다. 브라우저 새 API 키 양식을 최소 권한으로 준비했으나 **저장하지 않았다**. 새 보안 권한 생성은 브라우저 도구에서 실행 시점 확인을 요구한다. 후속 사용자 지시 “운영 배포 전까지는 해도돼”로 저장을 시도했으나 자동 승인 심사가 구체적 권한 발급 승인이 아니라는 이유로 차단했다. 실제 키는 발급되지 않았으며 다섯 권한과 만료일을 명시한 확인 질문이 대기 중이다. 공개 토큰/웹훅 설정, 운영 비밀값 등록은 미완료.
 - 운영 DB migration, 후보 배포/승격, 실제/샌드박스 Paddle 결제는 아직 실행하지 않았다. 로컬 테스트가 실제 결제 완료를 의미하지 않는다.
 - 비용: 상품 등록 및 로컬 테스트에서 구매/유료 인프라 생성 없음. 이 작업의 사용자 승인 한계는 **10,000원 이상 비용 발생 전 확인**. 실제 Lite 결제도 이 금액을 넘을 수 있으므로 자동으로 실행하지 않는다.
 
@@ -73,6 +73,18 @@
 - API 호출은 mock, SQL은 최소 관련 스키마를 만든 PGlite였다. 운영 스키마 호환성, 로그인 이후 실제 Paddle Checkout/3DS, Paddle 발송 webhook, 정산 입금은 아직 미확인이다.
 
 새 checkout에서 SQL 테스트를 재현하려면 저장소의 기존 PGlite 테스트 관례에 따라 `test-tools`에 `@electric-sql/pglite@0.3.14`를 설치한다(`npm install --prefix test-tools --no-save @electric-sql/pglite@0.3.14`). 이번 작업은 이미 설치된 모듈을 재사용했다. 테스트 명령은 `npm --prefix web test -- lib/paddle app/api/paddle app/settings/plan/paddle-routing.test.tsx`이다.
+
+## 후속 배포 전 점검 (2026-09-26)
+
+사용자는 운영 배포 전 단계까지만 진행하도록 했다. 운영 DB migration, 운영 환경변수 변경, 후보/운영 배포는 수행하지 않았다.
+
+- 실제 운영 DB의 관련 테이블 6개 / 컬럼 136개 / 제약조건 80개를 읽기 전용 조회했다. 개인정보/거래 내역은 조회하거나 복사하지 않았다. 기존 Paddle 테이블은 없었다.
+- 관찰한 구조를 `test-fixtures/paddle-production-schema-20260926.sql`에 재현했다. 외부 테이블 FK, 기존 RLS/트리거, 실제 데이터는 제외한 부분 모델이다.
+- 운영의 기존 CHECK 제약은 일부 `NOT VALID` 상태였다. 새 migration이 불필요하게 기존 데이터를 다시 검사하거나 실패하지 않도록 원래 표현식과 검증 상태를 보존한다. 신규 입력은 확장한 제약에 계속 검사된다.
+- 위 구조에 migration 두 번 적용, 기존 제약 밖의 과거 가상 데이터 보존, 새 잘못된 상품 차단, 실제 컬럼/제약을 통과하는 Paddle 구독·시간 지급을 로컬에서 검증했다.
+- 결과 불명확한 국내 결제 또는 유효기간이 지난 검토 중 Toss 결제가 있으면 새 Paddle 결제를 만들지 않도록 보완했다.
+- 후속 변경에서 관련 테스트 6개 파일 / 33개, lint, typecheck, production build, diff 검사를 통과했다. 빌드는 로컬에서만 수행했다.
+- 서버 API 키 저장은 자동 승인 심사에서 차단되어 미발급이다. 공개 토큰/웹훅, 실제 Paddle sandbox 결제도 여전히 미완료다. 이 기록을 실제 Paddle 결제 테스트 완료로 해석하면 안 된다.
 
 ## 공식 참고
 
