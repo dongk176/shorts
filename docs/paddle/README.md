@@ -7,7 +7,7 @@
 - 작업트리 `.tmp/paddle-integration-20260926`, 브랜치 `codex/paddle-integration-20260926`. 기존 작업트리 변경은 보존.
 - Paddle live Vendor 427481: 상품 3개, 가격 6개 등록 완료. 공개 식별자는 `live-catalog.json` 참조.
 - 서버 API 키 `EasyCut billing server` 발급 완료. 사용자가 다섯 권한/만료일을 명시한 확인 요청에 “승인”으로 답한 후 발급했다. 권한은 `transaction.read`, `transaction.write`, `subscription.read`, `adjustment.read`, `customer_portal_session.write`; 만료일 2026-12-25. 키 ID `apikey_01m3dthfsgd6sr1fvb28cn7e8z`. 비밀값은 Git 제외된 작업트리 `.secrets/paddle-live.env`에 파일 권한 0600/상위 폴더 0700으로 보관했고 로그/채팅/문서에는 출력하지 않았다. 운영 환경변수에는 등록하지 않았다.
-- 실제 Paddle API의 `GET /transactions?per_page=1` 읽기 전용 인증 확인: HTTP 200, 정상 목록 형식. 고객/거래 내용은 출력하지 않았으며 거래 생성/결제는 실행하지 않았다. 공개 토큰 `EasyCut web checkout`은 이름/설명 초안만 작성했으며 별도 발급 확인 대기 중이다. 웹훅 설정은 미완료.
+- 실제 Paddle API의 `GET /transactions?per_page=1` 읽기 전용 인증 확인: HTTP 200, 정상 목록 형식. 고객/거래 내용은 출력하지 않았으며 거래 생성/결제는 실행하지 않았다. 공개 토큰 `EasyCut web checkout`도 별도 사용자 승인 후 발급 완료했다. 토큰 ID `ctkn_01m3dwbyh147dy3cbbzftqwx70`, Active 상태를 확인했고 같은 로컬 보호 파일에 6개 가격 ID와 함께 보관했다. 웹훅 설정은 미완료.
 - 운영 DB migration, 후보 배포/승격, 실제/샌드박스 Paddle 결제는 아직 실행하지 않았다. 로컬 테스트가 실제 결제 완료를 의미하지 않는다.
 - 비용: 상품 등록 및 로컬 테스트에서 구매/유료 인프라 생성 없음. 이 작업의 사용자 승인 한계는 **10,000원 이상 비용 발생 전 확인**. 실제 Lite 결제도 이 금액을 넘을 수 있으므로 자동으로 실행하지 않는다.
 
@@ -85,12 +85,12 @@
 - 위 구조에 migration 두 번 적용, 기존 제약 밖의 과거 가상 데이터 보존, 새 잘못된 상품 차단, 실제 컬럼/제약을 통과하는 Paddle 구독·시간 지급을 로컬에서 검증했다.
 - 결과 불명확한 국내 결제 또는 유효기간이 지난 검토 중 Toss 결제가 있으면 새 Paddle 결제를 만들지 않도록 보완했다.
 - 후속 변경에서 관련 테스트 6개 파일 / 33개, lint, typecheck, production build, diff 검사를 통과했다. 빌드는 로컬에서만 수행했다.
-- 최초 서버 키 저장은 자동 승인 심사에서 차단되었으나, 이후 사용자의 구체적인 “승인” 답변 후 발급·로컬 보호 저장·읽기 전용 API 인증(HTTP 200)까지 완료했다. 공개 토큰/웹훅, 실제 Paddle sandbox 결제는 여전히 미완료다. API 인증 성공을 실제 결제 테스트 완료로 해석하면 안 된다.
+- 최초 서버 키 저장은 자동 승인 심사에서 차단되었으나, 이후 사용자의 구체적인 “승인” 답변 후 발급·로컬 보호 저장·읽기 전용 API 인증(HTTP 200)까지 완료했다. 공개 토큰은 이후 별도 승인 후 발급·보관했다. 웹훅과 실제 Paddle sandbox 결제는 여전히 미완료다. API 인증 성공을 실제 결제 테스트 완료로 해석하면 안 된다.
 
 ## 인증 준비 후 남은 작업
 
-- 공개 결제창 토큰은 발급 확인 후 저장해야 한다. 현재 브라우저 초안은 `EasyCut web checkout`이며, 서버 키 비밀값을 클라이언트 토큰으로 대체 사용하면 안 된다.
-- `https://sandbox-vendors.paddle.com/onboarding/get-started` 접근은 sandbox 로그인 화면으로 이동했다. 현재 테스트 계정은 로그인되지 않았고 계정 존재 여부도 확인하지 않았다. 운영 로그인과 별개로 테스트 계정 접근이 필요하다.
+- 공개 결제창 토큰 `EasyCut web checkout`은 발급·로컬 보관 완료했다. 서버 키 비밀값을 클라이언트 토큰으로 대체 사용하면 안 된다. 운영 환경변수에는 아직 둘 다 등록하지 않았다.
+- `https://sandbox-vendors.paddle.com/onboarding/get-started` 접근은 sandbox 로그인 화면으로 이동했다. 사용자가 로그인했다고 알려준 후 확인했으나 해당 탭에는 `Incorrect login details`가 표시되어 있었다. 테스트 계정 로그인은 성립하지 않았고, 계정 존재 여부를 사용자에게 확인 요청했다. 운영 로그인과 별개로 테스트 계정 접근이 필요하다.
 - 샌드박스 테스트 대상은 이 작업트리의 코드와 격리된 로컬 DB/가상 사용자이다. 운영 DB/고객 데이터 또는 기존 lab 서비스를 연결하지 않는다. 현재 테스트 기록은 실제 Paddle Checkout/웹훅 end-to-end 실행을 포함하지 않는다.
 - 발급된 live 서버 키는 이 작업트리 `.secrets/paddle-live.env`에만 있다. 작업트리 제거 전 사용자가 관리하는 비밀 저장소로 안전하게 옮기거나 Paddle에서 폐기해야 한다. 실제 배포 시에는 서버 전용 비밀값으로 넣고 2026-12-25 이전에 교체한다. `PADDLE_ENABLED=false` 상태를 유지한다.
 
