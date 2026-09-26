@@ -1,0 +1,111 @@
+{
+  "verifiedAt": "2026-09-26T06:20:18.703193+00:00",
+  "sourceBase": "d8eca7db93ddfd4eb06151f45840de96e48f433a",
+  "branch": "codex/paddle-integration-20260926",
+  "amountsMinor": {
+    "paddle_lite": {
+      "USD": 399,
+      "JPY": 590
+    },
+    "paddle_creator": {
+      "USD": 1199,
+      "JPY": 1790
+    },
+    "paddle_pro": {
+      "USD": 3499,
+      "JPY": 4990
+    }
+  },
+  "live": {
+    "vendorId": "427481",
+    "method": "Paddle dashboard Edit price; saved product rows read back for all six monthly prices",
+    "existingIdsPreserved": true
+  },
+  "sandbox": {
+    "verifiedAt": "2026-09-26T06:00:12.136Z",
+    "environment": "sandbox",
+    "vendorId": "123613",
+    "prices": [
+      {
+        "plan": "paddle_lite",
+        "priceId": "pri_01m3dx60h0gksanytsjzs3hn3h",
+        "currency": "USD",
+        "amountMinor": 399,
+        "taxMode": "internal",
+        "billingCycle": {
+          "interval": "month",
+          "frequency": 1
+        }
+      },
+      {
+        "plan": "paddle_lite",
+        "priceId": "pri_01m3dx8ne2sws910x536v47kb7",
+        "currency": "JPY",
+        "amountMinor": 590,
+        "taxMode": "internal",
+        "billingCycle": {
+          "interval": "month",
+          "frequency": 1
+        }
+      },
+      {
+        "plan": "paddle_creator",
+        "priceId": "pri_01m3dxd70sbwwnh0dmmbzkyycd",
+        "currency": "USD",
+        "amountMinor": 1199,
+        "taxMode": "internal",
+        "billingCycle": {
+          "interval": "month",
+          "frequency": 1
+        }
+      },
+      {
+        "plan": "paddle_creator",
+        "priceId": "pri_01m3dxd7a660mrc20xcwdd5e9c",
+        "currency": "JPY",
+        "amountMinor": 1790,
+        "taxMode": "internal",
+        "billingCycle": {
+          "interval": "month",
+          "frequency": 1
+        }
+      },
+      {
+        "plan": "paddle_pro",
+        "priceId": "pri_01m3dxd8azk3rmfncy9pbrh66c",
+        "currency": "USD",
+        "amountMinor": 3499,
+        "taxMode": "internal",
+        "billingCycle": {
+          "interval": "month",
+          "frequency": 1
+        }
+      },
+      {
+        "plan": "paddle_pro",
+        "priceId": "pri_01m3dxd8p6t7bvpxepjw06qbvy",
+        "currency": "JPY",
+        "amountMinor": 4990,
+        "taxMode": "internal",
+        "billingCycle": {
+          "interval": "month",
+          "frequency": 1
+        }
+      }
+    ]
+  },
+  "local": {
+    "port": 3423,
+    "environment": "sandbox with isolated loopback DB/auth; API key, client token and webhook secret removed",
+    "browserVerified": [
+      "/en/pricing",
+      "/jp/pricing"
+    ],
+    "testsPassed": 45,
+    "productionBuild": "passed with pre-existing optional canvas warning",
+    "targetedLint": "passed"
+  },
+  "actualCardPaymentRepeated": false,
+  "productionDeployment": false,
+  "productionDatabaseChanged": false
+}

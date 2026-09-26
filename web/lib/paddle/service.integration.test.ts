@@ -109,15 +109,15 @@ beforeEach(async () => {
         proration: null,
         price: {
           id: price,
-          unit_price: { amount: "990", currency_code: "USD" },
+          unit_price: { amount: "399", currency_code: "USD" },
           tax_mode: "internal",
           billing_cycle: { interval: "month", frequency: 1 },
         },
       },
     ],
     details: {
-      totals: { total: "990", subtotal: "990", tax: "0", discount: "0" },
-      line_items: [{ totals: { total: "990" } }],
+      totals: { total: "399", subtotal: "399", tax: "0", discount: "0" },
+      line_items: [{ totals: { total: "399" } }],
     },
   };
   subscription = {
@@ -136,7 +136,7 @@ beforeEach(async () => {
     status: "approved",
     action: "refund",
     updated_at: "2026-09-27T00:00:00Z",
-    totals: { total: "990", subtotal: "990" },
+    totals: { total: "399", subtotal: "399" },
   };
   vi.mocked(paddleRequest)
     .mockReset()
@@ -207,25 +207,25 @@ describe("Paddle ledger using real SQL and migration", () => {
     transaction.currency_code = "JPY";
     transaction.items[0].price.id = jpy;
     transaction.items[0].price.unit_price = {
-      amount: "1480",
+      amount: "590",
       currency_code: "JPY",
     };
-    transaction.details.totals.total = "1480";
-    transaction.details.totals.subtotal = "1480";
+    transaction.details.totals.total = "590";
+    transaction.details.totals.subtotal = "590";
     subscription.items[0].price.id = jpy;
     await processPaddleEvent(event(), tag(pg));
-    expect((await rows("paddle_payments"))[0].amount_minor).toBe(1480);
+    expect((await rows("paddle_payments"))[0].amount_minor).toBe(590);
     expect((await rows("usage_grants"))[0].total_seconds).toBe(3600);
   });
   it("accepts canonical tax-exempt totals without changing the fixed product price", async () => {
     transaction.details.totals = {
-      total: "900",
-      subtotal: "900",
+      total: "360",
+      subtotal: "360",
       tax: "0",
       discount: "0",
     };
     await processPaddleEvent(event(), tag(pg));
-    expect((await rows("paddle_payments"))[0].amount_minor).toBe(900);
+    expect((await rows("paddle_payments"))[0].amount_minor).toBe(360);
     expect((await rows("usage_grants"))[0].total_seconds).toBe(3600);
   });
   it("keeps management available while checkout is disabled", async () => {
@@ -321,15 +321,15 @@ describe("Paddle ledger using real SQL and migration", () => {
       "update shorts_mvp.usage_grants set consumed_seconds=1200,reserved_seconds=1000",
     );
     adjustment.status = "approved";
-    adjustment.totals.total = "495";
-    adjustment.totals.subtotal = "495";
+    adjustment.totals.total = "199";
+    adjustment.totals.subtotal = "199";
     await processPaddleEvent(
       event("adjustment.updated", adjustment.id, 3),
       tag(pg),
     );
     expect((await rows("usage_grants"))[0].total_seconds).toBe(2200);
-    adjustment.totals.total = "990";
-    adjustment.totals.subtotal = "990";
+    adjustment.totals.total = "399";
+    adjustment.totals.subtotal = "399";
     await processPaddleEvent(
       event("adjustment.updated", adjustment.id, 4),
       tag(pg),
@@ -337,10 +337,10 @@ describe("Paddle ledger using real SQL and migration", () => {
     expect((await rows("usage_grants"))[0].status).toBe("revoked");
   });
   it("tax-only refunds preserve minutes; reversing a chargeback does not undo a separate refund", async () => {
-    transaction.details.totals.subtotal = "900";
-    transaction.details.totals.tax = "90";
+    transaction.details.totals.subtotal = "360";
+    transaction.details.totals.tax = "39";
     await processPaddleEvent(event(), tag(pg));
-    adjustment.totals = { total: "90", subtotal: "0" };
+    adjustment.totals = { total: "39", subtotal: "0" };
     await processPaddleEvent(
       event("adjustment.updated", adjustment.id, 2),
       tag(pg),
@@ -349,20 +349,20 @@ describe("Paddle ledger using real SQL and migration", () => {
     const refund = {
       ...structuredClone(adjustment),
       id: "adj_" + "b".repeat(26),
-      totals: { total: "450", subtotal: "450" },
+      totals: { total: "180", subtotal: "180" },
     };
     const original = {
       ...structuredClone(adjustment),
       id: "adj_" + "c".repeat(26),
       action: "chargeback",
       status: "reversed",
-      totals: { total: "990", subtotal: "900" },
+      totals: { total: "399", subtotal: "360" },
     };
     adjustment = {
       ...structuredClone(adjustment),
       id: "adj_" + "d".repeat(26),
       action: "chargeback_reverse",
-      totals: { total: "990", subtotal: "900" },
+      totals: { total: "399", subtotal: "360" },
     };
     vi.mocked(paddleRequest).mockImplementation(async (p) =>
       p.includes("transaction_id=")

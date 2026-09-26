@@ -7,17 +7,30 @@
     "paddle_lite": {
       "productId": "pro_01m3dx3j7pk194z3ky5sr41dmw",
       "USD": "pri_01m3dx60h0gksanytsjzs3hn3h",
-      "JPY": "pri_01m3dx8ne2sws910x536v47kb7"
+      "JPY": "pri_01m3dx8ne2sws910x536v47kb7",
+      "amountsMinor": {
+        "USD": 399,
+        "JPY": 590
+      }
     },
     "paddle_creator": {
       "productId": "pro_01m3dxd5tzzjj087rtjagvwwjp",
       "USD": "pri_01m3dxd70sbwwnh0dmmbzkyycd",
-      "JPY": "pri_01m3dxd7a660mrc20xcwdd5e9c"
+      "JPY": "pri_01m3dxd7a660mrc20xcwdd5e9c",
+      "amountsMinor": {
+        "USD": 1199,
+        "JPY": 1790
+      }
     },
     "paddle_pro": {
       "productId": "pro_01m3dxd7mewf7g23rdkxf33dpg",
       "USD": "pri_01m3dxd8azk3rmfncy9pbrh66c",
-      "JPY": "pri_01m3dxd8p6t7bvpxepjw06qbvy"
+      "JPY": "pri_01m3dxd8p6t7bvpxepjw06qbvy",
+      "amountsMinor": {
+        "USD": 3499,
+        "JPY": 4990
+      }
     }
-  }
+  },
+  "pricesUpdatedAt": "2026-09-26"
 }
