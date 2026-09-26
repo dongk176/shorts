@@ -2,6 +2,8 @@ import { type NextRequest, NextResponse } from "next/server";
 import { refreshSupabaseSession } from "@/lib/supabase/middleware";
 
 import { isLocalizedPage, localePath, localizedHref, SITE_LOCALE_HEADER } from "@/lib/i18n/routing";
+import { SITE_LOCALE_COOKIE } from "@/lib/i18n/config";
+import { entryLocale, isLocaleCrawler } from "@/lib/i18n/entry-locale";
 
 const CANONICAL_HOST = "www.easycut.co.kr";
 const LEGACY_PRODUCTION_HOSTS = new Set([
@@ -43,6 +45,21 @@ export async function middleware(request: NextRequest) {
     return refreshSupabaseSession(request);
   }
   const route = localePath(pathname);
+  const homeEntry = pathname === "/" && !route.prefixed && ["GET", "HEAD"].includes(request.method);
+  if (homeEntry && !isLocaleCrawler(request.headers.get("user-agent"))) {
+    const locale = entryLocale(
+      request.cookies.get(SITE_LOCALE_COOKIE)?.value,
+      request.headers.get("x-vercel-ip-country"),
+      request.headers.get("accept-language"),
+    );
+    if (locale !== "ko") {
+      const destination = request.nextUrl.clone();
+      destination.pathname = localizedHref("/", locale);
+      const response = NextResponse.redirect(destination, 307);
+      preventSharedLocaleCache(response);
+      return response;
+    }
+  }
   if (route.prefixed && !isLocalizedPage(route.pathname)) {
     return new NextResponse(null, { status: 404 });
   }
@@ -92,7 +109,16 @@ export async function middleware(request: NextRequest) {
   }
   const destination = request.nextUrl.clone();
   destination.pathname = pathname;
-  return refreshSupabaseSession(request, route.prefixed ? destination : undefined, requestHeaders);
+  const response = await refreshSupabaseSession(request, route.prefixed ? destination : undefined, requestHeaders);
+  if (homeEntry) preventSharedLocaleCache(response);
+  return response;
+}
+
+function preventSharedLocaleCache(response: NextResponse) {
+  response.headers.set("Cache-Control", "private, no-store, max-age=0");
+  const vary = new Set((response.headers.get("Vary") || "").split(",").map((value) => value.trim()).filter(Boolean));
+  for (const name of ["Cookie", "X-Vercel-IP-Country", "Accept-Language", "User-Agent"]) vary.add(name);
+  response.headers.set("Vary", [...vary].join(", "));
 }
 
 export const config = {

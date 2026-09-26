@@ -172,9 +172,10 @@ describe("locale routing boundaries", () => {
     expect(response.headers.get("x-middleware-rewrite")).toBeNull();
     expect(response.headers.get("x-middleware-request-x-easycut-site-locale")).toBe(locale);
   });
-  it("keeps root Korean even with a foreign cookie or spoofed locale header", async () => {
+  it("honors an explicitly saved language at root instead of a spoofed locale header", async () => {
     const response = await middleware(new NextRequest("https://www.easycut.co.kr/", { headers: { "x-easycut-site-locale": "ja", cookie: "easycut_locale=en" } }));
-    expect(response.headers.get("x-middleware-request-x-easycut-site-locale")).toBe("ko");
+    expect(response.headers.get("location")).toBe("https://www.easycut.co.kr/en");
+    expect(response.status).toBe(307);
   });
   it.each(["/jp/api/jobs", "/en/admin/easycutcutcutcutcutcut", "/jp/auth/callback", "/jp/content-calendar", "/jp/east-cut-logo.png"])("rejects prefixed shared route %s", async (path) => {
     const response = await middleware(new NextRequest(`https://www.easycut.co.kr${path}`));
