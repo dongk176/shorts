@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { paddlePlans, formatPaddlePrice } from "@/lib/paddle/catalog";
 import { localizedHref } from "@/lib/i18n/routing";
+import { useUsageState } from "@/components/usage-provider";
 import type { SiteLocale } from "@/lib/i18n/config";
 
 type Subscription = {
@@ -130,6 +131,7 @@ export function PaddlePricing({
   checkoutEnabled?: boolean;
 }) {
   const language = locale === "ja" ? "ja" : "en";
+  const { refreshUsage } = useUsageState();
   const t = copy[language];
   const currency = language === "ja" ? "JPY" : "USD";
   const [scriptReady, setScriptReady] = useState(false);
@@ -161,6 +163,8 @@ export function PaddlePricing({
         ["active", "trialing"].includes(body.subscription.providerStatus)
       ) {
         setSubscription(body.subscription);
+        await refreshUsage();
+        if (!mounted.current) return;
         setMessage(t.ready);
         setPaid(true);
         return;

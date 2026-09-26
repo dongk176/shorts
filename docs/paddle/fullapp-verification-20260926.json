@@ -1,0 +1,210 @@
+{
+  "checkedAt": "2026-09-26T05:40:57.796Z",
+  "identity": {
+    "database": "paddle_fullapp_local"
+  },
+  "subscriptions": [
+    {
+      "paddle_id": "sub_01m3e362etktsghmr1rheexsq8",
+      "provider_status": "active",
+      "cancel_at_period_end": true
+    },
+    {
+      "paddle_id": "sub_01m3e2g83z6z3xyk9s8ay2n2v1",
+      "provider_status": "active",
+      "cancel_at_period_end": true
+    }
+  ],
+  "grants": [
+    {
+      "kind": "base",
+      "total_seconds": 1,
+      "credited_seconds": 1,
+      "status": "revoked"
+    },
+    {
+      "kind": "base",
+      "total_seconds": 1,
+      "credited_seconds": 1,
+      "status": "revoked"
+    }
+  ],
+  "refunds": [
+    {
+      "id": "adj_01m3e3ceh986kvh8ye4r0jxaat",
+      "transaction_id": "txn_01m3e22bmycxaysjz09bjqt571",
+      "status": "approved",
+      "action": "refund",
+      "amount_minor": "1480"
+    },
+    {
+      "id": "adj_01m3e3cdna6w2raey48tmrg5rp",
+      "transaction_id": "txn_01m3e1nr3zcyyxx5mxwyz9m8ve",
+      "status": "approved",
+      "action": "refund",
+      "amount_minor": "990"
+    }
+  ],
+  "events": [
+    {
+      "event_id": "evt_01m3e2g8ezhah35a1dtn82sv6z",
+      "event_type": "subscription.created"
+    },
+    {
+      "event_id": "evt_01m3e2g8ezb7qj5sccsaaw1ttx",
+      "event_type": "subscription.activated"
+    },
+    {
+      "event_id": "evt_01m3e2g99es6fgtnzfsjwraed9",
+      "event_type": "transaction.completed"
+    },
+    {
+      "event_id": "evt_01m3e362mjg06xdppwty0975e2",
+      "event_type": "subscription.created"
+    },
+    {
+      "event_id": "evt_01m3e362mjarzrxyajkxgfwbdy",
+      "event_type": "subscription.activated"
+    },
+    {
+      "event_id": "evt_01m3e363d0h1y0strw4pp308cr",
+      "event_type": "transaction.completed"
+    },
+    {
+      "event_id": "evt_01m3e38yenp6z62g4dndgbwz08",
+      "event_type": "subscription.updated"
+    },
+    {
+      "event_id": "evt_01m3e3cdnvkzqqxtpbj4twry3s",
+      "event_type": "adjustment.created"
+    },
+    {
+      "event_id": "evt_01m3e3cehmnazhgvjqt65khs03",
+      "event_type": "adjustment.created"
+    },
+    {
+      "event_id": "evt_01m3e3d8xammk5tgmjnd5t3rwq",
+      "event_type": "subscription.updated"
+    },
+    {
+      "event_id": "evt_01m3e3mj58vd428v9ghmqsydbe",
+      "event_type": "adjustment.updated"
+    },
+    {
+      "event_id": "evt_01m3e3mh5z8jfdn3mv1jn35xat",
+      "event_type": "adjustment.updated"
+    }
+  ],
+  "deliveries": [
+    {
+      "receivedAt": "2026-09-26T05:20:09.734Z",
+      "eventId": "evt_01m3e2g8ezhah35a1dtn82sv6z",
+      "eventType": "subscription.created",
+      "objectId": "sub_01m3e2g83z6z3xyk9s8ay2n2v1",
+      "status": 200
+    },
+    {
+      "receivedAt": "2026-09-26T05:20:09.745Z",
+      "eventId": "evt_01m3e2g8ezb7qj5sccsaaw1ttx",
+      "eventType": "subscription.activated",
+      "objectId": "sub_01m3e2g83z6z3xyk9s8ay2n2v1",
+      "status": 200
+    },
+    {
+      "receivedAt": "2026-09-26T05:20:10.734Z",
+      "eventId": "evt_01m3e2g99es6fgtnzfsjwraed9",
+      "eventType": "transaction.completed",
+      "objectId": "txn_01m3e1nr3zcyyxx5mxwyz9m8ve",
+      "status": 200
+    },
+    {
+      "receivedAt": "2026-09-26T05:32:07.135Z",
+      "eventId": "evt_01m3e362mjg06xdppwty0975e2",
+      "eventType": "subscription.created",
+      "objectId": "sub_01m3e362etktsghmr1rheexsq8",
+      "status": 200
+    },
+    {
+      "receivedAt": "2026-09-26T05:32:07.144Z",
+      "eventId": "evt_01m3e362mjarzrxyajkxgfwbdy",
+      "eventType": "subscription.activated",
+      "objectId": "sub_01m3e362etktsghmr1rheexsq8",
+      "status": 200
+    },
+    {
+      "receivedAt": "2026-09-26T05:32:08.282Z",
+      "eventId": "evt_01m3e363d0h1y0strw4pp308cr",
+      "eventType": "transaction.completed",
+      "objectId": "txn_01m3e22bmycxaysjz09bjqt571",
+      "status": 200
+    },
+    {
+      "receivedAt": "2026-09-26T05:33:40.653Z",
+      "eventId": "evt_01m3e38yenp6z62g4dndgbwz08",
+      "eventType": "subscription.updated",
+      "objectId": "sub_01m3e362etktsghmr1rheexsq8",
+      "status": 200
+    },
+    {
+      "receivedAt": "2026-09-26T05:33:43.473Z",
+      "eventId": "evt_01m3e363d0h1y0strw4pp308cr",
+      "eventType": "transaction.completed",
+      "objectId": "txn_01m3e22bmycxaysjz09bjqt571",
+      "status": 200
+    },
+    {
+      "receivedAt": "2026-09-26T05:35:35.333Z",
+      "eventId": "evt_01m3e3cdnvkzqqxtpbj4twry3s",
+      "eventType": "adjustment.created",
+      "objectId": "adj_01m3e3cdna6w2raey48tmrg5rp",
+      "status": 200
+    },
+    {
+      "receivedAt": "2026-09-26T05:35:35.820Z",
+      "eventId": "evt_01m3e3cehmnazhgvjqt65khs03",
+      "eventType": "adjustment.created",
+      "objectId": "adj_01m3e3ceh986kvh8ye4r0jxaat",
+      "status": 200
+    },
+    {
+      "receivedAt": "2026-09-26T05:36:06.272Z",
+      "eventId": "evt_01m3e3d8xammk5tgmjnd5t3rwq",
+      "eventType": "subscription.updated",
+      "objectId": "sub_01m3e2g83z6z3xyk9s8ay2n2v1",
+      "status": 200
+    },
+    {
+      "receivedAt": "2026-09-26T05:40:01.822Z",
+      "eventId": "evt_01m3e3mj58vd428v9ghmqsydbe",
+      "eventType": "adjustment.updated",
+      "objectId": "adj_01m3e3ceh986kvh8ye4r0jxaat",
+      "status": 200
+    },
+    {
+      "receivedAt": "2026-09-26T05:40:02.059Z",
+      "eventId": "evt_01m3e3mh5z8jfdn3mv1jn35xat",
+      "eventType": "adjustment.updated",
+      "objectId": "adj_01m3e3cdna6w2raey48tmrg5rp",
+      "status": 200
+    }
+  ],
+  "source": {
+    "baseCommit": "62fef9ba",
+    "change": "usage balance refresh in this commit",
+    "paymentRuntime": "Next development",
+    "followupRuntime": "optimized local production bundle",
+    "environment": "Paddle sandbox 123613; dedicated local PostgreSQL and GoTrue"
+  },
+  "limitations": [
+    "No production deployment or real-money payment",
+    "Future automatic renewal not observed",
+    "Social OAuth and in-app-browser rendering not covered"
+  ],
+  "cleanup": {
+    "sandboxDestination": "Inactive (dashboard confirmed)",
+    "ngrokTunnel": "stopped",
+    "webhookProxy": "stopped",
+    "testSubscriptions": "cancel scheduled for current period end",
+    "refunds": "both approved"
+  }
+}

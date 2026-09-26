@@ -2,6 +2,9 @@
 
 ## 작업 상태 (2026-09-26)
 
+- **후속 실제 앱 검증 완료 범위:** [fullapp-verification-20260926.md](fullapp-verification-20260926.md). 실제 로컬 로그인 → 영어/일본어 Paddle 카드 결제 → 실제 서명 웹훅 → 각 60분 지급, 알림 재전송 중복 방지, 고객 포털 해지 예약을 확인했다. 아래의 독립 검사 화면 기록과 구분한다. 결제 직후 잔여시간을 즉시 갱신하도록 보완했다. 운영 배포는 하지 않았다.
+
+
 - 운영 조회로 확인한 기준: 배포 `dpl_8241YpSbQiNaFDcg5tbeAB6UXPJb`, 커밋 `3a60f90a6b70088485a49e2ca56dad0d339882cd`.
 - Vercel 운영 프로젝트 `prj_bQyHRVC3Pfzq2dvUnAqEDlw66GOw`. 운영 DB는 `mvcprswvfybudtopepuj` / `shorts_mvp`. 2026-09-26 후속 작업에서 `transaction_read_only=on`으로 관련 테이블 구조만 조회했고 데이터/스키마는 변경하지 않았다.
 - 작업트리 `.tmp/paddle-integration-20260926`, 브랜치 `codex/paddle-integration-20260926`. 기존 작업트리 변경은 보존.
