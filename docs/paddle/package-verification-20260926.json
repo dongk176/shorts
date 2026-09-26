@@ -1,0 +1,271 @@
+{
+  "source": "84fa90bc7636ae9fc9c7234a1bf26e5c9d9a95fd",
+  "deployment": {
+    "id": "dpl_FLwBj2t8w6maRWeeodVtd1Ts3Sis",
+    "url": "shorts-5756cos5k-artiroom.vercel.app",
+    "projectId": "prj_bQyHRVC3Pfzq2dvUnAqEDlw66GOw",
+    "reportedCommit": "84fa90bc"
+  },
+  "candidate": {
+    "origin": "https://shorts-5756cos5k-artiroom.vercel.app",
+    "verifiedAt": "2026-09-26T07:40:26.277Z",
+    "results": [
+      {
+        "path": "/",
+        "status": 200
+      },
+      {
+        "path": "/guidebook",
+        "status": 200
+      },
+      {
+        "path": "/pricing",
+        "status": 200
+      },
+      {
+        "path": "/admin/easycutcutcutcutcutcut",
+        "status": 307
+      },
+      {
+        "path": "/projects/0/edit/00000000-0000-0000-0000-000000000000",
+        "status": 404
+      },
+      {
+        "path": "/en/pricing",
+        "status": 200,
+        "prices": true
+      },
+      {
+        "path": "/jp/pricing",
+        "status": 200,
+        "prices": true
+      },
+      {
+        "jobAdmission": {
+          "origin": "https://shorts-5756cos5k-artiroom.vercel.app",
+          "fingerprint": "668676b0a45b9376e76461fdd8f11367524e4a2bf08695ddc13aa62c267964f4"
+        }
+      },
+      {
+        "webhook": "unsigned",
+        "status": 401,
+        "code": "INVALID_SIGNATURE"
+      },
+      {
+        "webhook": "valid-ignored",
+        "status": 200,
+        "ignored": true
+      },
+      {
+        "webhook": "expired",
+        "status": 401,
+        "code": "INVALID_SIGNATURE"
+      },
+      {
+        "anonymousCheckout": 401
+      }
+    ],
+    "actualPayment": false
+  },
+  "production": {
+    "origin": "https://www.easycut.co.kr",
+    "verifiedAt": "2026-09-26T07:42:10.317Z",
+    "results": [
+      {
+        "path": "/",
+        "status": 200
+      },
+      {
+        "path": "/guidebook",
+        "status": 200
+      },
+      {
+        "path": "/pricing",
+        "status": 200
+      },
+      {
+        "path": "/admin/easycutcutcutcutcutcut",
+        "status": 307
+      },
+      {
+        "path": "/projects/0/edit/00000000-0000-0000-0000-000000000000",
+        "status": 404
+      },
+      {
+        "path": "/en/pricing",
+        "status": 200,
+        "prices": true
+      },
+      {
+        "path": "/jp/pricing",
+        "status": 200,
+        "prices": true
+      },
+      {
+        "webhook": "unsigned",
+        "status": 401,
+        "code": "INVALID_SIGNATURE"
+      },
+      {
+        "webhook": "valid-ignored",
+        "status": 200,
+        "ignored": true
+      },
+      {
+        "webhook": "expired",
+        "status": 401,
+        "code": "INVALID_SIGNATURE"
+      },
+      {
+        "anonymousCheckout": 401
+      }
+    ],
+    "actualPayment": false
+  },
+  "schema": {
+    "reservationTimeBoundary": true,
+    "plans": [
+      {
+        "code": "paddle_creator",
+        "prepaid_months": 1,
+        "monthly_source_seconds": 12000,
+        "is_active": false
+      },
+      {
+        "code": "paddle_creator_12m",
+        "prepaid_months": 12,
+        "monthly_source_seconds": 12000,
+        "is_active": false
+      },
+      {
+        "code": "paddle_creator_3m",
+        "prepaid_months": 3,
+        "monthly_source_seconds": 12000,
+        "is_active": false
+      },
+      {
+        "code": "paddle_creator_6m",
+        "prepaid_months": 6,
+        "monthly_source_seconds": 12000,
+        "is_active": false
+      },
+      {
+        "code": "paddle_lite",
+        "prepaid_months": 1,
+        "monthly_source_seconds": 3600,
+        "is_active": false
+      },
+      {
+        "code": "paddle_pro",
+        "prepaid_months": 1,
+        "monthly_source_seconds": 36000,
+        "is_active": false
+      },
+      {
+        "code": "paddle_pro_12m",
+        "prepaid_months": 12,
+        "monthly_source_seconds": 36000,
+        "is_active": false
+      },
+      {
+        "code": "paddle_pro_3m",
+        "prepaid_months": 3,
+        "monthly_source_seconds": 36000,
+        "is_active": false
+      },
+      {
+        "code": "paddle_pro_6m",
+        "prepaid_months": 6,
+        "monthly_source_seconds": 36000,
+        "is_active": false
+      }
+    ],
+    "rls": [
+      {
+        "relrowsecurity": true
+      }
+    ],
+    "legacyUnmapped": 0,
+    "states": [
+      {
+        "conname": "plans_code_check",
+        "convalidated": false
+      }
+    ],
+    "verifiedAt": "2026-09-26T07:40:08.368Z"
+  },
+  "sandboxCleanup": {
+    "verifiedAt": "2026-09-26T07:36:17.156Z",
+    "environment": "sandbox",
+    "checkouts": [
+      {
+        "plan_code": "paddle_creator",
+        "currency": "JPY",
+        "transaction_id": "txn_01m3e8av5fhvcf7agvrayyhybb",
+        "status": "canceled",
+        "providerStatus": "canceled",
+        "providerPrice": {
+          "amount": "1790",
+          "currency_code": "JPY"
+        }
+      },
+      {
+        "plan_code": "paddle_lite",
+        "currency": "JPY",
+        "transaction_id": "txn_01m3e8bm74j9rceprywbwyqqhr",
+        "status": "canceled",
+        "providerStatus": "canceled",
+        "providerPrice": {
+          "amount": "590",
+          "currency_code": "JPY"
+        }
+      },
+      {
+        "plan_code": "paddle_creator_6m",
+        "currency": "USD",
+        "transaction_id": "txn_01m3e9xvfmk4d7edf357jrnd3k",
+        "status": "canceled",
+        "providerStatus": "canceled",
+        "providerPrice": {
+          "amount": "7194",
+          "currency_code": "USD"
+        }
+      },
+      {
+        "plan_code": "paddle_creator_6m",
+        "currency": "JPY",
+        "transaction_id": "txn_01m3ea1464p7gt04t5xry016rb",
+        "status": "canceled",
+        "providerStatus": "canceled",
+        "providerPrice": {
+          "amount": "10740",
+          "currency_code": "JPY"
+        }
+      },
+      {
+        "plan_code": "paddle_creator_3m",
+        "currency": "JPY",
+        "transaction_id": "txn_01m3ea2z1ba5zj1jq6j5r6wxvb",
+        "status": "canceled",
+        "providerStatus": "canceled",
+        "providerPrice": {
+          "amount": "6570",
+          "currency_code": "JPY"
+        }
+      },
+      {
+        "plan_code": "paddle_pro_12m",
+        "currency": "JPY",
+        "transaction_id": "txn_01m3ea3zvqbnvd7wat3sy97gzm",
+        "status": "canceled",
+        "providerStatus": "canceled",
+        "providerPrice": {
+          "amount": "45480",
+          "currency_code": "JPY"
+        }
+      }
+    ],
+    "usageGrantCount": 0,
+    "noPaymentAttempt": true
+  }
+}
