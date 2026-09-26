@@ -6,7 +6,8 @@
 - Vercel 운영 프로젝트 `prj_bQyHRVC3Pfzq2dvUnAqEDlw66GOw`. 운영 DB는 `mvcprswvfybudtopepuj` / `shorts_mvp`. 2026-09-26 후속 작업에서 `transaction_read_only=on`으로 관련 테이블 구조만 조회했고 데이터/스키마는 변경하지 않았다.
 - 작업트리 `.tmp/paddle-integration-20260926`, 브랜치 `codex/paddle-integration-20260926`. 기존 작업트리 변경은 보존.
 - Paddle live Vendor 427481: 상품 3개, 가격 6개 등록 완료. 공개 식별자는 `live-catalog.json` 참조.
-- API 키는 기존 것이 없었다. 브라우저 새 API 키 양식을 최소 권한으로 준비했으나 **저장하지 않았다**. 새 보안 권한 생성은 브라우저 도구에서 실행 시점 확인을 요구한다. 후속 사용자 지시 “운영 배포 전까지는 해도돼”로 저장을 시도했으나 자동 승인 심사가 구체적 권한 발급 승인이 아니라는 이유로 차단했다. 실제 키는 발급되지 않았으며 다섯 권한과 만료일을 명시한 확인 질문이 대기 중이다. 공개 토큰/웹훅 설정, 운영 비밀값 등록은 미완료.
+- 서버 API 키 `EasyCut billing server` 발급 완료. 사용자가 다섯 권한/만료일을 명시한 확인 요청에 “승인”으로 답한 후 발급했다. 권한은 `transaction.read`, `transaction.write`, `subscription.read`, `adjustment.read`, `customer_portal_session.write`; 만료일 2026-12-25. 키 ID `apikey_01m3dthfsgd6sr1fvb28cn7e8z`. 비밀값은 Git 제외된 작업트리 `.secrets/paddle-live.env`에 파일 권한 0600/상위 폴더 0700으로 보관했고 로그/채팅/문서에는 출력하지 않았다. 운영 환경변수에는 등록하지 않았다.
+- 실제 Paddle API의 `GET /transactions?per_page=1` 읽기 전용 인증 확인: HTTP 200, 정상 목록 형식. 고객/거래 내용은 출력하지 않았으며 거래 생성/결제는 실행하지 않았다. 공개 토큰 `EasyCut web checkout`은 이름/설명 초안만 작성했으며 별도 발급 확인 대기 중이다. 웹훅 설정은 미완료.
 - 운영 DB migration, 후보 배포/승격, 실제/샌드박스 Paddle 결제는 아직 실행하지 않았다. 로컬 테스트가 실제 결제 완료를 의미하지 않는다.
 - 비용: 상품 등록 및 로컬 테스트에서 구매/유료 인프라 생성 없음. 이 작업의 사용자 승인 한계는 **10,000원 이상 비용 발생 전 확인**. 실제 Lite 결제도 이 금액을 넘을 수 있으므로 자동으로 실행하지 않는다.
 
@@ -42,7 +43,7 @@
 
 ## 설정 순서
 
-1. 사용자 확인 후 필요한 키를 발급한다. 서버 키 권한: `transaction.read`, `transaction.write`, `subscription.read`, `adjustment.read`, `customer_portal_session.write`만. 키 생성 초안의 기본 만료일은 2026-12-25이며 실제 발급일/만료일을 기록하고 교체해야 한다.
+1. 발급된 서버 키를 안전하게 배포 비밀값에 등록하고 만료 전 교체한다. 서버 키 권한: `transaction.read`, `transaction.write`, `subscription.read`, `adjustment.read`, `customer_portal_session.write`만. 2026-09-26 발급, 2026-12-25 만료이며 만료 전 교체해야 한다.
 2. 샌드박스는 별도 Paddle 계정/상품/가격/키를 사용한다. 별도 로컬 PostgreSQL 및 필요한 앱 schema/auth 구성에서 검증한다. 이 코드의 sandbox 환경은 원격 DB 및 Vercel production에 연결할 수 없다. lab의 `shorts_lab`용 코드가 아니므로 기존 lab DB에 그대로 적용하면 안 된다.
 3. 실제 운영 계정/DB/schema/배포 기준을 다시 확인하고, `202609260010_paddle_billing.sql`만 검토·적용한다. 결제 기능을 먼저 켜지 않는다. 기존 데이터/스키마 전체 복사 금지.
 4. 서버 환경변수 준비: `PADDLE_ENVIRONMENT=live`, `PADDLE_ENABLED=false`, `PADDLE_API_KEY`, `PADDLE_CLIENT_TOKEN`, `PADDLE_WEBHOOK_SECRET`, 6개 가격 식별자. 예시의 공개 가격은 live 전용이다. secret은 Git/로그/문서/채팅에 쓰지 않는다.
@@ -70,7 +71,7 @@
 - 최종 소스에서 web lint / production build / typecheck 및 `git diff --check` 통과. 기존 `budoux` → `linkedom`의 optional `canvas` 모듈 경고는 있으나 빌드는 성공했다.
 - 최종 build manifest에 `/`, `/guidebook`, `/pricing`, `/admin/easycutcutcutcutcutcut`, `/projects/[projectNumber]/edit/[shortId]`가 유지됨을 확인했다. `/en/pricing`, `/jp/pricing`, Paddle API/결제 페이지도 생성됐다. 실제 production candidate와의 원격 비교는 미실행.
 - Chrome 로컬 guest 화면: `/en/pricing` 달러, `/jp/pricing` 엔화가 첫 서버 렌더부터 표시됨을 확인했다. 데스크톱/390px 모바일, 영문 로그인 callback(`/en/pricing`) 점검. 임시 viewport는 복구했고 로컬 서버/미리보기 탭은 정리했다.
-- API 호출은 mock, SQL은 최소 관련 스키마를 만든 PGlite였다. 운영 스키마 호환성, 로그인 이후 실제 Paddle Checkout/3DS, Paddle 발송 webhook, 정산 입금은 아직 미확인이다.
+- 동작 테스트의 API 호출은 mock, SQL은 최소 관련 스키마를 만든 PGlite였다. 이후 실제 live 서버 키의 읽기 전용 인증만 별도 확인했다. 운영 스키마 호환성, 로그인 이후 실제 Paddle Checkout/3DS, Paddle 발송 webhook, 정산 입금은 아직 미확인이다.
 
 새 checkout에서 SQL 테스트를 재현하려면 저장소의 기존 PGlite 테스트 관례에 따라 `test-tools`에 `@electric-sql/pglite@0.3.14`를 설치한다(`npm install --prefix test-tools --no-save @electric-sql/pglite@0.3.14`). 이번 작업은 이미 설치된 모듈을 재사용했다. 테스트 명령은 `npm --prefix web test -- lib/paddle app/api/paddle app/settings/plan/paddle-routing.test.tsx`이다.
 
@@ -84,7 +85,14 @@
 - 위 구조에 migration 두 번 적용, 기존 제약 밖의 과거 가상 데이터 보존, 새 잘못된 상품 차단, 실제 컬럼/제약을 통과하는 Paddle 구독·시간 지급을 로컬에서 검증했다.
 - 결과 불명확한 국내 결제 또는 유효기간이 지난 검토 중 Toss 결제가 있으면 새 Paddle 결제를 만들지 않도록 보완했다.
 - 후속 변경에서 관련 테스트 6개 파일 / 33개, lint, typecheck, production build, diff 검사를 통과했다. 빌드는 로컬에서만 수행했다.
-- 서버 API 키 저장은 자동 승인 심사에서 차단되어 미발급이다. 공개 토큰/웹훅, 실제 Paddle sandbox 결제도 여전히 미완료다. 이 기록을 실제 Paddle 결제 테스트 완료로 해석하면 안 된다.
+- 최초 서버 키 저장은 자동 승인 심사에서 차단되었으나, 이후 사용자의 구체적인 “승인” 답변 후 발급·로컬 보호 저장·읽기 전용 API 인증(HTTP 200)까지 완료했다. 공개 토큰/웹훅, 실제 Paddle sandbox 결제는 여전히 미완료다. API 인증 성공을 실제 결제 테스트 완료로 해석하면 안 된다.
+
+## 인증 준비 후 남은 작업
+
+- 공개 결제창 토큰은 발급 확인 후 저장해야 한다. 현재 브라우저 초안은 `EasyCut web checkout`이며, 서버 키 비밀값을 클라이언트 토큰으로 대체 사용하면 안 된다.
+- `https://sandbox-vendors.paddle.com/onboarding/get-started` 접근은 sandbox 로그인 화면으로 이동했다. 현재 테스트 계정은 로그인되지 않았고 계정 존재 여부도 확인하지 않았다. 운영 로그인과 별개로 테스트 계정 접근이 필요하다.
+- 샌드박스 테스트 대상은 이 작업트리의 코드와 격리된 로컬 DB/가상 사용자이다. 운영 DB/고객 데이터 또는 기존 lab 서비스를 연결하지 않는다. 현재 테스트 기록은 실제 Paddle Checkout/웹훅 end-to-end 실행을 포함하지 않는다.
+- 발급된 live 서버 키는 이 작업트리 `.secrets/paddle-live.env`에만 있다. 작업트리 제거 전 사용자가 관리하는 비밀 저장소로 안전하게 옮기거나 Paddle에서 폐기해야 한다. 실제 배포 시에는 서버 전용 비밀값으로 넣고 2026-12-25 이전에 교체한다. `PADDLE_ENABLED=false` 상태를 유지한다.
 
 ## 공식 참고
 
