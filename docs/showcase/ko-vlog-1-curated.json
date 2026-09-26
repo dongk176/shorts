@@ -1,0 +1,117 @@
+{
+  "id": "ko-vlog-1",
+  "locale": "ko",
+  "videoId": "rCZr6Uv_yW4",
+  "sourceStart": 64.3,
+  "sourceEnd": 88.4,
+  "templateId": "comment-capture",
+  "presentation": "comment",
+  "audio": true,
+  "captionKind": null,
+  "commentsAreAIDemos": true,
+  "renderSpec": {
+    "version": 4,
+    "canvas": {
+      "width": 1080,
+      "height": 1920
+    },
+    "fps": 30,
+    "layerOrder": [
+      "video",
+      "title",
+      "comment",
+      "channel"
+    ],
+    "title": {
+      "lines": [
+        "서울에서 부산까지",
+        "시내버스로 간다고?"
+      ],
+      "centerX": 540.0,
+      "offsetY": 0.0,
+      "fontSize": 84.0,
+      "scale": 1.0,
+      "font": {
+        "fontId": "pretendard",
+        "fileId": "Pretendard-Bold.woff2",
+        "family": "\"Editor V4 Pretendard\"",
+        "requestedWeight": 700,
+        "resolvedWeight": 700,
+        "variableWeight": null,
+        "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+        "metrics": {
+          "revision": "editor-font-metrics-v2"
+        }
+      },
+      "visible": true,
+      "centerY": 335.0,
+      "lineGap": 18.0,
+      "linePaddingX": 29.0,
+      "linePaddingY": 12.0,
+      "clamp": {
+        "minX": 0.0,
+        "maxX": 1080.0,
+        "minY": 0.0,
+        "maxY": 1920.0
+      },
+      "lineBoxes": [
+        {
+          "text": "서울에서 부산까지",
+          "centerX": 540.0,
+          "centerY": 272.0,
+          "width": 658.109,
+          "height": 108.0,
+          "baselineY": 301.859,
+          "backgroundRuns": []
+        },
+        {
+          "text": "시내버스로 간다고?",
+          "centerX": 540.0,
+          "centerY": 398.0,
+          "width": 703.313,
+          "height": 108.0,
+          "baselineY": 427.859,
+          "backgroundRuns": []
+        }
+      ]
+    },
+    "channel": {
+      "offsetX": 0.0,
+      "offsetY": 0.0,
+      "scale": 1.0,
+      "font": {
+        "fontId": "pretendard",
+        "fileId": "Pretendard-Bold.woff2",
+        "family": "\"Editor V4 Pretendard\"",
+        "requestedWeight": 700,
+        "resolvedWeight": 700,
+        "variableWeight": null,
+        "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+        "metrics": {
+          "revision": "editor-font-metrics-v2"
+        }
+      },
+      "visible": true
+    },
+    "comments": [
+      {
+        "id": "ko-vlog-ai-demo",
+        "offsetY": 0.0,
+        "startFrame": 0,
+        "endFrame": 723
+      }
+    ],
+    "textOverlays": [],
+    "video": {
+      "offsetX": 0.0,
+      "offsetY": 0.0,
+      "scale": 1.0
+    }
+  },
+  "output": "/showcase-examples/curated-pilot-v1/ko-vlog-1.mp4",
+  "sha256": "ec9127c0a6f8d5599094b0eb5d5d4477abf86ab334ae85e3a3a67a4be11e2041",
+  "bytes": 7033422,
+  "duration": 24.16,
+  "renderer": "shorts_worker.renderer.VideoRenderer.render_clean_clip",
+  "rendererSourceCommit": "f9750acf607b8116f5a032bd0322d886d3eac258"
+}

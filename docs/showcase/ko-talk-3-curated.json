@@ -1,0 +1,110 @@
+{
+  "id": "ko-talk-3",
+  "locale": "ko",
+  "videoId": "F-Dp78NJwlU",
+  "sourceStart": 300.5,
+  "sourceEnd": 326.5,
+  "templateId": "dark-minimal",
+  "presentation": "minimal",
+  "audio": true,
+  "captionKind": null,
+  "commentsAreAIDemos": false,
+  "renderSpec": {
+    "version": 4,
+    "canvas": {
+      "width": 1080,
+      "height": 1920
+    },
+    "fps": 30,
+    "layerOrder": [
+      "video",
+      "title",
+      "comment",
+      "channel"
+    ],
+    "title": {
+      "lines": [
+        "두뇌 대신",
+        "눈치와 생존력"
+      ],
+      "centerX": 540.0,
+      "offsetY": 0.0,
+      "fontSize": 84.0,
+      "scale": 1.0,
+      "font": {
+        "fontId": "pretendard",
+        "fileId": "Pretendard-Bold.woff2",
+        "family": "\"Editor V4 Pretendard\"",
+        "requestedWeight": 700,
+        "resolvedWeight": 700,
+        "variableWeight": null,
+        "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+        "metrics": {
+          "revision": "editor-font-metrics-v2"
+        }
+      },
+      "visible": true,
+      "centerY": 495.0,
+      "lineGap": 18.0,
+      "linePaddingX": 29.0,
+      "linePaddingY": 12.0,
+      "clamp": {
+        "minX": 0.0,
+        "maxX": 1080.0,
+        "minY": 0.0,
+        "maxY": 1920.0
+      },
+      "lineBoxes": [
+        {
+          "text": "두뇌 대신",
+          "centerX": 540.0,
+          "centerY": 432.0,
+          "width": 367.734,
+          "height": 108.0,
+          "baselineY": 461.859,
+          "backgroundRuns": []
+        },
+        {
+          "text": "눈치와 생존력",
+          "centerX": 540.0,
+          "centerY": 558.0,
+          "width": 512.922,
+          "height": 108.0,
+          "baselineY": 587.859,
+          "backgroundRuns": []
+        }
+      ]
+    },
+    "channel": {
+      "offsetX": 0.0,
+      "offsetY": 0.0,
+      "scale": 1.0,
+      "font": {
+        "fontId": "pretendard",
+        "fileId": "Pretendard-Bold.woff2",
+        "family": "\"Editor V4 Pretendard\"",
+        "requestedWeight": 700,
+        "resolvedWeight": 700,
+        "variableWeight": null,
+        "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+        "metrics": {
+          "revision": "editor-font-metrics-v2"
+        }
+      },
+      "visible": true
+    },
+    "comments": [],
+    "textOverlays": [],
+    "video": {
+      "offsetX": 0.0,
+      "offsetY": 0.0,
+      "scale": 1.0
+    }
+  },
+  "output": "/showcase-examples/curated-pilot-v1/ko-talk-3.mp4",
+  "sha256": "bbae5b2cd758f0259abeaed0b985a2af19a9432614ad18f4a4504bb44399a95e",
+  "bytes": 2886275,
+  "duration": 26.026026,
+  "renderer": "shorts_worker.renderer.VideoRenderer.render_clean_clip",
+  "rendererSourceCommit": "f9750acf607b8116f5a032bd0322d886d3eac258"
+}

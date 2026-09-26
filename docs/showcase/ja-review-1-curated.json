@@ -1,0 +1,117 @@
+{
+  "id": "ja-review-1",
+  "locale": "ja",
+  "videoId": "qQ8zNDzgFV0",
+  "sourceStart": 26.5,
+  "sourceEnd": 48.5,
+  "templateId": "comment-capture",
+  "presentation": "comment",
+  "audio": true,
+  "captionKind": null,
+  "commentsAreAIDemos": true,
+  "renderSpec": {
+    "version": 4,
+    "canvas": {
+      "width": 1080,
+      "height": 1920
+    },
+    "fps": 30,
+    "layerOrder": [
+      "video",
+      "title",
+      "comment",
+      "channel"
+    ],
+    "title": {
+      "lines": [
+        "話題の焼きそば弁当",
+        "ついに食べてみた"
+      ],
+      "centerX": 540.0,
+      "offsetY": 0.0,
+      "fontSize": 84.0,
+      "scale": 1.0,
+      "font": {
+        "fontId": "noto-sans-jp",
+        "fileId": "NotoSansCJKjp-Variable.ttf",
+        "family": "\"Editor V4 Noto Sans JP\"",
+        "requestedWeight": 700,
+        "resolvedWeight": 700,
+        "variableWeight": 700,
+        "sha256": "240c9b83bf7b386edbae39995ae7e068ed4583f484d92e4a74c34158b5f27b1a",
+        "metrics": {
+          "revision": "editor-font-metrics-v2"
+        }
+      },
+      "visible": true,
+      "centerY": 335.0,
+      "lineGap": 18.0,
+      "linePaddingX": 29.0,
+      "linePaddingY": 12.0,
+      "clamp": {
+        "minX": 0.0,
+        "maxX": 1080.0,
+        "minY": 0.0,
+        "maxY": 1920.0
+      },
+      "lineBoxes": [
+        {
+          "text": "話題の焼きそば弁当",
+          "centerX": 540.0,
+          "centerY": 272.0,
+          "width": 814.0,
+          "height": 108.0,
+          "baselineY": 305.6,
+          "backgroundRuns": []
+        },
+        {
+          "text": "ついに食べてみた",
+          "centerX": 540.0,
+          "centerY": 398.0,
+          "width": 726.641,
+          "height": 108.0,
+          "baselineY": 431.6,
+          "backgroundRuns": []
+        }
+      ]
+    },
+    "channel": {
+      "offsetX": 0.0,
+      "offsetY": 0.0,
+      "scale": 1.0,
+      "font": {
+        "fontId": "pretendard",
+        "fileId": "Pretendard-Bold.woff2",
+        "family": "\"Editor V4 Pretendard\"",
+        "requestedWeight": 700,
+        "resolvedWeight": 700,
+        "variableWeight": null,
+        "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+        "metrics": {
+          "revision": "editor-font-metrics-v2"
+        }
+      },
+      "visible": true
+    },
+    "comments": [
+      {
+        "id": "ja-review-ai-demo",
+        "offsetY": 0.0,
+        "startFrame": 0,
+        "endFrame": 660
+      }
+    ],
+    "textOverlays": [],
+    "video": {
+      "offsetX": 0.0,
+      "offsetY": 0.0,
+      "scale": 1.0
+    }
+  },
+  "output": "/showcase-examples/curated-pilot-v1/ja-review-1.mp4",
+  "sha256": "ec28e837829be5552ce46a37be44c55507fc0e97728265a8ea6fde4bb678ff86",
+  "bytes": 3437161,
+  "duration": 22.0,
+  "renderer": "shorts_worker.renderer.VideoRenderer.render_clean_clip",
+  "rendererSourceCommit": "f9750acf607b8116f5a032bd0322d886d3eac258"
+}

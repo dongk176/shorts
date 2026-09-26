@@ -1,0 +1,110 @@
+{
+  "id": "en-education-3",
+  "locale": "en",
+  "videoId": "H4Cgx4EY8zs",
+  "sourceStart": 238.8,
+  "sourceEnd": 265.8,
+  "templateId": "dark-minimal",
+  "presentation": "minimal",
+  "audio": true,
+  "captionKind": null,
+  "commentsAreAIDemos": false,
+  "renderSpec": {
+    "version": 4,
+    "canvas": {
+      "width": 1080,
+      "height": 1920
+    },
+    "fps": 30,
+    "layerOrder": [
+      "video",
+      "title",
+      "comment",
+      "channel"
+    ],
+    "title": {
+      "lines": [
+        "Same hard work",
+        "Different results"
+      ],
+      "centerX": 540.0,
+      "offsetY": 0.0,
+      "fontSize": 84.0,
+      "scale": 1.0,
+      "font": {
+        "fontId": "pretendard",
+        "fileId": "Pretendard-Bold.woff2",
+        "family": "\"Editor V4 Pretendard\"",
+        "requestedWeight": 700,
+        "resolvedWeight": 700,
+        "variableWeight": null,
+        "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+        "metrics": {
+          "revision": "editor-font-metrics-v2"
+        }
+      },
+      "visible": true,
+      "centerY": 495.0,
+      "lineGap": 18.0,
+      "linePaddingX": 29.0,
+      "linePaddingY": 12.0,
+      "clamp": {
+        "minX": 0.0,
+        "maxX": 1080.0,
+        "minY": 0.0,
+        "maxY": 1920.0
+      },
+      "lineBoxes": [
+        {
+          "text": "Same hard work",
+          "centerX": 540.0,
+          "centerY": 432.0,
+          "width": 695.297,
+          "height": 108.0,
+          "baselineY": 461.859,
+          "backgroundRuns": []
+        },
+        {
+          "text": "Different results",
+          "centerX": 540.0,
+          "centerY": 558.0,
+          "width": 699.375,
+          "height": 108.0,
+          "baselineY": 587.859,
+          "backgroundRuns": []
+        }
+      ]
+    },
+    "channel": {
+      "offsetX": 0.0,
+      "offsetY": 0.0,
+      "scale": 1.0,
+      "font": {
+        "fontId": "pretendard",
+        "fileId": "Pretendard-Bold.woff2",
+        "family": "\"Editor V4 Pretendard\"",
+        "requestedWeight": 700,
+        "resolvedWeight": 700,
+        "variableWeight": null,
+        "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+        "metrics": {
+          "revision": "editor-font-metrics-v2"
+        }
+      },
+      "visible": true
+    },
+    "comments": [],
+    "textOverlays": [],
+    "video": {
+      "offsetX": 0.0,
+      "offsetY": 0.0,
+      "scale": 1.0
+    }
+  },
+  "output": "/showcase-examples/curated-pilot-v1/en-education-3.mp4",
+  "sha256": "4d98232491fe76c8aad8f62c08809537c57fb0773863998aac4be54f1b755d8a",
+  "bytes": 2594415,
+  "duration": 27.069,
+  "renderer": "shorts_worker.renderer.VideoRenderer.render_clean_clip",
+  "rendererSourceCommit": "f9750acf607b8116f5a032bd0322d886d3eac258"
+}

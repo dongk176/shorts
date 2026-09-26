@@ -51,8 +51,11 @@ describe("localized first render without browser effects", () => {
   it.each(["en", "ja"] as const)("renders only %s showcase media before hydration", (locale) => {
     const html = render(<><BackgroundShowcase /><TransformationShowcase /></>, locale);
     expect(html).toContain(`/home-showcase/${locale}/showcase-01.jpg`);
-    expect(html).toContain(`/transformation-showcase/${locale}-horizontal-v1.mp4`);
-    expect(html).toContain(`/transformation-showcase/${locale}-vertical-v1.mp4`);
+    expect(html).toContain(locale === "ja" ? "/showcase-examples/curated-pilot-v1/ja-talk-source.mp4" : "/showcase-examples/curated-pilot-v1/en-talk-source.mp4");
+    // One source plus three actual renderer outputs, with no in-video controls.
+    expect(html.match(/<video\b/g)).toHaveLength(4);
+    expect(html.match(/role="tab"/g)).toHaveLength(6);
+    expect(html).not.toContain(`/transformation-showcase/${locale === "en" ? "ja" : "en"}-horizontal-v1.mp4`);
     expect(html).not.toContain("/ditto-");
     expect(html).not.toContain("/home-showcase/showcase-");
     expect(html).not.toMatch(/[가-힣]/);

@@ -1,0 +1,110 @@
+{
+  "id": "ko-vlog-3",
+  "locale": "ko",
+  "videoId": "rCZr6Uv_yW4",
+  "sourceStart": 167.1,
+  "sourceEnd": 201.1,
+  "templateId": "dark-minimal",
+  "presentation": "minimal",
+  "audio": true,
+  "captionKind": null,
+  "commentsAreAIDemos": false,
+  "renderSpec": {
+    "version": 4,
+    "canvas": {
+      "width": 1080,
+      "height": 1920
+    },
+    "fps": 30,
+    "layerOrder": [
+      "video",
+      "title",
+      "comment",
+      "channel"
+    ],
+    "title": {
+      "lines": [
+        "버스 갈아타며",
+        "맞이한 아침"
+      ],
+      "centerX": 540.0,
+      "offsetY": 0.0,
+      "fontSize": 84.0,
+      "scale": 1.0,
+      "font": {
+        "fontId": "pretendard",
+        "fileId": "Pretendard-Bold.woff2",
+        "family": "\"Editor V4 Pretendard\"",
+        "requestedWeight": 700,
+        "resolvedWeight": 700,
+        "variableWeight": null,
+        "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+        "metrics": {
+          "revision": "editor-font-metrics-v2"
+        }
+      },
+      "visible": true,
+      "centerY": 495.0,
+      "lineGap": 18.0,
+      "linePaddingX": 29.0,
+      "linePaddingY": 12.0,
+      "clamp": {
+        "minX": 0.0,
+        "maxX": 1080.0,
+        "minY": 0.0,
+        "maxY": 1920.0
+      },
+      "lineBoxes": [
+        {
+          "text": "버스 갈아타며",
+          "centerX": 540.0,
+          "centerY": 432.0,
+          "width": 512.922,
+          "height": 108.0,
+          "baselineY": 461.859,
+          "backgroundRuns": []
+        },
+        {
+          "text": "맞이한 아침",
+          "centerX": 540.0,
+          "centerY": 558.0,
+          "width": 440.328,
+          "height": 108.0,
+          "baselineY": 587.859,
+          "backgroundRuns": []
+        }
+      ]
+    },
+    "channel": {
+      "offsetX": 0.0,
+      "offsetY": 0.0,
+      "scale": 1.0,
+      "font": {
+        "fontId": "pretendard",
+        "fileId": "Pretendard-Bold.woff2",
+        "family": "\"Editor V4 Pretendard\"",
+        "requestedWeight": 700,
+        "resolvedWeight": 700,
+        "variableWeight": null,
+        "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+        "metrics": {
+          "revision": "editor-font-metrics-v2"
+        }
+      },
+      "visible": true
+    },
+    "comments": [],
+    "textOverlays": [],
+    "video": {
+      "offsetX": 0.0,
+      "offsetY": 0.0,
+      "scale": 1.0
+    }
+  },
+  "output": "/showcase-examples/curated-pilot-v1/ko-vlog-3.mp4",
+  "sha256": "38f9b4e1d07a6e4a1c8fcdf107e306aff957fce7257c63670eb3acd3688f2479",
+  "bytes": 7499764,
+  "duration": 34.04,
+  "renderer": "shorts_worker.renderer.VideoRenderer.render_clean_clip",
+  "rendererSourceCommit": "f9750acf607b8116f5a032bd0322d886d3eac258"
+}

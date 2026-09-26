@@ -1,0 +1,122 @@
+{
+  "id": "en-entertainment-2",
+  "locale": "en",
+  "videoId": "bfigQ3DvIsY",
+  "sourceStart": 124.4,
+  "sourceEnd": 155.5,
+  "templateId": "dark-minimal",
+  "presentation": "highlight",
+  "audio": true,
+  "captionKind": "speech-with-provider-word-timestamps",
+  "commentsAreAIDemos": false,
+  "renderSpec": {
+    "version": 4,
+    "canvas": {
+      "width": 1080,
+      "height": 1920
+    },
+    "fps": 30,
+    "layerOrder": [
+      "video",
+      "title",
+      "comment",
+      "channel"
+    ],
+    "title": {
+      "lines": [
+        "The idea behind",
+        "This giant pool"
+      ],
+      "centerX": 540.0,
+      "offsetY": 0.0,
+      "fontSize": 84.0,
+      "scale": 1.0,
+      "font": {
+        "fontId": "pretendard",
+        "fileId": "Pretendard-Bold.woff2",
+        "family": "\"Editor V4 Pretendard\"",
+        "requestedWeight": 700,
+        "resolvedWeight": 700,
+        "variableWeight": null,
+        "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+        "metrics": {
+          "revision": "editor-font-metrics-v2"
+        }
+      },
+      "visible": false,
+      "centerY": 247.0,
+      "lineGap": 18.0,
+      "linePaddingX": 29.0,
+      "linePaddingY": 12.0,
+      "clamp": {
+        "minX": 0.0,
+        "maxX": 1080.0,
+        "minY": 0.0,
+        "maxY": 1920.0
+      },
+      "lineBoxes": [
+        {
+          "text": "The idea behind",
+          "centerX": 540.0,
+          "centerY": 184.0,
+          "width": 690.438,
+          "height": 108.0,
+          "baselineY": 213.859,
+          "backgroundRuns": []
+        },
+        {
+          "text": "This giant pool",
+          "centerX": 540.0,
+          "centerY": 310.0,
+          "width": 640.547,
+          "height": 108.0,
+          "baselineY": 339.859,
+          "backgroundRuns": []
+        }
+      ]
+    },
+    "channel": {
+      "offsetX": 0.0,
+      "offsetY": 0.0,
+      "scale": 1.0,
+      "font": {
+        "fontId": "pretendard",
+        "fileId": "Pretendard-Bold.woff2",
+        "family": "\"Editor V4 Pretendard\"",
+        "requestedWeight": 700,
+        "resolvedWeight": 700,
+        "variableWeight": null,
+        "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+        "metrics": {
+          "revision": "editor-font-metrics-v2"
+        }
+      },
+      "visible": false
+    },
+    "comments": [],
+    "textOverlays": [],
+    "video": {
+      "offsetX": 0.0,
+      "offsetY": 0.0,
+      "scale": 1.0
+    },
+    "subtitles": {
+      "centerX": 540,
+      "visible": true,
+      "captionSpecVersion": 4,
+      "offsetY": 0.0,
+      "scale": 1.0,
+      "fontId": "pretendard",
+      "accentColor": "#35E6E3",
+      "fontSize": 96.0,
+      "color": "#FFFFFF",
+      "cueEdits": []
+    }
+  },
+  "output": "/showcase-examples/curated-pilot-v1/en-entertainment-2.mp4",
+  "sha256": "9b5e3f516d471d16f2224e09d1fa5cf944ae5234b6a3d242e689dae8bcdb4c23",
+  "bytes": 11805534,
+  "duration": 31.1,
+  "renderer": "shorts_worker.renderer.VideoRenderer.render_clean_clip",
+  "rendererSourceCommit": "f9750acf607b8116f5a032bd0322d886d3eac258"
+}

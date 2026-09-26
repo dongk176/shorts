@@ -1,0 +1,117 @@
+{
+  "id": "en-gaming-1",
+  "locale": "en",
+  "videoId": "LOoynSCSLfI",
+  "sourceStart": 1004.6,
+  "sourceEnd": 1048.8,
+  "templateId": "comment-capture",
+  "presentation": "comment",
+  "audio": true,
+  "captionKind": null,
+  "commentsAreAIDemos": true,
+  "renderSpec": {
+    "version": 4,
+    "canvas": {
+      "width": 1080,
+      "height": 1920
+    },
+    "fps": 30,
+    "layerOrder": [
+      "video",
+      "title",
+      "comment",
+      "channel"
+    ],
+    "title": {
+      "lines": [
+        "His first NFL play",
+        "Did not go to plan"
+      ],
+      "centerX": 540.0,
+      "offsetY": 0.0,
+      "fontSize": 84.0,
+      "scale": 1.0,
+      "font": {
+        "fontId": "pretendard",
+        "fileId": "Pretendard-Bold.woff2",
+        "family": "\"Editor V4 Pretendard\"",
+        "requestedWeight": 700,
+        "resolvedWeight": 700,
+        "variableWeight": null,
+        "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+        "metrics": {
+          "revision": "editor-font-metrics-v2"
+        }
+      },
+      "visible": true,
+      "centerY": 335.0,
+      "lineGap": 18.0,
+      "linePaddingX": 29.0,
+      "linePaddingY": 12.0,
+      "clamp": {
+        "minX": 0.0,
+        "maxX": 1080.0,
+        "minY": 0.0,
+        "maxY": 1920.0
+      },
+      "lineBoxes": [
+        {
+          "text": "His first NFL play",
+          "centerX": 540.0,
+          "centerY": 272.0,
+          "width": 722.734,
+          "height": 108.0,
+          "baselineY": 301.859,
+          "backgroundRuns": []
+        },
+        {
+          "text": "Did not go to plan",
+          "centerX": 540.0,
+          "centerY": 398.0,
+          "width": 748.703,
+          "height": 108.0,
+          "baselineY": 427.859,
+          "backgroundRuns": []
+        }
+      ]
+    },
+    "channel": {
+      "offsetX": 0.0,
+      "offsetY": 0.0,
+      "scale": 1.0,
+      "font": {
+        "fontId": "pretendard",
+        "fileId": "Pretendard-Bold.woff2",
+        "family": "\"Editor V4 Pretendard\"",
+        "requestedWeight": 700,
+        "resolvedWeight": 700,
+        "variableWeight": null,
+        "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+        "metrics": {
+          "revision": "editor-font-metrics-v2"
+        }
+      },
+      "visible": true
+    },
+    "comments": [
+      {
+        "id": "en-gaming-ai-demo",
+        "offsetY": 0.0,
+        "startFrame": 0,
+        "endFrame": 1326
+      }
+    ],
+    "textOverlays": [],
+    "video": {
+      "offsetX": 0.0,
+      "offsetY": 0.0,
+      "scale": 1.0
+    }
+  },
+  "output": "/showcase-examples/curated-pilot-v1/en-gaming-1.mp4",
+  "sha256": "2449dfc31ad628190be5d138937853da3afeccdce8afbc7fd2dad357bef13496",
+  "bytes": 13512258,
+  "duration": 44.233333,
+  "renderer": "shorts_worker.renderer.VideoRenderer.render_clean_clip",
+  "rendererSourceCommit": "f9750acf607b8116f5a032bd0322d886d3eac258"
+}

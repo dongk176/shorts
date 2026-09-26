@@ -1,0 +1,117 @@
+{
+  "id": "ko-education-1",
+  "locale": "ko",
+  "videoId": "Pqmmn4HpnXg",
+  "sourceStart": 592.2,
+  "sourceEnd": 626.2,
+  "templateId": "comment-capture",
+  "presentation": "comment",
+  "audio": true,
+  "captionKind": null,
+  "commentsAreAIDemos": true,
+  "renderSpec": {
+    "version": 4,
+    "canvas": {
+      "width": 1080,
+      "height": 1920
+    },
+    "fps": 30,
+    "layerOrder": [
+      "video",
+      "title",
+      "comment",
+      "channel"
+    ],
+    "title": {
+      "lines": [
+        "같은 동네 주유소",
+        "왜 가격이 다를까?"
+      ],
+      "centerX": 540.0,
+      "offsetY": 0.0,
+      "fontSize": 84.0,
+      "scale": 1.0,
+      "font": {
+        "fontId": "pretendard",
+        "fileId": "Pretendard-Bold.woff2",
+        "family": "\"Editor V4 Pretendard\"",
+        "requestedWeight": 700,
+        "resolvedWeight": 700,
+        "variableWeight": null,
+        "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+        "metrics": {
+          "revision": "editor-font-metrics-v2"
+        }
+      },
+      "visible": true,
+      "centerY": 335.0,
+      "lineGap": 18.0,
+      "linePaddingX": 29.0,
+      "linePaddingY": 12.0,
+      "clamp": {
+        "minX": 0.0,
+        "maxX": 1080.0,
+        "minY": 0.0,
+        "maxY": 1920.0
+      },
+      "lineBoxes": [
+        {
+          "text": "같은 동네 주유소",
+          "centerX": 540.0,
+          "centerY": 272.0,
+          "width": 604.875,
+          "height": 108.0,
+          "baselineY": 301.859,
+          "backgroundRuns": []
+        },
+        {
+          "text": "왜 가격이 다를까?",
+          "centerX": 540.0,
+          "centerY": 398.0,
+          "width": 650.078,
+          "height": 108.0,
+          "baselineY": 427.859,
+          "backgroundRuns": []
+        }
+      ]
+    },
+    "channel": {
+      "offsetX": 0.0,
+      "offsetY": 0.0,
+      "scale": 1.0,
+      "font": {
+        "fontId": "pretendard",
+        "fileId": "Pretendard-Bold.woff2",
+        "family": "\"Editor V4 Pretendard\"",
+        "requestedWeight": 700,
+        "resolvedWeight": 700,
+        "variableWeight": null,
+        "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+        "metrics": {
+          "revision": "editor-font-metrics-v2"
+        }
+      },
+      "visible": true
+    },
+    "comments": [
+      {
+        "id": "ko-education-ai-demo",
+        "offsetY": 0.0,
+        "startFrame": 0,
+        "endFrame": 1020
+      }
+    ],
+    "textOverlays": [],
+    "video": {
+      "offsetX": 0.0,
+      "offsetY": 0.0,
+      "scale": 1.0
+    }
+  },
+  "output": "/showcase-examples/curated-pilot-v1/ko-education-1.mp4",
+  "sha256": "379a5df6fd6ec385a546d8138ab507b79cb611492057d1c9ef2210455f690783",
+  "bytes": 4233557,
+  "duration": 34.034034,
+  "renderer": "shorts_worker.renderer.VideoRenderer.render_clean_clip",
+  "rendererSourceCommit": "f9750acf607b8116f5a032bd0322d886d3eac258"
+}

@@ -1,0 +1,112 @@
+{
+  "id": "ko-gaming-2",
+  "locale": "ko",
+  "videoId": "sLPF_ibWhOg",
+  "sourceStart": 1100,
+  "sourceEnd": 1140.56,
+  "templateId": "dark-minimal",
+  "presentation": "highlight",
+  "audio": true,
+  "captionKind": "speech-with-provider-word-timestamps",
+  "commentsAreAIDemos": false,
+  "renderSpec": {
+    "version": 4,
+    "canvas": {
+      "width": 1080,
+      "height": 1920
+    },
+    "fps": 30,
+    "layerOrder": [
+      "video",
+      "title",
+      "comment",
+      "channel"
+    ],
+    "title": {
+      "lines": [
+        "쌍둥이면 끝난 거 아니야?"
+      ],
+      "centerX": 540.0,
+      "offsetY": 0.0,
+      "fontSize": 84.0,
+      "scale": 1.0,
+      "font": {
+        "fontId": "pretendard",
+        "fileId": "Pretendard-Bold.woff2",
+        "family": "\"Editor V4 Pretendard\"",
+        "requestedWeight": 700,
+        "resolvedWeight": 700,
+        "variableWeight": null,
+        "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+        "metrics": {
+          "revision": "editor-font-metrics-v2"
+        }
+      },
+      "visible": false,
+      "centerY": 310.0,
+      "lineGap": 18.0,
+      "linePaddingX": 29.0,
+      "linePaddingY": 12.0,
+      "clamp": {
+        "minX": 0.0,
+        "maxX": 1080.0,
+        "minY": 0.0,
+        "maxY": 1920.0
+      },
+      "lineBoxes": [
+        {
+          "text": "쌍둥이면 끝난 거 아니야?",
+          "centerX": 540.0,
+          "centerY": 310.0,
+          "width": 887.219,
+          "height": 108.0,
+          "baselineY": 339.859,
+          "backgroundRuns": []
+        }
+      ]
+    },
+    "channel": {
+      "offsetX": 0.0,
+      "offsetY": 0.0,
+      "scale": 1.0,
+      "font": {
+        "fontId": "pretendard",
+        "fileId": "Pretendard-Bold.woff2",
+        "family": "\"Editor V4 Pretendard\"",
+        "requestedWeight": 700,
+        "resolvedWeight": 700,
+        "variableWeight": null,
+        "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+        "metrics": {
+          "revision": "editor-font-metrics-v2"
+        }
+      },
+      "visible": false
+    },
+    "comments": [],
+    "textOverlays": [],
+    "video": {
+      "offsetX": 0.0,
+      "offsetY": 0.0,
+      "scale": 1.0
+    },
+    "subtitles": {
+      "centerX": 540,
+      "visible": true,
+      "captionSpecVersion": 4,
+      "offsetY": 0.0,
+      "scale": 1.0,
+      "fontId": "pretendard",
+      "accentColor": "#35E6E3",
+      "fontSize": 96.0,
+      "color": "#FFFFFF",
+      "cueEdits": []
+    }
+  },
+  "output": "/showcase-examples/curated-pilot-v1/ko-gaming-2.mp4",
+  "sha256": "3884c3eee5dc6dd29bfcc804aa39ec0f8c5f834a7c9b567581650d8961c95064",
+  "bytes": 6532656,
+  "duration": 40.567,
+  "renderer": "shorts_worker.renderer.VideoRenderer.render_clean_clip",
+  "rendererSourceCommit": "f9750acf607b8116f5a032bd0322d886d3eac258"
+}

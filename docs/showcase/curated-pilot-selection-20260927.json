@@ -1,0 +1,134 @@
+[
+  {
+    "locale": "ko",
+    "category": "gaming",
+    "videoId": "sLPF_ibWhOg",
+    "url": "https://www.youtube.com/watch?v=sLPF_ibWhOg",
+    "title": "따지지 말고 질문을 하세요 행님~",
+    "author": "침착맨 플러스",
+    "channelId": "UCC1LvVTX2ySKYjeIXkAtvsQ",
+    "publishedDate": "20260916",
+    "views": 417603,
+    "duration": 1574,
+    "license": "Creative Commons Attribution license (reuse allowed)",
+    "licenseEvidence": "YouTube expanded description and independent yt-dlp metadata",
+    "verifiedAt": "2026-09-27T00:55:27+09:00",
+    "dateWindow": "No upload-date restriction — user relaxed 2026-09-27",
+    "status": "local pilot complete: three native template renders with original audio; not deployed",
+    "plannedClips": [
+      {
+        "style": "comment",
+        "start": 1279.36,
+        "end": 1311.8
+      },
+      {
+        "style": "highlight",
+        "start": 1100,
+        "end": 1140.56
+      },
+      {
+        "style": "minimal",
+        "start": 24.24,
+        "end": 43.6
+      }
+    ],
+    "selectionPriority": [
+      "Required: official source/collaboration, individual-video CC BY, long-form",
+      "Large subscriber base and recognizable creator in the target language/category",
+      "Views and standalone moments that work as Shorts"
+    ],
+    "subscriberEvidence": {
+      "mainChannel": 3270000,
+      "sourceChannel": 884000,
+      "source": "YouTube channel UI, observed 2026-09-27; rounded displayed counts"
+    }
+  },
+  {
+    "locale": "ja",
+    "category": "talk",
+    "videoId": "vznu6pLMPXA",
+    "url": "https://www.youtube.com/watch?v=vznu6pLMPXA",
+    "title": "教育について語り合ったら楽し過ぎた！",
+    "author": "とある男が授業をしてみた × コムドット やまと",
+    "channelId": "UCzDd3Byvt91oyf3ggRlTb3A",
+    "publishedDate": "20260921",
+    "views": 206378,
+    "duration": 2214,
+    "license": "Creative Commons Attribution license (reuse allowed)",
+    "licenseEvidence": "YouTube expanded description and independent yt-dlp metadata",
+    "verifiedAt": "2026-09-27T01:10:00+09:00",
+    "dateWindow": "No upload-date restriction — user relaxed 2026-09-27",
+    "status": "local pilot complete: three native template renders with original audio; not deployed",
+    "plannedClips": [
+      {
+        "style": "comment",
+        "start": 52.88,
+        "end": 95.8
+      },
+      {
+        "style": "highlight",
+        "start": 294.76,
+        "end": 324
+      },
+      {
+        "style": "minimal",
+        "start": 387.24,
+        "end": 433.12
+      }
+    ],
+    "selectionPriority": [
+      "Required: official source/collaboration, individual-video CC BY, long-form",
+      "Large subscriber base and recognizable creator in the target language/category",
+      "Views and standalone moments that work as Shorts"
+    ],
+    "recognitionRationale": "Official collaboration with Comdot Yamato, whose group channel shows 4.29M subscribers; host education channel shows 2.24M. These counts do not prove age demographics.",
+    "subscriberEvidence": {
+      "Comdot": 4290000,
+      "sourceChannel": 2240000,
+      "source": "YouTube channel UI, observed 2026-09-27; rounded displayed counts"
+    }
+  },
+  {
+    "locale": "en",
+    "category": "gaming",
+    "videoId": "LOoynSCSLfI",
+    "url": "https://www.youtube.com/watch?v=LOoynSCSLfI",
+    "title": "I Imported My Heisman TE To Madden 27!",
+    "author": "MMG",
+    "channelId": "UCaYxyR9mzVlTrOOyZD0XAmA",
+    "publishedDate": "20260831",
+    "views": 1168159,
+    "duration": 2122,
+    "license": "Creative Commons Attribution license (reuse allowed)",
+    "licenseEvidence": "YouTube expanded description and independent yt-dlp metadata",
+    "verifiedAt": "2026-09-27T00:55:27+09:00",
+    "dateWindow": "No upload-date restriction — user relaxed 2026-09-27",
+    "status": "reserve only; strong sports-gaming niche but broad youth recognition not established; not promoted as main pilot",
+    "plannedClips": [
+      {
+        "style": "comment",
+        "start": 995,
+        "end": 1048.8
+      },
+      {
+        "style": "highlight",
+        "start": 1071.48,
+        "end": 1094
+      },
+      {
+        "style": "minimal",
+        "start": 25.12,
+        "end": 52.08
+      }
+    ],
+    "selectionPriority": [
+      "Required: official source/collaboration, individual-video CC BY, long-form",
+      "Large subscriber base and recognizable creator in the target language/category",
+      "Views and standalone moments that work as Shorts"
+    ],
+    "subscriberEvidence": {
+      "MMG": 3240000,
+      "source": "YouTube channel UI, observed 2026-09-27; rounded displayed count"
+    }
+  }
+]

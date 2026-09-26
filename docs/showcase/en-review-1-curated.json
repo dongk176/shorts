@@ -1,0 +1,117 @@
+{
+  "id": "en-review-1",
+  "locale": "en",
+  "videoId": "id1D3Ud5-2Q",
+  "sourceStart": 511.8,
+  "sourceEnd": 535.2,
+  "templateId": "comment-capture",
+  "presentation": "comment",
+  "audio": true,
+  "captionKind": null,
+  "commentsAreAIDemos": true,
+  "renderSpec": {
+    "version": 4,
+    "canvas": {
+      "width": 1080,
+      "height": 1920
+    },
+    "fps": 30,
+    "layerOrder": [
+      "video",
+      "title",
+      "comment",
+      "channel"
+    ],
+    "title": {
+      "lines": [
+        "A new car",
+        "Rated 15 out of 10?"
+      ],
+      "centerX": 540.0,
+      "offsetY": 0.0,
+      "fontSize": 84.0,
+      "scale": 1.0,
+      "font": {
+        "fontId": "pretendard",
+        "fileId": "Pretendard-Bold.woff2",
+        "family": "\"Editor V4 Pretendard\"",
+        "requestedWeight": 700,
+        "resolvedWeight": 700,
+        "variableWeight": null,
+        "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+        "metrics": {
+          "revision": "editor-font-metrics-v2"
+        }
+      },
+      "visible": true,
+      "centerY": 335.0,
+      "lineGap": 18.0,
+      "linePaddingX": 29.0,
+      "linePaddingY": 12.0,
+      "clamp": {
+        "minX": 0.0,
+        "maxX": 1080.0,
+        "minY": 0.0,
+        "maxY": 1920.0
+      },
+      "lineBoxes": [
+        {
+          "text": "A new car",
+          "centerX": 540.0,
+          "centerY": 272.0,
+          "width": 450.859,
+          "height": 108.0,
+          "baselineY": 301.859,
+          "backgroundRuns": []
+        },
+        {
+          "text": "Rated 15 out of 10?",
+          "centerX": 540.0,
+          "centerY": 398.0,
+          "width": 808.828,
+          "height": 108.0,
+          "baselineY": 427.859,
+          "backgroundRuns": []
+        }
+      ]
+    },
+    "channel": {
+      "offsetX": 0.0,
+      "offsetY": 0.0,
+      "scale": 1.0,
+      "font": {
+        "fontId": "pretendard",
+        "fileId": "Pretendard-Bold.woff2",
+        "family": "\"Editor V4 Pretendard\"",
+        "requestedWeight": 700,
+        "resolvedWeight": 700,
+        "variableWeight": null,
+        "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+        "metrics": {
+          "revision": "editor-font-metrics-v2"
+        }
+      },
+      "visible": true
+    },
+    "comments": [
+      {
+        "id": "en-review-ai-demo",
+        "offsetY": 0.0,
+        "startFrame": 0,
+        "endFrame": 702
+      }
+    ],
+    "textOverlays": [],
+    "video": {
+      "offsetX": 0.0,
+      "offsetY": 0.0,
+      "scale": 1.0
+    }
+  },
+  "output": "/showcase-examples/curated-pilot-v1/en-review-1.mp4",
+  "sha256": "8bfee08e9dd710ffbbe4cbe4fc681638a215845fd8e9bcf813e74881052ce3f7",
+  "bytes": 6076999,
+  "duration": 23.440107,
+  "renderer": "shorts_worker.renderer.VideoRenderer.render_clean_clip",
+  "rendererSourceCommit": "f9750acf607b8116f5a032bd0322d886d3eac258"
+}

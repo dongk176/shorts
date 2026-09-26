@@ -1,0 +1,1411 @@
+[
+  {
+    "id": "ko-vlog-1",
+    "locale": "ko",
+    "source": "urgency-horizontal.mp4",
+    "sourceStart": 3,
+    "sourceEnd": 7,
+    "templateId": "dark-minimal",
+    "videoAspectRatio": "16:9",
+    "title": "야외활동 1시간째\n예상 밖의 상황",
+    "renderSpec": {
+      "version": 4,
+      "canvas": {
+        "width": 1080,
+        "height": 1920
+      },
+      "fps": 30,
+      "layerOrder": [
+        "video",
+        "title",
+        "comment",
+        "channel"
+      ],
+      "title": {
+        "lines": [
+          "야외활동 1시간째",
+          "예상 밖의 상황"
+        ],
+        "centerX": 540.0,
+        "offsetY": 0.0,
+        "fontSize": 84.0,
+        "scale": 1.0,
+        "font": {
+          "fontId": "pretendard",
+          "fileId": "Pretendard-Bold.woff2",
+          "family": "\"Editor V4 Pretendard\"",
+          "requestedWeight": 700,
+          "resolvedWeight": 700,
+          "variableWeight": null,
+          "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+          "metrics": {
+            "revision": "editor-font-metrics-v2"
+          }
+        },
+        "visible": true,
+        "centerY": 495.0,
+        "lineGap": 18.0,
+        "linePaddingX": 29.0,
+        "linePaddingY": 12.0,
+        "clamp": {
+          "minX": 0.0,
+          "maxX": 1080.0,
+          "minY": 0.0,
+          "maxY": 1920.0
+        },
+        "lineBoxes": [
+          {
+            "text": "야외활동 1시간째",
+            "centerX": 540.0,
+            "centerY": 432.0,
+            "width": 624.891,
+            "height": 108.0,
+            "baselineY": 461.859,
+            "backgroundRuns": []
+          },
+          {
+            "text": "예상 밖의 상황",
+            "centerX": 540.0,
+            "centerY": 558.0,
+            "width": 532.281,
+            "height": 108.0,
+            "baselineY": 587.859,
+            "backgroundRuns": []
+          }
+        ]
+      },
+      "channel": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "scale": 1.0,
+        "font": {
+          "fontId": "pretendard",
+          "fileId": "Pretendard-Bold.woff2",
+          "family": "\"Editor V4 Pretendard\"",
+          "requestedWeight": 700,
+          "resolvedWeight": 700,
+          "variableWeight": null,
+          "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+          "metrics": {
+            "revision": "editor-font-metrics-v2"
+          }
+        },
+        "visible": false
+      },
+      "comments": [],
+      "textOverlays": [],
+      "video": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "scale": 1.0
+      }
+    },
+    "renderer": "shorts_worker.renderer.VideoRenderer.render_clean_clip",
+    "sourceGitSha": "f9750acf607b8116f5a032bd0322d886d3eac258",
+    "output": "/showcase-examples/category-rendered-v2/ko-vlog-1.mp4",
+    "sha256": "7d68c9c01ebfa48f413fca28b4a20554191ecf796b7611b23c8eec4279ffb230",
+    "bytes": 760884,
+    "duration": "4.000000",
+    "width": 1080,
+    "height": 1920,
+    "silent": true
+  },
+  {
+    "id": "ko-vlog-2",
+    "locale": "ko",
+    "source": "urgency-horizontal.mp4",
+    "sourceStart": 7,
+    "sourceEnd": 11,
+    "templateId": "white-yellow",
+    "videoAspectRatio": "16:9",
+    "title": "갑자기 바뀐\n오늘의 동선",
+    "renderSpec": {
+      "version": 4,
+      "canvas": {
+        "width": 1080,
+        "height": 1920
+      },
+      "fps": 30,
+      "layerOrder": [
+        "video",
+        "title",
+        "comment",
+        "channel"
+      ],
+      "title": {
+        "lines": [
+          "갑자기 바뀐",
+          "오늘의 동선"
+        ],
+        "centerX": 540.0,
+        "offsetY": 0.0,
+        "fontSize": 84.0,
+        "scale": 1.0,
+        "font": {
+          "fontId": "pretendard",
+          "fileId": "Pretendard-Bold.woff2",
+          "family": "\"Editor V4 Pretendard\"",
+          "requestedWeight": 700,
+          "resolvedWeight": 700,
+          "variableWeight": null,
+          "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+          "metrics": {
+            "revision": "editor-font-metrics-v2"
+          }
+        },
+        "visible": true,
+        "centerY": 495.0,
+        "lineGap": 18.0,
+        "linePaddingX": 29.0,
+        "linePaddingY": 12.0,
+        "clamp": {
+          "minX": 0.0,
+          "maxX": 1080.0,
+          "minY": 0.0,
+          "maxY": 1920.0
+        },
+        "lineBoxes": [
+          {
+            "text": "갑자기 바뀐",
+            "centerX": 540.0,
+            "centerY": 432.0,
+            "width": 440.328,
+            "height": 108.0,
+            "baselineY": 461.859,
+            "backgroundRuns": []
+          },
+          {
+            "text": "오늘의 동선",
+            "centerX": 540.0,
+            "centerY": 558.0,
+            "width": 440.328,
+            "height": 108.0,
+            "baselineY": 587.859,
+            "backgroundRuns": [
+              {
+                "start": 0,
+                "end": 6,
+                "color": "#FFE14A",
+                "x": 319.836,
+                "y": 504.0,
+                "width": 440.328,
+                "height": 108.0,
+                "radius": 12.0
+              }
+            ]
+          }
+        ]
+      },
+      "channel": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "scale": 1.0,
+        "font": {
+          "fontId": "pretendard",
+          "fileId": "Pretendard-Bold.woff2",
+          "family": "\"Editor V4 Pretendard\"",
+          "requestedWeight": 700,
+          "resolvedWeight": 700,
+          "variableWeight": null,
+          "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+          "metrics": {
+            "revision": "editor-font-metrics-v2"
+          }
+        },
+        "visible": false
+      },
+      "comments": [],
+      "textOverlays": [],
+      "video": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "scale": 1.0
+      }
+    },
+    "renderer": "shorts_worker.renderer.VideoRenderer.render_clean_clip",
+    "sourceGitSha": "f9750acf607b8116f5a032bd0322d886d3eac258",
+    "output": "/showcase-examples/category-rendered-v2/ko-vlog-2.mp4",
+    "sha256": "0e9548f3c0d8d7bdc615ce4e3e3e39f475cd193697abf471b6af2c39fde4f8f4",
+    "bytes": 943531,
+    "duration": "4.000000",
+    "width": 1080,
+    "height": 1920,
+    "silent": true
+  },
+  {
+    "id": "ko-vlog-3",
+    "locale": "ko",
+    "source": "urgency-horizontal.mp4",
+    "sourceStart": 11,
+    "sourceEnd": 15,
+    "templateId": "paper",
+    "videoAspectRatio": "16:9",
+    "title": "일상 속에서 만난\n뜻밖의 순간",
+    "renderSpec": {
+      "version": 4,
+      "canvas": {
+        "width": 1080,
+        "height": 1920
+      },
+      "fps": 30,
+      "layerOrder": [
+        "video",
+        "title",
+        "comment",
+        "channel"
+      ],
+      "title": {
+        "lines": [
+          "일상 속에서 만난",
+          "뜻밖의 순간"
+        ],
+        "centerX": 540.0,
+        "offsetY": 0.0,
+        "fontSize": 84.0,
+        "scale": 1.0,
+        "font": {
+          "fontId": "pretendard",
+          "fileId": "Pretendard-Bold.woff2",
+          "family": "\"Editor V4 Pretendard\"",
+          "requestedWeight": 700,
+          "resolvedWeight": 700,
+          "variableWeight": null,
+          "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+          "metrics": {
+            "revision": "editor-font-metrics-v2"
+          }
+        },
+        "visible": true,
+        "centerY": 495.0,
+        "lineGap": 18.0,
+        "linePaddingX": 29.0,
+        "linePaddingY": 12.0,
+        "clamp": {
+          "minX": 0.0,
+          "maxX": 1080.0,
+          "minY": 0.0,
+          "maxY": 1920.0
+        },
+        "lineBoxes": [
+          {
+            "text": "일상 속에서 만난",
+            "centerX": 540.0,
+            "centerY": 432.0,
+            "width": 604.875,
+            "height": 108.0,
+            "baselineY": 461.859,
+            "backgroundRuns": []
+          },
+          {
+            "text": "뜻밖의 순간",
+            "centerX": 540.0,
+            "centerY": 558.0,
+            "width": 440.328,
+            "height": 108.0,
+            "baselineY": 587.859,
+            "backgroundRuns": []
+          }
+        ]
+      },
+      "channel": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "scale": 1.0,
+        "font": {
+          "fontId": "pretendard",
+          "fileId": "Pretendard-Bold.woff2",
+          "family": "\"Editor V4 Pretendard\"",
+          "requestedWeight": 700,
+          "resolvedWeight": 700,
+          "variableWeight": null,
+          "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+          "metrics": {
+            "revision": "editor-font-metrics-v2"
+          }
+        },
+        "visible": false
+      },
+      "comments": [],
+      "textOverlays": [],
+      "video": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "scale": 1.0
+      }
+    },
+    "renderer": "shorts_worker.renderer.VideoRenderer.render_clean_clip",
+    "sourceGitSha": "f9750acf607b8116f5a032bd0322d886d3eac258",
+    "output": "/showcase-examples/category-rendered-v2/ko-vlog-3.mp4",
+    "sha256": "59ac45dac2694907fad65215f86ed1051be9bef4287e18b902856979c8da40f4",
+    "bytes": 1627915,
+    "duration": "4.000000",
+    "width": 1080,
+    "height": 1920,
+    "silent": true
+  },
+  {
+    "id": "ko-gaming-1",
+    "locale": "ko",
+    "source": "ditto-horizontal.mp4",
+    "sourceStart": 3,
+    "sourceEnd": 7,
+    "templateId": "dark-minimal",
+    "videoAspectRatio": "16:9",
+    "title": "다음 순간을\n놓치지 마세요",
+    "renderSpec": {
+      "version": 4,
+      "canvas": {
+        "width": 1080,
+        "height": 1920
+      },
+      "fps": 30,
+      "layerOrder": [
+        "video",
+        "title",
+        "comment",
+        "channel"
+      ],
+      "title": {
+        "lines": [
+          "다음 순간을",
+          "놓치지 마세요"
+        ],
+        "centerX": 540.0,
+        "offsetY": 0.0,
+        "fontSize": 84.0,
+        "scale": 1.0,
+        "font": {
+          "fontId": "pretendard",
+          "fileId": "Pretendard-Bold.woff2",
+          "family": "\"Editor V4 Pretendard\"",
+          "requestedWeight": 700,
+          "resolvedWeight": 700,
+          "variableWeight": null,
+          "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+          "metrics": {
+            "revision": "editor-font-metrics-v2"
+          }
+        },
+        "visible": true,
+        "centerY": 495.0,
+        "lineGap": 18.0,
+        "linePaddingX": 29.0,
+        "linePaddingY": 12.0,
+        "clamp": {
+          "minX": 0.0,
+          "maxX": 1080.0,
+          "minY": 0.0,
+          "maxY": 1920.0
+        },
+        "lineBoxes": [
+          {
+            "text": "다음 순간을",
+            "centerX": 540.0,
+            "centerY": 432.0,
+            "width": 440.328,
+            "height": 108.0,
+            "baselineY": 461.859,
+            "backgroundRuns": []
+          },
+          {
+            "text": "놓치지 마세요",
+            "centerX": 540.0,
+            "centerY": 558.0,
+            "width": 512.922,
+            "height": 108.0,
+            "baselineY": 587.859,
+            "backgroundRuns": []
+          }
+        ]
+      },
+      "channel": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "scale": 1.0,
+        "font": {
+          "fontId": "pretendard",
+          "fileId": "Pretendard-Bold.woff2",
+          "family": "\"Editor V4 Pretendard\"",
+          "requestedWeight": 700,
+          "resolvedWeight": 700,
+          "variableWeight": null,
+          "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+          "metrics": {
+            "revision": "editor-font-metrics-v2"
+          }
+        },
+        "visible": false
+      },
+      "comments": [],
+      "textOverlays": [],
+      "video": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "scale": 1.0
+      }
+    },
+    "renderer": "shorts_worker.renderer.VideoRenderer.render_clean_clip",
+    "sourceGitSha": "f9750acf607b8116f5a032bd0322d886d3eac258",
+    "output": "/showcase-examples/category-rendered-v2/ko-gaming-1.mp4",
+    "sha256": "c81b9459542885771ed618aacc767d4e1f103197d81bc5d990b6918f052777f1",
+    "bytes": 638370,
+    "duration": "4.000000",
+    "width": 1080,
+    "height": 1920,
+    "silent": true
+  },
+  {
+    "id": "ko-gaming-2",
+    "locale": "ko",
+    "source": "ditto-horizontal.mp4",
+    "sourceStart": 7,
+    "sourceEnd": 11,
+    "templateId": "dark-red",
+    "videoAspectRatio": "16:9",
+    "title": "게임 속\n결정적인 순간",
+    "renderSpec": {
+      "version": 4,
+      "canvas": {
+        "width": 1080,
+        "height": 1920
+      },
+      "fps": 30,
+      "layerOrder": [
+        "video",
+        "title",
+        "comment",
+        "channel"
+      ],
+      "title": {
+        "lines": [
+          "게임 속",
+          "결정적인 순간"
+        ],
+        "centerX": 540.0,
+        "offsetY": 0.0,
+        "fontSize": 84.0,
+        "scale": 1.0,
+        "font": {
+          "fontId": "pretendard",
+          "fileId": "Pretendard-Bold.woff2",
+          "family": "\"Editor V4 Pretendard\"",
+          "requestedWeight": 700,
+          "resolvedWeight": 700,
+          "variableWeight": null,
+          "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+          "metrics": {
+            "revision": "editor-font-metrics-v2"
+          }
+        },
+        "visible": true,
+        "centerY": 495.0,
+        "lineGap": 18.0,
+        "linePaddingX": 29.0,
+        "linePaddingY": 12.0,
+        "clamp": {
+          "minX": 0.0,
+          "maxX": 1080.0,
+          "minY": 0.0,
+          "maxY": 1920.0
+        },
+        "lineBoxes": [
+          {
+            "text": "게임 속",
+            "centerX": 540.0,
+            "centerY": 432.0,
+            "width": 295.141,
+            "height": 108.0,
+            "baselineY": 461.859,
+            "backgroundRuns": []
+          },
+          {
+            "text": "결정적인 순간",
+            "centerX": 540.0,
+            "centerY": 558.0,
+            "width": 512.922,
+            "height": 108.0,
+            "baselineY": 587.859,
+            "backgroundRuns": [
+              {
+                "start": 0,
+                "end": 7,
+                "color": "#D9253D",
+                "x": 283.539,
+                "y": 504.0,
+                "width": 512.922,
+                "height": 108.0,
+                "radius": 12.0
+              }
+            ]
+          }
+        ]
+      },
+      "channel": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "scale": 1.0,
+        "font": {
+          "fontId": "pretendard",
+          "fileId": "Pretendard-Bold.woff2",
+          "family": "\"Editor V4 Pretendard\"",
+          "requestedWeight": 700,
+          "resolvedWeight": 700,
+          "variableWeight": null,
+          "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+          "metrics": {
+            "revision": "editor-font-metrics-v2"
+          }
+        },
+        "visible": false
+      },
+      "comments": [],
+      "textOverlays": [],
+      "video": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "scale": 1.0
+      }
+    },
+    "renderer": "shorts_worker.renderer.VideoRenderer.render_clean_clip",
+    "sourceGitSha": "f9750acf607b8116f5a032bd0322d886d3eac258",
+    "output": "/showcase-examples/category-rendered-v2/ko-gaming-2.mp4",
+    "sha256": "ac34276035795ba6151eccb6d8d1a6ed2773b2503161654cc01eed5ea22c8a8b",
+    "bytes": 805234,
+    "duration": "4.000000",
+    "width": 1080,
+    "height": 1920,
+    "silent": true
+  },
+  {
+    "id": "ko-gaming-3",
+    "locale": "ko",
+    "source": "ditto-horizontal.mp4",
+    "sourceStart": 11,
+    "sourceEnd": 15,
+    "templateId": "white-yellow",
+    "videoAspectRatio": "16:9",
+    "title": "플레이와 리액션\n한눈에 보기",
+    "renderSpec": {
+      "version": 4,
+      "canvas": {
+        "width": 1080,
+        "height": 1920
+      },
+      "fps": 30,
+      "layerOrder": [
+        "video",
+        "title",
+        "comment",
+        "channel"
+      ],
+      "title": {
+        "lines": [
+          "플레이와 리액션",
+          "한눈에 보기"
+        ],
+        "centerX": 540.0,
+        "offsetY": 0.0,
+        "fontSize": 84.0,
+        "scale": 1.0,
+        "font": {
+          "fontId": "pretendard",
+          "fileId": "Pretendard-Bold.woff2",
+          "family": "\"Editor V4 Pretendard\"",
+          "requestedWeight": 700,
+          "resolvedWeight": 700,
+          "variableWeight": null,
+          "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+          "metrics": {
+            "revision": "editor-font-metrics-v2"
+          }
+        },
+        "visible": true,
+        "centerY": 495.0,
+        "lineGap": 18.0,
+        "linePaddingX": 29.0,
+        "linePaddingY": 12.0,
+        "clamp": {
+          "minX": 0.0,
+          "maxX": 1080.0,
+          "minY": 0.0,
+          "maxY": 1920.0
+        },
+        "lineBoxes": [
+          {
+            "text": "플레이와 리액션",
+            "centerX": 540.0,
+            "centerY": 432.0,
+            "width": 585.516,
+            "height": 108.0,
+            "baselineY": 461.859,
+            "backgroundRuns": []
+          },
+          {
+            "text": "한눈에 보기",
+            "centerX": 540.0,
+            "centerY": 558.0,
+            "width": 440.328,
+            "height": 108.0,
+            "baselineY": 587.859,
+            "backgroundRuns": [
+              {
+                "start": 0,
+                "end": 6,
+                "color": "#FFE14A",
+                "x": 319.836,
+                "y": 504.0,
+                "width": 440.328,
+                "height": 108.0,
+                "radius": 12.0
+              }
+            ]
+          }
+        ]
+      },
+      "channel": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "scale": 1.0,
+        "font": {
+          "fontId": "pretendard",
+          "fileId": "Pretendard-Bold.woff2",
+          "family": "\"Editor V4 Pretendard\"",
+          "requestedWeight": 700,
+          "resolvedWeight": 700,
+          "variableWeight": null,
+          "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+          "metrics": {
+            "revision": "editor-font-metrics-v2"
+          }
+        },
+        "visible": false
+      },
+      "comments": [],
+      "textOverlays": [],
+      "video": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "scale": 1.0
+      }
+    },
+    "renderer": "shorts_worker.renderer.VideoRenderer.render_clean_clip",
+    "sourceGitSha": "f9750acf607b8116f5a032bd0322d886d3eac258",
+    "output": "/showcase-examples/category-rendered-v2/ko-gaming-3.mp4",
+    "sha256": "ad124a0b1819dd982badd2893ecb594b3ad00a4aff6155b915552ac9813c173e",
+    "bytes": 716813,
+    "duration": "4.000000",
+    "width": 1080,
+    "height": 1920,
+    "silent": true
+  },
+  {
+    "id": "en-gaming-1",
+    "locale": "en",
+    "source": "en-horizontal-v1.mp4",
+    "sourceStart": 0,
+    "sourceEnd": 5,
+    "templateId": "dark-minimal",
+    "videoAspectRatio": "16:9",
+    "title": "One play\nchanges everything",
+    "renderSpec": {
+      "version": 4,
+      "canvas": {
+        "width": 1080,
+        "height": 1920
+      },
+      "fps": 30,
+      "layerOrder": [
+        "video",
+        "title",
+        "comment",
+        "channel"
+      ],
+      "title": {
+        "lines": [
+          "One play",
+          "changes everything"
+        ],
+        "centerX": 540.0,
+        "offsetY": 0.0,
+        "fontSize": 84.0,
+        "scale": 1.0,
+        "font": {
+          "fontId": "pretendard",
+          "fileId": "Pretendard-Bold.woff2",
+          "family": "\"Editor V4 Pretendard\"",
+          "requestedWeight": 700,
+          "resolvedWeight": 700,
+          "variableWeight": null,
+          "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+          "metrics": {
+            "revision": "editor-font-metrics-v2"
+          }
+        },
+        "visible": true,
+        "centerY": 495.0,
+        "lineGap": 18.0,
+        "linePaddingX": 29.0,
+        "linePaddingY": 12.0,
+        "clamp": {
+          "minX": 0.0,
+          "maxX": 1080.0,
+          "minY": 0.0,
+          "maxY": 1920.0
+        },
+        "lineBoxes": [
+          {
+            "text": "One play",
+            "centerX": 540.0,
+            "centerY": 432.0,
+            "width": 404.188,
+            "height": 108.0,
+            "baselineY": 461.859,
+            "backgroundRuns": []
+          },
+          {
+            "text": "changes everything",
+            "centerX": 540.0,
+            "centerY": 558.0,
+            "width": 844.422,
+            "height": 108.0,
+            "baselineY": 587.859,
+            "backgroundRuns": []
+          }
+        ]
+      },
+      "channel": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "scale": 1.0,
+        "font": {
+          "fontId": "pretendard",
+          "fileId": "Pretendard-Bold.woff2",
+          "family": "\"Editor V4 Pretendard\"",
+          "requestedWeight": 700,
+          "resolvedWeight": 700,
+          "variableWeight": null,
+          "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+          "metrics": {
+            "revision": "editor-font-metrics-v2"
+          }
+        },
+        "visible": true
+      },
+      "comments": [],
+      "textOverlays": [],
+      "video": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "scale": 1.0
+      }
+    },
+    "renderer": "shorts_worker.renderer.VideoRenderer.render_clean_clip",
+    "sourceGitSha": "f9750acf607b8116f5a032bd0322d886d3eac258",
+    "output": "/showcase-examples/category-rendered-v2/en-gaming-1.mp4",
+    "sha256": "75b8c8acd87b1dbb56e7f5a9ab2974650869e05f8016da852a0af1e35c42b5f9",
+    "bytes": 1595915,
+    "duration": "5.000000",
+    "width": 1080,
+    "height": 1920,
+    "silent": true
+  },
+  {
+    "id": "en-gaming-2",
+    "locale": "en",
+    "source": "en-horizontal-v1.mp4",
+    "sourceStart": 5,
+    "sourceEnd": 10,
+    "templateId": "dark-red",
+    "videoAspectRatio": "16:9",
+    "title": "From college\nto the NFL",
+    "renderSpec": {
+      "version": 4,
+      "canvas": {
+        "width": 1080,
+        "height": 1920
+      },
+      "fps": 30,
+      "layerOrder": [
+        "video",
+        "title",
+        "comment",
+        "channel"
+      ],
+      "title": {
+        "lines": [
+          "From college",
+          "to the NFL"
+        ],
+        "centerX": 540.0,
+        "offsetY": 0.0,
+        "fontSize": 84.0,
+        "scale": 1.0,
+        "font": {
+          "fontId": "pretendard",
+          "fileId": "Pretendard-Bold.woff2",
+          "family": "\"Editor V4 Pretendard\"",
+          "requestedWeight": 700,
+          "resolvedWeight": 700,
+          "variableWeight": null,
+          "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+          "metrics": {
+            "revision": "editor-font-metrics-v2"
+          }
+        },
+        "visible": true,
+        "centerY": 495.0,
+        "lineGap": 18.0,
+        "linePaddingX": 29.0,
+        "linePaddingY": 12.0,
+        "clamp": {
+          "minX": 0.0,
+          "maxX": 1080.0,
+          "minY": 0.0,
+          "maxY": 1920.0
+        },
+        "lineBoxes": [
+          {
+            "text": "From college",
+            "centerX": 540.0,
+            "centerY": 432.0,
+            "width": 566.203,
+            "height": 108.0,
+            "baselineY": 461.859,
+            "backgroundRuns": []
+          },
+          {
+            "text": "to the NFL",
+            "centerX": 540.0,
+            "centerY": 558.0,
+            "width": 460.219,
+            "height": 108.0,
+            "baselineY": 587.859,
+            "backgroundRuns": [
+              {
+                "start": 0,
+                "end": 10,
+                "color": "#D9253D",
+                "x": 309.891,
+                "y": 504.0,
+                "width": 460.219,
+                "height": 108.0,
+                "radius": 12.0
+              }
+            ]
+          }
+        ]
+      },
+      "channel": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "scale": 1.0,
+        "font": {
+          "fontId": "pretendard",
+          "fileId": "Pretendard-Bold.woff2",
+          "family": "\"Editor V4 Pretendard\"",
+          "requestedWeight": 700,
+          "resolvedWeight": 700,
+          "variableWeight": null,
+          "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+          "metrics": {
+            "revision": "editor-font-metrics-v2"
+          }
+        },
+        "visible": true
+      },
+      "comments": [],
+      "textOverlays": [],
+      "video": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "scale": 1.0
+      }
+    },
+    "renderer": "shorts_worker.renderer.VideoRenderer.render_clean_clip",
+    "sourceGitSha": "f9750acf607b8116f5a032bd0322d886d3eac258",
+    "output": "/showcase-examples/category-rendered-v2/en-gaming-2.mp4",
+    "sha256": "be7cdc997d9f25f593a156f2379848ee1c62849225d06587eb01b6275b236ee2",
+    "bytes": 1682365,
+    "duration": "5.000000",
+    "width": 1080,
+    "height": 1920,
+    "silent": true
+  },
+  {
+    "id": "en-gaming-3",
+    "locale": "en",
+    "source": "en-horizontal-v1.mp4",
+    "sourceStart": 10,
+    "sourceEnd": 15,
+    "templateId": "white-yellow",
+    "videoAspectRatio": "16:9",
+    "title": "Watch\nthe next move",
+    "renderSpec": {
+      "version": 4,
+      "canvas": {
+        "width": 1080,
+        "height": 1920
+      },
+      "fps": 30,
+      "layerOrder": [
+        "video",
+        "title",
+        "comment",
+        "channel"
+      ],
+      "title": {
+        "lines": [
+          "Watch",
+          "the next move"
+        ],
+        "centerX": 540.0,
+        "offsetY": 0.0,
+        "fontSize": 84.0,
+        "scale": 1.0,
+        "font": {
+          "fontId": "pretendard",
+          "fileId": "Pretendard-Bold.woff2",
+          "family": "\"Editor V4 Pretendard\"",
+          "requestedWeight": 700,
+          "resolvedWeight": 700,
+          "variableWeight": null,
+          "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+          "metrics": {
+            "revision": "editor-font-metrics-v2"
+          }
+        },
+        "visible": true,
+        "centerY": 495.0,
+        "lineGap": 18.0,
+        "linePaddingX": 29.0,
+        "linePaddingY": 12.0,
+        "clamp": {
+          "minX": 0.0,
+          "maxX": 1080.0,
+          "minY": 0.0,
+          "maxY": 1920.0
+        },
+        "lineBoxes": [
+          {
+            "text": "Watch",
+            "centerX": 540.0,
+            "centerY": 432.0,
+            "width": 312.313,
+            "height": 108.0,
+            "baselineY": 461.859,
+            "backgroundRuns": []
+          },
+          {
+            "text": "the next move",
+            "centerX": 540.0,
+            "centerY": 558.0,
+            "width": 618.344,
+            "height": 108.0,
+            "baselineY": 587.859,
+            "backgroundRuns": [
+              {
+                "start": 0,
+                "end": 13,
+                "color": "#FFE14A",
+                "x": 230.828,
+                "y": 504.0,
+                "width": 618.344,
+                "height": 108.0,
+                "radius": 12.0
+              }
+            ]
+          }
+        ]
+      },
+      "channel": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "scale": 1.0,
+        "font": {
+          "fontId": "pretendard",
+          "fileId": "Pretendard-Bold.woff2",
+          "family": "\"Editor V4 Pretendard\"",
+          "requestedWeight": 700,
+          "resolvedWeight": 700,
+          "variableWeight": null,
+          "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+          "metrics": {
+            "revision": "editor-font-metrics-v2"
+          }
+        },
+        "visible": true
+      },
+      "comments": [],
+      "textOverlays": [],
+      "video": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "scale": 1.0
+      }
+    },
+    "renderer": "shorts_worker.renderer.VideoRenderer.render_clean_clip",
+    "sourceGitSha": "f9750acf607b8116f5a032bd0322d886d3eac258",
+    "output": "/showcase-examples/category-rendered-v2/en-gaming-3.mp4",
+    "sha256": "813d494d14c11ea20f8a9cfaff0cd3d8445f0079a4788d83052ad4152512c2d7",
+    "bytes": 2267527,
+    "duration": "5.000000",
+    "width": 1080,
+    "height": 1920,
+    "silent": true
+  },
+  {
+    "id": "ja-entertainment-1",
+    "locale": "ja",
+    "source": "ja-horizontal-v1.mp4",
+    "sourceStart": 0,
+    "sourceEnd": 5,
+    "templateId": "white-yellow",
+    "videoAspectRatio": "16:9",
+    "title": "教科書を使って\nまさかの対決！？",
+    "renderSpec": {
+      "version": 4,
+      "canvas": {
+        "width": 1080,
+        "height": 1920
+      },
+      "fps": 30,
+      "layerOrder": [
+        "video",
+        "title",
+        "comment",
+        "channel"
+      ],
+      "title": {
+        "lines": [
+          "教科書を使って",
+          "まさかの対決！？"
+        ],
+        "centerX": 540.0,
+        "offsetY": 0.0,
+        "fontSize": 84.0,
+        "scale": 1.0,
+        "font": {
+          "fontId": "noto-sans-jp",
+          "fileId": "NotoSansCJKjp-Variable.ttf",
+          "family": "\"Editor V4 Noto Sans JP\"",
+          "requestedWeight": 700,
+          "resolvedWeight": 700,
+          "variableWeight": 700,
+          "sha256": "240c9b83bf7b386edbae39995ae7e068ed4583f484d92e4a74c34158b5f27b1a",
+          "metrics": {
+            "revision": "editor-font-metrics-v2"
+          }
+        },
+        "visible": true,
+        "centerY": 495.0,
+        "lineGap": 18.0,
+        "linePaddingX": 29.0,
+        "linePaddingY": 12.0,
+        "clamp": {
+          "minX": 0.0,
+          "maxX": 1080.0,
+          "minY": 0.0,
+          "maxY": 1920.0
+        },
+        "lineBoxes": [
+          {
+            "text": "教科書を使って",
+            "centerX": 540.0,
+            "centerY": 432.0,
+            "width": 641.797,
+            "height": 108.0,
+            "baselineY": 465.6,
+            "backgroundRuns": []
+          },
+          {
+            "text": "まさかの対決！？",
+            "centerX": 540.0,
+            "centerY": 558.0,
+            "width": 730.0,
+            "height": 108.0,
+            "baselineY": 591.6,
+            "backgroundRuns": [
+              {
+                "start": 0,
+                "end": 8,
+                "color": "#FFE14A",
+                "x": 175.0,
+                "y": 504.0,
+                "width": 730.0,
+                "height": 108.0,
+                "radius": 12.0
+              }
+            ]
+          }
+        ]
+      },
+      "channel": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "scale": 1.0,
+        "font": {
+          "fontId": "pretendard",
+          "fileId": "Pretendard-Bold.woff2",
+          "family": "\"Editor V4 Pretendard\"",
+          "requestedWeight": 700,
+          "resolvedWeight": 700,
+          "variableWeight": null,
+          "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+          "metrics": {
+            "revision": "editor-font-metrics-v2"
+          }
+        },
+        "visible": true
+      },
+      "comments": [],
+      "textOverlays": [],
+      "video": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "scale": 1.0
+      }
+    },
+    "renderer": "shorts_worker.renderer.VideoRenderer.render_clean_clip",
+    "sourceGitSha": "f9750acf607b8116f5a032bd0322d886d3eac258",
+    "output": "/showcase-examples/category-rendered-v2/ja-entertainment-1.mp4",
+    "sha256": "6daede4d5c21c33ffd0706818f99df67c52f79d4f374eaca52df5253fa3ec800",
+    "bytes": 259479,
+    "duration": "5.000000",
+    "width": 1080,
+    "height": 1920,
+    "silent": true
+  },
+  {
+    "id": "ja-entertainment-2",
+    "locale": "ja",
+    "source": "ja-horizontal-v1.mp4",
+    "sourceStart": 5,
+    "sourceEnd": 10,
+    "templateId": "dark-red",
+    "videoAspectRatio": "16:9",
+    "title": "相手の単元を\n推理せよ！",
+    "renderSpec": {
+      "version": 4,
+      "canvas": {
+        "width": 1080,
+        "height": 1920
+      },
+      "fps": 30,
+      "layerOrder": [
+        "video",
+        "title",
+        "comment",
+        "channel"
+      ],
+      "title": {
+        "lines": [
+          "相手の単元を",
+          "推理せよ！"
+        ],
+        "centerX": 540.0,
+        "offsetY": 0.0,
+        "fontSize": 84.0,
+        "scale": 1.0,
+        "font": {
+          "fontId": "noto-sans-jp",
+          "fileId": "NotoSansCJKjp-Variable.ttf",
+          "family": "\"Editor V4 Noto Sans JP\"",
+          "requestedWeight": 700,
+          "resolvedWeight": 700,
+          "variableWeight": 700,
+          "sha256": "240c9b83bf7b386edbae39995ae7e068ed4583f484d92e4a74c34158b5f27b1a",
+          "metrics": {
+            "revision": "editor-font-metrics-v2"
+          }
+        },
+        "visible": true,
+        "centerY": 495.0,
+        "lineGap": 18.0,
+        "linePaddingX": 29.0,
+        "linePaddingY": 12.0,
+        "clamp": {
+          "minX": 0.0,
+          "maxX": 1080.0,
+          "minY": 0.0,
+          "maxY": 1920.0
+        },
+        "lineBoxes": [
+          {
+            "text": "相手の単元を",
+            "centerX": 540.0,
+            "centerY": 432.0,
+            "width": 562.0,
+            "height": 108.0,
+            "baselineY": 465.6,
+            "backgroundRuns": []
+          },
+          {
+            "text": "推理せよ！",
+            "centerX": 540.0,
+            "centerY": 558.0,
+            "width": 478.0,
+            "height": 108.0,
+            "baselineY": 591.6,
+            "backgroundRuns": [
+              {
+                "start": 0,
+                "end": 5,
+                "color": "#D9253D",
+                "x": 301.0,
+                "y": 504.0,
+                "width": 478.0,
+                "height": 108.0,
+                "radius": 12.0
+              }
+            ]
+          }
+        ]
+      },
+      "channel": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "scale": 1.0,
+        "font": {
+          "fontId": "pretendard",
+          "fileId": "Pretendard-Bold.woff2",
+          "family": "\"Editor V4 Pretendard\"",
+          "requestedWeight": 700,
+          "resolvedWeight": 700,
+          "variableWeight": null,
+          "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+          "metrics": {
+            "revision": "editor-font-metrics-v2"
+          }
+        },
+        "visible": true
+      },
+      "comments": [],
+      "textOverlays": [],
+      "video": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "scale": 1.0
+      }
+    },
+    "renderer": "shorts_worker.renderer.VideoRenderer.render_clean_clip",
+    "sourceGitSha": "f9750acf607b8116f5a032bd0322d886d3eac258",
+    "output": "/showcase-examples/category-rendered-v2/ja-entertainment-2.mp4",
+    "sha256": "1e31fce519119973700488617c105c56d7e68e7f7b91281e7d303c153001fe9a",
+    "bytes": 166843,
+    "duration": "5.000000",
+    "width": 1080,
+    "height": 1920,
+    "silent": true
+  },
+  {
+    "id": "ja-entertainment-3",
+    "locale": "ja",
+    "source": "ja-horizontal-v1.mp4",
+    "sourceStart": 10,
+    "sourceEnd": 15,
+    "templateId": "paper",
+    "videoAspectRatio": "16:9",
+    "title": "教科書当て\n勝つのはどっち？",
+    "renderSpec": {
+      "version": 4,
+      "canvas": {
+        "width": 1080,
+        "height": 1920
+      },
+      "fps": 30,
+      "layerOrder": [
+        "video",
+        "title",
+        "comment",
+        "channel"
+      ],
+      "title": {
+        "lines": [
+          "教科書当て",
+          "勝つのはどっち？"
+        ],
+        "centerX": 540.0,
+        "offsetY": 0.0,
+        "fontSize": 84.0,
+        "scale": 1.0,
+        "font": {
+          "fontId": "noto-sans-jp",
+          "fileId": "NotoSansCJKjp-Variable.ttf",
+          "family": "\"Editor V4 Noto Sans JP\"",
+          "requestedWeight": 700,
+          "resolvedWeight": 700,
+          "variableWeight": 700,
+          "sha256": "240c9b83bf7b386edbae39995ae7e068ed4583f484d92e4a74c34158b5f27b1a",
+          "metrics": {
+            "revision": "editor-font-metrics-v2"
+          }
+        },
+        "visible": true,
+        "centerY": 495.0,
+        "lineGap": 18.0,
+        "linePaddingX": 29.0,
+        "linePaddingY": 12.0,
+        "clamp": {
+          "minX": 0.0,
+          "maxX": 1080.0,
+          "minY": 0.0,
+          "maxY": 1920.0
+        },
+        "lineBoxes": [
+          {
+            "text": "教科書当て",
+            "centerX": 540.0,
+            "centerY": 432.0,
+            "width": 478.0,
+            "height": 108.0,
+            "baselineY": 465.6,
+            "backgroundRuns": []
+          },
+          {
+            "text": "勝つのはどっち？",
+            "centerX": 540.0,
+            "centerY": 558.0,
+            "width": 730.0,
+            "height": 108.0,
+            "baselineY": 591.6,
+            "backgroundRuns": []
+          }
+        ]
+      },
+      "channel": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "scale": 1.0,
+        "font": {
+          "fontId": "pretendard",
+          "fileId": "Pretendard-Bold.woff2",
+          "family": "\"Editor V4 Pretendard\"",
+          "requestedWeight": 700,
+          "resolvedWeight": 700,
+          "variableWeight": null,
+          "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+          "metrics": {
+            "revision": "editor-font-metrics-v2"
+          }
+        },
+        "visible": true
+      },
+      "comments": [],
+      "textOverlays": [],
+      "video": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "scale": 1.0
+      }
+    },
+    "renderer": "shorts_worker.renderer.VideoRenderer.render_clean_clip",
+    "sourceGitSha": "f9750acf607b8116f5a032bd0322d886d3eac258",
+    "output": "/showcase-examples/category-rendered-v2/ja-entertainment-3.mp4",
+    "sha256": "57a5ed608cedba59ed971bda0f4502f5f860ea46ee050d5308817a3539b4509f",
+    "bytes": 90194,
+    "duration": "5.000000",
+    "width": 1080,
+    "height": 1920,
+    "silent": true
+  }
+]
