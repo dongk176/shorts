@@ -20,6 +20,10 @@ User authorized production rollout, excluding actual payments and refunds (user 
 
 ## Activation and release
 
-Paddle runtime registration, webhook destination creation and candidate promotion are recorded in the final rollout evidence after completion. No actual payment, refund or production subscription mutation will be executed by the agent.
+- Registered the existing live environment, server API key, public checkout token and six price IDs (nine variables) as production-only Vercel sensitive values. No sandbox keys were used. `PADDLE_ENABLED` and `PADDLE_WEBHOOK_SECRET` have not been set.
+- Saved and reloaded the Paddle default payment link `https://www.easycut.co.kr/billing/paddle`; dashboard displayed its success check.
+- Prepared `EasyCut production billing` webhook form at `https://www.easycut.co.kr/api/paddle/webhook`, API version 1, Platform usage, exactly 11 events handled by the route. Saving creates a new verification secret, so the browser tool requires at-action confirmation. User confirmation was requested; destination remains unsaved pending that answer.
+- Candidate deployment and promotion have NOT been performed. Existing production deployment remains current. No actual payment, refund or production subscription mutation was performed.
+- Resume by saving the approved webhook, securely registering its secret and `PADDLE_ENABLED=true`, then deploy a clean source candidate using `--prod --skip-domain`. Verify protected paths, route/runtime identity, English/Japanese prices and signed/unsigned webhook validation without payment before promoting that exact candidate. Refresh the production baseline again before promotion.
 
 Rollback: re-promote the verified baseline deployment if candidate checks fail. Do not drop the additive Paddle tables or overwrite historical payment data; disable new Paddle checkout if a problem is found after customers begin using it.
