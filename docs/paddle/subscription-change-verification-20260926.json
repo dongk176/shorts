@@ -1,0 +1,144 @@
+{
+  "source": "fdf863344b2a4e0e58fb26cf3d783206fe3c571f",
+  "deployment": "dpl_CSVczptRgPHCh3pS6DWfPiawwnFj",
+  "candidate": {
+    "origin": "https://shorts-ihbm6stvj-artiroom.vercel.app",
+    "verifiedAt": "2026-09-26T08:30:02.910Z",
+    "results": [
+      {
+        "path": "/",
+        "status": 200
+      },
+      {
+        "path": "/guidebook",
+        "status": 200
+      },
+      {
+        "path": "/pricing",
+        "status": 200
+      },
+      {
+        "path": "/admin/easycutcutcutcutcutcut",
+        "status": 307
+      },
+      {
+        "path": "/projects/0/edit/00000000-0000-0000-0000-000000000000",
+        "status": 404
+      },
+      {
+        "path": "/en/pricing",
+        "status": 200,
+        "prices": true
+      },
+      {
+        "path": "/jp/pricing",
+        "status": 200,
+        "prices": true
+      },
+      {
+        "jobAdmission": {
+          "origin": "https://shorts-ihbm6stvj-artiroom.vercel.app",
+          "fingerprint": "668676b0a45b9376e76461fdd8f11367524e4a2bf08695ddc13aa62c267964f4"
+        }
+      },
+      {
+        "webhook": "unsigned",
+        "status": 401,
+        "code": "INVALID_SIGNATURE"
+      },
+      {
+        "webhook": "valid-ignored",
+        "status": 200,
+        "ignored": true
+      },
+      {
+        "webhook": "expired",
+        "status": 401,
+        "code": "INVALID_SIGNATURE"
+      },
+      {
+        "anonymousCheckout": 401
+      },
+      {
+        "path": "/api/paddle/change",
+        "status": 401
+      },
+      {
+        "path": "/api/paddle/change",
+        "status": 403
+      },
+      {
+        "path": "/api/cron/paddle-plan-changes",
+        "status": 401
+      }
+    ],
+    "actualPayment": false
+  },
+  "production": {
+    "origin": "https://www.easycut.co.kr",
+    "verifiedAt": "2026-09-26T08:32:26.257Z",
+    "results": [
+      {
+        "path": "/",
+        "status": 200
+      },
+      {
+        "path": "/guidebook",
+        "status": 200
+      },
+      {
+        "path": "/pricing",
+        "status": 200
+      },
+      {
+        "path": "/admin/easycutcutcutcutcutcut",
+        "status": 307
+      },
+      {
+        "path": "/projects/0/edit/00000000-0000-0000-0000-000000000000",
+        "status": 404
+      },
+      {
+        "path": "/en/pricing",
+        "status": 200,
+        "prices": true
+      },
+      {
+        "path": "/jp/pricing",
+        "status": 200,
+        "prices": true
+      },
+      {
+        "webhook": "unsigned",
+        "status": 401,
+        "code": "INVALID_SIGNATURE"
+      },
+      {
+        "webhook": "valid-ignored",
+        "status": 200,
+        "ignored": true
+      },
+      {
+        "webhook": "expired",
+        "status": 401,
+        "code": "INVALID_SIGNATURE"
+      },
+      {
+        "anonymousCheckout": 401
+      },
+      {
+        "path": "/api/paddle/change",
+        "status": 401
+      },
+      {
+        "path": "/api/paddle/change",
+        "status": 403
+      },
+      {
+        "path": "/api/cron/paddle-plan-changes",
+        "status": 401
+      }
+    ],
+    "actualPayment": false
+  }
+}

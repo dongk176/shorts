@@ -81,3 +81,20 @@ localization, unauthenticated change/cron rejection, webhook signatures and job
 admission identity, then promote that exact deployment. Never test against a live
 customer subscription. Rollback web code to the previous deployment; keep the
 additive schema and review any already-pending changes before rollback.
+
+## Released
+
+- Source: `fdf863344b2a4e0e58fb26cf3d783206fe3c571f`.
+- Deployment: `dpl_CSVczptRgPHCh3pS6DWfPiawwnFj`,
+  `shorts-ihbm6stvj-artiroom.vercel.app`.
+- User confirmed LIVE subscription-write access at action time. Only that checkbox
+  changed; the existing key remained active, changing from 3 read / 2 write to
+  3 read / 3 write permissions. No credentials were rotated.
+- Additive production migration applied with the fixed database fingerprint and
+  public-schema unchanged verification.
+- Candidate and promoted production checks passed on 2026-09-26, including 401 for
+  anonymous changes/cron, 403 for cross-origin changes, signed/unsigned/expired
+  webhook probes, EN/JP prices, protected paths and candidate job admission.
+- Authenticated production Japanese pricing displays the user's existing monthly
+  plan and selectable packages; no real subscription change or payment was made.
+- Sandbox fixture was canceled after verification. Local test server stopped.
