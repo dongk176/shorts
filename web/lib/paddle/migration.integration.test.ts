@@ -26,13 +26,16 @@ it("applies twice to observed production billing constraints without validating 
     );
     await pg.exec(migration);
     await pg.exec(migration);
+    const packages = fs.readFileSync(path.resolve("../supabase/migrations/202609260020_paddle_packages.sql"), "utf8");
+    await pg.exec(packages);
+    await pg.exec(packages);
     expect(
       (
         await pg.query(
           "select code from shorts_mvp.plans where code like 'paddle_%'",
         )
       ).rows,
-    ).toHaveLength(3);
+    ).toHaveLength(9);
     expect(
       (
         await pg.query(

@@ -1,0 +1,65 @@
+{
+  "environment": "sandbox",
+  "plans": {
+    "paddle_creator_3m": {
+      "productId": "pro_01m3dxd5tzzjj087rtjagvwwjp",
+      "billingMonths": 3,
+      "amountsMinor": {
+        "USD": 4497,
+        "JPY": 6570
+      },
+      "USD": "pri_01m3e9h5a8hbsy1c2vyhrdbenj",
+      "JPY": "pri_01m3e9h5kcaeq71ea5m2ejzyty"
+    },
+    "paddle_creator_6m": {
+      "productId": "pro_01m3dxd5tzzjj087rtjagvwwjp",
+      "billingMonths": 6,
+      "amountsMinor": {
+        "USD": 7194,
+        "JPY": 10740
+      },
+      "USD": "pri_01m3e9h5v91g4s7avfndjfvb90",
+      "JPY": "pri_01m3e9h6pspyt4k8y50xazw03g"
+    },
+    "paddle_creator_12m": {
+      "productId": "pro_01m3dxd5tzzjj087rtjagvwwjp",
+      "billingMonths": 12,
+      "amountsMinor": {
+        "USD": 11988,
+        "JPY": 17880
+      },
+      "USD": "pri_01m3e9h6ykj3knmea8etcqq48t",
+      "JPY": "pri_01m3e9h76dp64hv5qa76ytrzcv"
+    },
+    "paddle_pro_3m": {
+      "productId": "pro_01m3dxd7mewf7g23rdkxf33dpg",
+      "billingMonths": 3,
+      "amountsMinor": {
+        "USD": 10797,
+        "JPY": 15270
+      },
+      "USD": "pri_01m3e9h7my23xjxt2f4n3q6mdf",
+      "JPY": "pri_01m3e9h7wc8vjgpbxb0es44a75"
+    },
+    "paddle_pro_6m": {
+      "productId": "pro_01m3dxd7mewf7g23rdkxf33dpg",
+      "billingMonths": 6,
+      "amountsMinor": {
+        "USD": 20994,
+        "JPY": 29940
+      },
+      "USD": "pri_01m3e9h83tdrczxwmxfpmcvfvc",
+      "JPY": "pri_01m3e9h8c1eh3t9674jv0xjpsx"
+    },
+    "paddle_pro_12m": {
+      "productId": "pro_01m3dxd7mewf7g23rdkxf33dpg",
+      "billingMonths": 12,
+      "amountsMinor": {
+        "USD": 31188,
+        "JPY": 45480
+      },
+      "USD": "pri_01m3e9h8m19sxr3sy9rdtzng0k",
+      "JPY": "pri_01m3e9h8w5mc2390ga3kdatxpx"
+    }
+  }
+}

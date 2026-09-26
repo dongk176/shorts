@@ -1,3 +1,4 @@
+import { paddleMonthlyPeriods } from "./periods";
 import { randomUUID } from "node:crypto";
 import type { Sql, TransactionSql } from "postgres";
 import { getDb } from "@/lib/db";
@@ -59,7 +60,7 @@ export function validatePaidTransaction(
     item.price.unit_price.currency_code !== currency ||
     Number(item.price.unit_price.amount) !== paddleAmount(code, currency) ||
     item.price.billing_cycle?.interval !== "month" ||
-    item.price.billing_cycle.frequency !== 1 ||
+    item.price.billing_cycle.frequency !== paddlePlan(code).billingMonths ||
     amount > paddleAmount(code, currency) ||
     item.price.tax_mode !== "internal"
   ) {
@@ -73,10 +74,12 @@ export function validatePaidTransaction(
     !Number.isFinite(+start) ||
     !Number.isFinite(+end) ||
     end <= start ||
-    +end - +start > 32 * 86400000
+    +end - +start > (paddlePlan(code).billingMonths * 31 + 1) * 86400000
+    || +end - +start < paddlePlan(code).billingMonths * 28 * 86400000
   ) {
     throw new Error("Invalid paid period");
   }
+  paddleMonthlyPeriods(start, end, paddlePlan(code).billingMonths);
   return { start, end, amount, principal };
 }
 
@@ -195,11 +198,12 @@ async function applySubscription(tx: Db, sub: PaddleSubscription) {
 
 async function applyRefunds(tx: Db, transactionId: string) {
   const rows =
-    await tx`select p.*,g.total_seconds,g.reserved_seconds,g.consumed_seconds,g.status as grant_status
-  from shorts_mvp.paddle_payments p join shorts_mvp.usage_grants g on g.id=p.grant_id
+    await tx`select p.*,g.id as linked_grant_id,g.expires_at as grant_expires_at,g.total_seconds,g.reserved_seconds,g.consumed_seconds
+  from shorts_mvp.paddle_payments p
+  left join shorts_mvp.paddle_payment_grants pg on pg.transaction_id=p.transaction_id
+  join shorts_mvp.usage_grants g on g.id=coalesce(pg.grant_id,p.grant_id)
   where p.transaction_id=${transactionId} for update of g`;
-  const p = rows[0];
-  if (!p) return;
+  if (!rows.length) return;
   const sums =
     await tx`select coalesce(sum(principal_minor),0) as amount from shorts_mvp.paddle_adjustments
   where transaction_id=${transactionId} and status='approved' and action in ('refund','chargeback','chargeback_warning')`;
@@ -207,22 +211,16 @@ async function applyRefunds(tx: Db, transactionId: string) {
   const plans =
     await tx`select pl.monthly_source_seconds,s.status as subscription_status from shorts_mvp.paddle_subscriptions ps
   join shorts_mvp.user_subscriptions s on s.id=ps.subscription_id join shorts_mvp.plans pl on pl.code=s.plan_code
-  where ps.paddle_id=${p.paddleSubscriptionId}`;
-  const original = Number(plans[0].monthlySourceSeconds);
-  const entitlement = Math.max(
-    0,
-    Math.floor(
-      original * (1 - Math.min(1, refunded / Number(p.principalMinor))),
-    ),
-  );
-  // Preserve already consumed/reserved usage; revoke unspent allowance without breaking ledger constraints.
-  const total = Math.max(
-    1,
-    entitlement,
-    Number(p.reservedSeconds) + Number(p.consumedSeconds),
-  );
-  await tx`update shorts_mvp.usage_grants set total_seconds=${total},credited_seconds=${total},carried_seconds=0,
-  status=${entitlement === 0 || plans[0].subscriptionStatus === "canceled" ? "revoked" : new Date(p.periodEnd) <= new Date() ? "expired" : "active"},updated_at=now() where id=${p.grantId}`;
+  where ps.paddle_id=${rows[0].paddleSubscriptionId}`;
+  // Each monthly allowance belongs to the paid package. A refund affects all
+  // of them, including future months, without making future usage available.
+  for (const p of rows) {
+    const entitlement = Math.max(0, Math.floor(Number(plans[0].monthlySourceSeconds) *
+      (1 - Math.min(1, refunded / Number(p.principalMinor)))));
+    const total = Math.max(1, entitlement, Number(p.reservedSeconds) + Number(p.consumedSeconds));
+    await tx`update shorts_mvp.usage_grants set total_seconds=${total},credited_seconds=${total},carried_seconds=0,
+    status=${entitlement === 0 || plans[0].subscriptionStatus === "canceled" ? "revoked" : new Date(p.grantExpiresAt) <= new Date() ? "expired" : "active"},updated_at=now() where id=${p.linkedGrantId}`;
+  }
 }
 
 async function loadTransactionAdjustments(transactionId: string) {
@@ -364,14 +362,18 @@ export async function processPaddleEvent(
         await tx`insert into shorts_mvp.paddle_payments(transaction_id,user_id,paddle_subscription_id,currency,amount_minor,principal_minor,period_start,period_end)
     values(${transaction.id},${userId},${sub.id},${currency},${paid.amount},${paid.principal},${paid.start},${paid.end}) on conflict do nothing returning transaction_id`;
       if (inserted.length) {
-        const seconds = paddlePlan(code).minutes * 60;
-        const grants =
-          await tx`insert into shorts_mvp.usage_grants(user_id,subscription_id,kind,product_code,total_seconds,credited_seconds,carried_seconds,valid_from,expires_at)
-     values(${userId},${mapped.subscriptionId},'base',${code},${seconds},${seconds},0,${paid.start},${paid.end})
-     on conflict (subscription_id,valid_from,kind) where subscription_id is not null and kind='base' do nothing returning id`;
-        if (!grants.length)
-          throw new Error("Duplicate paid period requires review");
-        await tx`update shorts_mvp.paddle_payments set grant_id=${grants[0].id} where transaction_id=${transaction.id}`;
+        const plan = paddlePlan(code);
+        const seconds = plan.minutes * 60;
+        for (const [index, period] of paddleMonthlyPeriods(paid.start, paid.end, plan.billingMonths).entries()) {
+          const grants =
+            await tx`insert into shorts_mvp.usage_grants(user_id,subscription_id,kind,product_code,total_seconds,credited_seconds,carried_seconds,valid_from,expires_at)
+          values(${userId},${mapped.subscriptionId},'base',${code},${seconds},${seconds},0,${period.start},${period.end})
+          on conflict (subscription_id,valid_from,kind) where subscription_id is not null and kind='base' do nothing returning id`;
+          if (!grants.length) throw new Error("Duplicate paid period requires review");
+          await tx`insert into shorts_mvp.paddle_payment_grants(transaction_id,grant_id) values(${transaction.id},${grants[0].id})`;
+          // Retain the legacy pointer for existing reporting/one-month rows.
+          if (index === 0) await tx`update shorts_mvp.paddle_payments set grant_id=${grants[0].id} where transaction_id=${transaction.id}`;
+        }
         await tx`update shorts_mvp.user_subscriptions set current_period_start=${paid.start},current_period_end=${paid.end}
      where id=${mapped.subscriptionId} and (current_period_end is null or current_period_end<=${paid.end})`;
       }

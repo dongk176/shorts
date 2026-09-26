@@ -80,6 +80,9 @@ beforeAll(async () => {
   );
   await pg.exec(migration);
   await pg.exec(migration);
+  const packages = fs.readFileSync(path.resolve("../supabase/migrations/202609260020_paddle_packages.sql"), "utf8");
+  await pg.exec(packages);
+  await pg.exec(packages);
 }, 30000);
 beforeEach(async () => {
   vi.useFakeTimers({ toFake: ["Date"] });
@@ -493,5 +496,99 @@ describe("Paddle ledger using real SQL and migration", () => {
     await expect(
       preparePaddleCheckout(user, "paddle_lite", "USD", tag(pg)),
     ).rejects.toThrow("existing");
+  });
+});
+
+describe("Paddle recurring packages", () => {
+  async function packageCheckout(months: 3 | 6 | 12 = 6) {
+    const { paddlePlan } = await import("./catalog");
+    const code = `paddle_creator_${months}m`;
+    const plan = paddlePlan(code);
+    vi.stubEnv(`PADDLE_PRICE_CREATOR_${months}M_USD`, price);
+    await pg.query("update shorts_mvp.paddle_checkouts set plan_code=$1 where id=$2", [code, checkout]);
+    transaction.items[0].price.unit_price.amount = String(plan.usd);
+    transaction.items[0].price.billing_cycle!.frequency = months;
+    transaction.billing_period = { starts_at: "2026-01-31T10:15:00Z", ends_at: months === 3 ? "2026-04-30T10:15:00Z" : months === 6 ? "2026-07-31T10:15:00Z" : "2027-01-31T10:15:00Z" };
+    transaction.details.totals = {total: String(plan.usd), subtotal: String(plan.usd), tax: "0", discount: "0"};
+    subscription.current_billing_period = transaction.billing_period;
+    subscription.next_billed_at = transaction.billing_period.ends_at;
+    vi.setSystemTime(new Date("2026-02-15T00:00:00Z"));
+    return plan;
+  }
+  it.each([3, 6, 12] as const)("allocates %i separate monthly grants exactly once, never all minutes at once", async months => {
+    await packageCheckout(months);
+    await processPaddleEvent(event(), tag(pg));
+    await processPaddleEvent(event("transaction.completed", txn, 2), tag(pg));
+    const grants = await rows("usage_grants");
+    expect(grants).toHaveLength(months);
+    expect(await rows("paddle_payment_grants")).toHaveLength(months);
+    expect(grants.every(g => g.total_seconds === 12000)).toBe(true);
+    for (const instant of ["2026-02-15", "2026-02-28T10:15:00Z", "2026-03-31T10:15:00Z"]) {
+      const active = (await pg.query<{ seconds: number }>("select sum(total_seconds) as seconds from shorts_mvp.usage_grants where status='active' and valid_from<=$1 and expires_at>$1",[instant])).rows;
+      expect(Number(active[0].seconds)).toBe(12000);
+    }
+    const future = grants.find(g => new Date(g.valid_from as string).toISOString() === "2026-03-31T10:15:00.000Z");
+    expect(future).toBeTruthy();
+  });
+  it("renews a six-month package once and keeps old months unavailable", async () => {
+    await packageCheckout();
+    await processPaddleEvent(event(), tag(pg));
+    transaction.id = "txn_" + "r".repeat(26);
+    transaction.billing_period = {starts_at: "2026-07-31T10:15:00Z", ends_at: "2027-01-31T10:15:00Z"};
+    subscription.current_billing_period = transaction.billing_period;
+    subscription.next_billed_at = transaction.billing_period.ends_at;
+    subscription.updated_at = "2026-07-31T10:15:00Z";
+    await processPaddleEvent(event("transaction.completed", transaction.id, 2), tag(pg));
+    await processPaddleEvent(event("transaction.completed", transaction.id, 3), tag(pg));
+    expect(await rows("usage_grants")).toHaveLength(12);
+    expect(await rows("paddle_payments")).toHaveLength(2);
+    expect((await rows("user_subscriptions"))[0].current_period_end).toEqual(new Date("2027-01-31T10:15:00Z"));
+  });
+  it("can refund a legacy monthly payment recorded during deployment before the map exists", async () => {
+    await processPaddleEvent(event(), tag(pg));
+    await pg.exec("delete from shorts_mvp.paddle_payment_grants");
+    await processPaddleEvent(event("adjustment.updated", adjustment.id, 2), tag(pg));
+    expect((await rows("usage_grants"))[0].status).toBe("revoked");
+  });
+  it("full refund revokes every current and future allowance, retaining consumed usage", async () => {
+    const plan = await packageCheckout();
+    await processPaddleEvent(event(), tag(pg));
+    await pg.exec("update shorts_mvp.usage_grants set consumed_seconds=60 where valid_from='2026-01-31T10:15:00Z'");
+    adjustment.totals = {total: String(plan.usd), subtotal: String(plan.usd)};
+    await processPaddleEvent(event("adjustment.updated", adjustment.id, 2), tag(pg));
+    const grants = await rows("usage_grants");
+    expect(grants).toHaveLength(6);
+    expect(grants.every(g => g.status === "revoked")).toBe(true);
+    expect(grants.some(g => g.total_seconds === 60 && g.consumed_seconds === 60)).toBe(true);
+  });
+  it("partial refund reduces each month proportionally and never revives an expired month", async () => {
+    const plan = await packageCheckout();
+    await processPaddleEvent(event(), tag(pg));
+    vi.setSystemTime(new Date("2026-03-15T00:00:00Z"));
+    adjustment.totals = {total: String(plan.usd / 2), subtotal: String(plan.usd / 2)};
+    await processPaddleEvent(event("adjustment.updated", adjustment.id, 2), tag(pg));
+    const grants = await rows("usage_grants");
+    expect(grants.every(g => g.total_seconds === 6000)).toBe(true);
+    expect(grants.filter(g => g.status === "expired")).toHaveLength(1);
+    expect(grants.filter(g => g.status === "active")).toHaveLength(5);
+  });
+  it("scheduled cancellation keeps paid months; immediate cancellation revokes them", async () => {
+    await packageCheckout();
+    subscription.scheduled_change = {action: "cancel", effective_at: subscription.next_billed_at!};
+    await processPaddleEvent(event(), tag(pg));
+    expect((await rows("usage_grants")).every(g => g.status === "active")).toBe(true);
+    subscription.status = "canceled";
+    subscription.updated_at = "2026-09-27T00:00:00Z";
+    await processPaddleEvent(event("subscription.canceled", sub, 2), tag(pg));
+    expect((await rows("usage_grants")).every(g => g.status === "revoked")).toBe(true);
+  });
+  it("rejects a wrong package frequency or a one-month paid period", async () => {
+    await packageCheckout();
+    transaction.items[0].price.billing_cycle!.frequency = 3;
+    await expect(processPaddleEvent(event(), tag(pg))).rejects.toThrow("catalog");
+    transaction.items[0].price.billing_cycle!.frequency = 6;
+    transaction.billing_period!.ends_at = "2026-02-28T10:15:00Z";
+    await expect(processPaddleEvent(event(), tag(pg))).rejects.toThrow("period");
+    expect(await rows("usage_grants")).toHaveLength(0);
   });
 });

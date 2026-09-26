@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { paddlePlans } from "@/lib/paddle/catalog";
 import { assertBillingMutationRequest } from "@/lib/billing-request";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 import { getRequestLocale } from "@/lib/i18n/server";
@@ -19,7 +20,7 @@ export const dynamic = "force-dynamic";
 const schema = z.union([
   z
     .object({
-      planCode: z.enum(["paddle_lite", "paddle_creator", "paddle_pro"]),
+      planCode: z.enum(paddlePlans.map((plan) => plan.code)),
       locale: z.enum(["en", "ja"]),
     })
     .strict(),

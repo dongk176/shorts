@@ -2,9 +2,10 @@
 import Script from "next/script";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { paddlePlans, formatPaddlePrice } from "@/lib/paddle/catalog";
+import { paddlePlans, paddleDisplayPlans, paddlePackageTerms, formatPaddlePrice } from "@/lib/paddle/catalog";
 import { localizedHref } from "@/lib/i18n/routing";
 import { useUsageState } from "@/components/usage-provider";
+import styles from "@/app/pricing/pricing.module.css";
 import type { SiteLocale } from "@/lib/i18n/config";
 
 type Subscription = {
@@ -44,14 +45,20 @@ const copy = {
       "Choose your monthly editing time. All plans include subtitles, vertical layouts and video exports.",
     month: "/ month",
     tax: "Tax included · Billed monthly",
-    recommend: "Recommended",
+    recommend: "Best value",
+    term: "Package duration",
+    duration: (n: number) => `${n} months`,
+    package: "Package",
+    names: ["EasyCut Pro", "Starter package", "Expert package"],
+    descriptions: ["Start with a monthly plan", "More editing time for regular creators", "For creators with a larger workflow"],
+    billed: (n: number, total: string) => `Tax included · ${total} every ${n} months`,
     start: "Choose plan",
     manage: "Manage subscription",
     minutes: (n: number) => `${n} source-video minutes each month`,
     jobs: (n: number) => `${n} concurrent ${n === 1 ? "job" : "jobs"}`,
     retention: "Projects stored for 30 days",
     terms:
-      "Renews automatically each month until canceled. Unused minutes expire at the end of each billing period. Cancel before your next renewal in Manage subscription.",
+      "EasyCut Pro renews monthly. Packages are paid upfront and renew every 3, 6 or 12 months, as selected. Editing minutes reset each month and do not roll over. Cancel before your next renewal in Manage subscription.",
     confirm: "Payment received. Confirming your editing time…",
     ready: "Your editing time is ready.",
     waiting:
@@ -83,13 +90,19 @@ const copy = {
     month: "/ 月",
     tax: "税込・毎月のお支払い",
     recommend: "おすすめ",
+    term: "パッケージの契約期間",
+    duration: (n: number) => `${n}か月`,
+    package: "パッケージ",
+    names: ["EasyCut Pro", "スターターパッケージ", "エキスパートパッケージ"],
+    descriptions: ["月額プランで気軽にスタート", "定期的に動画を制作する方に", "より多くの動画を制作する方に"],
+    billed: (n: number, total: string) => `税込・${n}か月ごとに${total}を一括払い`,
     start: "このプランを選ぶ",
     manage: "契約を管理",
     minutes: (n: number) => `毎月${n}分の元動画を処理`,
     jobs: (n: number) => `同時に${n}件まで処理`,
     retention: "プロジェクトを30日間保存",
     terms:
-      "解約するまで毎月自動更新されます。未使用の処理時間は翌月に繰り越されません。次回更新前に「契約を管理」から解約できます。",
+      "EasyCut Proは毎月、パッケージは選択した3・6・12か月ごとの一括払いで自動更新されます。処理時間は毎月リセットされ、翌月に繰り越されません。次回更新前に「契約を管理」から解約できます。",
     confirm: "お支払いを確認し、処理時間を反映しています…",
     ready: "処理時間が反映されました。",
     waiting:
@@ -136,6 +149,8 @@ export function PaddlePricing({
   const { refreshUsage } = useUsageState();
   const t = copy[language];
   const currency = language === "ja" ? "JPY" : "USD";
+  const [months, setMonths] = useState<(typeof paddlePackageTerms)[number]>(6);
+  const displayedPlans = paddleDisplayPlans(months);
   const [scriptReady, setScriptReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -328,40 +343,44 @@ export function PaddlePricing({
         </div>
       )}
       {!managementOnly && !current && (
-        <div className="mt-12 grid gap-5 md:grid-cols-3">
-          {paddlePlans.map((p, i) => (
-            <article
-              key={p.code}
-              className={`relative rounded-3xl border p-7 ${i === 1 ? "border-indigo-400 bg-indigo-400/10" : "border-white/15 bg-white/[.03]"}`}
-            >
-              {i === 1 && (
-                <span className="absolute -top-3 left-6 rounded-full bg-indigo-400 px-3 py-1 text-xs font-semibold text-black">
-                  {t.recommend}
-                </span>
-              )}
-              <h2 className="text-xl font-semibold">{p.name}</h2>
-              <p className="mt-6">
-                <span className="text-4xl font-bold tracking-tight">
-                  {formatPaddlePrice(p.code, currency)}
-                </span>
-                <span className="ml-2 text-neutral-400">{t.month}</span>
-              </p>
-              <p className="mt-2 text-sm text-neutral-400">{t.tax}</p>
-              <ul className="my-8 space-y-4 text-sm text-neutral-200">
-                <li>{t.minutes(p.minutes)}</li>
-                <li>{t.jobs(p.jobs)}</li>
-                <li>{t.retention}</li>
-              </ul>
-              <button
-                onClick={() => void checkout(p.code)}
-                disabled={busy || !scriptReady || !checkoutEnabled}
-                className={`w-full rounded-xl px-4 py-3 font-semibold disabled:opacity-50 ${i === 1 ? "bg-indigo-400 text-black" : "bg-white text-black"}`}
-              >
-                {t.start}
-              </button>
-            </article>
-          ))}
-        </div>
+        <>
+          <div className={`${styles.planToolbar} ${styles.localPlanToolbar} mt-10`}>
+            <span>{t.term}</span>
+            <div className={`${styles.packageTermPicker} ${styles.localTermPicker}`} role="group" aria-label={t.term}>
+              {paddlePackageTerms.map((term) => (
+                <button key={term} type="button" aria-pressed={months === term}
+                  className={months === term ? styles.packageTermActive : ""}
+                  onClick={() => setMonths(term)}>{t.duration(term)}</button>
+              ))}
+            </div>
+          </div>
+          <section id="pricing-plans" className={`pricing-grid ${styles.localPlanGrid}`} aria-label={t.title}>
+            {displayedPlans.map((p, i) => (
+              <article key={p.code}
+                className={`pricing-card ${i === 1 ? "pricing-card-popular" : i === 2 ? "pricing-card-pro" : ""} ${styles.planCard} ${styles.localPlanCard} ${styles.packagePlanCard} ${i === 1 ? styles.mobilePlanStarter : i === 2 ? styles.mobilePlanExpert : styles.mobilePlanPro}`}>
+                {i === 1 && months === 6 && (
+                  <span className={`pricing-badge ${styles.localReasonableBadge}`}>{t.recommend}</span>
+                )}
+                <div className="pricing-plan-name"><h2>{t.names[i]}</h2></div>
+                <p className={styles.localPlanDescription}>{t.descriptions[i]}</p>
+                <div className={`pricing-price ${styles.localPlanPrice}`}>
+                  <strong>{formatPaddlePrice(p.code, currency, true)}</strong><span>{t.month}</span>
+                </div>
+                <p className="pricing-billing">{p.billingMonths === 1 ? t.tax : t.billed(p.billingMonths, formatPaddlePrice(p.code, currency))}</p>
+                <ul>
+                  {[t.minutes(p.minutes), t.jobs(p.jobs), t.retention].map((feature) => (
+                    <li key={feature}><span>✓</span><span>{feature}</span></li>
+                  ))}
+                </ul>
+                <button type="button" onClick={() => void checkout(p.code)}
+                  disabled={busy || !scriptReady || !checkoutEnabled}
+                  className={`pricing-cta ${i === 1 ? "pricing-cta-primary" : ""} ${styles.planCta}`}>
+                  {t.start}
+                </button>
+              </article>
+            ))}
+          </section>
+        </>
       )}
       <div role="status" aria-live="polite" className="mt-6 text-center">
         <p>{message}</p>
