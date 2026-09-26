@@ -43,3 +43,6 @@ htmlcov/
 
 # Private reviewer credentials and local check scripts.
 .secrets/
+
+# Local interactive Paddle sandbox run artifacts
+.tmp/paddle-sandbox/

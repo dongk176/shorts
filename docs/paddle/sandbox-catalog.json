@@ -1,0 +1,23 @@
+{
+  "vendorId": "123613",
+  "environment": "sandbox",
+  "taxMode": "internal",
+  "billingCycle": "monthly",
+  "plans": {
+    "paddle_lite": {
+      "productId": "pro_01m3dx3j7pk194z3ky5sr41dmw",
+      "USD": "pri_01m3dx60h0gksanytsjzs3hn3h",
+      "JPY": "pri_01m3dx8ne2sws910x536v47kb7"
+    },
+    "paddle_creator": {
+      "productId": "pro_01m3dxd5tzzjj087rtjagvwwjp",
+      "USD": "pri_01m3dxd70sbwwnh0dmmbzkyycd",
+      "JPY": "pri_01m3dxd7a660mrc20xcwdd5e9c"
+    },
+    "paddle_pro": {
+      "productId": "pro_01m3dxd7mewf7g23rdkxf33dpg",
+      "USD": "pri_01m3dxd8azk3rmfncy9pbrh66c",
+      "JPY": "pri_01m3dxd8p6t7bvpxepjw06qbvy"
+    }
+  }
+}

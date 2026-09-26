@@ -1,0 +1,69 @@
+{
+  "testedServiceCommit": "5c1249fe41d4912a44422c414120a15680f7b12f",
+  "sandboxVendor": "123613",
+  "database": "local in-memory PGlite only",
+  "realMoney": false,
+  "actualWebhookDelivery": false,
+  "fullAppLoginFlow": false,
+  "providerMonthlyRenewal": false,
+  "checks": [
+    {
+      "check": "checkout-created",
+      "currency": "USD",
+      "transactionId": "txn_01m3dxvyc7h1f3h4b729063mhr"
+    },
+    {
+      "check": "paid-ledger",
+      "currency": "USD",
+      "status": "paid",
+      "grants": 1,
+      "minutes": 60,
+      "duplicateIgnored": true
+    },
+    {
+      "check": "cancel",
+      "currency": "USD",
+      "scheduledCancel": true,
+      "paidPeriodPreserved": true
+    },
+    {
+      "check": "checkout-created",
+      "currency": "JPY",
+      "transactionId": "txn_01m3dxyqgdsqbw711yrycnyrqh"
+    },
+    {
+      "check": "paid-ledger",
+      "currency": "JPY",
+      "status": "paid",
+      "grants": 1,
+      "minutes": 60,
+      "duplicateIgnored": true
+    },
+    {
+      "check": "cancel",
+      "currency": "JPY",
+      "scheduledCancel": true,
+      "paidPeriodPreserved": true
+    },
+    {
+      "check": "portal-created",
+      "currency": "USD"
+    },
+    {
+      "check": "portal-created",
+      "currency": "JPY"
+    },
+    {
+      "check": "refund",
+      "currency": "USD",
+      "refundStatus": "approved",
+      "grantStatus": "revoked"
+    },
+    {
+      "check": "refund",
+      "currency": "JPY",
+      "refundStatus": "approved",
+      "grantStatus": "revoked"
+    }
+  ]
+}

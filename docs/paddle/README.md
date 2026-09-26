@@ -8,7 +8,7 @@
 - Paddle live Vendor 427481: 상품 3개, 가격 6개 등록 완료. 공개 식별자는 `live-catalog.json` 참조.
 - 서버 API 키 `EasyCut billing server` 발급 완료. 사용자가 다섯 권한/만료일을 명시한 확인 요청에 “승인”으로 답한 후 발급했다. 권한은 `transaction.read`, `transaction.write`, `subscription.read`, `adjustment.read`, `customer_portal_session.write`; 만료일 2026-12-25. 키 ID `apikey_01m3dthfsgd6sr1fvb28cn7e8z`. 비밀값은 Git 제외된 작업트리 `.secrets/paddle-live.env`에 파일 권한 0600/상위 폴더 0700으로 보관했고 로그/채팅/문서에는 출력하지 않았다. 운영 환경변수에는 등록하지 않았다.
 - 실제 Paddle API의 `GET /transactions?per_page=1` 읽기 전용 인증 확인: HTTP 200, 정상 목록 형식. 고객/거래 내용은 출력하지 않았으며 거래 생성/결제는 실행하지 않았다. 공개 토큰 `EasyCut web checkout`도 별도 사용자 승인 후 발급 완료했다. 토큰 ID `ctkn_01m3dwbyh147dy3cbbzftqwx70`, Active 상태를 확인했고 같은 로컬 보호 파일에 6개 가격 ID와 함께 보관했다. 웹훅 설정은 미완료.
-- 운영 DB migration, 후보 배포/승격, 실제/샌드박스 Paddle 결제는 아직 실행하지 않았다. 로컬 테스트가 실제 결제 완료를 의미하지 않는다.
+- 운영 DB migration, 후보 배포/승격, 실제 돈을 사용하는 결제는 실행하지 않았다. 아래 샌드박스 검증은 가상 카드와 격리된 로컬 DB만 사용한다.
 - 비용: 상품 등록 및 로컬 테스트에서 구매/유료 인프라 생성 없음. 이 작업의 사용자 승인 한계는 **10,000원 이상 비용 발생 전 확인**. 실제 Lite 결제도 이 금액을 넘을 수 있으므로 자동으로 실행하지 않는다.
 
 ## 요금
@@ -85,13 +85,13 @@
 - 위 구조에 migration 두 번 적용, 기존 제약 밖의 과거 가상 데이터 보존, 새 잘못된 상품 차단, 실제 컬럼/제약을 통과하는 Paddle 구독·시간 지급을 로컬에서 검증했다.
 - 결과 불명확한 국내 결제 또는 유효기간이 지난 검토 중 Toss 결제가 있으면 새 Paddle 결제를 만들지 않도록 보완했다.
 - 후속 변경에서 관련 테스트 6개 파일 / 33개, lint, typecheck, production build, diff 검사를 통과했다. 빌드는 로컬에서만 수행했다.
-- 최초 서버 키 저장은 자동 승인 심사에서 차단되었으나, 이후 사용자의 구체적인 “승인” 답변 후 발급·로컬 보호 저장·읽기 전용 API 인증(HTTP 200)까지 완료했다. 공개 토큰은 이후 별도 승인 후 발급·보관했다. 웹훅과 실제 Paddle sandbox 결제는 여전히 미완료다. API 인증 성공을 실제 결제 테스트 완료로 해석하면 안 된다.
+- 최초 서버 키 저장은 자동 승인 심사에서 차단되었으나, 이후 사용자의 구체적인 “승인” 답변 후 발급·로컬 보호 저장·읽기 전용 API 인증(HTTP 200)까지 완료했다. 공개 토큰은 이후 별도 승인 후 발급·보관했다. 당시 웹훅과 Paddle sandbox 결제는 미완료였다. 이후 샌드박스 검증 결과는 아래에 별도로 기록한다.
 
 ## 인증 준비 후 남은 작업
 
 - 공개 결제창 토큰 `EasyCut web checkout`은 발급·로컬 보관 완료했다. 서버 키 비밀값을 클라이언트 토큰으로 대체 사용하면 안 된다. 운영 환경변수에는 아직 둘 다 등록하지 않았다.
-- `https://sandbox-vendors.paddle.com/onboarding/get-started` 접근은 sandbox 로그인 화면으로 이동했다. 사용자가 로그인했다고 알려준 후 확인했으나 해당 탭에는 `Incorrect login details`가 표시되어 있었다. 테스트 계정 로그인은 성립하지 않았고, 계정 존재 여부를 사용자에게 확인 요청했다. 운영 로그인과 별개로 테스트 계정 접근이 필요하다.
-- 샌드박스 테스트 대상은 이 작업트리의 코드와 격리된 로컬 DB/가상 사용자이다. 운영 DB/고객 데이터 또는 기존 lab 서비스를 연결하지 않는다. 현재 테스트 기록은 실제 Paddle Checkout/웹훅 end-to-end 실행을 포함하지 않는다.
+- 사용자 별도 가입 후 sandbox 로그인 완료를 확인했다. Sandbox artiroom 판매자 ID `123613`, 운영 판매자 ID `427481`과 구분된다. 사용자의 구체적인 “ㄱㄱ” 승인 후 테스트 서버 키 `EasyCut sandbox integration`과 공개 결제창 토큰을 발급했다. 서버 키 ID `apikey_01m3dx8p0d41pjttgdap34e6kh`, 클라이언트 토큰 ID `ctkn_01m3dxatfn9jt7srtzdk1c5fmd`. 상품/가격/거래/구독/환불 read+write 및 customer portal session write 권한, 만료 2026-12-25. 값은 Git 제외 `.secrets/paddle-sandbox.env`에 권한 0600으로 보관한다. 상품 3개/월 가격 6개는 `sandbox-catalog.json`에 기록했고 API로 통화·금액·세금 포함·수량 1·체험 없음 조건을 확인했다.
+- 샌드박스 테스트 대상은 이 작업트리의 코드와 격리된 로컬 DB/가상 사용자이다. 운영 DB/고객 데이터 또는 기존 lab 서비스를 연결하지 않는다. 실제 Paddle sandbox Checkout과 서비스 함수를 연결해 검증한다. 외부 웹훅 전달 및 실제 앱 로그인 흐름 전체는 이 검사에 포함하지 않는다.
 - 발급된 live 서버 키는 이 작업트리 `.secrets/paddle-live.env`에만 있다. 작업트리 제거 전 사용자가 관리하는 비밀 저장소로 안전하게 옮기거나 Paddle에서 폐기해야 한다. 실제 배포 시에는 서버 전용 비밀값으로 넣고 2026-12-25 이전에 교체한다. `PADDLE_ENABLED=false` 상태를 유지한다.
 
 ## 공식 참고
@@ -101,3 +101,22 @@
 - https://developer.paddle.com/webhooks/about/signature-verification/
 - https://developer.paddle.com/api-reference/adjustments/list-adjustments/
 - https://developer.paddle.com/api-reference/customer-portals/create-customer-portal-session/
+
+
+## 샌드박스 실제 API 검증 (2026-09-26)
+
+- 소스: `5c1249fe41d4912a44422c414120a15680f7b12f`의 결제 서비스 + 새 `web/lib/paddle/sandbox.session.test.ts` 검사 화면. 앱 코드를 변경하지 않고 실제 sandbox API를 호출했다.
+- 계정: sandbox Vendor `123613`; DB: 메모리 PGlite + 관찰한 운영 관련 스키마의 부분 fixture + 신규 migration. 가상 사용자 2명만 사용했다. AWS/lab/운영 DB를 사용하지 않았다.
+- `RUN_PADDLE_SANDBOX=1 npm --prefix web test -- lib/paddle/sandbox.session.test.ts`로 명시 실행한다. 일반 테스트에서는 자동 skip한다. 로컬 주소는 `http://127.0.0.1:3419/`, Host/Origin/임의 세션 쿠키를 검사하며 외부에 공개하지 않는다.
+- 기본 payment link 미설정 때문에 최초 API 생성이 실패했다. 거래 목록이 비어 있음을 확인한 후 sandbox Checkout Settings에 로컬 테스트 주소를 저장했고 새 격리 세션으로 재시작했다. 대시보드가 `https://127.0.0.1:3419/`로 정규화하므로 이 주소 자체의 복귀/결제 링크 동작은 검증하지 않았다. 실제 검사는 HTTP 로컬 페이지에서 transaction ID로 Paddle.js overlay를 연다. 배포 시 유효한 HTTPS 앱 결제 주소로 교체해야 한다.
+- 영어/미국: Lite USD 9.90 세금 포함, 테스트 카드 결제 성공. 일본어/일본: Lite JPY 1,480 소비세 포함, 가상 3DS 인증 및 결제 성공. 실제 카드 청구는 없다.
+- 두 결제 모두 실제 거래/구독을 API로 다시 조회해 로컬 이용시간 60분을 한 번만 지급했다. 같은 이벤트를 두 번 처리해 두 번째가 duplicate임을 확인했다.
+- 두 구독 모두 다음 결제일 해지 예약을 API에서 확인했고, 로컬 상태 active/기간 종료 시 해지 예약을 확인했다. 환불 승인 전에는 이용시간이 유지됐다.
+- 이벤트 envelope는 로컬에서 만든 것이다. 공급자 객체 조회/검증과 SQL 처리는 실제 서비스 함수를 사용하지만 Paddle → 공개 웹훅 전달, 서명 헤더, 재전송 네트워크를 종단 간 검증한 것은 아니다. HMAC/인증/갱신/실패는 기존 자동 테스트 결과와 구분해야 한다.
+- 실제 Next.js 로그인 후 결제 전체 흐름, 공급자의 다음 달 자동 재청구, 외부 웹훅 수신, 운영 후보 배포, 실제 카드 승인/환불/정산은 남아 있다. 현재 상태를 운영 출시 완료로 간주하지 않는다.
+
+- 환불 최종 결과: USD/JPY 모두 `approved`, 두 로컬 grant 모두 `revoked`. 대기 중에는 `active`를 유지하고 승인된 경우에만 회수했다. 두 테스트 구독은 다음 결제일 해지 예약 상태다.
+- 고객 포털 링크 생성과 실제 화면을 확인했다. USD 고객은 영어/US$9.90, JPY 고객은 일본어/JP¥1,480로 표시되고 예약 해지일이 일치했다.
+- 대화형 검사 1개 통과(실제 sandbox API, 가상 카드 2건), 이어서 결제 관련 자동 검사 31개 통과/대화형 1개 의도적 skip, typecheck 및 새 검사 파일 lint 통과. 대화형 실행 후 검사 파일의 환경 복원/출력 폴더 생성/서버 종료 처리만 보완했고, 이 보완된 파일의 원격 대화형 검사를 다시 실행하지는 않았다.
+- 최소 증거는 `sandbox-verification-20260926.json`에 기록했다. 키/고객 포털 인증 링크/실사용자 정보는 기록 파일에 넣지 않았다. 테스트 서버는 종료했다.
+- 참고: https://developer.paddle.com/sdks/sandbox/ 및 https://developer.paddle.com/concepts/sell/customer-portal/
