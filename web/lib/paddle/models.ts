@@ -7,6 +7,7 @@ export type PaddleSubscription = {
   current_billing_period: PaddlePeriod | null;
   next_billed_at: string | null;
   scheduled_change: { action: string; effective_at: string } | null;
+  custom_data?: {easycut_change_id?:string;easycut_checkout_id?:string}|null;
   items: { price: { id: string }; quantity: number }[];
 };
 export type PaddleTransaction = {
@@ -15,9 +16,10 @@ export type PaddleTransaction = {
   customer_id: string | null;
   subscription_id: string | null;
   discount_id: string | null;
+  origin?: string;
   currency_code: string;
   billing_period: PaddlePeriod | null;
-  custom_data: { easycut_checkout_id?: string } | null;
+  custom_data: { easycut_checkout_id?: string; easycut_change_id?: string } | null;
   items: {
     price: {
       id: string;
@@ -26,7 +28,7 @@ export type PaddleTransaction = {
       billing_cycle: { interval: string; frequency: number } | null;
     };
     quantity: number;
-    proration: unknown | null;
+    proration: { rate: string; billing_period?: PaddlePeriod } | null;
   }[];
   details: {
     totals: { total: string; subtotal: string; tax: string; discount: string };

@@ -1,5 +1,6 @@
 "use client";
 import Script from "next/script";
+import { formatChangeAmount } from "@/lib/paddle/change-policy";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { paddlePlans, paddleDisplayPlans, paddlePackageTerms, formatPaddlePrice } from "@/lib/paddle/catalog";
@@ -13,6 +14,8 @@ type Subscription = {
   planCode: string;
   currentPeriodEnd: string;
   cancelAtPeriodEnd: boolean;
+  currency?: "USD"|"JPY"|null;
+  pendingChange?: {planCode:string;timing:string;status:string;effectiveAt:string}|null;
 };
 type PaddleJs = {
   Environment: { set: (env: "sandbox") => void };
@@ -53,12 +56,23 @@ const copy = {
     descriptions: ["Start with a monthly plan", "More editing time for regular creators", "For creators with a larger workflow"],
     billed: (n: number, total: string) => `Tax included · ${total} every ${n} months`,
     start: "Choose plan",
+    current: "Current plan",
+    change: "Change plan",
+    changeQuestion: (name:string) => `Switch to ${name}?`,
+    nowCharge: (amount:string) => `Pay ${amount} now for the remaining period.`,
+    renewalChange: (date:string) => `Starts on ${date}. Your current plan stays active until then. No payment or refund today.`,
+    changed: "Plan change confirmed.",
+    changing: "Your change is being confirmed. Please do not submit again. Refresh this page shortly.",
+    changeError: "Unable to change this plan. Refresh the page or contact support.",
+    pendingChange: (name:string,date:string) => `Scheduled: ${name} from ${date}`,
+    settings: "Billing management",
+    compare: "Compare and change plans",
     manage: "Manage subscription",
     minutes: (n: number) => `${n} source-video minutes each month`,
     jobs: (n: number) => `${n} concurrent ${n === 1 ? "job" : "jobs"}`,
     retention: "Projects stored for 30 days",
     terms:
-      "EasyCut Pro renews monthly. Packages are paid upfront and renew every 3, 6 or 12 months, as selected. Editing minutes reset each month and do not roll over. Cancel before your next renewal in Manage subscription.",
+      "EasyCut Pro renews monthly. Packages are paid upfront and renew every 3, 6 or 12 months, as selected. Editing minutes reset each month and do not roll over. Manage payment methods or cancel before renewal in Settings → Billing management.",
     confirm: "Payment received. Confirming your editing time…",
     ready: "Your editing time is ready.",
     waiting:
@@ -97,12 +111,23 @@ const copy = {
     descriptions: ["月額プランで気軽にスタート", "定期的に動画を制作する方に", "より多くの動画を制作する方に"],
     billed: (n: number, total: string) => `税込・${n}か月ごとに${total}を一括払い`,
     start: "このプランを選ぶ",
+    current: "ご利用中のプラン",
+    change: "プランを変更",
+    changeQuestion: (name:string) => `${name}に変更しますか？`,
+    nowCharge: (amount:string) => `残りの利用期間の差額として、今すぐ${amount}をお支払いいただきます。`,
+    renewalChange: (date:string) => `${date}から適用されます。それまでは現在のプランをご利用いただけます。本日の請求・返金はありません。`,
+    changed: "プラン変更を受け付けました。",
+    changing: "変更内容を確認しています。再度申し込まず、しばらくしてからページを更新してください。",
+    changeError: "プランを変更できませんでした。ページを更新するか、サポートにお問い合わせください。",
+    pendingChange: (name:string,date:string) => `変更予定：${date}から${name}`,
+    settings: "お支払い・契約管理",
+    compare: "プランの比較・変更",
     manage: "契約を管理",
     minutes: (n: number) => `毎月${n}分の元動画を処理`,
     jobs: (n: number) => `同時に${n}件まで処理`,
     retention: "プロジェクトを30日間保存",
     terms:
-      "EasyCut Proは毎月、パッケージは選択した3・6・12か月ごとの一括払いで自動更新されます。処理時間は毎月リセットされ、翌月に繰り越されません。次回更新前に「契約を管理」から解約できます。",
+      "EasyCut Proは毎月、パッケージは選択した3・6・12か月ごとの一括払いで自動更新されます。処理時間は毎月リセットされ、翌月に繰り越されません。お支払い方法の変更・解約は、設定の「お支払い・契約管理」から行えます。",
     confirm: "お支払いを確認し、処理時間を反映しています…",
     ready: "処理時間が反映されました。",
     waiting:
@@ -148,7 +173,7 @@ export function PaddlePricing({
   const language = locale === "ja" ? "ja" : "en";
   const { refreshUsage } = useUsageState();
   const t = copy[language];
-  const currency = language === "ja" ? "JPY" : "USD";
+  const currency = initial?.currency || (language === "ja" ? "JPY" : "USD");
   const [months, setMonths] = useState<(typeof paddlePackageTerms)[number]>(6);
   const displayedPlans = paddleDisplayPlans(months);
   const [scriptReady, setScriptReady] = useState(false);
@@ -262,6 +287,34 @@ export function PaddlePricing({
       void checkout(undefined, resumeId);
     }
   }, [resumeId, scriptReady, loggedIn]); // eslint-disable-line react-hooks/exhaustive-deps
+  function planName(code: string) {
+    const p=paddlePlans.find(p=>p.code===code);
+    if(!p) return code;
+    const label=code==='paddle_lite'?t.names[0]:code.startsWith('paddle_creator')?t.names[1]:t.names[2];
+    return `${label} · ${p.billingMonths===1?(language==='ja'?'月額':'Monthly'):t.duration(p.billingMonths)}`;
+  }
+  const displayDate=(value:string)=>new Date(value).toLocaleDateString(language==='ja'?'ja-JP':'en-US');
+  async function changePlan(planCode:string) {
+    if(busy) return;
+    setBusy(true); setMessage('');
+    try {
+      const request=async(body:unknown)=>{
+        const r=await fetch('/api/paddle/change',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+        const data=await r.json();
+        if(!r.ok) throw new Error(data.code);
+        return data.change as {id:string;planCode:string;timing:string;amountMinor:number;currency:'USD'|'JPY';effectiveAt:string;status:string};
+      };
+      const quote=await request({action:'preview',planCode});
+      const detail=quote.timing==='immediate'?t.nowCharge(formatChangeAmount(quote.amountMinor,quote.currency,language)):t.renewalChange(displayDate(quote.effectiveAt));
+      if(!window.confirm(`${t.changeQuestion(planName(planCode))}\n\n${detail}`)) return;
+      const result=await request({action:'confirm',quoteId:quote.id});
+      setMessage(result.status==='applied'||result.status==='scheduled'?t.changed:t.changing);
+      const r=await fetch('/api/paddle/state',{cache:'no-store'});
+      if(r.ok) {const body=await r.json();setSubscription(body.subscription);await refreshUsage();}
+    } catch(error) {
+      setMessage(error instanceof Error && ['CHANGE_UNCONFIRMED','CHANGE_PENDING'].includes(error.message)?t.changing:t.changeError);
+    } finally {setBusy(false);}
+  }
   async function portal() {
     setBusy(true);
     try {
@@ -315,8 +368,7 @@ export function PaddlePricing({
       {subscription && (
         <div className="mx-auto mt-8 max-w-2xl rounded-2xl border border-white/15 bg-white/5 p-6">
           <h2 className="text-xl font-semibold">
-            EasyCut{" "}
-            {paddlePlans.find((p) => p.code === subscription.planCode)?.name}
+            {planName(subscription.planCode)}
           </h2>
           <p className="mt-2 text-neutral-300">
             {t.end}:{" "}
@@ -333,16 +385,18 @@ export function PaddlePricing({
           {subscription.providerStatus === "canceled" && (
             <p className="mt-2">{t.canceled}</p>
           )}
-          <button
+          {subscription.pendingChange && <p className="mt-3 text-sm text-neutral-300">{subscription.pendingChange.timing==='renewal' && subscription.pendingChange.status==='scheduled'?t.pendingChange(planName(subscription.pendingChange.planCode),displayDate(subscription.pendingChange.effectiveAt)):t.changing}</p>}
+          {managementOnly && <button
             disabled={busy}
             onClick={() => void portal()}
             className="mt-5 rounded-xl bg-white px-5 py-3 font-semibold text-black disabled:opacity-50"
           >
             {t.manage}
-          </button>
+          </button>}
+          {managementOnly && <Link className="ml-5 underline" href={localizedHref("/pricing",locale)}>{t.compare}</Link>}
         </div>
       )}
-      {!managementOnly && !current && (
+      {!managementOnly && (
         <>
           <div className={`${styles.planToolbar} ${styles.localPlanToolbar} mt-10`}>
             <span>{t.term}</span>
@@ -372,10 +426,10 @@ export function PaddlePricing({
                     <li key={feature}><span>✓</span><span>{feature}</span></li>
                   ))}
                 </ul>
-                <button type="button" onClick={() => void checkout(p.code)}
-                  disabled={busy || !scriptReady || !checkoutEnabled}
+                <button type="button" onClick={() => void (current ? changePlan(p.code) : checkout(p.code))}
+                  disabled={busy || !checkoutEnabled || (!current && !scriptReady) || !!(current && (subscription.planCode===p.code || subscription.pendingChange || subscription.cancelAtPeriodEnd || subscription.providerStatus!=="active"))}
                   className={`pricing-cta ${i === 1 ? "pricing-cta-primary" : ""} ${styles.planCta}`}>
-                  {t.start}
+                  {current ? subscription.planCode===p.code?t.current:t.change : t.start}
                 </button>
               </article>
             ))}
@@ -414,6 +468,7 @@ export function PaddlePricing({
         {t.terms}
       </p>
       <div className="mt-4 flex flex-wrap justify-center gap-5 text-sm text-neutral-300">
+        {!managementOnly && current && <Link href={localizedHref("/settings/plan",locale)}>{t.settings}</Link>}
         <Link href={localizedHref("/refund", locale)}>{t.refund}</Link>
         <Link href={localizedHref("/terms", locale)}>{t.legal}</Link>
         <a href="mailto:easycut@easycut.co.kr">{t.support}</a>

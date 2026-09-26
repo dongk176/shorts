@@ -83,6 +83,8 @@ beforeAll(async () => {
   const packages = fs.readFileSync(path.resolve("../supabase/migrations/202609260020_paddle_packages.sql"), "utf8");
   await pg.exec(packages);
   await pg.exec(packages);
+  const changes=fs.readFileSync(path.resolve("../supabase/migrations/202609260030_paddle_plan_changes.sql"),"utf8");
+  await pg.exec(changes); await pg.exec(changes);
 }, 30000);
 beforeEach(async () => {
   vi.useFakeTimers({ toFake: ["Date"] });
@@ -591,4 +593,160 @@ describe("Paddle recurring packages", () => {
     await expect(processPaddleEvent(event(), tag(pg))).rejects.toThrow("period");
     expect(await rows("usage_grants")).toHaveLength(0);
   });
+});
+
+// Exercise the authenticated change service against SQL, including uncertain dispatches.
+import { quotePaddleChange, confirmPaddleChange, reconcileRenewalChange } from './changes';
+import { changePayload, changeTiming, upgradeAllowances } from './change-policy';
+const creatorPrice='pri_'+'c'.repeat(26);
+function installChangeProvider() {
+  vi.stubEnv('PADDLE_PRICE_CREATOR_USD',creatorPrice);
+  vi.stubEnv('PADDLE_PRICE_CREATOR_3M_USD',creatorPrice);
+  vi.mocked(paddleRequest).mockImplementation(async(p,body,method)=>{
+    const input=body as {items?:{price_id:string}[];proration_billing_mode?:string;custom_data?:{easycut_change_id:string}}|undefined;
+    if(p.endsWith('/preview')) return {...subscription,id:undefined,currency_code:'USD',items:[{price:{id:creatorPrice},quantity:1}],
+      next_transaction:{billing_period:{starts_at:subscription.next_billed_at,ends_at:'2027-01-26T00:00:00Z'}},
+      immediate_transaction:input?.proration_billing_mode==='prorated_immediately'?{
+        ...transaction,billing_period:{starts_at:new Date().toISOString(),ends_at:subscription.next_billed_at},
+        details:{totals:{total:'800',subtotal:'800',tax:'0',discount:'0'},line_items:[]},
+      }:null};
+    if(p===`/subscriptions/${sub}` && method==='PATCH') {
+      subscription={...subscription,custom_data:input?.custom_data,items:[{price:{id:input!.items![0].price_id},quantity:1}],updated_at:new Date().toISOString()};
+      return subscription;
+    }
+    return p.startsWith('/subscriptions/')?subscription:p.startsWith('/adjustments?')?[adjustment]:transaction;
+  });
+}
+describe('Plan changes without duplicate charges or lost paid allowances',()=>{
+ it('defers term changes and downgrades; only same-term higher tiers are immediate',()=>{
+  expect(changeTiming('paddle_lite','paddle_creator_6m')).toBe('renewal');
+  expect(changeTiming('paddle_pro_6m','paddle_creator_6m')).toBe('renewal');
+  expect(changeTiming('paddle_creator_6m','paddle_pro_6m')).toBe('immediate');
+  expect(changePayload('paddle_pro_6m','paddle_lite',price)).toMatchObject({proration_billing_mode:'do_not_bill'});
+ });
+ it('prorates only the incremental minutes this month; future months get full differences',()=>{
+  const grants=upgradeAllowances('paddle_creator_3m','paddle_pro_3m',new Date('2026-09-01Z'),new Date('2026-12-01Z'),new Date('2026-09-16Z'));
+  expect(grants.map(g=>g.seconds)).toEqual([12000,24000,24000]);
+  expect(grants[1].start.toISOString()).toBe('2026-10-01T00:00:00.000Z');
+ });
+ it('quotes and confirms next-renewal change without changing paid benefits, then applies exactly once when paid',async()=>{
+  await processPaddleEvent(event(),tag(pg)); installChangeProvider();
+  const q=await quotePaddleChange(user,'paddle_creator_3m',tag(pg));
+  expect(q).toMatchObject({timing:'renewal',amountMinor:0,status:'quoted',currency:'USD'});
+  expect(vi.mocked(paddleRequest).mock.calls.filter(([p,,m])=>p===`/subscriptions/${sub}`&&m==='PATCH')).toHaveLength(0);
+  await expect(confirmPaddleChange(other,q.id,tag(pg))).rejects.toThrow('not found');
+  const result=await confirmPaddleChange(user,q.id,tag(pg));
+  expect(result.status).toBe('scheduled');
+  await confirmPaddleChange(user,q.id,tag(pg));
+  expect(vi.mocked(paddleRequest).mock.calls.filter(([p,,m])=>p===`/subscriptions/${sub}`&&m==='PATCH')).toHaveLength(1);
+  expect((await rows('user_subscriptions'))[0].plan_code).toBe('paddle_lite');
+  expect((await rows('usage_grants'))).toHaveLength(1);
+  await processPaddleEvent(event('subscription.updated',sub,2),tag(pg));
+  expect((await rows('user_subscriptions'))[0].plan_code).toBe('paddle_lite');
+  await expect(quotePaddleChange(user,'paddle_pro',tag(pg))).rejects.toThrow('already pending');
+  transaction={...transaction,id:'txn_'+'b'.repeat(26),origin:'subscription_recurring',billing_period:{starts_at:'2026-10-26T00:00:00Z',ends_at:'2027-01-26T00:00:00Z'},items:[{quantity:1,proration:null,price:{id:creatorPrice,unit_price:{amount:'4497',currency_code:'USD'},tax_mode:'internal',billing_cycle:{interval:'month',frequency:3}}}],details:{totals:{total:'4497',subtotal:'4497',tax:'0',discount:'0'},line_items:[]}};
+  subscription.next_billed_at='2027-01-26T00:00:00Z';subscription.updated_at='2026-10-26T00:00:01Z';
+  await processPaddleEvent(event('transaction.completed',transaction.id,3),tag(pg));
+  await processPaddleEvent(event('transaction.completed',transaction.id,4),tag(pg));
+  expect((await rows('user_subscriptions'))[0].plan_code).toBe('paddle_creator_3m');
+  expect(await rows('usage_grants')).toHaveLength(4);
+  expect((await rows('paddle_plan_changes'))[0].status).toBe('applied');
+  // A refund of the old monthly payment must not use the new 200-minute quota.
+  adjustment.totals={total:'199',subtotal:'199'};
+  await processPaddleEvent(event('adjustment.created',adjustment.id,5),tag(pg));
+  const old=(await rows('usage_grants')).find(g=>g.product_code==='paddle_lite')!;
+  expect(old.total_seconds).toBe(Math.floor(3600*(1-199/399)));
+ });
+ it.each([false,true])('restores the paid boundary after a frequency reset, including interrupted writes (%s)',async interrupted=>{
+  await processPaddleEvent(event(),tag(pg));installChangeProvider();
+  const impl=vi.mocked(paddleRequest).getMockImplementation()!;
+  const paidEnd=subscription.next_billed_at;
+  let dateWrites=0, itemWrites=0;
+  vi.mocked(paddleRequest).mockImplementation(async(p,b,m)=>{
+    const body=b as {next_billed_at?:string;items?:{price_id:string}[];proration_billing_mode?:string;custom_data?:{easycut_change_id:string}}|undefined;
+    if(p.endsWith('/preview')&&body?.next_billed_at&&!body.items) {
+      expect(body.proration_billing_mode).toBe('do_not_bill');
+      return {...subscription,id:undefined,next_billed_at:body.next_billed_at,immediate_transaction:null};
+    }
+    if(p===`/subscriptions/${sub}`&&m==='PATCH') {
+      expect(body?.proration_billing_mode).toBe('do_not_bill');
+      if(body?.items) {
+        itemWrites++;subscription={...subscription,items:[{price:{id:creatorPrice},quantity:1}],custom_data:body.custom_data,next_billed_at:'2026-12-26T00:00:00Z'};
+      } else {
+        dateWrites++;if(interrupted&&dateWrites===1)throw Error('Network timeout');
+        subscription={...subscription,next_billed_at:body!.next_billed_at!};
+      }
+      return subscription;
+    }
+    return impl(p,b,m);
+  });
+  const q=await quotePaddleChange(user,'paddle_creator_3m',tag(pg));
+  if(interrupted) {
+    await expect(confirmPaddleChange(user,q.id,tag(pg))).rejects.toThrow('Do not repeat');
+    expect((await rows('paddle_plan_changes'))[0].status).toBe('unknown');
+    await reconcileRenewalChange(q.id,tag(pg));
+  } else await confirmPaddleChange(user,q.id,tag(pg));
+  expect(+new Date(subscription.next_billed_at!)).toBe(+new Date(paidEnd!));
+  expect(itemWrites).toBe(1);expect(dateWrites).toBe(interrupted?2:1);
+  expect((await rows('paddle_plan_changes'))[0].status).toBe('scheduled');
+  expect((await rows('user_subscriptions'))[0].plan_code).toBe('paddle_lite');
+  expect(await rows('usage_grants')).toHaveLength(1);
+ });
+ it('rejects a larger fresh charge before making any provider mutation',async()=>{
+  await processPaddleEvent(event(),tag(pg));installChangeProvider();
+  const q=await quotePaddleChange(user,'paddle_creator',tag(pg));
+  const impl=vi.mocked(paddleRequest).getMockImplementation()!;
+  vi.mocked(paddleRequest).mockImplementation(async(p,b,m)=>{
+    const result=await impl(p,b,m);
+    if(p.endsWith('/preview')) (result as {immediate_transaction:PaddleTransaction}).immediate_transaction.details.totals.total='801';
+    return result;
+  });
+  await expect(confirmPaddleChange(user,q.id,tag(pg))).rejects.toThrow();
+  expect(vi.mocked(paddleRequest).mock.calls.filter(([p,,m])=>p===`/subscriptions/${sub}`&&m==='PATCH')).toHaveLength(0);
+ });
+ it('does not dispatch an expired/stale quote or charge more than the accepted quote',async()=>{
+  await processPaddleEvent(event(),tag(pg));installChangeProvider();
+  const q=await quotePaddleChange(user,'paddle_creator',tag(pg));
+  subscription.updated_at='2026-09-26T00:00:01Z';
+  await expect(confirmPaddleChange(user,q.id,tag(pg))).rejects.toThrow('Refresh');
+  subscription.updated_at='2026-09-26T00:00:00Z';
+  vi.setSystemTime(new Date('2026-09-26T00:06:00Z'));
+  await expect(confirmPaddleChange(user,q.id,tag(pg))).rejects.toThrow('Refresh');
+  expect(vi.mocked(paddleRequest).mock.calls.filter(([p,,m])=>p===`/subscriptions/${sub}`&&m==='PATCH')).toHaveLength(0);
+ });
+ it('uncertain dispatch remains reserved and can never retry the charge',async()=>{
+  await processPaddleEvent(event(),tag(pg));installChangeProvider();
+  const q=await quotePaddleChange(user,'paddle_creator',tag(pg));
+  const impl=vi.mocked(paddleRequest).getMockImplementation()!;
+  vi.mocked(paddleRequest).mockImplementation((p,b,m)=>{if(p===`/subscriptions/${sub}`&&m==='PATCH') throw Error('timeout');return impl(p,b,m)});
+  await expect(confirmPaddleChange(user,q.id,tag(pg))).rejects.toThrow('Do not repeat');
+  const repeat=await confirmPaddleChange(user,q.id,tag(pg));expect(repeat.status).toBe('unknown');
+  expect(vi.mocked(paddleRequest).mock.calls.filter(([p,,m])=>p===`/subscriptions/${sub}`&&m==='PATCH')).toHaveLength(1);
+  expect((await rows('user_subscriptions'))[0].plan_code).toBe('paddle_lite');
+  expect(await rows('usage_grants')).toHaveLength(1);
+ });
+ it('grants an upgrade only after canonical payment, preserves consumption and refunds only its increment',async()=>{
+  await processPaddleEvent(event(),tag(pg));installChangeProvider();
+  await pg.exec('update shorts_mvp.usage_grants set consumed_seconds=1800');
+  const q=await quotePaddleChange(user,'paddle_creator',tag(pg));
+  await confirmPaddleChange(user,q.id,tag(pg));
+  expect((await rows('user_subscriptions'))[0].plan_code).toBe('paddle_lite');
+  const upgradeId='txn_'+'u'.repeat(26);
+  transaction={...transaction,id:upgradeId,origin:'subscription_update',custom_data:{easycut_change_id:q.id},items:[{quantity:-1,proration:{rate:'1',billing_period:transaction.billing_period!},price:{...transaction.items[0].price}},{quantity:1,proration:{rate:'1',billing_period:transaction.billing_period!},price:{id:creatorPrice,unit_price:{amount:'1199',currency_code:'USD'},tax_mode:'internal',billing_cycle:{interval:'month',frequency:1}}}],details:{totals:{total:'800',subtotal:'800',tax:'0',discount:'0'},line_items:[]}};
+  await processPaddleEvent(event('transaction.completed',upgradeId,2),tag(pg));
+  await processPaddleEvent(event('transaction.completed',upgradeId,3),tag(pg));
+  expect((await rows('user_subscriptions'))[0].plan_code).toBe('paddle_creator');
+  const grants=await rows('usage_grants');expect(grants).toHaveLength(2);
+  expect(grants.find(g=>g.kind==='base')?.consumed_seconds).toBe(1800);
+  expect(grants.find(g=>g.kind==='addon')?.total_seconds).toBe(8400);
+  adjustment.transaction_id=upgradeId;adjustment.totals={total:'800',subtotal:'800'};
+  await processPaddleEvent(event('adjustment.created',adjustment.id,4),tag(pg));
+  expect((await rows('usage_grants')).find(g=>g.kind==='addon')?.status).toBe('revoked');
+  expect((await rows('usage_grants')).find(g=>g.kind==='base')?.total_seconds).toBe(3600);
+ });
+ it('rejects an unsolicited or overcharged upgrade instead of granting time',async()=>{
+  await processPaddleEvent(event(),tag(pg));installChangeProvider();
+  transaction.origin='subscription_update';transaction.id='txn_'+'v'.repeat(26);
+  await expect(processPaddleEvent(event('transaction.completed',transaction.id,2),tag(pg))).rejects.toThrow('Unexpected upgrade');
+ });
 });

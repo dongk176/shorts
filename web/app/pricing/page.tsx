@@ -51,6 +51,8 @@ export default async function PricingPage() {
             planCode: state.planCode,
             currentPeriodEnd: new Date(state.currentPeriodEnd).toISOString(),
             cancelAtPeriodEnd: state.cancelAtPeriodEnd,
+            currency: state.currency,
+            pendingChange: state.pendingChange ? {...state.pendingChange,effectiveAt:new Date(state.pendingChange.effectiveAt).toISOString()} : null,
           } : null}
         />
       );

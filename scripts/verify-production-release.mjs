@@ -44,6 +44,8 @@ export const PROTECTED_APP_ROUTES = [
 export const ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE = [
   // Approved Paddle production rollout (2026-09-26): exact billing routes only.
   "/api/paddle/checkout/route",
+  "/api/paddle/change/route",
+  "/api/cron/paddle-plan-changes/route",
   "/api/paddle/portal/route",
   "/api/paddle/state/route",
   "/api/paddle/webhook/route",

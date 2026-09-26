@@ -44,6 +44,10 @@
     {
       "path": "/api/cron/youtube-accounts",
       "schedule": "23 * * * *"
+    },
+    {
+      "path": "/api/cron/paddle-plan-changes",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

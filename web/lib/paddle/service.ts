@@ -1,3 +1,4 @@
+import { applyPaddleUpgrade, paidPlanCode } from "./change-ledger";
 import { paddleMonthlyPeriods } from "./periods";
 import { randomUUID } from "node:crypto";
 import type { Sql, TransactionSql } from "postgres";
@@ -192,16 +193,20 @@ async function applySubscription(tx: Db, sub: PaddleSubscription) {
   await tx`update shorts_mvp.user_subscriptions set status=${status},cancel_at_period_end=${sub.scheduled_change?.action === "cancel"},
   next_charge_at=${sub.next_billed_at},updated_at=now() where id=${mapped.subscriptionId}`;
   if (sub.status === "canceled") {
+    await tx`update shorts_mvp.paddle_plan_changes set status='superseded',updated_at=now() where paddle_subscription_id=${sub.id} and timing='renewal' and status='scheduled'`;
+  }
+  if (sub.status === "canceled") {
     await tx`update shorts_mvp.usage_grants set status='revoked' where subscription_id=${mapped.subscriptionId} and status='active'`;
   }
 }
 
 async function applyRefunds(tx: Db, transactionId: string) {
   const rows =
-    await tx`select p.*,g.id as linked_grant_id,g.expires_at as grant_expires_at,g.total_seconds,g.reserved_seconds,g.consumed_seconds
+    await tx`select p.*,g.id as linked_grant_id,g.expires_at as grant_expires_at,g.total_seconds,g.reserved_seconds,g.consumed_seconds,coalesce(pg.original_seconds,pl.monthly_source_seconds) as original_seconds
   from shorts_mvp.paddle_payments p
   left join shorts_mvp.paddle_payment_grants pg on pg.transaction_id=p.transaction_id
   join shorts_mvp.usage_grants g on g.id=coalesce(pg.grant_id,p.grant_id)
+  join shorts_mvp.plans pl on pl.code=g.product_code
   where p.transaction_id=${transactionId} for update of g`;
   if (!rows.length) return;
   const sums =
@@ -215,7 +220,7 @@ async function applyRefunds(tx: Db, transactionId: string) {
   // Each monthly allowance belongs to the paid package. A refund affects all
   // of them, including future months, without making future usage available.
   for (const p of rows) {
-    const entitlement = Math.max(0, Math.floor(Number(plans[0].monthlySourceSeconds) *
+    const entitlement = Math.max(0, Math.floor(Number(p.originalSeconds) *
       (1 - Math.min(1, refunded / Number(p.principalMinor)))));
     const total = Math.max(1, entitlement, Number(p.reservedSeconds) + Number(p.consumedSeconds));
     await tx`update shorts_mvp.usage_grants set total_seconds=${total},credited_seconds=${total},carried_seconds=0,
@@ -305,10 +310,16 @@ export async function processPaddleEvent(
           await tx`select * from shorts_mvp.paddle_subscriptions where paddle_id=${transaction.subscription_id} for update`;
         mapped = latest[0];
       }
+      if (mapped && await applyPaddleUpgrade(tx,transaction,sub,mapped as Parameters<typeof applyPaddleUpgrade>[3])) {
+        await applyRefunds(tx,transaction.id);
+        if(sub) await applySubscription(tx,sub);
+        return "processed";
+      }
       const current = mapped
         ? await tx`select plan_code from shorts_mvp.user_subscriptions where id=${mapped.subscriptionId}`
         : [];
-      const code = mapped ? current[0].planCode : checkout.planCode;
+      const resolved = mapped ? await paidPlanCode(tx,transaction,mapped as {paddleId:string},current[0].planCode) : {code:checkout.planCode,changeId:null};
+      const code = resolved.code;
       const currency = transaction.currency_code as PaddleCurrency;
       if (currency !== "USD" && currency !== "JPY")
         throw new Error("Unsupported transaction currency");
@@ -335,7 +346,7 @@ export async function processPaddleEvent(
         !sub ||
         sub.customer_id !== transaction.customer_id ||
         sub.items.length !== 1 ||
-        sub.items[0].price.id !== paddlePriceId(code, currency) ||
+        (!mapped && sub.items[0].price.id !== paddlePriceId(code, currency)) ||
         sub.items[0].quantity !== 1
       )
         throw new Error("Subscription mismatch");
@@ -359,8 +370,8 @@ export async function processPaddleEvent(
       )
         throw new Error("Paddle ownership mismatch");
       const inserted =
-        await tx`insert into shorts_mvp.paddle_payments(transaction_id,user_id,paddle_subscription_id,currency,amount_minor,principal_minor,period_start,period_end)
-    values(${transaction.id},${userId},${sub.id},${currency},${paid.amount},${paid.principal},${paid.start},${paid.end}) on conflict do nothing returning transaction_id`;
+        await tx`insert into shorts_mvp.paddle_payments(transaction_id,user_id,paddle_subscription_id,currency,amount_minor,principal_minor,period_start,period_end,plan_code)
+    values(${transaction.id},${userId},${sub.id},${currency},${paid.amount},${paid.principal},${paid.start},${paid.end},${code}) on conflict do nothing returning transaction_id`;
       if (inserted.length) {
         const plan = paddlePlan(code);
         const seconds = plan.minutes * 60;
@@ -370,13 +381,14 @@ export async function processPaddleEvent(
           values(${userId},${mapped.subscriptionId},'base',${code},${seconds},${seconds},0,${period.start},${period.end})
           on conflict (subscription_id,valid_from,kind) where subscription_id is not null and kind='base' do nothing returning id`;
           if (!grants.length) throw new Error("Duplicate paid period requires review");
-          await tx`insert into shorts_mvp.paddle_payment_grants(transaction_id,grant_id) values(${transaction.id},${grants[0].id})`;
+          await tx`insert into shorts_mvp.paddle_payment_grants(transaction_id,grant_id,original_seconds) values(${transaction.id},${grants[0].id},${seconds})`;
           // Retain the legacy pointer for existing reporting/one-month rows.
           if (index === 0) await tx`update shorts_mvp.paddle_payments set grant_id=${grants[0].id} where transaction_id=${transaction.id}`;
         }
-        await tx`update shorts_mvp.user_subscriptions set current_period_start=${paid.start},current_period_end=${paid.end}
+        await tx`update shorts_mvp.user_subscriptions set plan_code=${code},current_period_start=${paid.start},current_period_end=${paid.end}
      where id=${mapped.subscriptionId} and (current_period_end is null or current_period_end<=${paid.end})`;
       }
+      if (resolved.changeId) await tx`update shorts_mvp.paddle_plan_changes set status='applied',transaction_id=${transaction.id},updated_at=now() where id=${resolved.changeId}`;
       if (checkout)
         await tx`update shorts_mvp.paddle_checkouts set status='completed',transaction_id=coalesce(transaction_id,${transaction.id}) where id=${checkout.id}`;
       await applyRefunds(tx, transaction.id);
@@ -411,7 +423,14 @@ export async function getPaddleState(userId: string, db = getDb()) {
     await db`select ps.paddle_id,ps.provider_status,s.plan_code,s.current_period_end,s.cancel_at_period_end
   from shorts_mvp.paddle_subscriptions ps join shorts_mvp.user_subscriptions s on s.id=ps.subscription_id
   where ps.user_id=${userId} and ps.environment=${paddleEnvironment()} order by ps.created_at desc limit 1`;
-  return rows[0] || null;
+  if (!rows[0]) return null;
+  const [payment] = await db`select currency from shorts_mvp.paddle_payments where paddle_subscription_id=${rows[0].paddleId} order by period_end desc,created_at desc limit 1`;
+  const [change] = await db`select to_code as plan_code,timing,status,effective_at from shorts_mvp.paddle_plan_changes
+    where paddle_subscription_id=${rows[0].paddleId} and status in ('processing','unknown','scheduled') order by created_at desc limit 1`;
+  return {paddleId:rows[0].paddleId as string,providerStatus:rows[0].providerStatus as string,
+    planCode:rows[0].planCode as string,currentPeriodEnd:rows[0].currentPeriodEnd as Date,cancelAtPeriodEnd:rows[0].cancelAtPeriodEnd as boolean,
+    currency:(payment?.currency??null) as PaddleCurrency|null,
+    pendingChange:change?{planCode:change.planCode as string,timing:change.timing as string,status:change.status as string,effectiveAt:change.effectiveAt as Date}:null};
 }
 export async function createPaddlePortal(userId: string, db = getDb()) {
   paddleEnvironment();
