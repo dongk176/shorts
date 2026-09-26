@@ -25,6 +25,21 @@ test("production release guard requires an exact baseline manifest", () => {
   );
 });
 
+test("Paddle rollout permits exact billing routes without permitting arbitrary APIs", () => {
+  const additions = [
+    "/api/paddle/checkout/route", "/api/paddle/portal/route",
+    "/api/paddle/state/route", "/api/paddle/webhook/route",
+    "/billing/paddle/page", "/en/billing/paddle/page", "/jp/billing/paddle/page",
+    "/en/pricing/page", "/jp/pricing/page",
+    "/en/settings/plan/page", "/jp/settings/plan/page",
+  ];
+  for (const route of additions) assert.ok(ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE.includes(route));
+  assert.deepEqual(compareManifestRoutes(
+    [...PROTECTED_APP_ROUTES, ...additions, "/api/paddle/refund/route"],
+    PROTECTED_APP_ROUTES, ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE,
+  ), { added: ["/api/paddle/refund/route"], removed: [] });
+});
+
 test("Meta administrator release allows only its nine reviewed routes", () => {
   const additions = ["/route", "/connections/[connectionId]/route", "/deauthorize/route", "/media/[capability]/route", "/oauth/callback/route", "/oauth/start/route", "/posts/route", "/posts/[postId]/check/route", "/preview/[shortId]/route"].map(suffix => `/api/social/[platform]${suffix}`);
   assert.deepEqual(ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE.filter(route => route.startsWith("/api/social/[platform]")), additions);

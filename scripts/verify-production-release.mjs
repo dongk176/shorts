@@ -42,6 +42,18 @@ export const PROTECTED_APP_ROUTES = [
 // These routes are the only intentional additions relative to the currently
 // promoted production manifest. Everything else must still fail closed.
 export const ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE = [
+  // Approved Paddle production rollout (2026-09-26): exact billing routes only.
+  "/api/paddle/checkout/route",
+  "/api/paddle/portal/route",
+  "/api/paddle/state/route",
+  "/api/paddle/webhook/route",
+  "/billing/paddle/page",
+  "/en/billing/paddle/page",
+  "/jp/billing/paddle/page",
+  "/en/pricing/page",
+  "/jp/pricing/page",
+  "/en/settings/plan/page",
+  "/jp/settings/plan/page",
   // Explicit YouTube reviewer account and owned fixture only (2026-09-22).
   "/api/youtube/accounts/[connectionId]/route",
   "/api/youtube/accounts/eligibility/route",
