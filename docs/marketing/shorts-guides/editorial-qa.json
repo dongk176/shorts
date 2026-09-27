@@ -1,0 +1,137 @@
+[
+  {
+    "slug": "first-short",
+    "locale": "ko",
+    "pages": 13,
+    "sha256": "b2135fe1f1d9423e3af7e0424df096cea037409d2659f19043acbd1789224f32",
+    "bytes": 1832674,
+    "renderedPages": 13,
+    "copiesMatch": true
+  },
+  {
+    "slug": "affiliate",
+    "locale": "ko",
+    "pages": 13,
+    "sha256": "892186241e7b75d24345a881448d85fac2464a654a79f12465f144b1ae3a2d92",
+    "bytes": 2984891,
+    "renderedPages": 13,
+    "copiesMatch": true
+  },
+  {
+    "slug": "series",
+    "locale": "ko",
+    "pages": 13,
+    "sha256": "6fe8ef426024ec0dcb02c1c85274075fa68a0e0721b9fde693542e01bf93a4e0",
+    "bytes": 1255234,
+    "renderedPages": 13,
+    "copiesMatch": true
+  },
+  {
+    "slug": "brand",
+    "locale": "ko",
+    "pages": 13,
+    "sha256": "6df50df816e58dab8ebb9ac78cd29aba82c7ba132807669f908db1a378720635",
+    "bytes": 1922003,
+    "renderedPages": 13,
+    "copiesMatch": true
+  },
+  {
+    "slug": "sales",
+    "locale": "ko",
+    "pages": 13,
+    "sha256": "155ff8aa1a756e7b3b4c34efcd10a0b1c5a517c0f818625649372bad8c2cba44",
+    "bytes": 1914605,
+    "renderedPages": 13,
+    "copiesMatch": true
+  },
+  {
+    "slug": "first-short",
+    "locale": "en",
+    "pages": 13,
+    "sha256": "5a0cf8491177a2ab026355dbf0ee0e205538ca2a11590c2677b80e3401153bad",
+    "bytes": 1787946,
+    "renderedPages": 13,
+    "copiesMatch": true
+  },
+  {
+    "slug": "affiliate",
+    "locale": "en",
+    "pages": 13,
+    "sha256": "57231181f0b47f0d7ee16b8a309d50461d657039b24a7744dbc7abb343e418f7",
+    "bytes": 2938014,
+    "renderedPages": 13,
+    "copiesMatch": true
+  },
+  {
+    "slug": "series",
+    "locale": "en",
+    "pages": 13,
+    "sha256": "34353e9df876498518e3b070aaf15819acce5f1a56dcc3737775ea3558150e7e",
+    "bytes": 1209390,
+    "renderedPages": 13,
+    "copiesMatch": true
+  },
+  {
+    "slug": "brand",
+    "locale": "en",
+    "pages": 13,
+    "sha256": "49f9b57081acbadc4017807c1cc8760fdb116ca85751e987c7d629bb832b0b1a",
+    "bytes": 1877271,
+    "renderedPages": 13,
+    "copiesMatch": true
+  },
+  {
+    "slug": "sales",
+    "locale": "en",
+    "pages": 13,
+    "sha256": "aba3138824563fccbb14fb6b42a155f8751ff363accd55c93ad77dd9dfffeb6b",
+    "bytes": 1870768,
+    "renderedPages": 13,
+    "copiesMatch": true
+  },
+  {
+    "slug": "first-short",
+    "locale": "ja",
+    "pages": 13,
+    "sha256": "90f663ea0c92369d05fddcdbdf57925ac56d80f588b83dff030c078e5fa63907",
+    "bytes": 1868923,
+    "renderedPages": 13,
+    "copiesMatch": true
+  },
+  {
+    "slug": "affiliate",
+    "locale": "ja",
+    "pages": 13,
+    "sha256": "3e24e15a30610ad37b97e376391f8119838475f1ea58fafb13a5b752c2c9320f",
+    "bytes": 3025660,
+    "renderedPages": 13,
+    "copiesMatch": true
+  },
+  {
+    "slug": "series",
+    "locale": "ja",
+    "pages": 13,
+    "sha256": "aba2c63c3d173247f62d2491e78f2aac7d3cb5692d1dae9ca3f96c8bc42c1122",
+    "bytes": 1294077,
+    "renderedPages": 13,
+    "copiesMatch": true
+  },
+  {
+    "slug": "brand",
+    "locale": "ja",
+    "pages": 13,
+    "sha256": "b2dff50bc19cd9625e5405a02be486183101ea040af09b5e271a05394f07819e",
+    "bytes": 1964743,
+    "renderedPages": 13,
+    "copiesMatch": true
+  },
+  {
+    "slug": "sales",
+    "locale": "ja",
+    "pages": 13,
+    "sha256": "512204cd3c8f3ba157bacee111dde8755ef5c1bace51477a6c82c9f0794764b0",
+    "bytes": 1954344,
+    "renderedPages": 13,
+    "copiesMatch": true
+  }
+]

@@ -8,6 +8,7 @@ import { publishedBlogPosts } from "@/lib/blog";
 export const dynamic = "force-dynamic";
 
 const publicRoutes = [
+  { path: "/shorts-monetization", changeFrequency: "monthly", priority: 0.8 },
   { path: "/", changeFrequency: "weekly", priority: 1 },
   { path: "/blog", changeFrequency: "daily", priority: 0.8 },
   { path: "/ai-shorts-maker", changeFrequency: "monthly", priority: 0.9 },

@@ -1,0 +1,152 @@
+[
+  {
+    "slug": "first-short",
+    "locale": "ko",
+    "pages": 13,
+    "bytes": 1832674,
+    "textChars": 5321,
+    "photoCount": 3,
+    "edition": "editorial-20260927",
+    "textBoxesChecked": 146
+  },
+  {
+    "slug": "first-short",
+    "locale": "en",
+    "pages": 13,
+    "bytes": 1787946,
+    "textChars": 9191,
+    "photoCount": 3,
+    "edition": "editorial-20260927",
+    "textBoxesChecked": 146
+  },
+  {
+    "slug": "first-short",
+    "locale": "ja",
+    "pages": 13,
+    "bytes": 1868923,
+    "textChars": 4687,
+    "photoCount": 3,
+    "edition": "editorial-20260927",
+    "textBoxesChecked": 146
+  },
+  {
+    "slug": "affiliate",
+    "locale": "ko",
+    "pages": 13,
+    "bytes": 2984891,
+    "textChars": 5414,
+    "photoCount": 3,
+    "edition": "editorial-20260927",
+    "textBoxesChecked": 148
+  },
+  {
+    "slug": "affiliate",
+    "locale": "en",
+    "pages": 13,
+    "bytes": 2938014,
+    "textChars": 9406,
+    "photoCount": 3,
+    "edition": "editorial-20260927",
+    "textBoxesChecked": 146
+  },
+  {
+    "slug": "affiliate",
+    "locale": "ja",
+    "pages": 13,
+    "bytes": 3025660,
+    "textChars": 4672,
+    "photoCount": 3,
+    "edition": "editorial-20260927",
+    "textBoxesChecked": 146
+  },
+  {
+    "slug": "series",
+    "locale": "ko",
+    "pages": 13,
+    "bytes": 1255234,
+    "textChars": 5139,
+    "photoCount": 2,
+    "edition": "editorial-20260927",
+    "textBoxesChecked": 146
+  },
+  {
+    "slug": "series",
+    "locale": "en",
+    "pages": 13,
+    "bytes": 1209390,
+    "textChars": 9230,
+    "photoCount": 2,
+    "edition": "editorial-20260927",
+    "textBoxesChecked": 146
+  },
+  {
+    "slug": "series",
+    "locale": "ja",
+    "pages": 13,
+    "bytes": 1294077,
+    "textChars": 4556,
+    "photoCount": 2,
+    "edition": "editorial-20260927",
+    "textBoxesChecked": 146
+  },
+  {
+    "slug": "brand",
+    "locale": "ko",
+    "pages": 13,
+    "bytes": 1922003,
+    "textChars": 5230,
+    "photoCount": 3,
+    "edition": "editorial-20260927",
+    "textBoxesChecked": 146
+  },
+  {
+    "slug": "brand",
+    "locale": "en",
+    "pages": 13,
+    "bytes": 1877271,
+    "textChars": 9321,
+    "photoCount": 3,
+    "edition": "editorial-20260927",
+    "textBoxesChecked": 146
+  },
+  {
+    "slug": "brand",
+    "locale": "ja",
+    "pages": 13,
+    "bytes": 1964743,
+    "textChars": 4587,
+    "photoCount": 3,
+    "edition": "editorial-20260927",
+    "textBoxesChecked": 146
+  },
+  {
+    "slug": "sales",
+    "locale": "ko",
+    "pages": 13,
+    "bytes": 1914605,
+    "textChars": 5243,
+    "photoCount": 3,
+    "edition": "editorial-20260927",
+    "textBoxesChecked": 146
+  },
+  {
+    "slug": "sales",
+    "locale": "en",
+    "pages": 13,
+    "bytes": 1870768,
+    "textChars": 9508,
+    "photoCount": 3,
+    "edition": "editorial-20260927",
+    "textBoxesChecked": 146
+  },
+  {
+    "slug": "sales",
+    "locale": "ja",
+    "pages": 13,
+    "bytes": 1954344,
+    "textChars": 4545,
+    "photoCount": 3,
+    "edition": "editorial-20260927",
+    "textBoxesChecked": 146
+  }
+]

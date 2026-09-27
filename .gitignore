@@ -47,3 +47,6 @@ htmlcov/
 
 # Local interactive Paddle sandbox run artifacts
 .tmp/paddle-sandbox/
+
+# Regenerable copies; paid downloadable editions live in web/private.
+/output/pdf/shorts-guides/

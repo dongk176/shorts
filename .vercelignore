@@ -31,3 +31,7 @@ web/public/showcase-examples/curated-pilot-v1/**
 
 # Existing isolated PostgreSQL test runtime (local symlink).
 /test-tools
+
+# Editorial source and duplicate exports are not runtime assets.
+output/**
+docs/marketing/**

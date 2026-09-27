@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { StrategyGuideBenefit } from "@/components/strategy-guide-benefit";
 import { AuthControls } from "@/components/auth-controls";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
@@ -40,6 +41,7 @@ export function PaddlePage({
           loggedIn={Boolean(user)}
           onRequireLogin={() => setLoginOpen(true)}
         />
+        {!props.managementOnly && !props.resumeId && <StrategyGuideBenefit />}
       </main>
       <SiteFooter />
     </div>

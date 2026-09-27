@@ -38,3 +38,14 @@ it("keeps payment return tokens and limits rewriting to the current origin", () 
   expect(localizedReturnUrl("https://www.easycut.co.kr/billing/toss/success?checkoutId=x&state=a%2Fb", "ja", "https://www.easycut.co.kr")).toBe("https://www.easycut.co.kr/jp/billing/toss/success?checkoutId=x&state=a%2Fb");
   expect(localizedReturnUrl("https://provider.example/callback?token=x", "en", "https://www.easycut.co.kr")).toBe("https://provider.example/callback?token=x");
 });
+
+it("uses production language prefixes for the monetization guide and its SEO", () => {
+  const path = "/shorts-monetization";
+  expect(isLocalizedPage(path)).toBe(true);
+  for (const [locale, prefix] of [["ko", ""], ["en", "/en"], ["ja", "/jp"]] as const) {
+    expect(localizedHref(`${path}?from=guide#ways`, locale)).toBe(`${prefix}${path}?from=guide#ways`);
+    const metadata = createPageMetadata({ title: "Guide", description: "Start here", path, locale });
+    expect(metadata.alternates?.canonical).toBe(`https://www.easycut.co.kr${prefix}${path}`);
+    expect(metadata.alternates?.languages).toMatchObject({ en: `https://www.easycut.co.kr/en${path}`, ja: `https://www.easycut.co.kr/jp${path}` });
+  }
+});

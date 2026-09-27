@@ -14,6 +14,7 @@ const navigation = [
   { href: "/templates", labelKey: "nav.templates", path: "/templates" },
   { href: "/pricing", labelKey: "nav.pricing", path: "/pricing" },
   { href: "/popular", labelKey: "nav.popular", path: "/popular" },
+  { href: "/shorts-monetization", labelKey: "nav.shortsGuide", path: "/shorts-monetization" },
 ] as const;
 
 function NavigationIcon({ path }: { path: string }) {
@@ -57,6 +58,16 @@ function NavigationIcon({ path }: { path: string }) {
         <svg {...sharedProps}>
           <rect x="2.75" y="5" width="18.5" height="14" rx="2.75" />
           <path d="M2.75 9.5h18.5M6.75 14.75h4.5M16 13.5v3M14.5 15h3" />
+        </svg>
+      </span>
+    );
+  }
+  if (path === "/shorts-monetization") {
+    return (
+      <span className="site-nav-icon-frame" aria-hidden="true">
+        <svg {...sharedProps}>
+          <path d="M12 5.5C9 3.5 5.5 3.5 3 4.5v15c2.5-1 6-1 9 1 3-2 6.5-2 9-1v-15c-2.5-1-6-1-9 1Z" />
+          <path d="M12 5.5v15M6 8h3M6 11.5h3M15 8h3M15 11.5h3" />
         </svg>
       </span>
     );

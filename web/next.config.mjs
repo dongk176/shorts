@@ -4,6 +4,7 @@ const nextConfig = {
   output: "standalone",
   serverExternalPackages: ["postgres"],
   outputFileTracingIncludes: {
+    "/api/shorts-guides/*/download": ["./private/shorts-guides/**/*.pdf"],
     "/api/ebooks/*/download": ["./private/ebooks/*.pdf"],
   },
   poweredByHeader: false,

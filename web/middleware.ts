@@ -102,9 +102,9 @@ export async function middleware(request: NextRequest) {
     });
   }
 
-  // Billing must use the URL locale during server rendering. Concrete aliases
-  // avoid a second middleware pass on rewritten /pricing resetting it to Korean.
-  if (route.prefixed && ["/pricing", "/settings/plan", "/billing/paddle"].includes(pathname)) {
+  // These pages must use the URL locale during server rendering. Concrete aliases
+  // avoid a second middleware pass on shared routes resetting them to Korean.
+  if (route.prefixed && ["/pricing", "/settings/plan", "/billing/paddle", "/shorts-monetization"].includes(pathname)) {
     return refreshSupabaseSession(request, undefined, requestHeaders);
   }
   const destination = request.nextUrl.clone();

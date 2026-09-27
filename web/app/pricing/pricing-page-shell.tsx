@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { StrategyGuideBenefit } from "@/components/strategy-guide-benefit";
 import { AuthControls } from "@/components/auth-controls";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
@@ -56,6 +57,7 @@ export function PricingPageShell({
             onRequireLogin={() => setLoginOpen(true)}
           />
         )}
+        <StrategyGuideBenefit />
       </main>
       <SiteFooter />
     </div>
