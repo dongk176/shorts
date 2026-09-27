@@ -30,3 +30,13 @@ User requested a complete rewrite of thin survey results, including actionable i
 - YouTube link sharing guidance: https://support.google.com/youtube/answer/13748639?hl=ko
 
 No numeric eligibility promises or revenue forecasts are introduced.
+
+## Completed production release
+
+- Candidate source: `e73249b0ff233bb3c6051a2851098684ee3857a4`; deployment `dpl_27H1FYUwDWdUwkrvJrYGNZtqLzTs`; unaliased URL `https://shorts-l9fex9yt9-artiroom.vercel.app`.
+- Final local production build and Vercel production build passed. Eight release-guard tests passed; clean-worktree release verification retained the baseline route manifest and protected routes. Pre-promotion API lookup confirmed production still pointed to `d0c390fc897890062916129d53cecaaf7b902f28`.
+- Candidate HTTP verification passed all nine grouped checks, including Korean/English/Japanese guide metadata and existing share images, homepage image preservation, protected paths and read-only job-admission target registry.
+- Candidate mobile browser completed all eight questions for knowledge / sales / no channel / no source / voice / weekend / no offer / conversion. Verified demand-discovery script CTA, three timed tasks, three script outlines, five EasyCut steps, weekend schedule, nine FAQs and the closing workbook introduction. No horizontal overflow at 390px. Screenshot: `/tmp/shorts-guide-strategy-20260927/candidate-result.png`.
+- Promoted the same deployment without rebuilding. Live deployment API confirmed the exact candidate ID and source; all nine grouped production HTTP checks passed. Bounded error-log inspection returned zero entries for the preceding ten minutes.
+- Admin route retained its sign-in redirect; a synthetic nonexistent editor URL retained the same 404 response as the baseline, with route-manifest preservation. These checks do not claim authenticated editing, payment or worker rendering verification. No DB writes or schema changes were performed for these checks.
+- This completion entry is documentation only and does not require another deployment.
