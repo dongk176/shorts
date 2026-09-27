@@ -21,3 +21,12 @@ User requested a member group-chat announcement draft and production deployment 
 - Candidate access used a temporary deployment share link without changing protection settings. No analytics events, DB mutations, payments or worker submissions were performed.
 - Live source was rechecked before promotion and remained the approved baseline. The immediate preceding ten-minute error-level runtime log query returned zero records. This is bounded verification, not ongoing monitoring.
 - All three cards were visually inspected. KakaoTalk app-side cached previews were not directly checked or cleared. Subsequent documentation-only commits do not alter the deployed source above.
+
+## Centered typography revision
+
+User requested the homepage's simpler centered-text composition. Verified current production remains `22cb3bfd62187674798797e4623eece967500325` / `dpl_HuGnp3G2qzQ7Wf1ee35so1qBxaJ1`. This is the release baseline; subsequent local changes before this revision are documentation only.
+
+- Replaced the card-and-button layout with a centered two-line headline, small guide label and subtitle on a dark background. Korean, English and Japanese use the same layout; all three were visually inspected.
+- New `-v2.jpg` asset URLs avoid overwriting previously shared image files. Existing files remain available for cached links.
+- Existing production project/configuration; no database, worker, billing or infrastructure changes. Bounded one local and one remote build with read-only candidate/live checks.
+- Baseline manifest and verification evidence: `/tmp/shorts-guide-og-simple-20260927/`. The same clean-source, protected-route, candidate-before-promotion release process applies.

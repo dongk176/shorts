@@ -4,7 +4,7 @@ import { createPageMetadata } from "./seo";
 describe("localized share cards", () => {
   it("uses a page-specific image for both share tags while preserving localized URLs", () => {
     const image = {
-      url: "https://www.easycut.co.kr/social/shorts-guide-en-20260927.jpg",
+      url: "https://www.easycut.co.kr/social/shorts-guide-en-20260927-v2.jpg",
       alt: "Shorts guide",
     };
     const metadata = createPageMetadata({
