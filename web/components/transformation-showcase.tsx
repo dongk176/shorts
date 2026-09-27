@@ -94,7 +94,16 @@ function ShortCard({ media, index, position, template, locale, active, audible, 
   </figure>;
 }
 
-function Showcase({ locale }: { locale: SiteLocale }) {
+const swipeGuideStorageKey = "easycut.showcase.swiped.v1";
+
+function SwipeGuide({ locale }: { locale: SiteLocale }) {
+  return <span className={styles.swipeGuide} data-swipe-guide>
+    <span className={styles.swipeGuideArrow} aria-hidden="true">↔</span>
+    {localizedValue(locale, { ko: "좌우로 넘겨보세요!", en: "Swipe left or right!", ja: "左右にスワイプしてみてね！" })}
+  </span>;
+}
+
+function Showcase({ locale, showSwipeGuide, onSwipe }: { locale: SiteLocale; showSwipeGuide: boolean; onSwipe: () => void }) {
   const id = useId();
   const sectionRef = useRef<HTMLElement>(null);
   const tabsRef = useRef<(HTMLButtonElement | null)[]>([]);
@@ -130,6 +139,7 @@ function Showcase({ locale }: { locale: SiteLocale }) {
     const dx = event.clientX - gesture.x;
     const dy = event.clientY - gesture.y;
     if (gesture.axis === "horizontal" && Math.abs(dx) >= 40 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+      onSwipe();
       if (gesture.kind === "category") {
         setSelected((current) => {
           const index = categoryShowcase.findIndex((item) => item.id === current);
@@ -208,6 +218,7 @@ function Showcase({ locale }: { locale: SiteLocale }) {
             setExpanded(-1);
           }} aria-label={localizedValue(locale, { ko: "원본 미리보기 재생", en: "Play original preview", ja: "元動画のプレビューを再生" })}>
             {media ? <PreviewVideo source={media.source} poster={media.poster} active={active} label={media.title} /> : <span className={styles.emptySource}><CategoryIcon category={selected} /><strong>{category.label[locale]}</strong><span>{localizedValue(locale, { ko: "어울리는 원본 영상을 준비하고 있어요", en: "A matching source video is being prepared", ja: "このジャンルに合う元動画を準備中です" })}</span></span>}
+            {media && showSwipeGuide && <SwipeGuide locale={locale} />}
           </button>
           <div className={styles.sourceMeta}><strong>{categoryCopy.headline}</strong><span>{categoryCopy.description}</span></div>
         </figure>
@@ -217,6 +228,7 @@ function Showcase({ locale }: { locale: SiteLocale }) {
             {...swipeHandlers}
           >
             {category.styles.map((template, index) => <ShortCard key={`${locale}-${selected}-${index}`} media={media} template={template} index={index} position={(index - centeredShort + 4) % 3} locale={locale} active={active} audible={Boolean(media?.hasAudio) && soundEnabled && index === centeredShort && active} onSelect={() => setCenteredShort(index)} />)}
+            {media && showSwipeGuide && <SwipeGuide locale={locale} />}
           </div>
           {media?.hasAudio && <button type="button" className={styles.soundToggle} aria-label={localizedValue(locale, { ko: "음소거", en: "Mute", ja: "ミュート" })} aria-pressed={!soundEnabled} title={localizedValue(locale, soundEnabled ? { ko: "음소거", en: "Mute", ja: "ミュート" } : { ko: "음소거 해제", en: "Unmute", ja: "ミュート解除" })} onClick={() => setSoundEnabled((value) => !value)}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -243,5 +255,21 @@ function Showcase({ locale }: { locale: SiteLocale }) {
 
 export function TransformationShowcase() {
   const { locale } = useI18n();
-  return <Showcase key={locale} locale={locale} />;
+  // Read after hydration so returning visitors never see a flash of the guide.
+  const [showSwipeGuide, setShowSwipeGuide] = useState(false);
+  useEffect(() => {
+    try { setShowSwipeGuide(window.localStorage.getItem(swipeGuideStorageKey) !== "1"); }
+    catch { setShowSwipeGuide(true); }
+    const syncSwipe = (event: StorageEvent) => {
+      if (event.key === swipeGuideStorageKey && event.newValue === "1") setShowSwipeGuide(false);
+    };
+    window.addEventListener("storage", syncSwipe);
+    return () => window.removeEventListener("storage", syncSwipe);
+  }, []);
+  function dismissSwipeGuide() {
+    setShowSwipeGuide(false);
+    try { window.localStorage.setItem(swipeGuideStorageKey, "1"); }
+    catch { /* Keep swipe navigation working when browser storage is unavailable. */ }
+  }
+  return <Showcase key={locale} locale={locale} showSwipeGuide={showSwipeGuide} onSwipe={dismissSwipeGuide} />;
 }

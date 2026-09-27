@@ -89,3 +89,7 @@
 .soundToggle:hover { color:#b5fffd; background:#35e6e324; border-color:#35e6e380; }
 .soundToggle[aria-pressed=false] { color:#091b20; background:#35e6e3; border-color:#35e6e3; }
 .soundToggle[aria-pressed=false]:hover { background:#7bf2f0; border-color:#7bf2f0; }
+
+/* An overlay only: never intercept taps, swipes, scrolling or pinch zoom. */
+.swipeGuide { position: absolute; z-index: 6; top: 14px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; max-width: calc(100% - 24px); padding: 8px 13px; border: 1px solid #d8d1ff30; border-radius: 999px; background: linear-gradient(115deg,#202134c9,#242039c9); color: #f5f1ff; font-size: 13px; font-weight: 600; line-height: 1.4; white-space: nowrap; box-shadow: 0 4px 18px #0003; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); pointer-events: none; }
+.swipeGuideArrow { color: #b4c5ff; font-size: 21px; font-weight: 500; line-height: 1; }

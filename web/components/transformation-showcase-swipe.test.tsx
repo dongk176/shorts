@@ -13,12 +13,16 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function render(locale = "ko") {
+async function render(locale = "ko", storage = new Map<string, string>(), storageBlocked = false) {
   language.locale = locale;
   const { window, document } = parseHTML("<html><body><div id='app'></div></body></html>");
   vi.stubGlobal("window", window);
   vi.stubGlobal("document", document);
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal("localStorage", {
+    getItem: (key: string) => { if (storageBlocked) throw new Error("Storage unavailable"); return storage.get(key) ?? null; },
+    setItem: (key: string, value: string) => { if (storageBlocked) throw new Error("Storage unavailable"); storage.set(key, value); },
+  });
   window.matchMedia = vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia;
   vi.stubGlobal("IntersectionObserver", class { observe() {} disconnect() {} });
   Object.assign(window.HTMLElement.prototype, { pause() {}, load() {}, play: async () => {}, showModal() {}, close() {} });
@@ -43,7 +47,11 @@ async function render(locale = "ko") {
     return input;
   };
   const selected = () => cards.findIndex(card => card.getAttribute("aria-pressed") === "true");
-  return { cards, fan, capture, send, selected, document };
+  const changeLocale = async (next: string) => {
+    language.locale = next;
+    await act(async () => root!.render(<TransformationShowcase />));
+  };
+  return { cards, fan, capture, send, selected, document, storage, changeLocale, window };
 }
 
 describe("showroom touch capture", () => {
@@ -137,5 +145,59 @@ describe("source video category swipes", () => {
     await send(button, "pointerup");
     await send(button, "click", 220, 100, { detail: 1 });
     expect(document.querySelector("dialog")).not.toBeNull();
+  });
+});
+
+
+describe("first-swipe guidance", () => {
+  const key = "easycut.showcase.swiped.v1";
+  it.each([["ko", "좌우로 넘겨보세요!"], ["en", "Swipe left or right!"], ["ja", "左右にスワイプしてみてね！"]])("shows localized guidance in %s without dismissing it on taps or scrolling", async (locale, label) => {
+    const { document, cards, fan, send, storage } = await render(locale);
+    expect(Array.from(document.querySelectorAll("[data-swipe-guide]")).map(x => x.textContent)).toEqual(["↔" + label, "↔" + label]);
+    await send(cards[0], "click", 0, 0, { detail: 1 });
+    await send(cards[0], "pointerdown", 100, 100);
+    await send(cards[0], "pointermove", 103, 160);
+    await send(fan, "pointerup", 103, 200);
+    await send(cards[0], "pointerdown", 220);
+    await send(cards[0], "pointermove", 200);
+    await send(fan, "pointerup", 195);
+    await send(cards[0], "pointerdown", 220);
+    await send(cards[0], "pointermove", 200);
+    await send(fan, "pointercancel");
+    await send(fan, "pointerup", 100);
+    expect(document.querySelectorAll("[data-swipe-guide]").length).toBe(2);
+    expect(storage.has(key)).toBe(false);
+  });
+  it.each(["source", "short"])("remembers a successful %s swipe across locale changes and remounts", async area => {
+    const { document, cards, fan, send, storage, changeLocale } = await render();
+    const surface = area === "source" ? document.querySelector('figure button:not([aria-pressed])') as unknown as HTMLElement : fan;
+    const target = area === "source" ? surface.querySelector("video")! : cards[1];
+    await send(target, "pointerdown");
+    await send(target, "pointermove", 200);
+    await send(surface, "pointerup", 100);
+    expect(document.querySelectorAll("[data-swipe-guide]").length).toBe(0);
+    expect(storage.get(key)).toBe("1");
+    await changeLocale("en");
+    expect(document.querySelectorAll("[data-swipe-guide]").length).toBe(0);
+    await act(async () => root!.unmount()); root = undefined;
+    const nextVisit = await render("ja", storage);
+    expect(nextVisit.document.querySelectorAll("[data-swipe-guide]").length).toBe(0);
+  });
+  it("keeps navigation working when browser storage is unavailable", async () => {
+    const { document, cards, fan, send, selected, changeLocale } = await render("ko", new Map(), true);
+    expect(document.querySelectorAll("[data-swipe-guide]").length).toBe(2);
+    await send(cards[1], "pointerdown");
+    await send(cards[1], "pointermove", 200);
+    await send(fan, "pointerup", 100);
+    expect(selected()).toBe(2);
+    expect(document.querySelectorAll("[data-swipe-guide]").length).toBe(0);
+    await changeLocale("ja");
+    expect(document.querySelectorAll("[data-swipe-guide]").length).toBe(0);
+  });
+  it("dismisses guidance when another tab records a successful swipe", async () => {
+    const { document, window } = await render();
+    const event = Object.assign(new window.Event("storage"), { key, newValue: "1" });
+    await act(async () => { window.dispatchEvent(event); });
+    expect(document.querySelectorAll("[data-swipe-guide]").length).toBe(0);
   });
 });
