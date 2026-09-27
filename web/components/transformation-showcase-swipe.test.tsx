@@ -51,7 +51,14 @@ async function render(locale = "ko", storage = new Map<string, string>(), storag
     language.locale = next;
     await act(async () => root!.render(<TransformationShowcase />));
   };
-  return { cards, fan, capture, send, selected, document, storage, changeLocale, window };
+  const touch = async (target: HTMLElement, type: string, x = 220, y = 100, fingers = 1) => {
+    const changedTouches = [{ identifier: 7, clientX: x, clientY: y }];
+    const touches = type === "touchend" || type === "touchcancel" ? [] : [
+      ...changedTouches, ...(fingers > 1 ? [{ identifier: 8, clientX: x + 20, clientY: y }] : []),
+    ];
+    return send(target, type, x, y, { touches, changedTouches });
+  };
+  return { cards, fan, capture, send, touch, selected, document, storage, changeLocale, window };
 }
 
 describe("showroom touch capture", () => {
@@ -99,7 +106,8 @@ describe("showroom touch capture", () => {
 
 describe("source video category swipes", () => {
   it.each(["ko", "en", "ja"])("cycles categories in both directions in %s without opening the preview", async locale => {
-    const { document, send, cards } = await render(locale);
+    const { document, send: input, cards } = await render(locale);
+    const send: typeof input = (target, type, x, y, extra) => input(target, type, x, y, { pointerType: "mouse", ...extra });
     const source = () => document.querySelector('figure button:not([aria-pressed])') as unknown as HTMLElement;
     const categoryIndex = () => Array.from(document.querySelectorAll('[role="tablist"] [role="tab"]')).findIndex(tab => tab.getAttribute("aria-selected") === "true");
     const initial = categoryIndex();
@@ -126,7 +134,8 @@ describe("source video category swipes", () => {
   });
 
   it("preserves vertical scrolling, cancellation, and tapping the source preview", async () => {
-    const { document, send, capture } = await render();
+    const { document, send: input, capture } = await render();
+    const send: typeof input = (target, type, x, y, extra) => input(target, type, x, y, { pointerType: "mouse", ...extra });
     const button = document.querySelector('figure button:not([aria-pressed])') as unknown as HTMLElement;
     const video = button.querySelector("video")!;
     const originalTab = document.querySelector('[role="tab"][aria-selected="true"]')?.id;
@@ -169,12 +178,18 @@ describe("first-swipe guidance", () => {
     expect(storage.has(key)).toBe(false);
   });
   it.each(["source", "short"])("remembers a successful %s swipe across locale changes and remounts", async area => {
-    const { document, cards, fan, send, storage, changeLocale } = await render();
+    const { document, cards, fan, send, touch, storage, changeLocale } = await render();
     const surface = area === "source" ? document.querySelector('figure button:not([aria-pressed])') as unknown as HTMLElement : fan;
     const target = area === "source" ? surface.querySelector("video")! : cards[1];
-    await send(target, "pointerdown");
-    await send(target, "pointermove", 200);
-    await send(surface, "pointerup", 100);
+    if (area === "source") {
+      await touch(surface, "touchstart");
+      await touch(surface, "touchmove", 200);
+      await touch(surface, "touchend", 100);
+    } else {
+      await send(target, "pointerdown");
+      await send(target, "pointermove", 200);
+      await send(surface, "pointerup", 100);
+    }
     expect(document.querySelectorAll("[data-swipe-guide]").length).toBe(0);
     expect(storage.get(key)).toBe("1");
     await changeLocale("en");
@@ -199,5 +214,63 @@ describe("first-swipe guidance", () => {
     const event = Object.assign(new window.Event("storage"), { key, newValue: "1" });
     await act(async () => { window.dispatchEvent(event); });
     expect(document.querySelectorAll("[data-swipe-guide]").length).toBe(0);
+  });
+});
+
+
+describe("source native touch input", () => {
+  it.each(["ko", "en", "ja"])("handles %s touch swipes even if pointer capture is cancelled, once per gesture", async locale => {
+    const { document, send, touch, capture, storage } = await render(locale);
+    const source = () => document.querySelector('figure button:not([aria-pressed])') as unknown as HTMLElement;
+    const index = () => Array.from(document.querySelectorAll('[role="tablist"] [role="tab"]')).findIndex(tab => tab.getAttribute("aria-selected") === "true");
+    const initial = index();
+    for (let step = 1; step <= 6; step++) {
+      const button = source();
+      await send(button, "pointerdown", 240);
+      await touch(button, "touchstart", 240);
+      await send(button, "pointermove", 210);
+      await touch(button, "touchmove", 210);
+      await send(button, "pointercancel", 180);
+      await send(button, "lostpointercapture", 180);
+      await touch(button, "touchend", 90);
+      expect(index()).toBe((initial + step) % 6);
+      await send(source(), "click", 90, 100, { detail: 1 });
+      expect(document.querySelector("dialog")).toBeNull();
+    }
+    expect(capture).not.toHaveBeenCalled();
+    expect(storage.get("easycut.showcase.swiped.v1")).toBe("1");
+    const button = source();
+    await touch(button, "touchstart", 90);
+    await touch(button, "touchend", 240);
+    expect(index()).toBe((initial + 5) % 6);
+  });
+
+  it("allows vertical scrolling and pinch zoom, rejects cancellation, and keeps tap-to-preview", async () => {
+    const { document, send, touch, capture, storage } = await render();
+    const button = document.querySelector('figure button:not([aria-pressed])') as unknown as HTMLElement;
+    const selected = () => document.querySelector('[role="tab"][aria-selected="true"]')?.id;
+    const initial = selected();
+    await touch(button, "touchstart", 220, 100);
+    const vertical = await touch(button, "touchmove", 225, 160);
+    await touch(button, "touchend", 320, 180);
+    expect(vertical.defaultPrevented).toBe(false);
+    expect(selected()).toBe(initial);
+    await touch(button, "touchstart");
+    await touch(button, "touchmove", 200);
+    await touch(button, "touchcancel");
+    await touch(button, "touchend", 90);
+    expect(selected()).toBe(initial);
+    await touch(button, "touchstart");
+    await touch(button, "touchstart", 220, 100, 2);
+    const pinch = await touch(button, "touchmove", 150, 100, 2);
+    await touch(button, "touchend", 90);
+    expect(pinch.defaultPrevented).toBe(false);
+    expect(selected()).toBe(initial);
+    expect(capture).not.toHaveBeenCalled();
+    expect(storage.size).toBe(0);
+    await touch(button, "touchstart");
+    await touch(button, "touchend");
+    await send(button, "click", 220, 100, { detail: 1 });
+    expect(document.querySelector("dialog")).not.toBeNull();
   });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent, type TouchEvent } from "react";
 import { createPortal } from "react-dom";
 import { localizedValue, type SiteLocale } from "@/lib/i18n/config";
 import { useI18n } from "@/lib/i18n/provider";
@@ -113,7 +113,50 @@ function Showcase({ locale, showSwipeGuide, onSwipe }: { locale: SiteLocale; sho
   const [documentVisible, setDocumentVisible] = useState(true);
   const [centeredShort, setCenteredShort] = useState(1);
   const swipe = useRef<{ pointerId: number; x: number; y: number; axis: "pending" | "horizontal" | "vertical"; kind: "short" | "category" } | null>(null);
+  const sourceTouch = useRef<{ identifier: number; x: number; y: number; vertical: boolean } | null>(null);
   const suppressSwipeClick = useRef(false);
+  function changeCategory(dx: number) {
+    onSwipe();
+    setSelected((current) => {
+      const index = categoryShowcase.findIndex((item) => item.id === current);
+      return categoryShowcase[(index + (dx < 0 ? 1 : -1) + categoryShowcase.length) % categoryShowcase.length].id;
+    });
+    setCenteredShort(1);
+    setSoundEnabled(false);
+  }
+  // Source touch gestures do not depend on video/pointer capture. In particular,
+  // a browser pointercancel must not discard an otherwise valid touch sequence.
+  function startSourceTouch(event: TouchEvent<HTMLButtonElement>) {
+    swipe.current = null;
+    suppressSwipeClick.current = false;
+    const touch = event.touches[0];
+    sourceTouch.current = event.touches.length === 1
+      ? { identifier: touch.identifier, x: touch.clientX, y: touch.clientY, vertical: false }
+      : null;
+  }
+  function moveSourceTouch(event: TouchEvent<HTMLButtonElement>) {
+    const gesture = sourceTouch.current;
+    if (!gesture) return;
+    if (event.touches.length !== 1) { sourceTouch.current = null; return; }
+    const touch = event.touches[0];
+    if (touch.identifier !== gesture.identifier) return;
+    const dx = Math.abs(touch.clientX - gesture.x);
+    const dy = Math.abs(touch.clientY - gesture.y);
+    if (Math.max(dx, dy) >= 10) suppressSwipeClick.current = true;
+    if (dy >= 10 && dy > dx * 1.2) gesture.vertical = true;
+    // touch-action: pan-y keeps vertical scrolling and pinch zoom native.
+  }
+  function finishSourceTouch(event: TouchEvent<HTMLButtonElement>) {
+    const gesture = sourceTouch.current;
+    sourceTouch.current = null;
+    if (!gesture || event.touches.length) return;
+    const touch = Array.from(event.changedTouches).find(item => item.identifier === gesture.identifier);
+    if (!touch) return;
+    const dx = touch.clientX - gesture.x;
+    const dy = touch.clientY - gesture.y;
+    if (Math.max(Math.abs(dx), Math.abs(dy)) >= 10) suppressSwipeClick.current = true;
+    if (!gesture.vertical && Math.abs(dx) >= 40 && Math.abs(dx) > Math.abs(dy) * 1.2) changeCategory(dx);
+  }
   function startSwipe(event: PointerEvent<HTMLElement>, kind: "short" | "category" = "short") {
     if (!event.isPrimary) { swipe.current = null; return; }
     if (event.button !== 0) return;
@@ -139,15 +182,10 @@ function Showcase({ locale, showSwipeGuide, onSwipe }: { locale: SiteLocale; sho
     const dx = event.clientX - gesture.x;
     const dy = event.clientY - gesture.y;
     if (gesture.axis === "horizontal" && Math.abs(dx) >= 40 && Math.abs(dx) > Math.abs(dy) * 1.2) {
-      onSwipe();
       if (gesture.kind === "category") {
-        setSelected((current) => {
-          const index = categoryShowcase.findIndex((item) => item.id === current);
-          return categoryShowcase[(index + (dx < 0 ? 1 : -1) + categoryShowcase.length) % categoryShowcase.length].id;
-        });
-        setCenteredShort(1);
-        setSoundEnabled(false);
+        changeCategory(dx);
       } else {
+        onSwipe();
         setCenteredShort((index) => (index + (dx < 0 ? 1 : 2)) % 3);
       }
     }
@@ -211,7 +249,9 @@ function Showcase({ locale, showSwipeGuide, onSwipe }: { locale: SiteLocale; sho
       <div className={styles.stage}>
         <figure className={styles.source}>
           <figcaption className={styles.sourceLabel}><span>{localizedValue(locale, { ko: "원본 영상", en: "Original video", ja: "元の動画" })}</span></figcaption>
-          <button className={styles.sourceFrame} {...swipeHandlers} onPointerDown={(event) => startSwipe(event, "category")} type="button" disabled={!media} onClick={(event) => {
+          <button className={styles.sourceFrame} {...swipeHandlers} onPointerDown={(event) => { if (event.pointerType !== "touch") startSwipe(event, "category"); }}
+            onTouchStart={startSourceTouch} onTouchMove={moveSourceTouch} onTouchEnd={finishSourceTouch}
+            onTouchCancel={() => { sourceTouch.current = null; suppressSwipeClick.current = true; }} type="button" disabled={!media} onClick={(event) => {
             if (suppressSwipeClick.current && event.detail !== 0) {
               event.preventDefault(); suppressSwipeClick.current = false; return;
             }
