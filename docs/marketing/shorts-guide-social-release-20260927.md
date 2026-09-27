@@ -11,3 +11,13 @@ User requested a member group-chat announcement draft and production deployment 
 - Baseline manifest copied from the local build of the exact current production source before rebuilding. Evidence directory: `/tmp/shorts-guide-og-20260927/`.
 - Deployment: clean committed source → unaliased production-configured candidate → verify → recheck live baseline → promote identical deployment without rebuilding.
 - Bounded usage: local builds and one remote build plus read-only HTTP checks. No new recurring resources. KakaoTalk's app-side cached card is not directly verified by server metadata checks.
+
+## Verified production result
+
+- Deployed source `22cb3bfd62187674798797e4623eece967500325`; deployment `dpl_HuGnp3G2qzQ7Wf1ee35so1qBxaJ1`; candidate `https://shorts-lhif6xa8z-artiroom.vercel.app`. Live domain confirms the identical deployment and READY state after promotion.
+- Local and remote production builds passed. Four metadata tests, eight release guard tests and scoped ESLint passed. Exact baseline/candidate manifests both contain 249 routes, with no additions or removals.
+- Candidate and production each passed nine grouped read-only checks: all three localized OG/Twitter images, canonical and language metadata, translated alt text, article image, image MIME/dimensions and exact SHA-256; homepage default image; five protected route responses; five worker target fingerprints.
+- Home, guidebook and pricing returned 200. Admin retained its sign-in redirect. The nonexistent editor fixture retained its existing 404; the actual editor route is present in both manifests, but authenticated editing was not exercised by this metadata-only release.
+- Candidate access used a temporary deployment share link without changing protection settings. No analytics events, DB mutations, payments or worker submissions were performed.
+- Live source was rechecked before promotion and remained the approved baseline. The immediate preceding ten-minute error-level runtime log query returned zero records. This is bounded verification, not ongoing monitoring.
+- All three cards were visually inspected. KakaoTalk app-side cached previews were not directly checked or cleared. Subsequent documentation-only commits do not alter the deployed source above.
