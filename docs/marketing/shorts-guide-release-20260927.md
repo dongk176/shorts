@@ -20,3 +20,9 @@ User authorized production deployment of the local guide, three-language pages, 
 - Immediate post-promotion verification will check domain identity, guide/locale responses, collection and runtime errors. Full editor rendering and real paid-account downloads are not claimed by public-route checks.
 
 Release evidence is stored locally under `/tmp/shorts-guide-release-20260927/`. Final deployment identifiers and results will be appended after promotion.
+
+## Candidate correction
+
+- First unpromoted candidate `dpl_317LyTTJsDkJkBiQ1JLo1NPPj51o` built successfully. Public route, locale, cover asset, entitlement denial and worker-target checks reached the analytics check, which exposed postgres.js serializing a JSON string a second time for an inferred jsonb parameter.
+- Corrected the bound parameter to `::text::jsonb`. Reproduced and verified the fix using the actual production postgres.js driver/transform and a transaction that was rolled back; insert plus replay yielded exactly one row. The first candidate was not promoted.
+- Applied only the approved analytics migration to verified production DB; the migration runner confirmed public schema unchanged. No production configuration was modified.
