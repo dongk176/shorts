@@ -25,17 +25,24 @@ function CategoryIcon({ category }: { category: ShowcaseCategory }) {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[category]} /></svg>;
 }
 
-function PreviewVideo({ source, poster, active, label, audible = false }: { source: string; poster: string; active: boolean; label: string; audible?: boolean }) {
+function PreviewVideo({ source, poster, active, label, audible = false, unloadWhenInactive = true }: { source: string; poster: string; active: boolean; label: string; audible?: boolean; unloadWhenInactive?: boolean }) {
   const ref = useRef<HTMLVideoElement>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     const video = ref.current;
     if (!video) return;
     if (active && !document.hidden) void video.play().catch(() => { /* A user gesture can start playback. */ });
-    else video.pause();
+    else {
+      video.pause();
+      // Drop the resource so inactive cards cannot keep buffering in the background.
+      if (unloadWhenInactive) {
+        video.removeAttribute("src");
+        video.load();
+      }
+    }
     return () => video.pause();
-  }, [active, source, audible]);
-  return <><video ref={ref} className={styles.video} src={source} poster={poster} muted={!audible} playsInline loop controls={false} preload={active ? "auto" : "metadata"} aria-label={label}
+  }, [active, source, audible, unloadWhenInactive]);
+  return <><video ref={ref} className={styles.video} src={active || !unloadWhenInactive ? source : undefined} poster={poster} muted={!audible} playsInline loop controls={false} preload="none" aria-label={label}
     onError={() => setFailed(true)} data-media-error={failed || undefined} />{failed && <span className={styles.mediaError} role="status">⚠ {label}</span>}</>;
 }
 
@@ -69,7 +76,7 @@ function ExpandedPlayer({ media, locale, category, index, onClose }: { media: Sh
     <div className={styles.dialogContent}>
       <button autoFocus type="button" className={styles.close} onClick={onClose} aria-label={localizedValue(locale, { ko: "닫기", en: "Close", ja: "閉じる" })}>×</button>
       <div className={index < 0 ? styles.expandedSource : styles.expandedShort}>
-        <PreviewVideo source={clip.source} poster={clip.poster} active={playing} audible={Boolean(media.hasAudio)} label={media.title} />
+        <PreviewVideo source={clip.source} poster={clip.poster} active={playing} audible={Boolean(media.hasAudio)} unloadWhenInactive={false} label={media.title} />
       </div>
       <button type="button" className={styles.playToggle} aria-pressed={playing} onClick={() => setPlaying((value) => !value)}>{playing ? "Ⅱ" : "▷"} {localizedValue(locale, { ko: "재생 / 일시정지", en: "Play / pause", ja: "再生 / 一時停止" })}</button>
       <p>{playerCopy.title}</p><small>{playerCopy.description}</small>
@@ -82,7 +89,7 @@ function ShortCard({ media, index, position, template, locale, active, audible, 
   const actualTemplate = clip?.style ?? template;
   return <figure className={`${styles.short} ${styles[`card${position}`]}`}>
     <button type="button" className={styles.shortButton} disabled={!clip} onClick={onSelect} aria-pressed={position === 1} aria-label={localizedValue(locale, { ko: `${index + 1}번째 ${showcaseStyleLabels[actualTemplate].ko} 쇼츠 가운데로 보기`, en: `Center Short ${index + 1}: ${showcaseStyleLabels[actualTemplate].en}`, ja: `ショート${index + 1}を中央に：${showcaseStyleLabels[actualTemplate].ja}` })}>
-      {clip ? <PreviewVideo source={clip.source} poster={clip.poster} active={active} audible={audible} label={`${media?.author} · ${index + 1}`} /> : <span className={styles.pendingMark}><span>✦</span>{localizedValue(locale, { ko: "영상 준비 중", en: "Video coming soon", ja: "動画を準備中" })}</span>}
+      {clip ? <PreviewVideo source={clip.source} poster={clip.poster} active={active && position === 1} audible={audible} label={`${media?.author} · ${index + 1}`} /> : <span className={styles.pendingMark}><span>✦</span>{localizedValue(locale, { ko: "영상 준비 중", en: "Video coming soon", ja: "動画を準備中" })}</span>}
     </button>
   </figure>;
 }
@@ -139,7 +146,7 @@ function Showcase({ locale }: { locale: SiteLocale }) {
         <figure className={styles.source}>
           <figcaption className={styles.sourceLabel}><span>{localizedValue(locale, { ko: "원본 영상", en: "Original video", ja: "元の動画" })}</span></figcaption>
           <button className={styles.sourceFrame} type="button" disabled={!media} onClick={() => setExpanded(-1)} aria-label={localizedValue(locale, { ko: "원본 미리보기 재생", en: "Play original preview", ja: "元動画のプレビューを再生" })}>
-            {media ? <PreviewVideo source={media.source} poster={media.poster} active={active} label={media.title} /> : <span className={styles.emptySource}><CategoryIcon category={selected} /><strong>{category.label[locale]}</strong><span>{localizedValue(locale, { ko: "어울리는 원본 영상을 준비하고 있어요", en: "A matching source video is being prepared", ja: "このジャンルに合う元動画を準備中です" })}</span></span>}
+            {media ? <PreviewVideo source={media.source} poster={media.poster} active={false} label={media.title} /> : <span className={styles.emptySource}><CategoryIcon category={selected} /><strong>{category.label[locale]}</strong><span>{localizedValue(locale, { ko: "어울리는 원본 영상을 준비하고 있어요", en: "A matching source video is being prepared", ja: "このジャンルに合う元動画を準備中です" })}</span></span>}
           </button>
           <div className={styles.sourceMeta}><strong>{categoryCopy.headline}</strong><span>{categoryCopy.description}</span></div>
         </figure>

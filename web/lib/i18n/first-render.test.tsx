@@ -1,5 +1,6 @@
 import { BackgroundShowcase } from "@/components/background-showcase";
 import { TransformationShowcase } from "@/components/transformation-showcase";
+import { showcaseAsset } from "@/lib/showcase-delivery";
 import { type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -52,13 +53,15 @@ describe("localized first render without browser effects", () => {
     const html = render(<><BackgroundShowcase /><TransformationShowcase /></>, locale);
     for (const category of ["talk", "entertainment", "review", "education", "gaming", "vlog"]) {
       for (const style of [1, 2, 3]) {
-        expect(html).toContain(`/showcase-examples/curated-pilot-v1/${locale}-${category}-${style}.jpg`);
+        expect(html).toContain(showcaseAsset(`${locale}-${category}-${style}`, "poster"));
       }
     }
     expect(html).not.toContain(`/home-showcase/${locale}/`);
-    expect(html).toContain(locale === "ja" ? "/showcase-examples/curated-pilot-v1/ja-talk-source.mp4" : "/showcase-examples/curated-pilot-v1/en-talk-source.mp4");
+    expect(html).toContain(showcaseAsset(`${locale}-talk-source`, "poster"));
     // One source plus three actual renderer outputs, with no in-video controls.
     expect(html.match(/<video\b/g)).toHaveLength(4);
+    expect(html).not.toMatch(/<video\b[^>]*\ssrc=/);
+    expect(html.match(/preload="none"/g)).toHaveLength(4);
     expect(html.match(/role="tab"/g)).toHaveLength(6);
     expect(html).not.toContain(`/transformation-showcase/${locale === "en" ? "ja" : "en"}-horizontal-v1.mp4`);
     expect(html).not.toContain("/ditto-");

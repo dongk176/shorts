@@ -26,5 +26,8 @@ web/test-tools/**
 web/**/*.test.ts
 web/**/*.test.tsx
 
+# Approved showcase masters are retained locally; compact previews are served by CloudFront.
+web/public/showcase-examples/curated-pilot-v1/**
+
 # Existing isolated PostgreSQL test runtime (local symlink).
 /test-tools

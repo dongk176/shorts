@@ -1,0 +1,293 @@
+{
+  "origin": "https://d1mzwx29nljvyq.cloudfront.net",
+  "assets": {
+    "en-education-1": {
+      "video": "easycut/showcase/v2/en-education-1-a5772c3510f63683.mp4",
+      "poster": "easycut/showcase/v2/en-education-1-285fb657c6386862.webp"
+    },
+    "en-education-2": {
+      "video": "easycut/showcase/v2/en-education-2-f79f9a997d1a707d.mp4",
+      "poster": "easycut/showcase/v2/en-education-2-bb296eb380323aaa.webp"
+    },
+    "en-education-3": {
+      "video": "easycut/showcase/v2/en-education-3-463698981ea16f40.mp4",
+      "poster": "easycut/showcase/v2/en-education-3-de5feb9051907777.webp"
+    },
+    "en-education-source": {
+      "video": "easycut/showcase/v2/en-education-source-a46e4fdeca10d741.mp4",
+      "poster": "easycut/showcase/v2/en-education-source-a04e56177661c42d.webp"
+    },
+    "en-entertainment-1": {
+      "video": "easycut/showcase/v2/en-entertainment-1-e9309706d09ada8f.mp4",
+      "poster": "easycut/showcase/v2/en-entertainment-1-18b35618cab534b8.webp"
+    },
+    "en-entertainment-2": {
+      "video": "easycut/showcase/v2/en-entertainment-2-8d34efae2105bab3.mp4",
+      "poster": "easycut/showcase/v2/en-entertainment-2-00f975ecf519f7bf.webp"
+    },
+    "en-entertainment-3": {
+      "video": "easycut/showcase/v2/en-entertainment-3-806388035f50818e.mp4",
+      "poster": "easycut/showcase/v2/en-entertainment-3-6f073fdbcaf58d88.webp"
+    },
+    "en-entertainment-source": {
+      "video": "easycut/showcase/v2/en-entertainment-source-b62af1836ff91c89.mp4",
+      "poster": "easycut/showcase/v2/en-entertainment-source-2aa0b2e698e538c5.webp"
+    },
+    "en-gaming-1": {
+      "video": "easycut/showcase/v2/en-gaming-1-4560da33d32477c9.mp4",
+      "poster": "easycut/showcase/v2/en-gaming-1-1af28c21d65e6bd7.webp"
+    },
+    "en-gaming-2": {
+      "video": "easycut/showcase/v2/en-gaming-2-3b5e687c7a22d458.mp4",
+      "poster": "easycut/showcase/v2/en-gaming-2-9627d71307aff60f.webp"
+    },
+    "en-gaming-3": {
+      "video": "easycut/showcase/v2/en-gaming-3-918ef6bab2de1631.mp4",
+      "poster": "easycut/showcase/v2/en-gaming-3-2d2ba99dc20f8085.webp"
+    },
+    "en-gaming-source": {
+      "video": "easycut/showcase/v2/en-gaming-source-46a4adfe800fbc2d.mp4",
+      "poster": "easycut/showcase/v2/en-gaming-source-bb519f787c6738a4.webp"
+    },
+    "en-review-1": {
+      "video": "easycut/showcase/v2/en-review-1-5fd009d136fce68c.mp4",
+      "poster": "easycut/showcase/v2/en-review-1-b075653edb5e8947.webp"
+    },
+    "en-review-2": {
+      "video": "easycut/showcase/v2/en-review-2-76e9ce0d8844797c.mp4",
+      "poster": "easycut/showcase/v2/en-review-2-888f52a473bea3eb.webp"
+    },
+    "en-review-3": {
+      "video": "easycut/showcase/v2/en-review-3-d228a4c3b660e148.mp4",
+      "poster": "easycut/showcase/v2/en-review-3-c5e0013be64c39da.webp"
+    },
+    "en-review-source": {
+      "video": "easycut/showcase/v2/en-review-source-800707947323c5fb.mp4",
+      "poster": "easycut/showcase/v2/en-review-source-fc9b6bbf20523062.webp"
+    },
+    "en-talk-1": {
+      "video": "easycut/showcase/v2/en-talk-1-71d64f302e25d44b.mp4",
+      "poster": "easycut/showcase/v2/en-talk-1-812bf0d042ae151b.webp"
+    },
+    "en-talk-2": {
+      "video": "easycut/showcase/v2/en-talk-2-8aaa123996c77b6c.mp4",
+      "poster": "easycut/showcase/v2/en-talk-2-2d48b6268b815dfd.webp"
+    },
+    "en-talk-3": {
+      "video": "easycut/showcase/v2/en-talk-3-52a280a7aa17c2e5.mp4",
+      "poster": "easycut/showcase/v2/en-talk-3-94a9367ce95a6273.webp"
+    },
+    "en-talk-source": {
+      "video": "easycut/showcase/v2/en-talk-source-d2fa168f4532f7d9.mp4",
+      "poster": "easycut/showcase/v2/en-talk-source-b3f415aafb1359a4.webp"
+    },
+    "en-vlog-1": {
+      "video": "easycut/showcase/v2/en-vlog-1-9213fee3631949fd.mp4",
+      "poster": "easycut/showcase/v2/en-vlog-1-b13462ad7e14d9c2.webp"
+    },
+    "en-vlog-2": {
+      "video": "easycut/showcase/v2/en-vlog-2-01ad4a78ca08d305.mp4",
+      "poster": "easycut/showcase/v2/en-vlog-2-c09b774ddcf3a58b.webp"
+    },
+    "en-vlog-3": {
+      "video": "easycut/showcase/v2/en-vlog-3-8dc6dd91e25f940a.mp4",
+      "poster": "easycut/showcase/v2/en-vlog-3-8e7c3fa12facdebf.webp"
+    },
+    "en-vlog-source": {
+      "video": "easycut/showcase/v2/en-vlog-source-5adfebf5b63fdaee.mp4",
+      "poster": "easycut/showcase/v2/en-vlog-source-cfe8e6880490d428.webp"
+    },
+    "ja-education-1": {
+      "video": "easycut/showcase/v2/ja-education-1-b1931880ae77bd32.mp4",
+      "poster": "easycut/showcase/v2/ja-education-1-fc3e5fab4d64e865.webp"
+    },
+    "ja-education-2": {
+      "video": "easycut/showcase/v2/ja-education-2-63504f3f7232b012.mp4",
+      "poster": "easycut/showcase/v2/ja-education-2-d5cd2db7d24711ab.webp"
+    },
+    "ja-education-3": {
+      "video": "easycut/showcase/v2/ja-education-3-8f6383683e9b030b.mp4",
+      "poster": "easycut/showcase/v2/ja-education-3-ad37a44911d45a88.webp"
+    },
+    "ja-education-source": {
+      "video": "easycut/showcase/v2/ja-education-source-634eb7ed49b848c5.mp4",
+      "poster": "easycut/showcase/v2/ja-education-source-0b3c6aae04501584.webp"
+    },
+    "ja-entertainment-1": {
+      "video": "easycut/showcase/v2/ja-entertainment-1-a219e234818616cd.mp4",
+      "poster": "easycut/showcase/v2/ja-entertainment-1-95c88f6329bffcc2.webp"
+    },
+    "ja-entertainment-2": {
+      "video": "easycut/showcase/v2/ja-entertainment-2-c3681557b3b2a1bd.mp4",
+      "poster": "easycut/showcase/v2/ja-entertainment-2-29910e9497119ed9.webp"
+    },
+    "ja-entertainment-3": {
+      "video": "easycut/showcase/v2/ja-entertainment-3-754fbeb37028c882.mp4",
+      "poster": "easycut/showcase/v2/ja-entertainment-3-a2b7158b758a4295.webp"
+    },
+    "ja-entertainment-source": {
+      "video": "easycut/showcase/v2/ja-entertainment-source-64603b4befc482f1.mp4",
+      "poster": "easycut/showcase/v2/ja-entertainment-source-5992c867f6a65fd0.webp"
+    },
+    "ja-gaming-1": {
+      "video": "easycut/showcase/v2/ja-gaming-1-3cbfcd1948ed47ca.mp4",
+      "poster": "easycut/showcase/v2/ja-gaming-1-3f931b22aec78167.webp"
+    },
+    "ja-gaming-2": {
+      "video": "easycut/showcase/v2/ja-gaming-2-6eed735295b54165.mp4",
+      "poster": "easycut/showcase/v2/ja-gaming-2-e36cc22cbdf14ccd.webp"
+    },
+    "ja-gaming-3": {
+      "video": "easycut/showcase/v2/ja-gaming-3-335c9fde6416ba4b.mp4",
+      "poster": "easycut/showcase/v2/ja-gaming-3-95e27c1780897055.webp"
+    },
+    "ja-gaming-source": {
+      "video": "easycut/showcase/v2/ja-gaming-source-6569e9eae4ef3097.mp4",
+      "poster": "easycut/showcase/v2/ja-gaming-source-ffc30caab7cdd20b.webp"
+    },
+    "ja-review-1": {
+      "video": "easycut/showcase/v2/ja-review-1-536488f78ea11d63.mp4",
+      "poster": "easycut/showcase/v2/ja-review-1-352a97e1fdbd080f.webp"
+    },
+    "ja-review-2": {
+      "video": "easycut/showcase/v2/ja-review-2-f8905610a2f34a22.mp4",
+      "poster": "easycut/showcase/v2/ja-review-2-f96b6a6fecd0603c.webp"
+    },
+    "ja-review-3": {
+      "video": "easycut/showcase/v2/ja-review-3-e4dad010fdf695b2.mp4",
+      "poster": "easycut/showcase/v2/ja-review-3-9688bbc4c007e1ef.webp"
+    },
+    "ja-review-source": {
+      "video": "easycut/showcase/v2/ja-review-source-46526722fbffd3b5.mp4",
+      "poster": "easycut/showcase/v2/ja-review-source-8dc2d9b1207536d7.webp"
+    },
+    "ja-talk-1": {
+      "video": "easycut/showcase/v2/ja-talk-1-0e8ce812a8ef51ab.mp4",
+      "poster": "easycut/showcase/v2/ja-talk-1-88b42508a9a810c5.webp"
+    },
+    "ja-talk-2": {
+      "video": "easycut/showcase/v2/ja-talk-2-23ba75a8cf12cc6c.mp4",
+      "poster": "easycut/showcase/v2/ja-talk-2-657f2ae5b34b720b.webp"
+    },
+    "ja-talk-3": {
+      "video": "easycut/showcase/v2/ja-talk-3-d0ceaf1d439a882a.mp4",
+      "poster": "easycut/showcase/v2/ja-talk-3-861bcdf6a336a0e2.webp"
+    },
+    "ja-talk-source": {
+      "video": "easycut/showcase/v2/ja-talk-source-7c77d717c769b806.mp4",
+      "poster": "easycut/showcase/v2/ja-talk-source-d7e373d20bf9b733.webp"
+    },
+    "ja-vlog-1": {
+      "video": "easycut/showcase/v2/ja-vlog-1-04818c7bf5c0fd8b.mp4",
+      "poster": "easycut/showcase/v2/ja-vlog-1-baf2096629bc2e3e.webp"
+    },
+    "ja-vlog-2": {
+      "video": "easycut/showcase/v2/ja-vlog-2-fd1cb69543a4061f.mp4",
+      "poster": "easycut/showcase/v2/ja-vlog-2-8c3bf4f6267f054f.webp"
+    },
+    "ja-vlog-3": {
+      "video": "easycut/showcase/v2/ja-vlog-3-f796afcd80a165e7.mp4",
+      "poster": "easycut/showcase/v2/ja-vlog-3-96d5645995f22c36.webp"
+    },
+    "ja-vlog-source": {
+      "video": "easycut/showcase/v2/ja-vlog-source-25a73759b2489817.mp4",
+      "poster": "easycut/showcase/v2/ja-vlog-source-c13db0eb6f49a414.webp"
+    },
+    "ko-education-1": {
+      "video": "easycut/showcase/v2/ko-education-1-60e28401c076c710.mp4",
+      "poster": "easycut/showcase/v2/ko-education-1-6ab719361a61335e.webp"
+    },
+    "ko-education-2": {
+      "video": "easycut/showcase/v2/ko-education-2-0867218222f45be6.mp4",
+      "poster": "easycut/showcase/v2/ko-education-2-64ba84c5d091532c.webp"
+    },
+    "ko-education-3": {
+      "video": "easycut/showcase/v2/ko-education-3-47dfcbd7dced0f3a.mp4",
+      "poster": "easycut/showcase/v2/ko-education-3-ffbc4495a0fde2fd.webp"
+    },
+    "ko-education-source": {
+      "video": "easycut/showcase/v2/ko-education-source-85a542a4fb8489a0.mp4",
+      "poster": "easycut/showcase/v2/ko-education-source-807b5cd712d6c169.webp"
+    },
+    "ko-entertainment-1": {
+      "video": "easycut/showcase/v2/ko-entertainment-1-7f7643bd03c63795.mp4",
+      "poster": "easycut/showcase/v2/ko-entertainment-1-28ec14ce5b0fcba0.webp"
+    },
+    "ko-entertainment-2": {
+      "video": "easycut/showcase/v2/ko-entertainment-2-5c7a6b946aae0e83.mp4",
+      "poster": "easycut/showcase/v2/ko-entertainment-2-2030ce2eb8e1052a.webp"
+    },
+    "ko-entertainment-3": {
+      "video": "easycut/showcase/v2/ko-entertainment-3-4e79333072562d7f.mp4",
+      "poster": "easycut/showcase/v2/ko-entertainment-3-c576dd49c7d1dde5.webp"
+    },
+    "ko-entertainment-source": {
+      "video": "easycut/showcase/v2/ko-entertainment-source-a56485951a97f11c.mp4",
+      "poster": "easycut/showcase/v2/ko-entertainment-source-b8c074898484a434.webp"
+    },
+    "ko-gaming-1": {
+      "video": "easycut/showcase/v2/ko-gaming-1-3b3848b2ddee0d09.mp4",
+      "poster": "easycut/showcase/v2/ko-gaming-1-c06f24ce12dade52.webp"
+    },
+    "ko-gaming-2": {
+      "video": "easycut/showcase/v2/ko-gaming-2-6b8efbcadc8e1339.mp4",
+      "poster": "easycut/showcase/v2/ko-gaming-2-fde260ee13b873fc.webp"
+    },
+    "ko-gaming-3": {
+      "video": "easycut/showcase/v2/ko-gaming-3-3c3294735c7ca70a.mp4",
+      "poster": "easycut/showcase/v2/ko-gaming-3-789300bef25c7458.webp"
+    },
+    "ko-gaming-source": {
+      "video": "easycut/showcase/v2/ko-gaming-source-1b0eac31153ee70e.mp4",
+      "poster": "easycut/showcase/v2/ko-gaming-source-37166dce2d789f3b.webp"
+    },
+    "ko-review-1": {
+      "video": "easycut/showcase/v2/ko-review-1-a5730efda086f35b.mp4",
+      "poster": "easycut/showcase/v2/ko-review-1-9574b491b5906a1f.webp"
+    },
+    "ko-review-2": {
+      "video": "easycut/showcase/v2/ko-review-2-91b02879699d980b.mp4",
+      "poster": "easycut/showcase/v2/ko-review-2-c89534f4d621ad09.webp"
+    },
+    "ko-review-3": {
+      "video": "easycut/showcase/v2/ko-review-3-d9bd763e90d9d2f0.mp4",
+      "poster": "easycut/showcase/v2/ko-review-3-cbc3bfc622971f54.webp"
+    },
+    "ko-review-source": {
+      "video": "easycut/showcase/v2/ko-review-source-7d4dfe613667b00a.mp4",
+      "poster": "easycut/showcase/v2/ko-review-source-ba40781988a420b9.webp"
+    },
+    "ko-talk-1": {
+      "video": "easycut/showcase/v2/ko-talk-1-79873970c3eeaa0e.mp4",
+      "poster": "easycut/showcase/v2/ko-talk-1-44a1903772b77a07.webp"
+    },
+    "ko-talk-2": {
+      "video": "easycut/showcase/v2/ko-talk-2-0c2d8783cf0da902.mp4",
+      "poster": "easycut/showcase/v2/ko-talk-2-eb461abd47f61e11.webp"
+    },
+    "ko-talk-3": {
+      "video": "easycut/showcase/v2/ko-talk-3-757ce59abf85838b.mp4",
+      "poster": "easycut/showcase/v2/ko-talk-3-46fe66a9c9650d12.webp"
+    },
+    "ko-talk-source": {
+      "video": "easycut/showcase/v2/ko-talk-source-2ebfa5df0a21e817.mp4",
+      "poster": "easycut/showcase/v2/ko-talk-source-4310cfec264ce1f1.webp"
+    },
+    "ko-vlog-1": {
+      "video": "easycut/showcase/v2/ko-vlog-1-2563ad22124a177c.mp4",
+      "poster": "easycut/showcase/v2/ko-vlog-1-6368fef55956c4b3.webp"
+    },
+    "ko-vlog-2": {
+      "video": "easycut/showcase/v2/ko-vlog-2-6e5055427fc5396b.mp4",
+      "poster": "easycut/showcase/v2/ko-vlog-2-654b5a8853db12d6.webp"
+    },
+    "ko-vlog-3": {
+      "video": "easycut/showcase/v2/ko-vlog-3-13764b05b434a06b.mp4",
+      "poster": "easycut/showcase/v2/ko-vlog-3-63639229097f52ed.webp"
+    },
+    "ko-vlog-source": {
+      "video": "easycut/showcase/v2/ko-vlog-source-796281b061759d01.mp4",
+      "poster": "easycut/showcase/v2/ko-vlog-source-72734e5c9b0234c6.webp"
+    }
+  }
+}
