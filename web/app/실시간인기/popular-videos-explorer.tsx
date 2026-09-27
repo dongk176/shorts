@@ -9,6 +9,7 @@ import { reconcileCatalogVisibility, type CatalogVisibility } from "@/lib/youtub
 
 import Image from "next/image";
 import type { ReactNode } from "react";
+import { SavedVideoToast } from "@/components/saved-video-toast";
 import { SaveVideoButton } from "@/components/save-video-button";
 import { useSavedVideos } from "@/lib/use-saved-videos";
 import { savedVideoCopy } from "@/lib/saved-videos";
@@ -612,15 +613,16 @@ export function VideoCard({ video, rank, searching = false, active, onOpen, onCl
       />
       <div className="relative aspect-video overflow-hidden bg-[#0b0f10]">
         <Image src={video.thumbnailUrl} alt={uiCopy.thumbnail(video.title)} fill sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw" priority={rank === 1} unoptimized className="object-cover transition duration-300 group-hover:scale-[1.025]" />
+        {saveAction && <div className="absolute right-2.5 top-2.5 z-30">{saveAction}</div>}
         {!searching && <span className="absolute left-2.5 top-2.5 grid min-w-9 place-items-center rounded-lg bg-[#f04435] px-2 py-1.5 text-sm font-black text-white shadow-lg">{rank}</span>}
-        {video.license === "creativeCommon" && <span className="absolute right-2.5 top-2.5 inline-flex rounded-full border border-violet-200/40 bg-violet-950/85 px-2.5 py-1 text-[10px] font-black tracking-wide text-violet-100 shadow-lg backdrop-blur-sm">{uiCopy.reusableBadge}</span>}
+        {video.license === "creativeCommon" && <span className="absolute bottom-2.5 left-2.5 z-[1] inline-flex rounded-full border border-violet-200/40 bg-violet-950/85 px-2.5 py-1 text-[10px] font-black tracking-wide text-violet-100 shadow-lg backdrop-blur-sm">{uiCopy.reusableBadge}</span>}
         <span className="absolute bottom-2.5 right-2.5 rounded-md bg-black/85 px-2 py-1 text-xs font-bold tabular-nums text-white backdrop-blur-sm">{formatDuration(video.durationSeconds)}</span>
         <span className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-black/40 to-transparent" aria-hidden="true" />
       </div>
       <div className="flex flex-1 flex-col p-4">
         {video.isCurrentTrending && <span className="mb-2 text-xs font-bold text-emerald-300">{discoveryCopy[locale].current}</span>}
         <h2 data-i18n-skip className="line-clamp-2 min-h-11 text-[15px] font-extrabold leading-[1.45] tracking-[-.015em] text-white">{video.title}</h2>
-        <div className="mt-2 flex items-center justify-between gap-2"><p data-i18n-skip className="min-w-0 truncate text-[13px] font-semibold text-neutral-400">{video.channelName}</p>{saveAction}</div>
+        <p data-i18n-skip className="mt-2 truncate text-[13px] font-semibold text-neutral-400">{video.channelName}</p>
         <div className="mt-3 flex items-center gap-2 text-[13px] font-semibold text-neutral-400">
           <span>{locale === "ko" ? "조회수" : locale === "en" ? "Views" : "再生回数"} {formatViews(video.viewCount, locale)}</span><span aria-hidden="true">·</span><span>{formatPublishedAt(video.publishedAt, locale)}</span>
         </div>
@@ -1086,7 +1088,7 @@ export function PopularVideosExplorer({
       ) : response?.items.length ? (
         <div>
           {savedVideos.loadError && <p role="alert" className="mb-3 text-sm text-amber-200">{savedCopy.error} <button type="button" onClick={() => void savedVideos.reload()} className="min-h-11 px-3 underline">{savedCopy.retry}</button></p>}
-          <div className="sr-only" role="status">{savedVideos.notice}</div>
+          <SavedVideoToast message={savedVideos.notice} />
           {savedVideos.error && <p role="alert" className="fixed bottom-20 right-4 z-50 max-w-[calc(100vw-2rem)] rounded-xl border border-red-300/30 bg-[#321c22] p-4 text-sm text-red-100 shadow-xl sm:max-w-sm">{savedVideos.error}</p>}
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{response.items.map((video, index) => <VideoCard key={video.videoId} video={video} rank={index + 1} searching={searching} active={activeVideoId === video.videoId} onOpen={() => setActiveVideoId(video.videoId)} onClose={() => setActiveVideoId(null)}
             saveAction={<SaveVideoButton title={video.title} saved={savedByVideoId.has(video.videoId)} busy={savedVideos.pending.has(video.videoId)} disabled={savedVideos.loading || savedVideos.loadError} onClick={() => void savedVideos.mutate(video, savedByVideoId.get(video.videoId))} />} />)}</div>

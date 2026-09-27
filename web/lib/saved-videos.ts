@@ -9,7 +9,7 @@ export const savedVideoCopy = {
   ko: {
     title: "저장된 영상", description: "다시 보고 싶은 영상을 모아두세요. 저장한 순서대로 보여드려요.",
     save: "저장", saved: "저장됨", remove: "저장 해제", saving: "저장 중", removing: "해제 중",
-    added: "저장된 영상에 추가했어요.", removed: "저장을 해제했어요.",
+    added: "저장됨", removed: "저장 해제",
     loading: "저장된 영상을 불러오는 중이에요.", error: "저장 목록을 불러오지 못했어요. 다시 시도해 주세요.",
     mutationError: "변경 내용을 저장하지 못했어요. 다시 눌러주세요.", retry: "다시 시도",
     empty: "아직 저장한 영상이 없어요", emptyHint: "실시간 인기에서 마음에 드는 영상의 저장 버튼을 눌러보세요.",
@@ -22,7 +22,7 @@ export const savedVideoCopy = {
   en: {
     title: "Saved videos", description: "Keep videos worth coming back to. Your latest saves appear first.",
     save: "Save", saved: "Saved", remove: "Unsave", saving: "Saving", removing: "Removing",
-    added: "Added to your saved videos.", removed: "Removed from saved videos.",
+    added: "Saved", removed: "Removed from saved videos",
     loading: "Loading your saved videos…", error: "Couldn't load your saved videos. Please try again.",
     mutationError: "Couldn't save that change. Please try again.", retry: "Try again",
     empty: "No saved videos yet", emptyHint: "Find something you like in Trending now and tap Save.",
@@ -35,7 +35,7 @@ export const savedVideoCopy = {
   ja: {
     title: "保存した動画", description: "また見たい動画をまとめておきましょう。新しく保存した順に表示します。",
     save: "保存", saved: "保存済み", remove: "保存を解除", saving: "保存中", removing: "解除中",
-    added: "保存した動画に追加しました。", removed: "保存を解除しました。",
+    added: "保存しました", removed: "保存を解除しました",
     loading: "保存した動画を読み込んでいます。", error: "保存した動画を読み込めませんでした。もう一度お試しください。",
     mutationError: "変更を保存できませんでした。もう一度お試しください。", retry: "もう一度試す",
     empty: "まだ保存した動画がありません", emptyHint: "人気動画で気になる動画を見つけたら、保存を押してみてください。",

@@ -11,7 +11,7 @@ export function useSavedVideos(isAuthenticated: boolean, onRequireLogin: () => v
   const [loading, setLoading] = useState(isAuthenticated);
   const [loadError, setLoadError] = useState(false);
   const [mutationError, setMutationError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<"added" | "removed" | null>(null);
+  const [notice, setNotice] = useState<{ type: "added" | "removed" } | null>(null);
   const [pending, setPending] = useState<Set<string>>(new Set());
   const busy = useRef(new Set<string>());
   const revision = useRef(0);
@@ -59,6 +59,12 @@ export function useSavedVideos(isAuthenticated: boolean, onRequireLogin: () => v
     };
   }, [isAuthenticated, accountKey, reload]);
 
+  useEffect(() => {
+    if (!notice) return;
+    const timeout = window.setTimeout(() => setNotice(null), 1800);
+    return () => window.clearTimeout(timeout);
+  }, [notice]);
+
   const mutate = async (video: PopularVideo | null, saved?: SavedVideo) => {
     if (!isAuthenticated) { onRequireLogin(); return; }
     const key = video?.videoId || saved?.id;
@@ -80,7 +86,7 @@ export function useSavedVideos(isAuthenticated: boolean, onRequireLogin: () => v
       if (!mounted.current || epoch !== accountEpoch.current) return;
       if (saved) setItems(current => current.filter(item => item.id !== saved.id));
       else setItems(current => [{ id: body.id, savedAt: new Date().toISOString(), video }, ...current.filter(item => item.id !== body.id)]);
-      setNotice(saved ? "removed" : "added");
+      setNotice({ type: saved ? "removed" : "added" });
     } catch (error) {
       if (mounted.current && epoch === accountEpoch.current) setMutationError(error instanceof Error ? error.message : "SAVE_FAILED");
     } finally {
@@ -94,6 +100,6 @@ export function useSavedVideos(isAuthenticated: boolean, onRequireLogin: () => v
   return {
     items, loading, loadError, reload, pending, mutate,
     error: mutationError ? mutationError === "SAVED_VIDEO_LIMIT" ? copy.limit : mutationError === "VIDEO_UNAVAILABLE" ? copy.unavailableSave : copy.mutationError : null,
-    notice: notice ? copy[notice] : null,
+    notice: notice ? copy[notice.type] : null,
   };
 }

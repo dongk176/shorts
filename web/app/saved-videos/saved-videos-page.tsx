@@ -5,6 +5,7 @@ import { useI18n } from "@/lib/i18n/provider";
 import { AuthControls } from "@/components/auth-controls";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
+import { SavedVideoToast } from "@/components/saved-video-toast";
 import { BookmarkIcon, SaveVideoButton } from "@/components/save-video-button";
 import { savedVideoCopy } from "@/lib/saved-videos";
 import { useSavedVideos } from "@/lib/use-saved-videos";
@@ -26,7 +27,7 @@ export function SavedVideosPage({ user }: { user: AuthProfile | null }) {
     <SiteHeader desktopSidebar><AuthControls user={user} next="/saved-videos" loginOpen={loginOpen} onLoginOpenChange={setLoginOpen} /></SiteHeader>
     <main className="relative mx-auto w-full max-w-6xl px-4 pb-24 pt-5 sm:px-8 sm:pt-7">
       <header className="mb-6 md:pr-36"><div className="flex items-center gap-3 text-violet-200"><BookmarkIcon filled /><h1 className="text-2xl font-black tracking-tight text-white sm:text-3xl">{copy.title}</h1></div><p className="mt-3 text-sm leading-6 text-neutral-400">{copy.description}</p></header>
-      <div role="status" className="sr-only">{saved.notice}</div>
+      <SavedVideoToast message={saved.notice} />
       {saved.error && <p role="alert" className="fixed bottom-20 right-4 z-50 max-w-[calc(100vw-2rem)] rounded-xl border border-red-300/30 bg-[#321c22] p-4 text-sm text-red-100 shadow-xl sm:max-w-sm">{saved.error}</p>}
       {!user ? <section className="rounded-2xl border border-white/10 bg-white/[.025] px-5 py-16 text-center"><div className="mb-5 flex justify-center text-violet-300"><BookmarkIcon /></div><h2 className="text-xl font-bold">{copy.loginTitle}</h2><p className="mx-auto mb-6 mt-3 max-w-md text-sm leading-6 text-neutral-400">{copy.loginHint}</p><button type="button" onClick={() => setLoginOpen(true)} className={primary}>{copy.login}</button></section>
         : saved.loading ? <p role="status" className="py-16 text-center text-neutral-400">{copy.loading}</p>
@@ -39,7 +40,7 @@ export function SavedVideosPage({ user }: { user: AuthProfile | null }) {
             : <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{filtered.slice(0,shown).map((item,index) => {
               const saveAction = <SaveVideoButton title={item.video?.title || copy.unavailable} saved busy={saved.pending.has(item.video?.videoId || item.id)} onClick={() => void saved.mutate(item.video,item)} />;
               return item.video ? <VideoCard key={item.id} video={item.video} rank={index+1} searching active={active===item.id} onOpen={() => setActive(item.id)} onClose={() => setActive(null)} saveAction={saveAction} />
-                : <article key={item.id} className="flex min-h-64 flex-col rounded-2xl border border-white/10 bg-[#191c1e]/90 p-5"><div className="mb-5 text-neutral-500"><BookmarkIcon /></div><h2 className="font-bold">{copy.unavailable}</h2><p className="mb-6 mt-3 text-sm leading-6 text-neutral-400">{copy.unavailableHint}</p><div className="mt-auto flex justify-end">{saveAction}</div></article>;
+                : <article key={item.id} className="relative flex min-h-64 flex-col rounded-2xl border border-white/10 bg-[#191c1e]/90 p-5"><div className="mb-5 text-neutral-500"><BookmarkIcon /></div><h2 className="pr-10 font-bold">{copy.unavailable}</h2><p className="mb-6 mt-3 text-sm leading-6 text-neutral-400">{copy.unavailableHint}</p><div className="absolute right-2.5 top-2.5">{saveAction}</div></article>;
             })}</div>}
           {filtered.length > shown && <div className="mt-8 text-center"><button type="button" className="min-h-12 rounded-xl border border-white/20 px-8 text-sm font-bold hover:bg-white/5" onClick={() => setShown(n=>n+48)}>{copy.more}</button></div>}
         </>}

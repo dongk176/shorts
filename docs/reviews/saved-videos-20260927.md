@@ -36,3 +36,10 @@
 
 - Full production build passed (Next.js 15.5.20), including lint/type validation. An initial build found a generated type file for the removed local fixture; only that generated file was removed and the final build passed.
 - Compared the exact pre-change production-source app route manifest: no routes removed; exactly four additions (saved page, EN/JP aliases, saved-video API). No fixture route in the final output.
+
+## Icon and centered toast follow-up
+
+- Moved the Save control to the thumbnail's top-right corner. Icon-only 44px touch target, filled purple state for saved videos, spinner while pending, translated accessible labels/tooltips. Moved the reuse badge to bottom-left to avoid overlap.
+- Save/remove confirmations now appear at the viewport center via a non-interactive body portal and disappear after 1.8 seconds. Consecutive successful actions restart the timer; messages are localized. Both popular and saved lists share this component.
+- Browser fixture verified save/remove, empty button text, automatic toast dismissal, mobile center `(195,422)` at 390×844 and desktop center `(682.5,450)` at 1365×900; no horizontal overflow. Screenshots `icon-toast-mobile.png` and `icon-toast-desktop.png` are under the same output directory. Fixture removed after testing.
+- This is a local UI follow-up. Production DB/deployment approval status remains unchanged.
