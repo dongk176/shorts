@@ -146,7 +146,7 @@ function Showcase({ locale }: { locale: SiteLocale }) {
         <figure className={styles.source}>
           <figcaption className={styles.sourceLabel}><span>{localizedValue(locale, { ko: "원본 영상", en: "Original video", ja: "元の動画" })}</span></figcaption>
           <button className={styles.sourceFrame} type="button" disabled={!media} onClick={() => setExpanded(-1)} aria-label={localizedValue(locale, { ko: "원본 미리보기 재생", en: "Play original preview", ja: "元動画のプレビューを再生" })}>
-            {media ? <PreviewVideo source={media.source} poster={media.poster} active={false} label={media.title} /> : <span className={styles.emptySource}><CategoryIcon category={selected} /><strong>{category.label[locale]}</strong><span>{localizedValue(locale, { ko: "어울리는 원본 영상을 준비하고 있어요", en: "A matching source video is being prepared", ja: "このジャンルに合う元動画を準備中です" })}</span></span>}
+            {media ? <PreviewVideo source={media.source} poster={media.poster} active={active} label={media.title} /> : <span className={styles.emptySource}><CategoryIcon category={selected} /><strong>{category.label[locale]}</strong><span>{localizedValue(locale, { ko: "어울리는 원본 영상을 준비하고 있어요", en: "A matching source video is being prepared", ja: "このジャンルに合う元動画を準備中です" })}</span></span>}
           </button>
           <div className={styles.sourceMeta}><strong>{categoryCopy.headline}</strong><span>{categoryCopy.description}</span></div>
         </figure>
