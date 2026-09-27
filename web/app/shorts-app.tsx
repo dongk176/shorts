@@ -14649,6 +14649,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
           </div>
         )}
       </section>
+      {!state?.user ? <TransformationShowcase /> : null}
       {state?.recentJobs.length ? <section id="results" ref={projectsSectionRef} className="scroll-mt-24 sm:scroll-mt-28">
         <div className="mb-5 flex items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-2">
@@ -14661,7 +14662,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         </div>
         <div className="grid grid-cols-[minmax(0,1fr)] gap-5 sm:grid-cols-2 lg:grid-cols-3">{state.recentJobs.map((job) => <ProjectCard key={job.id} job={job} />)}</div>
       </section> : null}
-      <TransformationShowcase />
+      {state?.user ? <TransformationShowcase /> : null}
       <BackgroundShowcase />
       {error && <div role="alert" className="rounded-xl border border-red-900 bg-red-950/50 p-4 text-sm text-red-200">{ui(error)}</div>}
       {stateLoadStatus === "error" && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-900 bg-amber-950/40 p-4 text-sm text-amber-100"><div><p>{t("home.serviceLoadError")}</p>{stateLoadError && <p className="mt-1 text-xs text-amber-300">{stateLoadError}</p>}</div><button type="button" onClick={retryStateLoad} className="rounded-lg border border-amber-300/30 px-3 py-2 font-semibold">{t("common.retry")}</button></div>}
