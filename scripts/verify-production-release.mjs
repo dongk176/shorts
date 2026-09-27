@@ -42,6 +42,12 @@ export const PROTECTED_APP_ROUTES = [
 // These routes are the only intentional additions relative to the currently
 // promoted production manifest. Everything else must still fail closed.
 export const ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE = [
+  // Approved localized Shorts guide and paid workbook release (2026-09-27).
+  "/shorts-monetization/page",
+  "/en/shorts-monetization/page",
+  "/jp/shorts-monetization/page",
+  "/api/shorts-guides/[slug]/download/route",
+  "/api/shorts-monetization/events/route",
   // Read-only Paddle admin summary (2026-09-27).
   "/api/admin/billing/paddle-summary/route",
   // Approved Paddle production rollout (2026-09-26): exact billing routes only.
