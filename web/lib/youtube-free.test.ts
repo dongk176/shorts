@@ -36,6 +36,12 @@ afterEach(() => {
 });
 
 describe("free YouTube search collection", () => {
+  it("retains explicit English metadata from search and refresh details", () => {
+    const original=detail("english0001");
+    const result=verifiedCatalogDetails([original.id],detailsResponseSchema.parse({items:[{...original,snippet:{...original.snippet,defaultAudioLanguage:"en-GB"}}]}));
+    expect(result.items[0].isEnglish).toBe(true);
+  });
+
   it("keeps complete public multi-day duration metadata in the reusable catalog", () => {
     const result=verifiedCatalogDetails(["Z-NKel1EZyU"],detailsResponseSchema.parse({items:[detail("Z-NKel1EZyU",{contentDetails:{duration:"P2DT42M37S"},status:{privacyStatus:"public",license:"creativeCommon"}})]}),true);
     expect(result.items[0]).toMatchObject({videoId:"Z-NKel1EZyU",durationSeconds:175357,license:"creativeCommon"});

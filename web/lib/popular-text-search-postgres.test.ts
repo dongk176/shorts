@@ -47,6 +47,15 @@ integration("popular search on isolated PostgreSQL", () => {
   async function seed(items: CatalogVideo[]) {
     await saveCatalogPage(db, items, { observedAt: now, firstDiscoveredAt: new Date(now.getTime() - 90 * 86400000) });
   }
+
+  it("keeps English search pagination isolated from the other languages", async () => {
+    await seed([...Array.from({length:55},(_,i)=>fixture(`eng${String(i).padStart(8,"0")}`,"football",{isEnglish:true,isKorean:false})), fixture("spanish0001","football",{isKorean:false})]);
+    const first=await search("football",{english:true});
+    expect(first.totalCount).toBe(55); expect(first.items).toHaveLength(48);
+    expect((await search("football",{english:true,cursor:first.nextCursor})).items).toHaveLength(7);
+    await expect(search("football",{cursor:first.nextCursor})).rejects.toBeInstanceOf(CatalogCursorExpiredError);
+    expect((await search("football",{korean:true})).items).toHaveLength(0);
+  });
   it("finds names, spacing, aliases, multiple words and typos; exact results outrank popular fuzzy matches", async () => {
     await seed([
       fixture("search00001", "손흥민", { viewCount: 1 }), fixture("search00002", "손흥민 축구 실수", { viewCount: 90000 }),

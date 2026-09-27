@@ -32,6 +32,7 @@ export const catalogId = (videoId: string) =>
 export type CatalogVideo = PopularVideo & {
   isKorean: boolean;
   isJapanese?: boolean;
+  isEnglish?: boolean;
   categoryRank?: number;
 };
 export async function saveCatalogPage(
@@ -69,6 +70,7 @@ export async function saveCatalogPage(
       license: item.license,
       isKorean: item.isKorean,
       isJapanese: item.isJapanese ?? false,
+      isEnglish: item.isEnglish ?? false,
     },
   }));
   await db`insert into shorts_mvp.youtube_catalog
@@ -239,6 +241,7 @@ export type CatalogFilters = {
   longForm: boolean;
   korean: boolean;
   japanese?: boolean;
+  english?: boolean;
   period: PopularDiscoveryPeriod;
   periodBasis?: "collected";
   date?: string;
@@ -278,9 +281,10 @@ export async function getCatalogVideos(
     filters.period, filters.date || null, filters.periodBasis || null,
     ...(afternoonPeriod ? ["afternoon-1720-v1", filters.period === "all" ? null : today.toISOString()] : []),
   ]);
-  const baseFilterKey = exposedJapan || filters.japanese
+  const regionalFilterKey = exposedJapan || filters.japanese
     ? JSON.stringify([...JSON.parse(legacyFilterKey), "regions-v2", Boolean(filters.japanese), exposedJapan,
       afternoonPeriod && filters.period !== "all" ? state.collectionWindowKey : null]) : legacyFilterKey;
+  const baseFilterKey = filters.english ? JSON.stringify(["english-v1", regionalFilterKey]) : regionalFilterKey;
   const filterKey = search ? JSON.stringify(["text-search-v1", normalizePopularQuery(filters.q!), baseFilterKey]) : baseFilterKey;
   let requestedVersion: { id: string; collectedAt: Date | null; currentRunIds: string[]; filterKey: string } | undefined;
   let cursorOffset = 0;
@@ -292,7 +296,7 @@ export async function getCatalogVideos(
         || !Number.isSafeInteger(cursor.offset) || cursor.offset < 0) throw new Error();
     } catch { throw new CatalogCursorExpiredError(); }
     const [version] = await db`select id,collected_at,current_run_ids,filter_key from shorts_mvp.youtube_list_versions
-      where id=${cursor.id} and expires_at>${now} and (filter_key=${filterKey} or (${!search && !filters.japanese} and filter_key=${legacyFilterKey}))`;
+      where id=${cursor.id} and expires_at>${now} and (filter_key=${filterKey} or (${!search && !filters.japanese && !filters.english} and filter_key=${legacyFilterKey}))`;
     if (!version) throw new CatalogCursorExpiredError();
     requestedVersion = version as typeof requestedVersion;
     if (version.filterKey === legacyFilterKey) includeJapan = false;
@@ -328,6 +332,7 @@ export async function getCatalogVideos(
     and c.verified_at>${new Date(now.getTime() - 30 * DAY_MS)}
     and (${filters.category}='all' or c.metadata->>'category'=${filters.category})
     and (${filters.japanese ?? false}=false or coalesce((c.metadata->>'isJapanese')::boolean,false))
+    and (${filters.english ?? false}=false or coalesce((c.metadata->>'isEnglish')::boolean,false))
     and (${filters.korean}=false or (c.metadata->>'isKorean')::boolean)
     and (${filters.longForm}=false or (c.metadata->>'durationSeconds')::int>=240)
     and (${reusable}=false or c.metadata->>'license'='creativeCommon')

@@ -169,6 +169,7 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
         "202609110010_youtube_japan_discovery.sql",
         "202609110011_youtube_japan_quota.sql",
         "202609110012_youtube_japan_activation_constraints.sql",
+        "202609280001_popular_english_filter.sql",
       ]) {
         if (name === "202609110010_youtube_japan_discovery.sql") {
           await migrationDb`insert into shorts_mvp.youtube_catalog(id,video_id,metadata,first_discovered_at,verified_at,last_trending_at,trending_rank)
@@ -219,6 +220,24 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
     await db?.end();
+  });
+
+  it("filters English across counts, pages and current metadata; rejects another language cursor", async () => {
+    const now = new Date();
+    await saveCatalogPage(db, [
+      ...Array.from({length:55}, (_,i)=>fixture(`eng${String(i).padStart(8,"0")}`, {isEnglish:true,isKorean:false,license:"creativeCommon"})),
+      fixture("unknown0001", {isKorean:false}), fixture("korean00001"), fixture("japan000001", {isJapanese:true,isKorean:false}),
+    ], {observedAt:now});
+    const first=await getCatalogVideos(filters({english:true,reusable:true,longForm:true}),db,now);
+    expect(first.totalCount).toBe(55); expect(first.items).toHaveLength(48);
+    const next=await getCatalogVideos(filters({english:true,reusable:true,longForm:true,cursor:first.nextCursor}),db,now);
+    expect(next.items).toHaveLength(7);
+    expect(next.items.every(item=>item.videoId.startsWith("eng"))).toBe(true);
+    await expect(getCatalogVideos(filters({reusable:true,longForm:true,cursor:first.nextCursor}),db,now)).rejects.toBeInstanceOf(CatalogCursorExpiredError);
+    await db`update shorts_mvp.youtube_catalog set metadata=jsonb_set(metadata,'{isEnglish}','false') where video_id=${next.items[0].videoId}`;
+    expect((await getCatalogVideos(filters({english:true,reusable:true,longForm:true,cursor:first.nextCursor}),db,now)).items).toHaveLength(6);
+    const [column]=await db`select column_default,is_nullable from information_schema.columns where table_schema='shorts_mvp' and table_name='popular_filter_usage_events' and column_name='english_only'`;
+    expect(column).toMatchObject({columnDefault:"false",isNullable:"NO"});
   });
   async function run(at: Date, status = "success", legacy = false) {
     const [r] =

@@ -131,6 +131,7 @@ describe("popular YouTube API route", () => {
       reusableOnly: true,
       longFormOnly: true,
       japaneseOnly: false,
+      englishOnly: false,
       koreanOnly: true,
       discoveryPeriod: "all",
       resultCount: 0,
@@ -368,6 +369,7 @@ describe("popular YouTube API route", () => {
       reusableOnly: false,
       longFormOnly: false,
       japaneseOnly: false,
+      englishOnly: false,
       koreanOnly: false,
       discoveryPeriod: "all",
       resultCount: 2,
@@ -490,5 +492,32 @@ describe("DB-only text search API", () => {
     mocks.searchCatalogVideos.mockRejectedValueOnce(new Error("DB unavailable"));
     const response = await GET(new Request("http://localhost/api/youtube/popular?type=trending&q=축구"));
     expect(response.status).toBe(503);
+  });
+});
+
+describe("English popular filter", () => {
+  it.each(["english=yes", "english=true&korean=true", "english=true&japanese=true"])("rejects invalid combination %s", async query => {
+    expect((await GET(new Request(`http://localhost/api/youtube/popular?type=trending&${query}`))).status).toBe(400);
+    expect(mocks.getCatalogVideos).not.toHaveBeenCalled();
+  });
+  it("fails closed when the catalog is disabled", async () => {
+    vi.stubEnv("YOUTUBE_CATALOG_READS_ENABLED", "false");
+    const response=await GET(new Request("http://localhost/api/youtube/popular?type=trending&english=true"));
+    expect(response.status).toBe(503);
+    expect(mocks.getPopularVideos).not.toHaveBeenCalled();
+  });
+  it("authorizes and records English filters, including search and pagination", async () => {
+    vi.stubEnv("YOUTUBE_DISCOVERY_ENABLED", "true");
+    vi.stubEnv("YOUTUBE_CATALOG_READS_ENABLED", "true");
+    vi.stubEnv("YOUTUBE_POPULAR_SEARCH_ENABLED", "true");
+    mocks.getCatalogVideos.mockResolvedValue({items:[],updatedAt:"",totalCount:0});
+    mocks.searchCatalogVideos.mockResolvedValue({items:[],updatedAt:"",totalCount:0});
+    expect((await GET(new Request("http://localhost/api/youtube/popular?type=views&english=true&longForm=true&reusable=true"))).status).toBe(200);
+    expect(mocks.authenticatedSession).toHaveBeenCalledOnce();
+    expect(mocks.getCatalogVideos).toHaveBeenCalledWith(expect.objectContaining({english:true,korean:false,japanese:false,longForm:true,reusable:true}),"database");
+    expect(mocks.recordPopularFilterUsage).toHaveBeenCalledWith("database",expect.objectContaining({englishOnly:true}));
+    expect((await GET(new Request("http://localhost/api/youtube/popular?type=views&english=true&q=football&cursor=next"))).status).toBe(200);
+    expect(mocks.searchCatalogVideos).toHaveBeenCalledWith(expect.objectContaining({english:true,q:"football",cursor:"next"}),"database");
+    expect(mocks.recordPopularFilterUsage).toHaveBeenCalledOnce();
   });
 });

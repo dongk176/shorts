@@ -42,6 +42,13 @@ afterEach(() => {
 });
 
 describe("popular YouTube category collection", () => {
+  it("retains explicit English metadata from trending collection", async () => {
+    const original=video();
+    const fetchMock=vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({items:[{...original,snippet:{...original.snippet,defaultAudioLanguage:"en-US"}}]}));
+    const result=await collectPopularCategory(gaming,fetchMock);
+    expect(result.items[0].isEnglish).toBe(true);
+  });
+
   it("follows every nextPageToken until YouTube omits it", async () => {
     const fetchMock = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(jsonResponse({

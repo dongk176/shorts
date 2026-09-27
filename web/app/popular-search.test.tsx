@@ -202,3 +202,38 @@ describe("compact popular filters", () => {
     expect(page.requests).toHaveLength(1);
   });
 });
+
+describe("English language controls", () => {
+  it("orders all five desktop filters and preserves English through search and pagination", async () => {
+    const page=await setup();
+    const labels=Array.from(page.container.querySelectorAll('fieldset button[role="switch"]')).map(button=>button.textContent);
+    expect(labels).toEqual(["한국어만","일본어만","영어만","롱폼만","재사용 허용만"]);
+    await page.click(page.button("한국어만")); await page.respond(1);
+    await page.click(page.button("영어만"));
+    expect(Object.fromEntries(page.requests[2].url.searchParams)).toMatchObject({english:"true",korean:"false",japanese:"false"});
+    await page.respond(2);
+    await page.type("football"); await page.submit();
+    const video={videoId:"fixture0001",title:"Football",channelName:"Test",viewCount:100,category:"sports",license:"youtube",durationSeconds:300,publishedAt:new Date().toISOString(),thumbnailUrl:"/test.jpg"};
+    await page.respond(3,{items:[video],nextCursor:"english-next"});
+    await page.click(page.button("더 보기"));
+    expect(Object.fromEntries(page.requests[4].url.searchParams)).toMatchObject({english:"true",q:"football",cursor:"english-next"});
+    await page.respond(4);
+    await page.click(page.button("일본어만"));
+    expect(Object.fromEntries(page.requests[5].url.searchParams)).toMatchObject({english:"false",korean:"false",japanese:"true"});
+  });
+  it("applies and clears the mobile English draft", async () => {
+    const page=await setup();
+    await page.click(page.button("필터")); await page.click(page.button("영어"));
+    expect(page.requests).toHaveLength(1);
+    await page.click(page.button("적용"));
+    expect(page.requests[1].url.searchParams.get("english")).toBe("true");
+    await page.respond(1);
+    await page.click(page.container.querySelector('[aria-label="영어만 · 조건 해제"]')!);
+    expect(page.requests[2].url.searchParams.get("english")).toBe("false");
+  });
+  it("keeps English behind the existing filter entitlement", async () => {
+    const page=await setup(false); await page.click(page.button("영어만"));
+    expect(page.requests).toHaveLength(1);
+    expect(page.container.querySelector('[data-testid="existing-plan-guide"]')).not.toBeNull();
+  });
+});

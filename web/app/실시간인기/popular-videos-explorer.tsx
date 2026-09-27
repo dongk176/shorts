@@ -60,9 +60,9 @@ const categoryOptions: Array<{ value: PopularVideoCategory }> = [
 ];
 
 const compactFilterCopy = {
-  ko: { title: "필터", language: "영상 언어", allLanguages: "전체", korean: "한국어", japanese: "일본어", period: "수집 기간", remove: "조건 해제", shortSearch: "제목·채널 검색" },
-  en: { title: "Filters", language: "Video language", allLanguages: "All", korean: "Korean", japanese: "Japanese", period: "Collection period", remove: "Remove filter", shortSearch: "Search titles or channels" },
-  ja: { title: "フィルター", language: "動画の言語", allLanguages: "すべて", korean: "韓国語", japanese: "日本語", period: "収集期間", remove: "条件を解除", shortSearch: "タイトル・チャンネル検索" },
+  ko: { title: "필터", language: "영상 언어", allLanguages: "전체", korean: "한국어", japanese: "일본어", english: "영어", period: "수집 기간", remove: "조건 해제", shortSearch: "제목·채널 검색" },
+  en: { title: "Filters", language: "Video language", allLanguages: "All", korean: "Korean", japanese: "Japanese", english: "English", period: "Collection period", remove: "Remove filter", shortSearch: "Search titles or channels" },
+  ja: { title: "フィルター", language: "動画の言語", allLanguages: "すべて", korean: "韓国語", japanese: "日本語", english: "英語", period: "収集期間", remove: "条件を解除", shortSearch: "タイトル・チャンネル検索" },
 };
 
 const reusableGuideDismissedKey = "easycut:reusable-license-guide-dismissed:v1";
@@ -71,6 +71,7 @@ type PopularFiltersDraft = {
   category: PopularVideoCategory;
   koreanOnly: boolean;
   japaneseOnly: boolean;
+  englishOnly: boolean;
   longFormOnly: boolean;
   period: PopularDiscoveryPeriod;
 };
@@ -154,6 +155,7 @@ const popularUiCopy: Record<SiteLocale, {
   activePlanOnly: string;
   koreanOnly: string;
   japaneseOnly: string;
+  englishOnly: string;
   longFormOnly: string;
   reusableOnly: string;
   longFormOnlyAria: string;
@@ -181,7 +183,7 @@ const popularUiCopy: Record<SiteLocale, {
 }> = {
   ko: {
     lastUpdated: "마지막 업데이트", filters: "필터", activePlanOnly: "활성 이용권 전용",
-    japaneseOnly: "일본어만", koreanOnly: "한국어만", longFormOnly: "롱폼만", reusableOnly: "재사용 허용만",
+    englishOnly: "영어만", japaneseOnly: "일본어만", koreanOnly: "한국어만", longFormOnly: "롱폼만", reusableOnly: "재사용 허용만",
     longFormOnlyAria: "롱폼만 보기", reusableOnlyAria: "재사용 허용 영상만 보기",
     categoryAria: (label) => `${label} 카테고리`, countLoading: "개수 확인 중",
     loadFailed: "인기 영상을 불러오지 못했습니다", retry: "다시 시도", loadMore: "더 보기",
@@ -195,7 +197,7 @@ const popularUiCopy: Record<SiteLocale, {
   },
   en: {
     lastUpdated: "Last updated", filters: "Filters", activePlanOnly: "Active plan only",
-    japaneseOnly: "Japanese only", koreanOnly: "Korean only", longFormOnly: "Long-form only", reusableOnly: "Reuse allowed only",
+    englishOnly: "English only", japaneseOnly: "Japanese only", koreanOnly: "Korean only", longFormOnly: "Long-form only", reusableOnly: "Reuse allowed only",
     longFormOnlyAria: "Show long-form videos only", reusableOnlyAria: "Show reusable videos only",
     categoryAria: (label) => `${label} category`, countLoading: "Checking count",
     loadFailed: "Could not load trending videos", retry: "Try again", loadMore: "Show more",
@@ -209,7 +211,7 @@ const popularUiCopy: Record<SiteLocale, {
   },
   ja: {
     lastUpdated: "最終更新", filters: "フィルター", activePlanOnly: "有効なプラン限定",
-    japaneseOnly: "日本語のみ", koreanOnly: "韓国語のみ", longFormOnly: "長尺のみ", reusableOnly: "再利用可能のみ",
+    englishOnly: "英語のみ", japaneseOnly: "日本語のみ", koreanOnly: "韓国語のみ", longFormOnly: "長尺のみ", reusableOnly: "再利用可能のみ",
     longFormOnlyAria: "長尺動画のみ表示", reusableOnlyAria: "再利用可能な動画のみ表示",
     categoryAria: (label) => `${label}カテゴリー`, countLoading: "件数を確認中",
     loadFailed: "人気動画を読み込めませんでした", retry: "もう一度試す", loadMore: "さらに表示",
@@ -462,10 +464,10 @@ function PopularFiltersDialog({ open, japaneseEnabled, locale, draft, onDraftCha
           <fieldset>
             <legend className="mb-2 text-sm font-semibold text-neutral-300">{compact.language}</legend>
             <div className="flex gap-2">
-              {[{ value: "all", label: compact.allLanguages }, { value: "ko", label: compact.korean }, ...(japaneseEnabled ? [{ value: "ja", label: compact.japanese }] : [])].map(option => {
-                const selected = option.value === (draft.koreanOnly ? "ko" : draft.japaneseOnly ? "ja" : "all");
+              {[{ value: "all", label: compact.allLanguages }, { value: "ko", label: compact.korean }, ...(japaneseEnabled ? [{ value: "ja", label: compact.japanese }] : []), { value: "en", label: compact.english }].map(option => {
+                const selected = option.value === (draft.koreanOnly ? "ko" : draft.japaneseOnly ? "ja" : draft.englishOnly ? "en" : "all");
                 return <button key={option.value} type="button" aria-pressed={selected}
-                  onClick={() => onDraftChange({ ...draft, koreanOnly: option.value === "ko", japaneseOnly: option.value === "ja" })}
+                  onClick={() => onDraftChange({ ...draft, koreanOnly: option.value === "ko", japaneseOnly: option.value === "ja", englishOnly: option.value === "en" })}
                   className={`min-h-11 flex-1 rounded-xl border px-2 text-sm font-semibold ${selected ? "border-[#ff715e]/60 bg-[#ff715e]/10 text-[#ff9b8d]" : "border-white/10 text-neutral-300 hover:bg-white/5"}`}>{option.label}</button>;
               })}
             </div>
@@ -551,6 +553,7 @@ function popularVideoParams(
   longForm: boolean,
   korean: boolean,
   japanese: boolean,
+  english: boolean,
   discoveryPeriod: PopularDiscoveryPeriod,
   cursor?: string,
   interactionId?: string,
@@ -563,6 +566,7 @@ function popularVideoParams(
     longForm: String(longForm),
     korean: String(korean),
     japanese: String(japanese),
+    english: String(english),
   });
   params.set("period", discoveryPeriod);
   params.set("periodBasis", "collected");
@@ -687,6 +691,7 @@ export function PopularVideosExplorer({
   const composing = useRef(false);
   const searching = Boolean(searchQuery);
   const [dataType, setDataType] = useState<"trending" | "views">("trending");
+  const [englishOnly, setEnglishOnly] = useState(false);
   const [japaneseOnly, setJapaneseOnly] = useState(false);
   const [koreanOnly, setKoreanOnly] = useState(false);
   const [longFormOnly, setLongFormOnly] = useState(false);
@@ -712,6 +717,7 @@ export function PopularVideosExplorer({
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filterDraft, setFilterDraft] = useState<PopularFiltersDraft>({
     category: "all",
+    englishOnly: false,
     japaneseOnly: false,
     koreanOnly: false,
     longFormOnly: false,
@@ -739,7 +745,7 @@ export function PopularVideosExplorer({
     setLoadMoreError(null);
     setError(null);
     setResponse(null);
-    const endpoint = `/api/youtube/popular?${popularVideoParams(searching ? "views" : dataType, category, reusableOnly, longFormOnly, koreanOnly, japaneseOnly, discoveryPeriod, undefined, filterInteractionId || undefined, searchQuery)}`;
+    const endpoint = `/api/youtube/popular?${popularVideoParams(searching ? "views" : dataType, category, reusableOnly, longFormOnly, koreanOnly, japaneseOnly, englishOnly, discoveryPeriod, undefined, filterInteractionId || undefined, searchQuery)}`;
     fetch(endpoint, { cache: "no-store", signal: controller.signal })
       .then(async (result) => {
         if (!result.ok) {
@@ -761,7 +767,7 @@ export function PopularVideosExplorer({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [searchQuery, searching, category, dataType, discoveryPeriod, filterInteractionId, koreanOnly, japaneseOnly, locale, longFormOnly, reusableOnly, retryCount, uiCopy.loadFailed]);
+  }, [searchQuery, searching, category, dataType, discoveryPeriod, filterInteractionId, koreanOnly, japaneseOnly, englishOnly, locale, longFormOnly, reusableOnly, retryCount, uiCopy.loadFailed]);
 
   const visibleVideoIds = response?.items.map(video => video.videoId).join(",") || "";
   useEffect(() => {
@@ -809,7 +815,7 @@ export function PopularVideosExplorer({
     setLoadingMore(true);
     setLoadMoreError(null);
     try {
-      const endpoint = `/api/youtube/popular?${popularVideoParams(searching ? "views" : dataType, category, reusableOnly, longFormOnly, koreanOnly, japaneseOnly, discoveryPeriod, response.nextCursor, undefined, searchQuery)}`;
+      const endpoint = `/api/youtube/popular?${popularVideoParams(searching ? "views" : dataType, category, reusableOnly, longFormOnly, koreanOnly, japaneseOnly, englishOnly, discoveryPeriod, response.nextCursor, undefined, searchQuery)}`;
       const result = await fetch(endpoint, { cache: "no-store", signal: controller.signal });
       if (controller.signal.aborted) return;
       if (result.status === 410) {
@@ -893,14 +899,14 @@ export function PopularVideosExplorer({
     action?.();
   }, []);
 
-  const activeFilterCount = Number(category !== "all") + Number(koreanOnly || japaneseOnly) + Number(longFormOnly) + Number(discoveryPeriod !== "all");
+  const activeFilterCount = Number(category !== "all") + Number(koreanOnly || japaneseOnly || englishOnly) + Number(longFormOnly) + Number(discoveryPeriod !== "all");
   const openFilters = () => {
     if (!canUseFilters) {
       setPlanOverlayFeature("filters");
       setPlanOverlayOpen(true);
       return;
     }
-    setFilterDraft({ category, koreanOnly, japaneseOnly, longFormOnly, period: discoveryPeriod });
+    setFilterDraft({ category, koreanOnly, japaneseOnly, englishOnly, longFormOnly, period: discoveryPeriod });
     setFiltersOpen(true);
   };
   const applyFilters = () => {
@@ -908,6 +914,7 @@ export function PopularVideosExplorer({
       setCategory(filterDraft.category);
       setKoreanOnly(filterDraft.koreanOnly);
       setJapaneseOnly(filterDraft.japaneseOnly);
+      setEnglishOnly(filterDraft.englishOnly);
       setLongFormOnly(filterDraft.longFormOnly);
       setDiscoveryPeriod(filterDraft.period);
     });
@@ -1021,31 +1028,40 @@ export function PopularVideosExplorer({
               {compactFilterCopy[locale].title}{activeFilterCount > 0 && <span className="text-xs tabular-nums">{activeFilterCount}</span>}
             </button>
           </div>
-        <fieldset className="hidden shrink-0 md:ml-auto md:block">
+        <fieldset className="hidden min-w-0 max-w-full md:ml-auto md:block">
           <legend className="sr-only">{compactFilterCopy[locale].title}</legend>
-          <div className="flex items-center justify-end gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             {[
-              { tone: "violet", label: uiCopy.reusableOnly, checked: reusableOnly, toggle: toggleReusable },
               { tone: "emerald", label: uiCopy.koreanOnly, checked: koreanOnly, toggle: () => applyFilter(() => {
                 setKoreanOnly(current => !current);
                 setJapaneseOnly(false);
+                setEnglishOnly(false);
               }) },
               { tone: "sky", label: uiCopy.japaneseOnly, checked: japaneseOnly, toggle: () => applyFilter(() => {
                 setJapaneseOnly(current => !current);
                 setKoreanOnly(false);
+                setEnglishOnly(false);
+              }) },
+              { tone: "amber", label: uiCopy.englishOnly, checked: englishOnly, toggle: () => applyFilter(() => {
+                setEnglishOnly(current => !current);
+                setKoreanOnly(false);
+                setJapaneseOnly(false);
               }) },
               { tone: "coral", label: uiCopy.longFormOnly, checked: longFormOnly, toggle: () => applyFilter(() => setLongFormOnly(current => !current)) },
+              { tone: "violet", label: uiCopy.reusableOnly, checked: reusableOnly, toggle: toggleReusable },
             ].map(({ label, checked, toggle, tone }) => {
               const colors = checked ? {
                 violet: "border-violet-300/60 bg-violet-400/20 text-violet-100",
                 emerald: "border-emerald-300/60 bg-emerald-400/20 text-emerald-100",
                 sky: "border-sky-300/60 bg-sky-400/20 text-sky-100",
+                amber: "border-amber-300/60 bg-amber-400/20 text-amber-100",
                 coral: "border-[#ff8b7c]/60 bg-[#ff715e]/20 text-[#ffd0c9]",
               }[tone] : "border-white/20 bg-white/[.035] text-neutral-200 hover:border-white/35 hover:bg-white/[.07]";
               const switchColor = checked ? {
                 violet: "bg-violet-400",
                 emerald: "bg-emerald-400",
                 sky: "bg-sky-400",
+                amber: "bg-amber-400",
                 coral: "bg-[#ff715e]",
               }[tone] : "bg-white/20";
               return <button key={label} type="button" role="switch" aria-checked={checked}
@@ -1063,7 +1079,7 @@ export function PopularVideosExplorer({
         {activeFilterCount > 0 && <div className="mt-2 flex flex-wrap gap-2">
           {[
             ...(category !== "all" ? [{ key: "category", label: filterCopy.categories[category], clear: () => setCategory("all") }] : []),
-            ...(koreanOnly || japaneseOnly ? [{ key: "language", label: koreanOnly ? uiCopy.koreanOnly : uiCopy.japaneseOnly, clear: () => { setKoreanOnly(false); setJapaneseOnly(false); } }] : []),
+            ...(koreanOnly || japaneseOnly || englishOnly ? [{ key: "language", label: koreanOnly ? uiCopy.koreanOnly : japaneseOnly ? uiCopy.japaneseOnly : uiCopy.englishOnly, clear: () => { setKoreanOnly(false); setJapaneseOnly(false); setEnglishOnly(false); } }] : []),
             ...(longFormOnly ? [{ key: "length", label: uiCopy.longFormOnly, clear: () => setLongFormOnly(false) }] : []),
             ...(discoveryPeriod !== "all" ? [{ key: "period", label: discoveryPeriodOptions.find(option => option.value === discoveryPeriod)!.labels[locale], clear: () => setDiscoveryPeriod("all") }] : []),
           ].map(chip => <button key={chip.key} type="button" onClick={() => applyFilter(chip.clear)} aria-label={`${chip.label} · ${compactFilterCopy[locale].remove}`}
@@ -1130,6 +1146,7 @@ export function PopularVideosExplorer({
         onClose={() => setFiltersOpen(false)}
         onReset={() => setFilterDraft({
           category: "all",
+          englishOnly: false,
           japaneseOnly: false,
           koreanOnly: false,
           longFormOnly: false,

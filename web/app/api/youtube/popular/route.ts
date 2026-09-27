@@ -37,6 +37,7 @@ const querySchema = z.object({
   reusable: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
   longForm: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
   japanese: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
+  english: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
   korean: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
   period: z.enum(popularDiscoveryPeriods).default("all"),
   periodBasis: z.literal("collected").optional(),
@@ -54,6 +55,7 @@ export async function GET(request: Request) {
     reusable: url.searchParams.get("reusable") || undefined,
     longForm: url.searchParams.get("longForm") || undefined,
     japanese: url.searchParams.get("japanese") || undefined,
+    english: url.searchParams.get("english") || undefined,
     korean: url.searchParams.get("korean") || undefined,
     period: url.searchParams.get("period")
       || url.searchParams.get("reusablePeriod")
@@ -63,7 +65,7 @@ export async function GET(request: Request) {
     cursor: url.searchParams.get("cursor") || undefined,
     interactionId: url.searchParams.get("interactionId") || undefined,
   });
-  if (!query.success || (query.data.korean && query.data.japanese) || (query.data.date && query.data.type !== "trending")) {
+  if (!query.success || ([query.data.korean, query.data.japanese, query.data.english].filter(Boolean).length > 1) || (query.data.date && query.data.type !== "trending")) {
     return NextResponse.json({ detail: "지원하지 않는 인기 영상 필터입니다." }, { status: 400 });
   }
   try {
@@ -79,6 +81,7 @@ export async function GET(request: Request) {
       || query.data.reusable
       || query.data.longForm
       || query.data.japanese
+      || query.data.english
       || query.data.korean
       || query.data.period !== "all";
     if (usesPaidFeature) {
@@ -90,6 +93,9 @@ export async function GET(request: Request) {
       ]);
       assertPopularFilterAccess(billing, hasDirectAccess, managedOverride);
       paidFilterUserId = session.userId;
+    }
+    if (query.data.english && !catalogReadsEnabled()) {
+      return NextResponse.json({ detail: "영어 영상 목록을 준비 중입니다.", code: "ENGLISH_DISCOVERY_UNAVAILABLE" }, { status: 503 });
     }
     const japaneseEnabled = await japanReadsEnabled(db);
     if (query.data.japanese && !japaneseEnabled) {
@@ -175,6 +181,7 @@ export async function GET(request: Request) {
         longFormOnly: query.data.longForm,
         koreanOnly: query.data.korean,
         japaneseOnly: query.data.japanese,
+        englishOnly: query.data.english,
         discoveryPeriod: query.data.period,
         resultCount: result.items.length,
         ...(query.data.date ? { selectedDate: query.data.date } : {}),

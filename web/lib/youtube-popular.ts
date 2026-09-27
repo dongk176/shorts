@@ -3,7 +3,7 @@ import type { Sql } from "postgres";
 import { z } from "zod";
 import { getDb } from "@/lib/db";
 import { parseIsoDuration } from "@/lib/youtube";
-import { isKoreanVideo, isJapaneseVideo } from "@/lib/youtube-language";
+import { isKoreanVideo, isJapaneseVideo, isEnglishVideo } from "@/lib/youtube-language";
 
 export const popularVideoTypes = ["trending", "views", "reusable"] as const;
 export const popularDiscoveryPeriods = ["today", "week", "all"] as const;
@@ -87,7 +87,7 @@ export type PopularVideoResponse = {
 export type PopularCollectionCategoryResult = {
   category: PopularVideoSourceCategory;
   pages: number;
-  items: Array<PopularVideo & { categoryRank: number; pageNumber: number; isKorean: boolean; isJapanese?: boolean }>;
+  items: Array<PopularVideo & { categoryRank: number; pageNumber: number; isKorean: boolean; isJapanese?: boolean; isEnglish?: boolean }>;
 };
 
 export type PopularCollectionResult = {
@@ -199,6 +199,7 @@ export function normalizePage(
       license: item.status.license === "creativeCommon" ? "creativeCommon" : "youtube",
       isKorean: isKoreanVideo(item.snippet),
       isJapanese: isJapaneseVideo(item.snippet),
+      isEnglish: isEnglishVideo(item.snippet),
     });
   });
   return videos;

@@ -34,3 +34,10 @@ export function isJapaneseVideo(metadata: YoutubeLanguageMetadata) {
   if (language) return /^ja(?:[-_]|$)/i.test(language);
   return (metadata.title.normalize("NFKC").match(/[\u3041-\u3096\u30a1-\u30fa]/g)?.length || 0) >= 2;
 }
+
+/** English has no unique script: require an explicit YouTube language tag.
+ * Never treat every non-Korean/non-Japanese or Latin-script title as English. */
+export function isEnglishVideo(metadata: YoutubeLanguageMetadata) {
+  const language = metadata.defaultAudioLanguage?.trim() || metadata.defaultLanguage?.trim();
+  return Boolean(language && /^en(?:[-_]|$)/i.test(language));
+}

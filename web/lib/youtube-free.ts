@@ -3,7 +3,7 @@ import type { Sql } from "postgres";
 import { z } from "zod";
 import { getDb } from "@/lib/db";
 import { parseIsoDuration } from "@/lib/youtube";
-import { isKoreanVideo, isJapaneseVideo } from "@/lib/youtube-language";
+import { isKoreanVideo, isJapaneseVideo, isEnglishVideo } from "@/lib/youtube-language";
 import type { PopularVideo, PopularVideoResponse, PopularVideoSourceCategory } from "@/lib/youtube-popular";
 
 const FREE_SEARCH_PAGE_SIZE = 50;
@@ -85,7 +85,7 @@ const cursorSchema = z.object({
   offset: z.number().int().nonnegative(),
 });
 
-export type StoredSearchVideo = PopularVideo & { searchRank: number; pageNumber: number; isKorean: boolean; isJapanese?: boolean };
+export type StoredSearchVideo = PopularVideo & { searchRank: number; pageNumber: number; isKorean: boolean; isJapanese?: boolean; isEnglish?: boolean };
 
 export type SearchVideoSource = {
   query?: string;
@@ -270,6 +270,7 @@ export function normalizeDetails(
       license: item.status.license === "creativeCommon" ? "creativeCommon" : "youtube",
       isKorean: isKoreanVideo(item.snippet),
       isJapanese: isJapaneseVideo(item.snippet),
+      isEnglish: isEnglishVideo(item.snippet),
     });
   });
   return videos;
