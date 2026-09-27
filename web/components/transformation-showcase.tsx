@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { localizedValue, type SiteLocale } from "@/lib/i18n/config";
 import { useI18n } from "@/lib/i18n/provider";
@@ -103,15 +103,15 @@ function Showcase({ locale }: { locale: SiteLocale }) {
   const [reducedMotion, setReducedMotion] = useState(false);
   const [documentVisible, setDocumentVisible] = useState(true);
   const [centeredShort, setCenteredShort] = useState(1);
-  const swipe = useRef<{ pointerId: number; x: number; y: number; axis: "pending" | "horizontal" | "vertical" } | null>(null);
+  const swipe = useRef<{ pointerId: number; x: number; y: number; axis: "pending" | "horizontal" | "vertical"; kind: "short" | "category" } | null>(null);
   const suppressSwipeClick = useRef(false);
-  function startSwipe(event: PointerEvent<HTMLDivElement>) {
+  function startSwipe(event: PointerEvent<HTMLElement>, kind: "short" | "category" = "short") {
     if (!event.isPrimary) { swipe.current = null; return; }
     if (event.button !== 0) return;
     suppressSwipeClick.current = false;
-    swipe.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, axis: "pending" };
+    swipe.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, axis: "pending", kind };
   }
-  function moveSwipe(event: PointerEvent<HTMLDivElement>) {
+  function moveSwipe(event: PointerEvent<HTMLElement>) {
     const gesture = swipe.current;
     if (!gesture || gesture.pointerId !== event.pointerId) return;
     const dx = Math.abs(event.clientX - gesture.x);
@@ -123,16 +123,41 @@ function Showcase({ locale }: { locale: SiteLocale }) {
     }
     if (gesture.axis === "horizontal") event.preventDefault();
   }
-  function finishSwipe(event: PointerEvent<HTMLDivElement>) {
+  function finishSwipe(event: PointerEvent<HTMLElement>) {
     const gesture = swipe.current;
     if (!gesture || gesture.pointerId !== event.pointerId) return;
     swipe.current = null;
     const dx = event.clientX - gesture.x;
     const dy = event.clientY - gesture.y;
     if (gesture.axis === "horizontal" && Math.abs(dx) >= 40 && Math.abs(dx) > Math.abs(dy) * 1.2) {
-      setCenteredShort((index) => (index + (dx < 0 ? 1 : 2)) % 3);
+      if (gesture.kind === "category") {
+        setSelected((current) => {
+          const index = categoryShowcase.findIndex((item) => item.id === current);
+          return categoryShowcase[(index + (dx < 0 ? 1 : -1) + categoryShowcase.length) % categoryShowcase.length].id;
+        });
+        setCenteredShort(1);
+        setSoundEnabled(false);
+      } else {
+        setCenteredShort((index) => (index + (dx < 0 ? 1 : 2)) % 3);
+      }
     }
   }
+
+  const swipeHandlers = {
+    onPointerDown: (event: PointerEvent<HTMLElement>) => startSwipe(event),
+    onPointerMove: moveSwipe,
+    onPointerUp: finishSwipe,
+    onPointerCancel: () => { swipe.current = null; suppressSwipeClick.current = false; },
+    onLostPointerCapture: (event: PointerEvent<HTMLElement>) => {
+      // Ignore bubbling loss when touch capture transfers from a child video/card.
+      if (event.target === event.currentTarget) swipe.current = null;
+    },
+    onClickCapture: (event: MouseEvent<HTMLElement>) => {
+      if (suppressSwipeClick.current && event.detail !== 0) {
+        event.preventDefault(); event.stopPropagation(); suppressSwipeClick.current = false;
+      }
+    },
+  };
 
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [expanded, setExpanded] = useState<number | null>(null);
@@ -176,7 +201,12 @@ function Showcase({ locale }: { locale: SiteLocale }) {
       <div className={styles.stage}>
         <figure className={styles.source}>
           <figcaption className={styles.sourceLabel}><span>{localizedValue(locale, { ko: "원본 영상", en: "Original video", ja: "元の動画" })}</span></figcaption>
-          <button className={styles.sourceFrame} type="button" disabled={!media} onClick={() => setExpanded(-1)} aria-label={localizedValue(locale, { ko: "원본 미리보기 재생", en: "Play original preview", ja: "元動画のプレビューを再生" })}>
+          <button className={styles.sourceFrame} {...swipeHandlers} onPointerDown={(event) => startSwipe(event, "category")} type="button" disabled={!media} onClick={(event) => {
+            if (suppressSwipeClick.current && event.detail !== 0) {
+              event.preventDefault(); suppressSwipeClick.current = false; return;
+            }
+            setExpanded(-1);
+          }} aria-label={localizedValue(locale, { ko: "원본 미리보기 재생", en: "Play original preview", ja: "元動画のプレビューを再生" })}>
             {media ? <PreviewVideo source={media.source} poster={media.poster} active={active} label={media.title} /> : <span className={styles.emptySource}><CategoryIcon category={selected} /><strong>{category.label[locale]}</strong><span>{localizedValue(locale, { ko: "어울리는 원본 영상을 준비하고 있어요", en: "A matching source video is being prepared", ja: "このジャンルに合う元動画を準備中です" })}</span></span>}
           </button>
           <div className={styles.sourceMeta}><strong>{categoryCopy.headline}</strong><span>{categoryCopy.description}</span></div>
@@ -184,18 +214,7 @@ function Showcase({ locale }: { locale: SiteLocale }) {
         <div className={styles.arrow} aria-hidden="true"><span>→</span></div>
         <div className={styles.result}>
           <div className={styles.fan}
-            onPointerDown={startSwipe} onPointerMove={moveSwipe} onPointerUp={finishSwipe}
-            onPointerCancel={() => { swipe.current = null; suppressSwipeClick.current = false; }}
-            onLostPointerCapture={(event) => {
-              // Touch transfers implicit capture from the card to the fan.
-              // Its child's bubbling event must not cancel the active swipe.
-              if (event.target === event.currentTarget) swipe.current = null;
-            }}
-            onClickCapture={(event) => {
-              if (suppressSwipeClick.current && event.detail !== 0) {
-                event.preventDefault(); event.stopPropagation(); suppressSwipeClick.current = false;
-              }
-            }}
+            {...swipeHandlers}
           >
             {category.styles.map((template, index) => <ShortCard key={`${locale}-${selected}-${index}`} media={media} template={template} index={index} position={(index - centeredShort + 4) % 3} locale={locale} active={active} audible={Boolean(media?.hasAudio) && soundEnabled && index === centeredShort && active} onSelect={() => setCenteredShort(index)} />)}
           </div>
