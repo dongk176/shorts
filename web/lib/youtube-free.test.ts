@@ -38,7 +38,7 @@ afterEach(() => {
 describe("free YouTube search collection", () => {
   it("retains explicit English metadata from search and refresh details", () => {
     const original=detail("english0001");
-    const result=verifiedCatalogDetails([original.id],detailsResponseSchema.parse({items:[{...original,snippet:{...original.snippet,defaultAudioLanguage:"en-GB"}}]}));
+    const result=verifiedCatalogDetails([original.id],detailsResponseSchema.parse({items:[{...original,snippet:{...original.snippet,title:"English video",defaultAudioLanguage:"en-GB"}}]}));
     expect(result.items[0].isEnglish).toBe(true);
   });
 

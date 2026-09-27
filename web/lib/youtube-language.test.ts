@@ -43,14 +43,30 @@ describe("Japanese language detection", () => {
 
 describe("English language detection", () => {
   it.each(["en", "en-US", "en_GB", " EN-au "])("accepts explicit English language %s", code => {
-    expect(isEnglishVideo({title:"영상", defaultAudioLanguage:code})).toBe(true);
+    expect(isEnglishVideo({title:"English video", defaultAudioLanguage:code})).toBe(true);
   });
   it("prefers the audio language, then metadata, and never guesses from Latin text", () => {
     expect(isEnglishVideo({title:"English title",defaultAudioLanguage:"es",defaultLanguage:"en"})).toBe(false);
-    expect(isEnglishVideo({title:"한국어 제목",defaultAudioLanguage:"en",defaultLanguage:"ko"})).toBe(true);
+    expect(isEnglishVideo({title:"한국어 제목",defaultAudioLanguage:"en",defaultLanguage:"ko"})).toBe(false);
     expect(isEnglishVideo({title:"Title",defaultLanguage:"en-GB"})).toBe(true);
     expect(isEnglishVideo({title:"English title"})).toBe(false);
     expect(isEnglishVideo({title:"Hola mundo",defaultLanguage:"es"})).toBe(false);
     expect(isEnglishVideo({title:"Bonjour",defaultLanguage:"eng"})).toBe(false);
+  });
+});
+
+describe("English filter Korean false-positive guard", () => {
+  it.each([
+    {title:"범부들은 감히 흉내낼 수 없는 플레이",defaultAudioLanguage:"en-US",defaultLanguage:"ko"},
+    {title:"English display title",defaultAudioLanguage:"en",defaultLanguage:"ko-KR"},
+    {title:"[MV] Kim Yong Bin(김용빈) _ Only you(당신뿐입니다)",defaultAudioLanguage:"en",defaultLanguage:"en"},
+    {title:"헤어진아내가 밥먹자고 부른이유",defaultLanguage:"en"},
+    {title:"한국어 제목",defaultAudioLanguage:"en"},
+  ])("excludes Korean evidence despite English tags: $title", metadata => {
+    expect(isEnglishVideo(metadata)).toBe(false);
+  });
+  it("retains English metadata without requiring audio or rejecting a localized description", () => {
+    expect(isEnglishVideo({title:"Learn English with stories",defaultLanguage:"en"})).toBe(true);
+    expect(isEnglishVideo({title:"English Interview",defaultAudioLanguage:"en-US",description:"한국어로 번역된 영상 소개와 설명입니다."})).toBe(true);
   });
 });

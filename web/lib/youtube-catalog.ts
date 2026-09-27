@@ -71,6 +71,7 @@ export async function saveCatalogPage(
       isKorean: item.isKorean,
       isJapanese: item.isJapanese ?? false,
       isEnglish: item.isEnglish ?? false,
+      englishLanguageVersion: 4,
     },
   }));
   await db`insert into shorts_mvp.youtube_catalog

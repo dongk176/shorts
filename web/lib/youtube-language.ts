@@ -35,9 +35,12 @@ export function isJapaneseVideo(metadata: YoutubeLanguageMetadata) {
   return (metadata.title.normalize("NFKC").match(/[\u3041-\u3096\u30a1-\u30fa]/g)?.length || 0) >= 2;
 }
 
-/** English has no unique script: require an explicit YouTube language tag.
- * Never treat every non-Korean/non-Japanese or Latin-script title as English. */
+/** Keep the metadata fallback, but reject contradictory Korean signals.
+ * Some Korean uploads set English audio tags incorrectly. Descriptions are often
+ * localized, so Korean description text alone must not exclude English videos. */
 export function isEnglishVideo(metadata: YoutubeLanguageMetadata) {
   const language = metadata.defaultAudioLanguage?.trim() || metadata.defaultLanguage?.trim();
-  return Boolean(language && /^en(?:[-_]|$)/i.test(language));
+  return Boolean(language && /^en(?:[-_]|$)/i.test(language)
+    && !isKoreanLanguageCode(metadata.defaultLanguage)
+    && !hasKoreanText(metadata.title, 2));
 }
