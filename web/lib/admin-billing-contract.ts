@@ -6,6 +6,12 @@ export type AdminOrder = {
   billingCycle: string | null;
   prepaidMonths: number;
   refundPolicyVersion: number;
+  currency?: "KRW" | "USD" | "JPY";
+  amountMinor?: number;
+  refundedAmountMinor?: number;
+  pendingRefundMinor?: number;
+  chargebackMinor?: number;
+  paddleSubscriptionId?: string;
   amountKrw: number;
   refundedAmountKrw: number;
   reservedRefundKrw: number;

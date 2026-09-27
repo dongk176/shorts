@@ -42,6 +42,8 @@ export const PROTECTED_APP_ROUTES = [
 // These routes are the only intentional additions relative to the currently
 // promoted production manifest. Everything else must still fail closed.
 export const ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE = [
+  // Read-only Paddle admin summary (2026-09-27).
+  "/api/admin/billing/paddle-summary/route",
   // Approved Paddle production rollout (2026-09-26): exact billing routes only.
   "/api/paddle/checkout/route",
   "/api/paddle/change/route",

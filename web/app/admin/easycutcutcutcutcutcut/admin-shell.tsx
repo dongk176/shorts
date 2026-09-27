@@ -1,5 +1,6 @@
 "use client";
 
+import { AdminPaddleSales } from "@/components/admin-paddle-sales";
 import type { CSSProperties, ReactNode } from "react";
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -424,6 +425,7 @@ export function AdminShell({
               ))}
             </div>
 
+            <AdminPaddleSales />
             <div className={styles.analyticsGrid}>
               {overview ? (
                 <>

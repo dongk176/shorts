@@ -3,6 +3,7 @@ import "server-only";
 import { z } from "zod";
 import { addKstMonths } from "@/lib/billing";
 import { getDb } from "@/lib/db";
+import { loadAdminPaddleOrders } from "@/lib/admin-paddle";
 import { HttpError } from "@/lib/http";
 import { getPrepaidPackageMonthState } from "@/lib/refund-policy";
 import type { AdminBillingOrderPage, AdminOrder } from "@/lib/admin-billing-contract";
@@ -18,7 +19,7 @@ export type AdminBillingOrderFilters = {
 const billingOrderCursorSchema = z.object({
   v: z.literal(1),
   createdAt: z.string().datetime(),
-  id: z.string().uuid(),
+  id: z.union([z.string().uuid(), z.string().regex(/^txn_[a-z0-9]{26}$/)]),
   filters: z.object({
     status: z.string(),
     provider: z.string(),
@@ -140,29 +141,42 @@ export async function loadAdminBillingOrders({
   const db = getDb();
   const cursor = decodeBillingOrderCursor(encodedCursor, filters);
   const legacyOffset = cursor ? 0 : offset;
-  const rows = await db`
+  // Select one global page before enriching either ledger. Foreign amounts never
+  // enter billing_orders or its KRW totals; only confirmed live payments join here.
+  const selected = await db`
+    with candidates as (
+      select o.id::text as id,o.created_at,o.status,o.provider,u.email,
+        o.order_id,o.provider_transaction_id
+      from shorts_mvp.billing_orders o join shorts_mvp.app_users u on u.id=o.user_id
+      union all
+      select p.transaction_id,p.created_at,'succeeded','paddle',u.email,
+        p.transaction_id,p.transaction_id
+      from shorts_mvp.paddle_payments p
+      join shorts_mvp.paddle_subscriptions ps on ps.paddle_id=p.paddle_subscription_id and ps.user_id=p.user_id
+      join shorts_mvp.app_users u on u.id=p.user_id
+      where ps.environment='live'
+    )
+    select id,created_at,provider,
+      to_char(created_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as cursor_created_at
+    from candidates o
+    where (${filters.status}='all' or o.status=${filters.status})
+      and (${filters.provider}='all' or o.provider=${filters.provider})
+      and (${filters.query}='' or lower(coalesce(o.email,'')) like ${`%${filters.query.toLowerCase()}%`}
+        or lower(o.order_id) like ${`%${filters.query.toLowerCase()}%`}
+        or lower(coalesce(o.provider_transaction_id,'')) like ${`%${filters.query.toLowerCase()}%`})
+      and (${cursor === null} or (o.created_at,o.id) < (${cursor?.createdAt ?? null}::timestamptz,${cursor?.id ?? null}::text))
+    order by o.created_at desc,o.id desc
+    limit ${ADMIN_BILLING_ORDER_PAGE_SIZE + 1} offset ${legacyOffset}
+  `;
+  const page = selected.slice(0, ADMIN_BILLING_ORDER_PAGE_SIZE);
+  const domesticIds = page.filter((r) => r.provider !== 'paddle').map((r) => String(r.id));
+  const paddleIds = page.filter((r) => r.provider === 'paddle').map((r) => String(r.id));
+  const rows = domesticIds.length ? await db`
     with selected_orders as materialized (
-      select o.id,o.created_at
-      from shorts_mvp.billing_orders o
-      join shorts_mvp.app_users u on u.id=o.user_id
-      where (${filters.status}='all' or o.status=${filters.status})
-        and (${filters.provider}='all' or o.provider=${filters.provider})
-        and (
-          ${filters.query}=''
-          or lower(coalesce(u.email,'')) like ${`%${filters.query.toLowerCase()}%`}
-          or lower(o.order_id) like ${`%${filters.query.toLowerCase()}%`}
-          or lower(coalesce(o.provider_transaction_id,'')) like ${`%${filters.query.toLowerCase()}%`}
-        )
-        and (
-          ${cursor === null}
-          or (o.created_at,o.id) < (
-            ${cursor?.createdAt ?? null}::timestamptz,
-            ${cursor?.id ?? null}::uuid
-          )
-        )
+      select o.id,o.created_at from shorts_mvp.billing_orders o
+      where o.id=any(${domesticIds}::uuid[])
       order by o.created_at desc,o.id desc
       limit ${ADMIN_BILLING_ORDER_PAGE_SIZE + 1}
-      offset ${legacyOffset}
     )
     select o.id,o.order_id,o.kind,o.product_code,o.billing_cycle,o.amount_krw,
       o.refunded_amount_krw,o.refund_status,o.status,o.provider,o.provider_transaction_id,
@@ -227,20 +241,20 @@ export async function loadAdminBillingOrders({
       limit 1
     ) first_job on true
     order by o.created_at desc,o.id desc
-  `;
-  const hasMore = rows.length > ADMIN_BILLING_ORDER_PAGE_SIZE;
-  const orders = rows
-    .slice(0, ADMIN_BILLING_ORDER_PAGE_SIZE)
-    .map((row) => toAdminOrder(row));
+  ` : [];
+  const paddleOrders = paddleIds.length ? await loadAdminPaddleOrders(paddleIds) : [];
+  const byId = new Map([...rows.map((row) => toAdminOrder(row)), ...paddleOrders].map((order) => [order.id, order]));
+  const orders = page.map((row) => byId.get(String(row.id))).filter((order): order is AdminOrder => Boolean(order));
+  const hasMore = selected.length > ADMIN_BILLING_ORDER_PAGE_SIZE;
 
   return {
     orders,
     hasMore,
-    nextCursor: hasMore && orders.length
+    nextCursor: hasMore && page.length
       ? encodeBillingOrderCursor({
           v: 1,
-          createdAt: orders[orders.length - 1].createdAt,
-          id: orders[orders.length - 1].id,
+          createdAt: String(page[page.length - 1].cursorCreatedAt),
+          id: String(page[page.length - 1].id),
           filters,
         })
       : null,

@@ -35,7 +35,7 @@ describe("administrator billing pagination", () => {
 
   it("selects at most 21 order ids before detailed enrichment", () => {
     expect(ADMIN_BILLING_ORDER_PAGE_SIZE).toBe(20);
-    const selected = loaderSource.indexOf("with selected_orders as materialized");
+    const selected = loaderSource.indexOf("with candidates as");
     const bounded = loaderSource.indexOf("limit ${ADMIN_BILLING_ORDER_PAGE_SIZE + 1}");
     const enrichment = loaderSource.indexOf("left join lateral", bounded);
     expect(selected).toBeGreaterThan(-1);

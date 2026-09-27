@@ -17,7 +17,7 @@ export function AdminSalesCard({
   const trigger = useRef<HTMLButtonElement>(null);
   const options = useRef<Array<HTMLButtonElement | null>>([]);
   const id = useId();
-  const labels = period === "today" ? ["오늘 매출", "오늘 순매출"] : ["누적 매출", "순매출"];
+  const labels = period === "today" ? ["오늘 국내 매출", "오늘 국내 순매출"] : ["누적 국내 매출", "국내 순매출"];
   const selected = net ? 1 : 0;
   const money = (value: number) => `${value.toLocaleString("ko-KR")}원`;
 
