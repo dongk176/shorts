@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { localizedValue, type SiteLocale } from "@/lib/i18n/config";
 import { useI18n } from "@/lib/i18n/provider";
@@ -103,6 +103,37 @@ function Showcase({ locale }: { locale: SiteLocale }) {
   const [reducedMotion, setReducedMotion] = useState(false);
   const [documentVisible, setDocumentVisible] = useState(true);
   const [centeredShort, setCenteredShort] = useState(1);
+  const swipe = useRef<{ pointerId: number; x: number; y: number; axis: "pending" | "horizontal" | "vertical" } | null>(null);
+  const suppressSwipeClick = useRef(false);
+  function startSwipe(event: PointerEvent<HTMLDivElement>) {
+    if (!event.isPrimary) { swipe.current = null; return; }
+    if (event.button !== 0) return;
+    suppressSwipeClick.current = false;
+    swipe.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, axis: "pending" };
+  }
+  function moveSwipe(event: PointerEvent<HTMLDivElement>) {
+    const gesture = swipe.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    const dx = Math.abs(event.clientX - gesture.x);
+    const dy = Math.abs(event.clientY - gesture.y);
+    if (gesture.axis === "pending" && Math.max(dx, dy) >= 10) {
+      gesture.axis = dx > dy * 1.2 ? "horizontal" : "vertical";
+      suppressSwipeClick.current = true;
+      if (gesture.axis === "horizontal") event.currentTarget.setPointerCapture(event.pointerId);
+    }
+    if (gesture.axis === "horizontal") event.preventDefault();
+  }
+  function finishSwipe(event: PointerEvent<HTMLDivElement>) {
+    const gesture = swipe.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    swipe.current = null;
+    const dx = event.clientX - gesture.x;
+    const dy = event.clientY - gesture.y;
+    if (gesture.axis === "horizontal" && Math.abs(dx) >= 40 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+      setCenteredShort((index) => (index + (dx < 0 ? 1 : 2)) % 3);
+    }
+  }
+
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [expanded, setExpanded] = useState<number | null>(null);
   const category = categoryShowcase.find((item) => item.id === selected)!;
@@ -152,7 +183,16 @@ function Showcase({ locale }: { locale: SiteLocale }) {
         </figure>
         <div className={styles.arrow} aria-hidden="true"><span>→</span></div>
         <div className={styles.result}>
-          <div className={styles.fan}>
+          <div className={styles.fan}
+            onPointerDown={startSwipe} onPointerMove={moveSwipe} onPointerUp={finishSwipe}
+            onPointerCancel={() => { swipe.current = null; suppressSwipeClick.current = false; }}
+            onLostPointerCapture={() => { swipe.current = null; }}
+            onClickCapture={(event) => {
+              if (suppressSwipeClick.current && event.detail !== 0) {
+                event.preventDefault(); event.stopPropagation(); suppressSwipeClick.current = false;
+              }
+            }}
+          >
             {category.styles.map((template, index) => <ShortCard key={`${locale}-${selected}-${index}`} media={media} template={template} index={index} position={(index - centeredShort + 4) % 3} locale={locale} active={active} audible={Boolean(media?.hasAudio) && soundEnabled && index === centeredShort && active} onSelect={() => setCenteredShort(index)} />)}
           </div>
           {media?.hasAudio && <button type="button" className={styles.soundToggle} aria-label={localizedValue(locale, { ko: "음소거", en: "Mute", ja: "ミュート" })} aria-pressed={!soundEnabled} title={localizedValue(locale, soundEnabled ? { ko: "음소거", en: "Mute", ja: "ミュート" } : { ko: "음소거 해제", en: "Unmute", ja: "ミュート解除" })} onClick={() => setSoundEnabled((value) => !value)}>
