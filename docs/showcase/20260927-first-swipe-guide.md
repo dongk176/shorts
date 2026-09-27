@@ -1,0 +1,10 @@
+# Persistent first-swipe guidance — 2026-09-27
+
+- Authorized production UI change on `codex/showcase-geo-release-20260927`, worktree `.tmp/showcase-geo-release-20260927`. Baseline `b66d42eeea78a5f29f4d842ceeb9f4a7fa4b4458`; intervening parent is release documentation only.
+- Added localized translucent guidance above source and short fan, with pointer-events:none. Any successful source/style swipe dismisses both and writes `easycut.showcase.swiped.v1=1` to localStorage without expiry. Click, vertical/short/cancelled gestures do not mark completion. Parent state survives locale changes; storage events synchronize other tabs. Storage errors do not block navigation. Persistence is browser/origin-specific and resets if site data is cleared.
+- Hidden during SSR/initial hydration; returning visitors do not get an initial flash before storage is read. No cookie, network request, account write or tracking service added.
+- Local 4123 worktree has matching component/CSS changes. Local/candidate browser verified first-visit guidance, pointer passthrough, successful swipe disappearance and no return after reload; local English navigation also kept it hidden. Production first-visit hints inspected without consuming the user's completion flag.
+- 31 tests passed: prior touch/category checks plus all-language first-use hints, no dismissal on incidental gestures, source/short completion persistence across locale/remount, storage failure and cross-tab event. Scoped lint and local/remote builds passed.
+- Released source `add473bedd3b34140b204199e148e7eac3cafbc6`, deployment `dpl_AffDkcPun8BLd4YkVwygmtwFeUB2`, https://shorts-po8g9povy-artiroom.vercel.app. Baseline rechecked before same-candidate promotion.
+- Candidate/live HTTP release verification passed for three locales, protected paths, route parity, language routing and worker admission fingerprint. Initial 5-minute runtime error query returned zero records. No jobs or DB/infra changes.
+- Evidence `/tmp/showcase-swipe-guide-20260927/`. Existing-service builds/deployment only; no recurring cost added.
