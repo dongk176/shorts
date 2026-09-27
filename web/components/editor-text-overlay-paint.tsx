@@ -7,6 +7,8 @@ import {
 import { editorFontFamily, resolveEditorFontFace } from "@/lib/editor-fonts";
 import { wrapEditorRenderText, type EditorRenderTextLayerSpec } from "@/lib/editor-render-spec";
 
+import { editorTextOverlayOffset, EDITOR_TEXT_LINE_HEIGHT, EDITOR_TEXT_PADDING_X, EDITOR_TEXT_PADDING_Y } from "@/lib/editor-text-layout";
+
 type PaintOverlay = Omit<EditorTextOverlay, "startSeconds" | "endSeconds">;
 
 function canvasWidth(value: number) {
@@ -16,13 +18,15 @@ function canvasWidth(value: number) {
 export function editorTextOverlayPositionStyle(
   textOverlay: PaintOverlay,
   zIndex?: number,
+  renderSpec?: EditorRenderTextLayerSpec,
 ): CSSProperties {
+  const offset = editorTextOverlayOffset(textOverlay, renderSpec);
   return {
     zIndex,
     left: "50%",
     top: "50%",
     width: canvasWidth(textOverlay.width ?? EDITOR_TEXT_DEFAULT_WIDTH),
-    translate: `calc(-50% + ${canvasWidth(textOverlay.offset.x)}) calc(-50% + ${canvasWidth(textOverlay.offset.y)})`,
+    translate: `calc(-50% + ${canvasWidth(offset.x)}) calc(-50% + ${canvasWidth(offset.y)})`,
     scale: String(textOverlay.scale),
     transformOrigin: "center",
   };
@@ -38,7 +42,8 @@ export function editorTextOverlayTextStyle(
     fontFamily: renderSpec?.font.family || editorFontFamily(textOverlay.fontId),
     fontWeight: renderSpec?.font.resolvedWeight ?? resolveEditorFontFace(textOverlay.fontId, "text").resolvedWeight,
     fontSize: canvasWidth(72),
-    lineHeight: 1.2,
+    lineHeight: canvasWidth(renderSpec?.lineHeight ?? EDITOR_TEXT_LINE_HEIGHT),
+    padding: `${canvasWidth(EDITOR_TEXT_PADDING_Y)} ${canvasWidth(EDITOR_TEXT_PADDING_X)}`,
     ...(effect === "none"
       ? { WebkitTextStroke: "0 transparent", filter: "none", textShadow: "none" }
       : effect === "outline"
@@ -62,7 +67,7 @@ export function EditorTextOverlayLines({
 }) {
   const lines = renderSpec?.lines || wrapEditorRenderText(textOverlay.text, textOverlay.width);
   return <>{lines.map((line, index) => (
-    <span key={`${index}:${line}`} className="block whitespace-pre" style={{ minHeight: "1.2em" }}>{line}</span>
+    <span key={`${index}:${line}`} className="block whitespace-pre" style={{ minHeight: canvasWidth(renderSpec?.lineHeight ?? EDITOR_TEXT_LINE_HEIGHT) }}>{line}</span>
   ))}</>;
 }
 
@@ -79,7 +84,7 @@ export function EditorTextOverlayPaint({
   return <div
     data-editor-text-overlay-id={textOverlay.id}
     className="pointer-events-none absolute rounded-[2.4cqw]"
-    style={editorTextOverlayPositionStyle(textOverlay, zIndex)}
+    style={editorTextOverlayPositionStyle(textOverlay, zIndex, renderSpec)}
   >
     <div
       className="w-full whitespace-pre rounded-[2cqw] bg-transparent px-[2cqw] py-[1cqw] text-center font-extrabold"

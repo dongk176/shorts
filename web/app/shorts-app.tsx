@@ -242,6 +242,7 @@ import {
   type EditorTextResizeEdge,
   type EditorVideoResizeHandle,
 } from "@/lib/editor-overlay-preview";
+import { clampEditorTextOverlay } from "@/lib/editor-text-layout";
 import { editorChannelAssetPreviewUrl } from "@/lib/editor-channel-asset-url";
 import {
   DEFAULT_EDITOR_FONT_ID,
@@ -6894,7 +6895,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
     updateEditorOverlayLayout((current) => ({
       ...current,
       textOverlays: current.textOverlays.map((textOverlay) => (
-        textOverlay.id === id ? updater(textOverlay) : textOverlay
+        textOverlay.id === id ? clampEditorTextOverlay(updater(textOverlay)) : textOverlay
       )),
     }));
   }, [updateEditorOverlayLayout]);
@@ -7449,7 +7450,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
   ]);
 
   const deleteSelectedEditorVideoClip = useCallback(() => {
-    if (!overlayPreviewEnabled || !selectedVideoClipId) return;
+    if (!overlayPreviewEnabled || !selectedVideoClipId || !editTimeline) return;
     finishPendingEditorInteractionsIncludingCaption();
     const clipsBeforeDelete = cloneEditorVideoClips(videoClipsRef.current);
     const result = deleteEditorVideoClip(
@@ -7462,6 +7463,12 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
     recordEditorVideoStep(clipsBeforeDelete, result.clips);
     videoClipsRef.current = result.clips;
     setVideoClips(result.clips);
+    setSelectionStart(
+      editTimeline.timelineStartSeconds + result.clips[0].sourceStartSeconds,
+    );
+    setSelectionEnd(
+      editTimeline.timelineStartSeconds + result.clips[result.clips.length - 1].sourceEndSeconds,
+    );
     setSelectedVideoClipId(result.selectedClipId);
     setVideoRippleRevision((current) => current + 1);
     const nextDuration = editorVideoDuration(result.clips);
@@ -7470,6 +7477,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
       Math.max(0, nextDuration - 0.001),
     ));
   }, [
+    editTimeline,
     finishPendingEditorInteractionsIncludingCaption,
     overlayPreviewEnabled,
     recordEditorVideoStep,
@@ -10521,6 +10529,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
             ? clearEditorOverlaySelection
             : undefined}
         >
+        {error && <p role="alert" className="editor-apply-error">{ui(error)}</p>}
         <div
           data-editor-preview-canvas-wrap=""
           className={standalone ? "editor-preview-canvas-wrap" : "sticky top-0 mx-auto w-full max-w-[320px]"}
@@ -11102,7 +11111,9 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
               data-editor-overlay-layer="comment"
               className={`absolute inset-x-0 z-40 cursor-ns-resize touch-none${selectedOverlay === "comment" ? " outline outline-2 outline-[#ff715e] outline-offset-[-2px]" : ""}`}
               style={{
-                top: "62%",
+                top: activeCustomTemplate
+                  ? `${customCommentY / TEMPLATE_CANVAS.height * 100}%`
+                  : "62%",
                 ...(overlayMovementStyle("comment", layoutPreviewComment.id) || {}),
               }}
               onPointerDown={(event) => beginEditorOverlayDrag(
@@ -11119,7 +11130,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
             >
               <TemplateCommentPreview
                 theme={editorCommentTheme}
-                size="medium"
+                size={activeCustomTemplate?.config.comment.size || "medium"}
                 comment={layoutPreviewComment}
                 japaneseFontEnabled={japaneseFontEnabled}
                 outputLanguage={commentOutputLanguage}
@@ -12295,7 +12306,6 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
               </div>
             </div>
           </details>
-          {error && <p className="mt-4 text-sm font-semibold text-white">{ui(error)}</p>}
           {!standalone && <div className="mt-6 flex flex-wrap justify-end gap-2"><button onClick={onClose} className="h-11 rounded-lg border border-white/15 px-4 text-sm font-semibold">{ui("변경 취소")}</button><button disabled={(overlayPreviewEnabled && !editorSaveEnabled) || !editorValid || saving} onPointerDown={preserveInvalidCaptionTextFocus} onClick={openEditorApplyConfirmation} className="h-11 rounded-lg bg-white px-4 text-sm font-bold text-black disabled:opacity-40">{ui(overlayPreviewEnabled && !editorSaveEnabled ? "저장 잠금" : saving ? "처리 중..." : "영상에 적용")}</button></div>}
           </div>
           </div>

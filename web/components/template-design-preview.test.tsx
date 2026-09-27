@@ -59,7 +59,8 @@ describe("template design presentation", () => {
       textOverlay: overlay, renderSpec: templateTextRenderSpec(overlay),
     }));
     expect(html.match(/class="block whitespace-pre"/g)).toHaveLength(3);
-    expect(html).toContain('min-height:1.2em"> </span>');
+    const blankLineHeight = html.match(/min-height:([\d.]+)cqw"> <\/span>/)?.[1];
+    expect(Number(blankLineHeight)).toBeCloseTo(86 / 10.8, 6);
     expect(html).not.toContain("<button");
   });
 

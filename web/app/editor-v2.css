@@ -1651,3 +1651,24 @@
   font-weight: 100 900;
   font-display: swap;
 }
+
+/* Apply failures must remain visible when the settings sidebar is closed. */
+.editor-apply-error {
+  position: absolute;
+  z-index: 90;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  width: fit-content;
+  max-width: calc(100% - 24px);
+  margin: 0 auto;
+  border: 1px solid rgba(255, 113, 94, .55);
+  border-radius: 12px;
+  padding: 10px 16px;
+  background: #321b1b;
+  color: #fff1ef;
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: center;
+  overflow-wrap: anywhere;
+}

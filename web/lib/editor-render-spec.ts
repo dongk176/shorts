@@ -861,20 +861,16 @@ export async function createEditorRenderSpecV4(
       ...overlay,
       font: textOverlayFonts[index],
     })),
-    // Retain edited text in the existing layout record when captions are hidden.
-    // subtitles.enabled remains the renderer's visibility switch.
-    ...(document.subtitles.enabled || normalizedSubtitleLayout.cueEdits?.length
-      ? {
-          subtitles: {
-            centerX: 540 as const,
-            ...normalizedSubtitleLayout,
-            fontSize: normalizedSubtitleLayout.fontSize
-              ?? EDITOR_SUBTITLE_DEFAULT_FONT_SIZE,
-            color: normalizedSubtitleLayout.color ?? "#FFFFFF",
-            visible: true as const,
-            captionSpecVersion: 4 as const,
-          },
-        }
-      : {}),
+    // Visibility is controlled by document.subtitles.enabled. Keep the style
+    // independently so hiding captions does not erase edits on the next open.
+    subtitles: {
+      centerX: 540 as const,
+      ...normalizedSubtitleLayout,
+      fontSize: normalizedSubtitleLayout.fontSize
+        ?? EDITOR_SUBTITLE_DEFAULT_FONT_SIZE,
+      color: normalizedSubtitleLayout.color ?? "#FFFFFF",
+      visible: true as const,
+      captionSpecVersion: 4 as const,
+    },
   };
 }

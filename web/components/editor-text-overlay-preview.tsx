@@ -54,7 +54,7 @@ export function EditorTextOverlayPreview({
   const ui = useUiText();
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const width = textOverlay.width ?? EDITOR_TEXT_DEFAULT_WIDTH;
-  const positionStyle = editorTextOverlayPositionStyle(textOverlay, zIndex);
+  const positionStyle = editorTextOverlayPositionStyle(textOverlay, zIndex, renderSpec);
   const textStyle = editorTextOverlayTextStyle(textOverlay, renderSpec);
 
   useLayoutEffect(() => {
