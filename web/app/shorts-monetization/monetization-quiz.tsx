@@ -444,46 +444,40 @@ export function MonetizationQuiz() {
               </div>
               <div className={s.reason}>
                 <Icon name="spark" size={20} />
-                <p>{plan.reason}</p>
+                <p>{strategy.positioning}</p>
               </div>
               <section className={s.todayAction}>
                 <span className={s.eyebrow}>
                   {l("오늘 할 일", "Your next step today", "今日やること")}
                 </span>
                 <p>{strategy.priority}</p>
+                <small className={s.todayBudget}>
+                  {l("오늘 작업 예시", "Example session", "今日の作業例")} ·{" "}
+                  {strategy.todayMinutes}
+                  {l("분", " min", "分")}
+                </small>
+                <ol className={s.todayTasks}>
+                  {strategy.today.map((task, index) => (
+                    <li key={task.title}>
+                      <div>
+                        <span>{String(index + 1).padStart(2, "0")}</span>
+                        <strong>{task.title}</strong>
+                        <small>
+                          {task.minutes}
+                          {l("분", " min", "分")}
+                        </small>
+                      </div>
+                      <p>{task.body}</p>
+                      <div className={s.doneLine}>
+                        <strong>
+                          {l("완료 기준", "Done when you have", "完了の目安")}
+                        </strong>
+                        <span>{task.done}</span>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
               </section>
-              <a
-                className={s.resultBook}
-                href="#guide-library"
-                onClick={() =>
-                  trackGuideEvent({
-                    name: "result_action",
-                    action: "recommended_book",
-                    locale,
-                    guide: strategy.guide,
-                  })
-                }
-              >
-                <Image
-                  src={`/shorts-guide-previews/${locale}/${strategy.guide}-cover.jpg?v=20260927-editorial-2`}
-                  alt=""
-                  width={84}
-                  height={119}
-                />
-                <span>
-                  <small>
-                    {l(
-                      "내 답변에 맞는 실행북 · 무료 미리보기",
-                      "Your workbook · Free preview",
-                      "回答に合う実践ブック・無料サンプル",
-                    )}
-                  </small>
-                  <strong>
-                    {textFor(guideCatalog[strategy.guide].title, locale)}
-                  </strong>
-                </span>
-                <span aria-hidden="true">↗</span>
-              </a>
               <div className={s.resultActions}>
                 {plan.ready ? (
                   <Link
@@ -576,63 +570,52 @@ export function MonetizationQuiz() {
                   ))}
                 </div>
               )}
-              <details className={s.resultDetails}>
-                <summary>
+              <StrategyDetails answers={answers} />
+              <section className={s.workbookNext}>
+                <span className={s.stepLabel}>
+                  07 · {l("더 자세히 따라 해보기", "GO DEEPER", "さらに詳しく")}
+                </span>
+                <h3>
                   {l(
-                    "자세한 전략과 첫 주 계획 펼치기",
-                    "Explore your strategy and first-week plan",
-                    "詳しい戦略と最初の週の予定を見る",
+                    "더 자세한 내용은 실행북에 담았어요",
+                    "Continue with the detailed workbook",
+                    "詳しい内容は実践ブックで",
                   )}
-                  <span className={s.faqPlus} aria-hidden="true" />
-                </summary>
-                <StrategyDetails answers={answers} hidePriority />
-                <section className={s.weekPlan}>
-                  <div>
-                    <span className={s.stepLabel}>{t("03 · 실행 일정")}</span>
-                    <h3>
-                      {answers.time === "weekend"
-                        ? t("주말에 준비하는 시작 계획")
-                        : answers.time === "unsure"
-                          ? t("내 페이스를 찾는 시작 계획")
-                          : t("{time}으로 시작하는 첫 주", {
-                              time: plan.time.label,
-                            })}
-                    </h3>
-                    <p>
-                      {plan.time.pace}{" "}
-                      {t(
-                        "매일 하기 어렵다면 가능한 날에 나눠 진행해도 좋아요.",
+                </h3>
+                <p>{strategy.bookIntro}</p>
+                <a
+                  className={s.resultBook}
+                  href="#guide-library"
+                  onClick={() =>
+                    trackGuideEvent({
+                      name: "result_action",
+                      action: "recommended_book",
+                      locale,
+                      guide: strategy.guide,
+                    })
+                  }
+                >
+                  <Image
+                    src={`/shorts-guide-previews/${locale}/${strategy.guide}-cover.jpg?v=20260927-editorial-2`}
+                    alt=""
+                    width={84}
+                    height={119}
+                  />
+                  <span>
+                    <small>
+                      {l(
+                        "내 답변에 맞는 실행북 · 표지 미리보기",
+                        "Your workbook · Cover preview",
+                        "回答に合う実践ブック・表紙を見る",
                       )}
-                    </p>
-                  </div>
-                  <ol>
-                    {plan.time.steps.map(([day, text, detail]) => (
-                      <li key={day}>
-                        <span>{day}</span>
-                        <strong>{text}</strong>
-                        <p>{detail}</p>
-                      </li>
-                    ))}
-                  </ol>
-                </section>
-                <div className={s.metrics}>
-                  <strong>{t("확인할 지표")}</strong>
-                  <div>
-                    {plan.metrics.map((metric) => (
-                      <span key={metric}>
-                        <Icon name="check" size={15} />
-                        {metric}
-                      </span>
-                    ))}
-                  </div>
-                  <p>
-                    {t(
-                      "초기 반응이 적어도 성패를 단정하지 말고, 다음 영상에서 한 가지씩 바꿔보세요.",
-                    )}
-                  </p>
-                </div>
-                <p className={s.resultNote}>{plan.note}</p>
-              </details>
+                    </small>
+                    <strong>
+                      {textFor(guideCatalog[strategy.guide].title, locale)}
+                    </strong>
+                  </span>
+                  <span aria-hidden="true">↗</span>
+                </a>
+              </section>
               <div className={s.resultFooter}>
                 <span>
                   {t(
