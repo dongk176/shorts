@@ -40,3 +40,10 @@ Bounded verification uses local tests, synthetic rendering with existing 120-sec
 At 2026-09-27T13:26:23Z, saved videos was verified promoted as `03c030e6cb3a9ea2040304926af125570267285c`, deployment `dpl_2DXVKBaNTgxUY28PZvMyiV2s5G6y`. Rebased only the editor commit onto that exact source. The 11 editor files and 26 saved-feature files have no overlap. Baseline route manifest was copied from that source's successful build and contains all localized saved pages and its API.
 
 Reopened the local editor: the three-line draft restored its full text and top bound exactly at the canvas top (84 CSS px). Temporary localhost servers and browser tabs were stopped. Existing transient pre-compilation draft validation warning converged to the correctly saved/restored draft; no persistent autosave failure reproduced.
+
+## Final integrated checks
+
+- Production build passed on the integrated saved-videos + editor source.
+- Full web run: 3,260 passed, seven failures in the pre-existing popular-search UI test, 143 skipped. The test queued the new `/api/saved-videos` fetch as if it were a search fetch, shifting all indexed responses. Added an empty saved-state response to that test only; all 13 search tests then passed. The 3,267 executed web tests have passing results across the full run plus the corrected-file rerun. No production search or saved-video code was modified.
+- Release guard tests: 11 passed. Saved feature code, worker code, DB migrations and target registry are identical to the promoted baseline.
+- The final test-only correction and this review record are excluded from the deployed runtime. Local build source and release candidate runtime source are identical.

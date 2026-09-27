@@ -25,7 +25,12 @@ async function setup(access=true, locale="ko", { deferInitial=false, searchEnabl
   (window.HTMLElement.prototype as HTMLDialogElement).close = function () { this.removeAttribute("open"); };
   Object.defineProperty(window, "localStorage", { configurable: true, value: { getItem: () => "1" } });
   const requests: {url:URL;signal:AbortSignal;resolve:(response:Response)=>void}[]=[];
-  vi.stubGlobal("fetch",vi.fn((url:string, options:RequestInit)=>new Promise<Response>(resolve=>requests.push({url:new URL(url,"http://localhost"),signal:options.signal!,resolve}))));
+  vi.stubGlobal("fetch",vi.fn((url:string, options:RequestInit) => {
+    const parsedUrl = new URL(url, "http://localhost");
+    // Saved state is a separate request; the queue below controls search only.
+    if (parsedUrl.pathname === "/api/saved-videos") return Promise.resolve(Response.json({ items: [] }));
+    return new Promise<Response>(resolve => requests.push({ url: parsedUrl, signal: options.signal!, resolve }));
+  }));
   const container=document.getElementById("app")!;
   root=createRoot(container as unknown as Element);
   await act(async()=>{root!.render(<PopularVideosExplorer searchEnabled={searchEnabled} canUseFilters={access} isAuthenticated={access} onRequireLogin={()=>{}}/>);});
