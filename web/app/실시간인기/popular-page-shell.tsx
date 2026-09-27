@@ -32,6 +32,7 @@ export function PopularPageShell({
         canUseFilters={canUseFilters}
         searchEnabled={searchEnabled}
         isAuthenticated={Boolean(user)}
+        accountKey={user?.id}
         onRequireLogin={() => setLoginOpen(true)}
       />
       <SiteFooter />

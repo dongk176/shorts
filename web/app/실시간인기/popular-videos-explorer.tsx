@@ -8,6 +8,10 @@ import { discoveryCopy } from "./trending-date-filter";
 import { reconcileCatalogVisibility, type CatalogVisibility } from "@/lib/youtube-catalog-visibility";
 
 import Image from "next/image";
+import type { ReactNode } from "react";
+import { SaveVideoButton } from "@/components/save-video-button";
+import { useSavedVideos } from "@/lib/use-saved-videos";
+import { savedVideoCopy } from "@/lib/saved-videos";
 import { normalizePopularQuery } from "@/lib/popular-text-search";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -567,13 +571,14 @@ function popularVideoParams(
   return params;
 }
 
-function VideoCard({ video, rank, searching = false, active, onOpen, onClose }: {
+export function VideoCard({ video, rank, searching = false, active, onOpen, onClose, saveAction }: {
   video: PopularVideo;
   rank: number;
   searching?: boolean;
   active: boolean;
   onOpen: () => void;
   onClose: () => void;
+  saveAction?: ReactNode;
 }) {
   const { locale } = useI18n();
   const uiCopy = popularUiCopy[locale];
@@ -615,7 +620,7 @@ function VideoCard({ video, rank, searching = false, active, onOpen, onClose }: 
       <div className="flex flex-1 flex-col p-4">
         {video.isCurrentTrending && <span className="mb-2 text-xs font-bold text-emerald-300">{discoveryCopy[locale].current}</span>}
         <h2 data-i18n-skip className="line-clamp-2 min-h-11 text-[15px] font-extrabold leading-[1.45] tracking-[-.015em] text-white">{video.title}</h2>
-        <p data-i18n-skip className="mt-2 truncate text-[13px] font-semibold text-neutral-400">{video.channelName}</p>
+        <div className="mt-2 flex items-center justify-between gap-2"><p data-i18n-skip className="min-w-0 truncate text-[13px] font-semibold text-neutral-400">{video.channelName}</p>{saveAction}</div>
         <div className="mt-3 flex items-center gap-2 text-[13px] font-semibold text-neutral-400">
           <span>{locale === "ko" ? "조회수" : locale === "en" ? "Views" : "再生回数"} {formatViews(video.viewCount, locale)}</span><span aria-hidden="true">·</span><span>{formatPublishedAt(video.publishedAt, locale)}</span>
         </div>
@@ -656,15 +661,20 @@ export function PopularVideosExplorer({
   canUseFilters,
   searchEnabled,
   isAuthenticated,
+  accountKey,
   onRequireLogin,
 }: {
   canUseFilters: boolean;
   searchEnabled: boolean;
   isAuthenticated: boolean;
+  accountKey?: string;
   onRequireLogin: () => void;
 }) {
   const ui = useUiText();
   const { locale } = useI18n();
+  const savedVideos = useSavedVideos(isAuthenticated, onRequireLogin, accountKey);
+  const savedByVideoId = new Map(savedVideos.items.filter(item => item.video).map(item => [item.video!.videoId, item]));
+  const savedCopy = savedVideoCopy[locale];
   const uiCopy = popularUiCopy[locale];
   const filterCopy = filterLabels[locale];
   const searchUi = searchCopy[locale];
@@ -1075,7 +1085,11 @@ export function PopularVideosExplorer({
         </section>
       ) : response?.items.length ? (
         <div>
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{response.items.map((video, index) => <VideoCard key={video.videoId} video={video} rank={index + 1} searching={searching} active={activeVideoId === video.videoId} onOpen={() => setActiveVideoId(video.videoId)} onClose={() => setActiveVideoId(null)} />)}</div>
+          {savedVideos.loadError && <p role="alert" className="mb-3 text-sm text-amber-200">{savedCopy.error} <button type="button" onClick={() => void savedVideos.reload()} className="min-h-11 px-3 underline">{savedCopy.retry}</button></p>}
+          <div className="sr-only" role="status">{savedVideos.notice}</div>
+          {savedVideos.error && <p role="alert" className="fixed bottom-20 right-4 z-50 max-w-[calc(100vw-2rem)] rounded-xl border border-red-300/30 bg-[#321c22] p-4 text-sm text-red-100 shadow-xl sm:max-w-sm">{savedVideos.error}</p>}
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{response.items.map((video, index) => <VideoCard key={video.videoId} video={video} rank={index + 1} searching={searching} active={activeVideoId === video.videoId} onOpen={() => setActiveVideoId(video.videoId)} onClose={() => setActiveVideoId(null)}
+            saveAction={<SaveVideoButton title={video.title} saved={savedByVideoId.has(video.videoId)} busy={savedVideos.pending.has(video.videoId)} disabled={savedVideos.loading || savedVideos.loadError} onClick={() => void savedVideos.mutate(video, savedByVideoId.get(video.videoId))} />} />)}</div>
           {response.nextCursor && (
             <div className="mt-10 flex flex-col items-center gap-3">
               <button

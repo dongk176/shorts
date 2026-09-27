@@ -14,6 +14,7 @@ const navigation = [
   { href: "/templates", labelKey: "nav.templates", path: "/templates" },
   { href: "/pricing", labelKey: "nav.pricing", path: "/pricing" },
   { href: "/popular", labelKey: "nav.popular", path: "/popular" },
+  { href: "/saved-videos", labelKey: "nav.savedVideos", path: "/saved-videos" },
   { href: "/shorts-monetization", labelKey: "nav.shortsGuide", path: "/shorts-monetization" },
 ] as const;
 
@@ -71,6 +72,9 @@ function NavigationIcon({ path }: { path: string }) {
         </svg>
       </span>
     );
+  }
+  if (path === "/saved-videos") {
+    return <span className="site-nav-icon-frame" aria-hidden="true"><svg {...sharedProps}><path d="M6 4.5A1.5 1.5 0 0 1 7.5 3h9A1.5 1.5 0 0 1 18 4.5V21l-6-4-6 4V4.5Z" /></svg></span>;
   }
   if (path === "/popular") {
     return (

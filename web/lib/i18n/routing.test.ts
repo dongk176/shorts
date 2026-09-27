@@ -49,3 +49,9 @@ it("uses production language prefixes for the monetization guide and its SEO", (
     expect(metadata.alternates?.languages).toMatchObject({ en: `https://www.easycut.co.kr/en${path}`, ja: `https://www.easycut.co.kr/jp${path}` });
   }
 });
+
+it("localizes saved video navigation and login return URLs", () => {
+  expect(localizedHref("/saved-videos", "en")).toBe("/en/saved-videos");
+  expect(localizedHref("/saved-videos", "ja")).toBe("/jp/saved-videos");
+  expect(localizedHref("/auth/sign-in?next=%2Fsaved-videos", "ja")).toBe("/auth/sign-in?next=%2Fjp%2Fsaved-videos");
+});

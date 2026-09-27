@@ -104,7 +104,7 @@ export async function middleware(request: NextRequest) {
 
   // These pages must use the URL locale during server rendering. Concrete aliases
   // avoid a second middleware pass on shared routes resetting them to Korean.
-  if (route.prefixed && ["/pricing", "/settings/plan", "/billing/paddle", "/shorts-monetization"].includes(pathname)) {
+  if (route.prefixed && ["/pricing", "/settings/plan", "/billing/paddle", "/shorts-monetization", "/saved-videos"].includes(pathname)) {
     return refreshSupabaseSession(request, undefined, requestHeaders);
   }
   const destination = request.nextUrl.clone();

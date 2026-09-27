@@ -8,7 +8,7 @@ const pageRoots = new Set([
   "ai-shorts-maker", "popular", "templates", "support", "team", "compare",
   "easycut-private", "guidebook", "refund", "blog", "account", "pricing",
   "pricing-2", "terms", "settings", "faq", "enterprise", "purchase-terms",
-  "privacy", "projects", "billing", "실시간인기", "shorts-monetization",
+  "privacy", "projects", "billing", "실시간인기", "shorts-monetization", "saved-videos",
 ]);
 
 export function localePath(pathname: string) {
