@@ -186,7 +186,11 @@ function Showcase({ locale }: { locale: SiteLocale }) {
           <div className={styles.fan}
             onPointerDown={startSwipe} onPointerMove={moveSwipe} onPointerUp={finishSwipe}
             onPointerCancel={() => { swipe.current = null; suppressSwipeClick.current = false; }}
-            onLostPointerCapture={() => { swipe.current = null; }}
+            onLostPointerCapture={(event) => {
+              // Touch transfers implicit capture from the card to the fan.
+              // Its child's bubbling event must not cancel the active swipe.
+              if (event.target === event.currentTarget) swipe.current = null;
+            }}
             onClickCapture={(event) => {
               if (suppressSwipeClick.current && event.detail !== 0) {
                 event.preventDefault(); event.stopPropagation(); suppressSwipeClick.current = false;
