@@ -18,6 +18,7 @@ type PageMetadataOptions = {
   path: string;
   type?: "website" | "article";
   locale?: SiteLocale;
+  image?: { url: string; alt: string };
 };
 
 export function absoluteUrl(path: string) {
@@ -30,9 +31,10 @@ export function createPageMetadata({
   path,
   type = "website",
   locale = "ko",
+  image,
 }: PageMetadataOptions): Metadata {
   const url = absoluteUrl(localizedHref(path, locale));
-  const ogImage = localizedOgImages[locale];
+  const ogImage = image ?? localizedOgImages[locale];
   return {
     title: { absolute: title },
     description,

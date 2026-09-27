@@ -36,6 +36,10 @@ export async function generateMetadata(): Promise<Metadata> {
     ),
     path: "/shorts-monetization",
     type: "article",
+    image: {
+      url: `${SITE_URL}/social/shorts-guide-${locale}-20260927.jpg`,
+      alt: t("유튜브 쇼츠 수익화, 나에게 맞는 방법 찾기"),
+    },
   });
 }
 export const viewport: Viewport = {
@@ -231,6 +235,7 @@ export default async function MonetizationPage() {
           headline: t("유튜브 쇼츠 수익화, 나에게 맞는 방법 찾기"),
           description: t("맞춤 설문과 수익화 방식별 시작 가이드"),
           inLanguage: localeTags[locale],
+          image: `${SITE_URL}/social/shorts-guide-${locale}-20260927.jpg`,
           mainEntityOfPage: `${SITE_URL}${localizedHref("/shorts-monetization", locale)}`,
           author: { "@id": `${SITE_URL}/#organization` },
           publisher: { "@id": `${SITE_URL}/#organization` },
