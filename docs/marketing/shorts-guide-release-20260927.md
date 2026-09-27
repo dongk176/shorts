@@ -26,3 +26,14 @@ Release evidence is stored locally under `/tmp/shorts-guide-release-20260927/`. 
 - First unpromoted candidate `dpl_317LyTTJsDkJkBiQ1JLo1NPPj51o` built successfully. Public route, locale, cover asset, entitlement denial and worker-target checks reached the analytics check, which exposed postgres.js serializing a JSON string a second time for an inferred jsonb parameter.
 - Corrected the bound parameter to `::text::jsonb`. Reproduced and verified the fix using the actual production postgres.js driver/transform and a transaction that was rolled back; insert plus replay yielded exactly one row. The first candidate was not promoted.
 - Applied only the approved analytics migration to verified production DB; the migration runner confirmed public schema unchanged. No production configuration was modified.
+
+## Final production result
+
+- Deployed source: `90481f61ee6a58e2e6e977c116fc1d1f4f19c758` (clean at upload), deployment `dpl_AtsX5PPGp7CPNWnUuLjvM35ehjcV`, candidate `https://shorts-ad613o79g-artiroom.vercel.app`.
+- Rechecked live baseline `b5a8c244` immediately before promotion. Promoted the identical verified deployment without rebuilding; live domain API confirms the same final deployment ID, SHA and READY state.
+- Candidate and live domain each passed 29 checks: all three language pages, canonical/language text, existing protected paths, 15 cover assets, anonymous download denial, private file non-exposure, sitemap, five exact worker target fingerprints, remote analytics insertion and replay deduplication. Only exact synthetic test survey IDs were deleted afterward.
+- Final local/remote builds and route manifest checks passed; all 15 paid PDFs are in the function trace. Analytics tests rerun after the correction: 13 passed. Prior 105 focused tests and 12 release guards passed.
+- Browser inspected the final candidate at 390px with no horizontal overflow and the promoted desktop guide/sidebar. Existing logged-in paid account downloaded the Korean first-short PDF; downloaded file SHA-256 `b2135fe1f1d9423e3af7e0424df096cea037409d2659f19043acbd1789224f32` exactly matches the private source. The browser automation download event timed out, but the actual file arrived successfully and was verified on disk.
+- Final deployment's immediate preceding ten-minute server error scan returned zero entries. This is a bounded check, not ongoing monitoring. Authenticated editor rendering and real payment transactions were not exercised.
+- Initial promotion by URL hit a CLI team-selection error before changing the domain; explicit verified team ID plus deployment ID succeeded.
+- Screenshot: `/tmp/shorts-guide-release-20260927/production-guide.png`. Subsequent documentation-only commits do not change the deployed source above.
