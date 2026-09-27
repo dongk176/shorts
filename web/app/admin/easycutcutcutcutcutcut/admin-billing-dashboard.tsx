@@ -346,7 +346,7 @@ export function AdminBillingDashboard({
                   <td className="px-4 py-4 font-mono text-xs text-neutral-500" title={order.orderId}><p>{shortId(order.orderId)}</p><p className="mt-1" title={order.paddleSubscriptionId}>{shortId(order.paddleSubscriptionId || order.providerTransactionId)}</p></td>
                   <td className="px-5 py-4 text-right">
                     {order.provider === "paddle"
-                      ? <a href={`https://vendors.paddle.com/transactions/${encodeURIComponent(order.orderId)}`} target="_blank" rel="noopener noreferrer" className="inline-block rounded-lg border border-white/20 px-3 py-2 text-xs font-bold text-neutral-200">Paddle에서 보기 ↗</a>
+                      ? <a href={`https://vendors.paddle.com/transactions-v2/${encodeURIComponent(order.orderId)}`} target="_blank" rel="noopener noreferrer" className="inline-block rounded-lg border border-white/20 px-3 py-2 text-xs font-bold text-neutral-200">Paddle에서 보기 ↗</a>
                       : canResolveManualReview
                       ? <button type="button" onClick={() => openManualReview(order)} className="rounded-lg border border-amber-300/40 px-3 py-2 text-xs font-black text-amber-200">PG 대조 처리</button>
                       : <span className="inline-block rounded-lg border border-white/10 px-3 py-2 text-xs font-bold text-neutral-500">PG에서 직접 처리</span>}

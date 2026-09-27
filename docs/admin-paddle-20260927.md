@@ -12,3 +12,5 @@ Validation: PGlite integration (mixed ledgers, cursor microseconds, filtering/pa
 Release: unaliased candidate, protected-route and admin denial verification, unchanged production worker admission fingerprint, then promote exact candidate. Runtime verification artifacts retained outside source under /private/tmp/admin-paddle-20260927. Lab is not used as production-equivalence evidence.
 
 Initial candidate 39bbc00b was promoted as dpl_GTB2gHTZ8Xn1y1v6w1dCSE1PU4zt and authenticated production UI showed both expected payments. Full-shell inspection found the summary repeated inside billing; the follow-up removes the inner duplicate, leaving the shared shell as the sole summary owner. Follow-up baseline is this promoted commit. SQL and API behavior are unchanged.
+
+Paddle dashboard navigation verified the real detail route is /transactions-v2/:id; external links use that observed route. The intermediate dedup-only candidate is not promoted.
