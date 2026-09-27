@@ -1,6 +1,5 @@
 "use client";
 
-import { AdminPaddleSales } from "@/components/admin-paddle-sales";
 import { formatAdminCurrency, paddleAdminProduct } from "@/lib/admin-paddle-contract";
 import { useRouter } from "next/navigation";
 import { AdminUpgradeRefunds } from "./admin-upgrade-refunds";
@@ -292,7 +291,6 @@ export function AdminBillingDashboard({
           )}
         </section>
       )}
-      <AdminPaddleSales />
       <section className="overflow-hidden rounded-2xl border border-white/10 bg-[#151819]">
         <div className="border-b border-white/10 p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
