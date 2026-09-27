@@ -34,3 +34,9 @@
 Local evidence: `/Users/gimdongmin/shorts-clean/output/editor-fixes-20260927/` (regression logs, build, synthetic browser screenshots, worker geometry and apply payloads). Payloads contain only synthetic editor content. Temporary browser server binds only localhost and must be stopped after checks.
 
 Bounded verification uses local tests, synthetic rendering with existing 120-second per-process timeouts, and one production-configured unaliased web candidate when the current release baseline is settled. Expected incremental cloud build/transfer usage is under USD 2; no fixed recurring resource is added. No production video jobs or DB mutations are part of this fix. Record the actual candidate/promotion separately after release checks.
+
+## Integrated release baseline
+
+At 2026-09-27T13:26:23Z, saved videos was verified promoted as `03c030e6cb3a9ea2040304926af125570267285c`, deployment `dpl_2DXVKBaNTgxUY28PZvMyiV2s5G6y`. Rebased only the editor commit onto that exact source. The 11 editor files and 26 saved-feature files have no overlap. Baseline route manifest was copied from that source's successful build and contains all localized saved pages and its API.
+
+Reopened the local editor: the three-line draft restored its full text and top bound exactly at the canvas top (84 CSS px). Temporary localhost servers and browser tabs were stopped. Existing transient pre-compilation draft validation warning converged to the correctly saved/restored draft; no persistent autosave failure reproduced.
