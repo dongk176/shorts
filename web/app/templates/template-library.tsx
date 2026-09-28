@@ -1,6 +1,7 @@
 "use client";
 
 import { presetChannelCenterY } from "@/lib/preset-channel-position";
+import { withNewTemplateChannelPosition } from "@/lib/new-template-channel-position";
 import { useUiText } from "@/lib/i18n/use-ui-text";
 
 import Link from "@/lib/i18n/navigation";
@@ -131,7 +132,7 @@ const unifiedSubtitlePreviewTemplates = {
     id: "subtitle-pop",
     name: "자막 팝형",
     baseTemplateId: "dark-minimal",
-    config: createUnifiedSubtitleTemplateConfig("pop"),
+    config: withNewTemplateChannelPosition(createUnifiedSubtitleTemplateConfig("pop"), "dark-minimal", "pop"),
     version: 1,
     createdAt: "",
     updatedAt: "",
@@ -140,7 +141,7 @@ const unifiedSubtitlePreviewTemplates = {
     id: "subtitle-highlight",
     name: "자막 강조형",
     baseTemplateId: "dark-minimal",
-    config: createUnifiedSubtitleTemplateConfig("highlight"),
+    config: withNewTemplateChannelPosition(createUnifiedSubtitleTemplateConfig("highlight"), "dark-minimal", "highlight"),
     version: 1,
     createdAt: "",
     updatedAt: "",

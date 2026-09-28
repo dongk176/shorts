@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { localizedRedirectPath } from "@/lib/i18n/server";
 import { TemplateEditor } from "../template-editor";
+import { withNewTemplateChannelPosition } from "@/lib/new-template-channel-position";
 import {
   createDefaultTemplateConfig,
   createUnifiedSubtitleTemplateConfig,
@@ -59,7 +60,7 @@ export default async function NewTemplatePage({ searchParams }: { searchParams: 
   return <TemplateEditor
     initialTemplate={null}
     baseTemplateId={subtitleVariant ? "dark-minimal" : baseTemplateId}
-    initialConfig={initialConfig}
+    initialConfig={withNewTemplateChannelPosition(initialConfig, baseTemplateId, subtitleVariant)}
     unifiedSubtitleCanaryEnabled={unifiedSubtitleCanaryEnabled}
     suggestedName={suggestedName}
     customTemplateDesignEnabled={designAccess.enabled}
