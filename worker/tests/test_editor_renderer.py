@@ -1697,26 +1697,6 @@ def test_editor_subtitles_are_retimed_across_deleted_video_gaps() -> None:
     ]
 
 
-def test_edited_caption_script_keeps_uncompiled_translated_context(monkeypatch) -> None:
-    document = _document_v3_with_subtitle_layout(
-        cue_edits=[{"cueIndex": 0, "text": "Edited text"}],
-    )
-    segment_type = type(document.subtitles.segments[0])
-    document.subtitles.segments = [
-        segment_type(start=1, end=2.5, text="Original text"),
-        segment_type(start=4, end=6, text="Translated context"),
-    ]
-    monkeypatch.setattr("shorts_worker.editor_renderer.retime_editor_caption_spec", lambda *_: {
-        "fps": 30, "cues": [{"startFrame": 0, "endFrame": 45,
-                             "words": [{"text": "Edited text"}]}],
-    })
-    assert [s.model_dump() for s in retime_editor_subtitles(document, {})] == [
-        {"start": 0, "end": 1.5, "text": "Edited text"},
-        {"start": 1.5, "end": 3.5, "text": "Translated context"},
-    ]
-    assert document.subtitles.segments[0].text == "Original text"
-
-
 def test_every_bundled_editor_font_and_text_effect_loads(tmp_path: Path) -> None:
     verify_editor_fonts()
     for effect in ("none", "outline", "shadow"):
@@ -1772,17 +1752,15 @@ def test_one_pixel_text_layout_wraps_without_clipping_the_glyphs(
     shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
     reason="ffmpeg and ffprobe are required",
 )
-@pytest.mark.parametrize("source_duration", [9.8, 9.6, 9.2])
 def test_editor_sequence_pads_small_source_tail_drift_to_document_duration(
     tmp_path: Path,
-    source_duration: float,
 ) -> None:
     timeline = tmp_path / "short-tail-timeline.mp4"
     _run([
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
         "-f", "lavfi", "-i", "testsrc2=size=160x90:rate=30",
         "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=16000",
-        "-t", str(source_duration), "-c:v", "libx264", "-preset", "ultrafast",
+        "-t", "9.8", "-c:v", "libx264", "-preset", "ultrafast",
         "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", str(timeline),
     ])
     value = json.loads(FIXTURE.read_text())
@@ -2133,9 +2111,8 @@ def test_v4_editor_renders_stored_v3_pop_caption_with_canonical_font_and_gap(
     shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
     reason="ffmpeg and ffprobe are required",
 )
-@pytest.mark.parametrize("translated_five_four", [False, True])
 def test_v4_caption_off_preserves_non_caption_composition(
-    tmp_path: Path, translated_five_four: bool,
+    tmp_path: Path,
 ) -> None:
     clean = tmp_path / "caption-toggle-clean.mp4"
     _run([
@@ -2161,21 +2138,11 @@ def test_v4_caption_off_preserves_non_caption_composition(
         font_id=EditorFontId.PAPERLOGY,
         schema_version=4,
     )
-    if translated_five_four:
-        fixture = json.loads((FIXTURE.parent / "caption-composition-5x4.json").read_text())
-        with pytest.raises(RenderError, match="안전영역"):
-            editor_video_frame(_document_v3(), fixture["stored"])
-        caption_spec = fixture["normalized"]
     enabled_document = _document_v4_with_contiguous_caption_clip(
         caption_spec,
         clip_start_seconds=0,
         clip_end_seconds=1,
     )
-    if translated_five_four:
-        value = enabled_document.model_dump(by_alias=True, mode="json")
-        value["video"]["aspectRatio"] = "5:4"
-        value["template"]["id"] = "dark-red"
-        enabled_document = EditorDocument.model_validate(value)
     disabled_value = enabled_document.model_dump(by_alias=True, mode="json")
     disabled_value["subtitles"]["enabled"] = False
     disabled_value["renderSpec"]["subtitles"] = None

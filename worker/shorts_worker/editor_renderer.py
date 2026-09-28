@@ -2,13 +2,11 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
-from io import BytesIO
 from math import ceil, floor
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
-from .caption_composition import caption_composition_rect
 from .caption_templates import (
     CAPTION_ACCENT,
     CAPTION_FPS,
@@ -24,20 +22,18 @@ from .caption_templates import (
 from .config import Settings
 from .editor_text_layout import composition_steps, normalize_composition_layer_order
 from .errors import RenderError
-from .font_manifest import normalized_editor_font_bytes
 from .media import media_duration, probe_media, run_command, video_fps
 from .overlays import (
     CUSTOM_BACKGROUND_ASSETS,
-    PANEL_HEIGHT,
     TEMPLATE_STYLES,
     _title_line_character_indices,
     _title_style_runs,
-    caption_comment_channel_image,
     create_ass_subtitles,
     create_comment_panel,
     ensure_title_text_background,
     wrap_korean_title,
 )
+from .preset_channel_position import preset_channel_center_y
 from .render_spec_v4 import (
     canonical_px_v4,
     draw_editor_title_spec_v4,
@@ -45,7 +41,6 @@ from .render_spec_v4 import (
 )
 from .renderer import VideoLayout, caption_video_layout
 from .schemas import (
-    EDITOR_TIMELINE_METADATA_TOLERANCE_SECONDS,
     CustomTemplateConfig,
     EditorDocument,
     EditorFontId,
@@ -82,7 +77,6 @@ EDITOR_FONT_FILES = {
     EditorFontId.SUIT: "SUIT-Bold.woff2",
     EditorFontId.SPOQA_HAN_SANS_NEO: "SpoqaHanSansNeo-Bold.woff2",
     EditorFontId.NOTO_SANS_KR: "NotoSansKR-Variable.ttf",
-    EditorFontId.NOTO_SANS_JP: "NotoSansCJKjp-Variable.ttf",
     EditorFontId.NANUM_SQUARE_NEO: "NanumSquareNeo-Bold.ttf",
     EditorFontId.SANDBOX_AGGRO: "SandboxAggro-Bold.ttf",
     EditorFontId.JUA: "Jua-Regular.ttf",
@@ -99,7 +93,6 @@ EDITOR_FONT_DIRECTORY = Path(__file__).parent / "assets" / "editor_fonts"
 EDITOR_FONT_DEFAULT_VARIATION_WEIGHTS = {
     EditorFontId.NOTO_SERIF_KR: 700,
     EditorFontId.NOTO_SANS_KR: 700,
-    EditorFontId.NOTO_SANS_JP: 700,
 }
 TIMED_OVERLAY_TRANSITION_FRAMES = 3
 TIMED_OVERLAY_CONTIGUOUS_TOLERANCE_SECONDS = 0.001
@@ -200,9 +193,8 @@ def load_editor_font(
     *,
     weight: int | None = None,
 ) -> ImageFont.FreeTypeFont:
-    editor_font_path(font_id)
     font = ImageFont.truetype(
-        BytesIO(normalized_editor_font_bytes(font_id)),
+        str(editor_font_path(font_id)),
         size=max(1, round(size)),
     )
     variation_weight = (
@@ -224,9 +216,6 @@ def verify_editor_fonts() -> None:
         box = font.getbbox("한글 Aa 123")
         if box[2] <= box[0] or box[3] <= box[1]:
             raise RenderError(f"편집기 폰트 글리프를 읽지 못했습니다: {font_id.value}")
-        # A visible .notdef box has a valid text bbox, so also verify spaces.
-        if font.getmask(" ").getbbox() is not None or font.getlength(" ") <= 0:
-            raise RenderError(f"편집기 폰트 공백이 올바르지 않습니다: {font_id.value}")
 
 
 def _custom_template_config(document: EditorDocument) -> CustomTemplateConfig | None:
@@ -345,9 +334,7 @@ def _editor_video_input_filter(
     return f"{prefix}{geometry}format=rgba[video_layer]"
 
 
-def retime_editor_subtitles(
-    document: EditorDocument, caption_render_spec: dict[str, object] | None = None,
-) -> list[SubtitleSegment]:
+def retime_editor_subtitles(document: EditorDocument) -> list[SubtitleSegment]:
     retimed: list[SubtitleSegment] = []
     output_cursor = 0.0
     for clip in document.video.clips:
@@ -362,30 +349,6 @@ def retime_editor_subtitles(
                 text=segment.text,
             ))
         output_cursor += clip.source_end_seconds - clip.source_start_seconds
-    caption_layout = getattr(document.render_spec, "subtitles", None)
-    cue_edits = getattr(caption_layout, "cue_edits", None)
-    if caption_render_spec is not None and cue_edits:
-        # The original segments and caption source remain immutable. Use the same
-        # edited, cut caption text as the renderer for the current project script.
-        edited = retime_editor_caption_spec(document, caption_render_spec)
-        edited_segments = [
-            SubtitleSegment(
-                start=round(cue["startFrame"] / edited["fps"], 3),
-                end=round(cue["endFrame"] / edited["fps"], 3),
-                text="".join(
-                    (" " if index and word.get("spaceBefore") else "") + word["text"]
-                    for index, word in enumerate(cue["words"])
-                ),
-            )
-            for cue in (edited["cues"] if edited else [])
-        ]
-        # Valid translated context may have no compiled caption (for example
-        # when only the padded margin layout failed). Keep that script too.
-        uncovered = [segment for segment in retimed if not any(
-            segment.start < caption.end and segment.end > caption.start
-            for caption in edited_segments
-        )]
-        return sorted(edited_segments + uncovered, key=lambda segment: segment.start)
     return retimed
 
 
@@ -552,21 +515,6 @@ def _shift_caption_cue_frames(
                 if key in event:
                     event[key] = int(event[key]) + frame_offset
     return shifted
-
-
-def caption_spec_for_padded_timeline(
-    caption_render_spec: dict[str, object], *, start_seconds: float, end_seconds: float,
-) -> dict[str, object]:
-    """Keep valid clip captions when compiling captions outside the clip fails."""
-    spec = deepcopy(caption_render_spec)
-    offset = floor((float(spec["clipStartSeconds"]) - start_seconds) * int(spec["fps"]) + 0.5)
-    spec["cues"] = [
-        _shift_caption_cue_frames(cue, frame_offset=offset) for cue in spec["cues"]
-    ]
-    spec["clipStartSeconds"] = round(start_seconds, 3)
-    spec["clipEndSeconds"] = round(end_seconds, 3)
-    spec.pop("editorSource", None)
-    return spec
 
 
 def project_caption_render_spec_v4(
@@ -1432,22 +1380,6 @@ def create_editor_channel_layer(
         custom_template_config=config,
     )
     font_id = document.overlays.fonts["channel"]
-    saved_comment_rect = caption_composition_rect(caption_render_spec, "comment")
-    if config is None and caption_layout is not None and saved_comment_rect is not None:
-        row = caption_comment_channel_image(
-            document.channel.display_name, panel_height=caption_layout.bottom_height,
-            font_id=font_id, thumbnail_path=thumbnail_path,
-        )
-        bounds = row.getbbox()
-        if bounds:
-            content = _scale_layer(row.crop(bounds), document.overlays.scales["channel"])
-            offset = document.overlays.offsets["channel"]
-            _paste_center_clamped(
-                canvas, content, (bounds[0] + bounds[2]) / 2 + offset.x,
-                caption_layout.bottom_y + (bounds[1] + bounds[3]) / 2 + offset.y,
-            )
-        canvas.save(output_path, format="PNG", compress_level=1)
-        return output_path
     if caption_layout is not None:
         base_font_size = 48
         center_x = CANVAS_WIDTH / 2
@@ -1473,10 +1405,9 @@ def create_editor_channel_layer(
     else:
         base_font_size = 45
         center_x = CANVAS_WIDTH / 2
-        center_y = (
-            COMMENT_CAPTURE_SQUARE_CHANNEL_CENTER_Y
-            if document.template.id is TemplateId.COMMENT_CAPTURE
-            else PRESET_SQUARE_CHANNEL_CENTER_Y
+        center_y = preset_channel_center_y(
+            document.template.id.value, document.video.aspect_ratio.value,
+            document.template.preset_version,
         )
         foreground = TEMPLATE_STYLES[document.template.id].channel
         background = None
@@ -1710,17 +1641,12 @@ def _base_comment_y(
     caption_render_spec: dict[str, object] | None = None,
 ) -> int:
     config = _custom_template_config(document)
-    saved_comment_rect = caption_composition_rect(caption_render_spec, "comment")
-    if config is None and saved_comment_rect is not None:
-        return int(saved_comment_rect["y"])
     caption_layout = _editor_caption_layout(
         caption_render_spec,
         custom_template_config=config,
     )
     if caption_layout is not None:
-        return (caption_layout.bottom_y
-                if config is None and caption_render_spec.get("templateId") == "basic"
-                else caption_layout.video_y + caption_layout.video_height)
+        return caption_layout.video_y + caption_layout.video_height
     if config is not None:
         video_bottom = config.video.y + config.video.height
         if config.comment.docked_to_video and 720 <= video_bottom <= 1480:
@@ -1745,7 +1671,6 @@ def create_editor_comment_layers(
     document: EditorDocument,
     directory: Path,
     caption_render_spec: dict[str, object] | None = None,
-    output_language: str = "ko",
 ) -> list[EditorLayerAsset]:
     if not document.overlays.visible["comment"]:
         return []
@@ -1756,22 +1681,6 @@ def create_editor_comment_layers(
     )
     size = config.comment.size if config is not None else "medium"
     base_y = _base_comment_y(document, caption_render_spec)
-    caption_layout = _editor_caption_layout(
-        caption_render_spec, custom_template_config=config,
-    ) if (config is None and caption_render_spec is not None
-          and caption_render_spec.get("templateId") == "basic") else None
-    compact_caption_comment = caption_layout is not None and (
-        document.template.preset_version >= 3
-        or (document.template.preset_version == 2
-            and document.video.aspect_ratio is VideoAspectRatio.LANDSCAPE)
-    )
-    saved_comment_rect = caption_composition_rect(caption_render_spec, "comment")
-    caption_panel_height = (
-        int(saved_comment_rect["height"]) if config is None and saved_comment_rect is not None
-        else (min(330, max(285, caption_layout.bottom_height - 128))
-              if compact_caption_comment else caption_layout.bottom_height
-              if caption_layout is not None else PANEL_HEIGHT)
-    )
     assets: list[EditorLayerAsset] = []
     comments = sorted(document.comments, key=lambda item: item.start_seconds)
     output_duration = document.video.output_duration_seconds
@@ -1784,21 +1693,9 @@ def create_editor_comment_layers(
         create_comment_panel(
             comment,
             panel_path,
-            panel_height=caption_panel_height,
             overlay_mode=True,
-            theme=theme if caption_layout is None or document.overlays.comment_theme else None,
-            # Saved caption cards use their fixed geometry for every color.
-            # Passing a size selects the differently sized custom-template card.
-            size=(None if config is None and saved_comment_rect is not None
-                  else size if caption_layout is None or document.overlays.comment_theme else None),
-            output_language=output_language,
-            bundled_font=config is None and saved_comment_rect is not None,
-            japanese_font_enabled=(
-                output_language == "ja" if saved_comment_rect is not None else bool(
-                    document.render_spec
-                    and document.render_spec.title.font.font_id == EditorFontId.NOTO_SANS_JP
-                )
-            ),
+            theme=theme,
+            size=size,
         )
         with Image.open(panel_path) as source:
             panel = source.convert("RGBA")
@@ -1808,8 +1705,7 @@ def create_editor_comment_layers(
             document.overlays.offsets["comment"],
         )
         y = min(
-            max(base_y if caption_layout is not None and saved_comment_rect is None else 0,
-                CANVAS_HEIGHT - panel.height),
+            max(0, CANVAS_HEIGHT - panel.height),
             max(0, round(base_y + offset.y)),
         )
         layer.paste(panel, (0, y), panel)
@@ -1988,11 +1884,7 @@ class EditorDocumentRenderer:
             document.video.timeline_end_seconds
             - document.video.timeline_start_seconds
         )
-        timeline_drift_tolerance = max(
-            # Both endpoints can drift in opposite directions.
-            2 * EDITOR_TIMELINE_METADATA_TOLERANCE_SECONDS,
-            expected_duration * 0.01,
-        )
+        timeline_drift_tolerance = max(0.2, expected_duration * 0.01)
         if abs(timeline_duration - expected_duration) > timeline_drift_tolerance:
             raise RenderError("편집 타임라인 길이가 저장된 문서와 일치하지 않습니다.")
         has_audio = any(
@@ -2110,7 +2002,6 @@ class EditorDocumentRenderer:
         caption_composition_spec: dict[str, object] | None = None,
         caption_overlay_only: bool = False,
         uploaded_background_path: Path | None = None,
-        comment_output_language: str = "ko",
     ) -> Path:
         work_dir.mkdir(parents=True, exist_ok=True)
         if document.render_spec is not None and document.render_spec.version == 4:
@@ -2195,7 +2086,6 @@ class EditorDocumentRenderer:
             document,
             assets_dir,
             resolved_caption_composition_spec,
-            output_language=comment_output_language,
         )
         render_text_specs = {
             item.id: item
@@ -2247,13 +2137,6 @@ class EditorDocumentRenderer:
             **text_assets,
         }
         layer_order = editor_layer_order(document)
-        if (resolved_caption_composition_spec is not None
-                and resolved_caption_composition_spec.get("templateId") == "basic"
-                and _custom_template_config(document) is None
-                and document.template.id is TemplateId.COMMENT_CAPTURE
-                and layer_order == ["video", "title", "comment", "channel"]):
-            # Preset generation paints the channel panel before its comments.
-            layer_order = ["video", "title", "channel", "comment"]
 
         image_inputs: list[Path] = [background_path]
         ordered_assets: list[tuple[str, EditorLayerAsset]] = []

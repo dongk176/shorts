@@ -1,14 +1,13 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
-
-from .content_language import CONTENT_LANGUAGES, comment_key
 
 MAX_FALLBACK_COMMENTS_PER_CLIP = 15
 
 
 def _comment_key(text: str) -> str:
-    return comment_key(text)
+    return re.sub(r"[^0-9a-zA-Z가-힣]+", "", text).casefold()
 
 
 def _load_fallback_comments() -> tuple[str, ...]:
@@ -31,22 +30,18 @@ def select_fallback_comment_texts(
     *,
     clip_index: int,
     excluded_keys: set[str] | None = None,
-    output_language: str = "ko",
 ) -> list[str]:
     """Select stable, non-duplicated fallback copy for one numbered short."""
     requested = max(0, int(count))
     if requested == 0:
         return []
     excluded = excluded_keys if excluded_keys is not None else set()
-    catalog = (
-        FALLBACK_COMMENT_TEXTS
-        if output_language == "ko"
-        else CONTENT_LANGUAGES[output_language]["comments"]
-    )
-    start = (max(0, int(clip_index) - 1) * MAX_FALLBACK_COMMENTS_PER_CLIP) % len(catalog)
+    start = (
+        max(0, int(clip_index) - 1) * MAX_FALLBACK_COMMENTS_PER_CLIP
+    ) % len(FALLBACK_COMMENT_TEXTS)
     selected: list[str] = []
-    for offset in range(len(catalog)):
-        text = catalog[(start + offset) % len(catalog)]
+    for offset in range(len(FALLBACK_COMMENT_TEXTS)):
+        text = FALLBACK_COMMENT_TEXTS[(start + offset) % len(FALLBACK_COMMENT_TEXTS)]
         key = _comment_key(text)
         if not key or key in excluded:
             continue

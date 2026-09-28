@@ -777,9 +777,6 @@ class WorkerRepository:
             return connection.execute(
                 """
                 select s.*, j.channel_thumbnail_url,
-                  to_jsonb(j)->>'language_test_release_id' as language_test_release_id,
-                  case when to_jsonb(j)->>'language_test_release_id' is not null
-                  then j.output_language else 'ko' end as comment_output_language,
                   transcript.words as transcript_words,
                   transcript.source_offset_seconds as transcript_source_offset_seconds
                 from shorts_mvp.generated_shorts s
@@ -1123,10 +1120,7 @@ class WorkerRepository:
         with self.connect() as connection:
             return list(connection.execute(
                 """
-                select s.*,j.channel_thumbnail_url,a.slot_index,
-                  to_jsonb(j)->>'language_test_release_id' as language_test_release_id,
-                  case when to_jsonb(j)->>'language_test_release_id' is not null
-                  then j.output_language else 'ko' end as comment_output_language
+                select s.*,j.channel_thumbnail_url,a.slot_index
                 from shorts_mvp.project_output_attempts a
                 join shorts_mvp.generated_shorts s on s.id=a.generated_short_id
                 join shorts_mvp.video_jobs j on j.id=a.job_id
@@ -1800,10 +1794,7 @@ class WorkerRepository:
             return list(
                 connection.execute(
                     """
-                select s.*, j.channel_thumbnail_url,
-                  to_jsonb(j)->>'language_test_release_id' as language_test_release_id,
-                  case when to_jsonb(j)->>'language_test_release_id' is not null
-                  then j.output_language else 'ko' end as comment_output_language
+                select s.*, j.channel_thumbnail_url
                 from shorts_mvp.generated_shorts s
                 join shorts_mvp.video_jobs j on j.id=s.job_id
                 where s.job_id=%s and s.render_shard_index=%s and s.deleted_at is null

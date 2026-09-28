@@ -40,7 +40,7 @@ describe("file upload UI authentication and capability isolation", () => {
     expect(source).toContain('if (stateLoadStatus !== "ready") return;');
     expect(source).toContain('aria-selected={sourceMode === "upload"}\n              disabled={stateLoadStatus !== "ready"}');
     expect(source).toContain('if (uploadModeEnabled || sourceMode !== "upload") return;');
-    expect(source).toContain("if (!file || !uploadModeEnabled) return;");
+    expect(source).toContain("if (!file || !uploadModeEnabled || busy) return;");
     expect(source).toContain("if (!state?.user || !uploadModeEnabled)");
     expect(source).not.toContain("if (!file || !uploadModeVisible)");
   });
