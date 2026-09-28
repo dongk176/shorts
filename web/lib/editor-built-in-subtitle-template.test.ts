@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { createEditorDocumentSnapshot } from "./editor-document-snapshot";
 import { createInitialEditorOverlayLayout } from "./editor-overlay-preview";
 import { compileEditorRenderTitleSpecV4 } from "./editor-render-spec";
-import { resolveBuiltInSubtitleTemplateSnapshot } from "./editor-built-in-subtitle-template";
+import { builtInSubtitleChannelRect, resolveBuiltInSubtitleTemplateSnapshot } from "./editor-built-in-subtitle-template";
 import { createUnifiedSubtitleTemplateConfig } from "./template-config";
 
 const measure = (text: string, fontSize: number) => ({
@@ -50,6 +50,34 @@ function documentWithSnapshot(snapshot: NonNullable<ReturnType<
 }
 
 describe("built-in subtitle template editor snapshot", () => {
+  it.each(subtitleRatioCases)("previews saved channel position for $id $videoAspectRatio $captionPlacement despite an older caption layout", (test) => {
+    const legacy = builtInSubtitlePresentation({ ...test, legacyChannelPosition: true });
+    const current = builtInSubtitlePresentation(test);
+    const snapshot = { presetVersion: 4, config: current.config };
+    const saved = resolveBuiltInSubtitleTemplateSnapshot({
+      templateId: "dark-minimal", subtitleTemplateId: test.id,
+      templateSnapshot: JSON.parse(JSON.stringify(snapshot)),
+      videoAspectRatio: test.videoAspectRatio,
+    });
+    const rect = builtInSubtitleChannelRect(saved, legacy.style.layout.channel);
+    expect(rect.x + rect.width / 2).toBe(540);
+    expect(rect.y + rect.height / 2).toBe(test.channelY);
+    expect(rect.width).toBe(legacy.style.layout.channel.width);
+    expect(rect.height).toBe(legacy.style.layout.channel.height);
+    expect(saved).toEqual(snapshot);
+    expect(builtInSubtitleChannelRect({ config: legacy.config }, rect))
+      .toEqual(legacy.style.layout.channel);
+  });
+
+  it("keeps saved channel anchors and leaves snapshots without v5 channel geometry unchanged", () => {
+    const fallback = { x: 0, y: 1710, width: 1080, height: 160 };
+    const config = createUnifiedSubtitleTemplateConfig("highlight");
+    config.channel.y = 1470;
+    expect(builtInSubtitleChannelRect({ config }, fallback)).toEqual({ ...fallback, y: 1390 });
+    expect(builtInSubtitleChannelRect({ presetVersion: 3 }, fallback)).toBe(fallback);
+    expect(builtInSubtitleChannelRect(null, fallback)).toBe(fallback);
+  });
+
   it.each(subtitleRatioCases)("restores $id $videoAspectRatio $captionPlacement and preserves the saved snapshot", (test) => {
     const expected = builtInSubtitlePresentation({ ...test, legacyChannelPosition: true }).config;
     const input = {

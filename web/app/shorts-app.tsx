@@ -301,7 +301,7 @@ import {
   shouldPreserveInitialEditorRenderSpec,
   type EditorInitialRenderSpecLayerFingerprints,
 } from "@/lib/editor-initial-render-spec";
-import { resolveBuiltInSubtitleTemplateSnapshot } from "@/lib/editor-built-in-subtitle-template";
+import { builtInSubtitleChannelRect, resolveBuiltInSubtitleTemplateSnapshot } from "@/lib/editor-built-in-subtitle-template";
 import {
   editorDraftDocumentSnapshotSchema,
   editorDocumentSnapshotSchema,
@@ -11062,7 +11062,12 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                   && <CaptionTemplateEditorChannel
                     fontId={renderSpec?.channel.font.fontId ?? channelFontId}
                     fitSavedCommentChannel={Boolean(savedCaptionCommentRect)}
-                    rect={savedCaptionChannelRect ?? captionTemplatePreviewSnapshot.layout.channel}
+                    rect={builtInSubtitleTemplateSelectionActive
+                      ? builtInSubtitleChannelRect(
+                          editorDocumentSnapshot.template.snapshot,
+                          savedCaptionChannelRect ?? captionTemplatePreviewSnapshot.layout.channel,
+                        )
+                      : savedCaptionChannelRect ?? captionTemplatePreviewSnapshot.layout.channel}
                     fontSize={savedCaptionCommentRect ? 42 : captionTemplatePreviewSnapshot.channel.fontSizePx}
                     iconSize={savedCaptionCommentRect ? 52 : captionTemplatePreviewSnapshot.channel.iconSizePx}
                     gap={savedCaptionCommentRect ? 15 : captionTemplatePreviewSnapshot.channel.gapPx}

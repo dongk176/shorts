@@ -1,4 +1,5 @@
 import type { TemplateId, VideoAspectRatio } from "./contracts";
+import type { CaptionCompositionRect } from "./caption-composition";
 import { builtInSubtitlePresentation } from "./built-in-subtitle-presentation";
 import type { EditorDocumentJsonObject } from "./editor-document-snapshot";
 import {
@@ -46,6 +47,20 @@ function snapshotWithMatchingConfig(
     ...snapshot,
     config: parsedConfig.data,
   }) as EditorDocumentJsonObject;
+}
+
+/** The saved v5 channel anchor also owns the caption editor's channel preview. */
+export function builtInSubtitleChannelRect(
+  snapshot: unknown,
+  fallback: CaptionCompositionRect,
+): CaptionCompositionRect {
+  const parsed = templateConfigSchema.safeParse(jsonObject(snapshot)?.config);
+  if (!parsed.success || !isTemplateConfigV5(parsed.data)) return fallback;
+  return {
+    ...fallback,
+    x: parsed.data.channel.x - fallback.width / 2,
+    y: parsed.data.channel.y - fallback.height / 2,
+  };
 }
 
 /**
