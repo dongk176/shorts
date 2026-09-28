@@ -5,6 +5,14 @@ type Phrase = readonly [ko: string, en: string, ja: string];
 // Legacy page copy is kept here while the product moves to semantic message keys.
 // User-provided and generated content is intentionally excluded from this table.
 const phrases: readonly Phrase[] = [
+  ["선택한 영상을 확인해 주세요", "Please check the selected video", "選択した動画を確認してください"],
+  ["3분부터 3시간까지의 원본 영상을 선택해 주세요.", "Choose a source video between 3 minutes and 3 hours long.", "3分以上3時間以内の元動画を選択してください。"],
+  ["5GB 이하 영상 파일을 선택해 주세요.", "Choose a video file no larger than 5GB.", "5GB以下の動画ファイルを選択してください。"],
+  ["MP4, MOV, M4V, WEBM, MKV 영상 파일을 선택해 주세요.", "Choose an MP4, MOV, M4V, WEBM or MKV video file.", "MP4、MOV、M4V、WEBM、MKVの動画ファイルを選択してください。"],
+  ["브라우저에서 영상 정보를 확인하지 못했습니다.", "The browser could not read this video. Try another file.", "ブラウザで動画情報を読み取れませんでした。別のファイルをお試しください。"],
+  ["영상 화면 크기를 확인하지 못했습니다.", "Could not read the video dimensions. Try another file.", "動画の画面サイズを確認できませんでした。別のファイルをお試しください。"],
+  ["영상 썸네일을 준비하지 못했습니다.", "Could not prepare the video thumbnail. Try another file.", "動画のサムネイルを準備できませんでした。別のファイルをお試しください。"],
+  ["영상 썸네일을 만들지 못했습니다.", "Could not create the video thumbnail. Try another file.", "動画のサムネイルを作成できませんでした。別のファイルをお試しください。"],
   ["배경 이미지를 불러오지 못했습니다. 다시 시도해 주세요.", "Could not load your background images. Please try again.", "背景画像を読み込めませんでした。もう一度お試しください。"],
   ["내 배경 목록을 불러오지 못했습니다.", "Could not load your background library.", "背景ライブラリを読み込めませんでした。"],
   ["배경 이미지 처리 기능을 준비하지 못했습니다. 잠시 후 다시 시도해 주세요.", "Background image processing is temporarily unavailable. Please try again shortly.", "背景画像を一時的に処理できません。しばらくしてからもう一度お試しください。"],

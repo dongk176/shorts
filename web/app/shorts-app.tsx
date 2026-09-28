@@ -24,6 +24,7 @@ import { createPortal } from "react-dom";
 import Image from "next/image";
 import Link from "@/lib/i18n/navigation";
 import { AuthControls } from "@/components/auth-controls";
+import { UploadSelectionError } from "@/components/upload-selection-error";
 import { BackgroundShowcase } from "@/components/background-showcase";
 import { BackgroundAssetPicker } from "@/components/background-asset-picker";
 import { BrandColorPicker } from "@/components/brand-color-picker";
@@ -13194,6 +13195,9 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const [analysis, setAnalysis] = useState<YoutubeAnalysis | null>(resumedDraft?.analysis ?? null);
   const [uploadVideo, setUploadVideo] = useState<InspectedUploadVideo | null>(null);
   const [uploadInspectionBusy, setUploadInspectionBusy] = useState(false);
+  const [uploadSelectionError, setUploadSelectionError] = useState<string | null>(null);
+  const [uploadSelectionErrorOpen, setUploadSelectionErrorOpen] = useState(false);
+  const uploadInspectionVersion = useRef(0);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [uploadTransferActive, setUploadTransferActive] = useState(false);
   const [uploadPreparationActive, setUploadPreparationActive] = useState(false);
@@ -13814,6 +13818,10 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     uploadAbortController.current?.abort();
     uploadRequestId.current = null;
     uploadRequestIntentKey.current = null;
+    uploadInspectionVersion.current += 1;
+    setUploadInspectionBusy(false);
+    setUploadSelectionError(null);
+    setUploadSelectionErrorOpen(false);
     setSourceMode(nextMode);
     setUploadProgress(null);
     setUploadCompletionOpen(false);
@@ -13830,7 +13838,10 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   };
 
   const prepareSelectedUpload = async (file: File) => {
-    if (!file || !uploadModeEnabled) return;
+    if (!file || !uploadModeEnabled || busy) return;
+    const inspectionVersion = ++uploadInspectionVersion.current;
+    setUploadSelectionError(null);
+    setUploadSelectionErrorOpen(false);
     uploadAbortController.current?.abort();
     uploadRequestId.current = null;
     uploadRequestIntentKey.current = null;
@@ -13845,6 +13856,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     setError(null);
     try {
       const inspected = await inspectUploadVideo(file);
+      if (inspectionVersion !== uploadInspectionVersion.current) return;
       setUploadVideo(inspected);
       resetSourceRangeGuide();
       setScrollToAnalysis(true);
@@ -13853,9 +13865,11 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         setScrollToAnalysis(false);
       }
     } catch (cause) {
-      setError(userFacingErrorMessage(cause, "영상 정보를 확인하지 못했습니다."));
+      if (inspectionVersion !== uploadInspectionVersion.current) return;
+      setUploadSelectionError(userFacingErrorMessage(cause, "영상 정보를 확인하지 못했습니다."));
+      setUploadSelectionErrorOpen(true);
     } finally {
-      setUploadInspectionBusy(false);
+      if (inspectionVersion === uploadInspectionVersion.current) setUploadInspectionBusy(false);
     }
   };
 
@@ -14603,6 +14617,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
             <button
               type="button"
               disabled={busy || uploadInspectionBusy}
+              aria-describedby={uploadSelectionError ? "upload-selection-error" : undefined}
               onClick={() => uploadFileInputRef.current?.click()}
               onDragEnter={(event) => {
                 event.preventDefault();
@@ -14656,6 +14671,12 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
                 </>
               )}
             </button>
+            <UploadSelectionError
+              error={uploadSelectionError}
+              open={uploadSelectionErrorOpen}
+              onClose={() => setUploadSelectionErrorOpen(false)}
+              onRetry={() => uploadFileInputRef.current?.click()}
+            />
           </div>
         )}
       </section>
