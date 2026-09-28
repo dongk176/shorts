@@ -7,7 +7,6 @@ from pathlib import Path
 
 from PIL import Image
 
-from .caption_composition import caption_composition_rect
 from .caption_templates import (
     CAPTION_FPS,
     CAPTION_TIMING_LEAD_FRAMES,
@@ -26,7 +25,6 @@ from .media import media_duration, probe_media, run_command, video_fps
 from .overlays import (
     TEMPLATE_STYLES,
     add_comment_channel_to_panel,
-    caption_comment_channel_image,
     create_ass_subtitles,
     create_channel_panel,
     create_comment_panel,
@@ -34,11 +32,11 @@ from .overlays import (
     create_custom_comment_overlay,
     create_panel_overlays,
 )
+from .preset_channel_position import preset_channel_center_y
 from .render_spec_v4 import draw_editor_title_spec_v4
 from .schemas import (
     CommentOverlay,
     CustomTemplateConfig,
-    EditorFontId,
     EditorRenderSpec,
     HighlightClip,
     SubtitleSegment,
@@ -452,6 +450,7 @@ class VideoRenderer:
         comment_channel_below: bool = False,
         comment_channel_fixed: bool = False,
         fixed_preset_channel: bool = False,
+        preset_version: int = 3,
         title_text_styles: list[TitleTextStyle] | None = None,
         custom_template_config: CustomTemplateConfig | None = None,
         caption_render_spec: dict[str, object] | None = None,
@@ -459,7 +458,6 @@ class VideoRenderer:
         title_accent_color: str | None = None,
         metrics_callback: RenderMetricsCallback | None = None,
         uploaded_background_path: Path | None = None,
-        comment_output_language: str = "ko",
     ) -> Path:
         work_dir.mkdir(parents=True, exist_ok=True)
         probe_started_at = time.monotonic()
@@ -519,7 +517,6 @@ class VideoRenderer:
                 has_audio=has_audio,
                 metrics_callback=custom_metrics.update,
                 uploaded_background_path=uploaded_background_path,
-                comment_output_language=comment_output_language,
             )
             if metrics_callback:
                 metrics_callback({
@@ -602,7 +599,6 @@ class VideoRenderer:
             rendered_title.save(top, format="PNG", compress_level=1)
             title_overlay_y = 0
         channel_overlay_y = layout.bottom_y
-        saved_comment_rect = caption_composition_rect(caption_render_spec, "comment")
         if (
             caption_render_spec is None
             and channel_visible
@@ -618,25 +614,18 @@ class VideoRenderer:
                 overlay_mode=True,
             )
             channel_overlay_y = (
-                PRESET_SQUARE_CHANNEL_CENTER_Y - PRESET_CHANNEL_OVERLAY_HEIGHT // 2
+                preset_channel_center_y(template_id.value, video_aspect_ratio.value, preset_version)
+                - PRESET_CHANNEL_OVERLAY_HEIGHT // 2
             )
-        if saved_comment_rect is not None and template_id is TemplateId.COMMENT_CAPTURE:
-            channel_image = caption_comment_channel_image(
-                channel_name, panel_height=layout.bottom_height,
-                font_id=(authoritative_render_spec.channel.font.font_id
-                         if authoritative_render_spec else EditorFontId.PRETENDARD),
-                thumbnail_path=channel_thumbnail_path,
-            ) if channel_visible else Image.new(
-                "RGBA", (CANVAS_WIDTH, layout.bottom_height), (0, 0, 0, 0),
-            )
-            channel_image.save(bottom, format="PNG", compress_level=1)
-        elif template_id is TemplateId.COMMENT_CAPTURE:
+        if template_id is TemplateId.COMMENT_CAPTURE:
             comment_channel_center_y = None
             if not channel_visible:
                 comment_channel_center_y = None
             elif comment_channel_fixed:
                 comment_channel_center_y = (
-                    COMMENT_CAPTURE_SQUARE_CHANNEL_CENTER_Y - layout.bottom_y
+                    preset_channel_center_y(
+                        template_id.value, video_aspect_ratio.value, preset_version,
+                    ) - layout.bottom_y
                 )
             elif (
                 comment_channel_below
@@ -665,24 +654,16 @@ class VideoRenderer:
             )
         )
         comment_panel_height = (
-            int(saved_comment_rect["height"]) if saved_comment_rect is not None
-            else (min(330, max(285, layout.bottom_height - 128))
-                  if compact_comment_panel else layout.bottom_height)
+            min(330, max(285, layout.bottom_height - 128))
+            if compact_comment_panel
+            else layout.bottom_height
         )
         comment_panels = [
             create_comment_panel(
                 comment,
                 work_dir / "overlays" / f"{prefix}_comment_{index}.png",
                 panel_height=comment_panel_height,
-                output_language=comment_output_language,
-                bundled_font=saved_comment_rect is not None,
                 overlay_mode=layout.overlay_mode,
-                japanese_font_enabled=(comment_output_language == "ja"
-                                       if saved_comment_rect is not None else bool(
-                    initial_render_spec
-                    and initial_render_spec.get("title", {}).get("font", {}).get("fontId")
-                    == "noto-sans-jp"
-                )),
             )
             for index, (comment, _, _) in enumerate(comment_windows)
         ]
@@ -724,11 +705,9 @@ class VideoRenderer:
         ]
         video_label = "composed"
         if comment_manifest:
-            comment_y = (saved_comment_rect["y"]
-                         if saved_comment_rect is not None else layout.bottom_y)
             filters.append("[3:v]setpts=PTS-STARTPTS,format=rgba[comment_track]")
             filters.append(
-                f"[{video_label}][comment_track]overlay=x=0:y={comment_y}:"
+                f"[{video_label}][comment_track]overlay=x=0:y={layout.bottom_y}:"
                 "eof_action=repeat:repeatlast=1[with_comments]"
             )
             video_label = "with_comments"
@@ -868,7 +847,6 @@ class VideoRenderer:
         has_audio: bool,
         metrics_callback: RenderMetricsCallback | None = None,
         uploaded_background_path: Path | None = None,
-        comment_output_language: str = "ko",
     ) -> Path:
         design_layers = bool(config.text_overlays) or config.layer_order is not None
         if design_layers:
@@ -919,7 +897,6 @@ class VideoRenderer:
                 comment_y=comment_y,
                 channel_thumbnail_path=channel_thumbnail_path,
                 include_channel=False,
-                output_language=comment_output_language,
             )
             for index, (comment, _, _) in enumerate(comment_windows)
         ]

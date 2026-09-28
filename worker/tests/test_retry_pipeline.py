@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import inspect
 import json
-import shutil
-import subprocess
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -12,9 +10,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from shorts_worker.caption_templates import compile_caption_render_spec
-from shorts_worker.config import Settings
-from shorts_worker.editor_renderer import EditorDocumentRenderer
 from shorts_worker.errors import (
     BotCheckError,
     CaptionCompileError,
@@ -25,16 +20,13 @@ from shorts_worker.errors import (
 )
 from shorts_worker.ingestion import DownloadedAssetBundle, VideoMetadata
 from shorts_worker.render_spec_v4 import compile_initial_editor_render_spec_v4
-from shorts_worker.schemas import HighlightClip, SubtitleSegment, TemplateId, TemplateSubtitleLayer
-from shorts_worker.subtitles import TranscriptWord
+from shorts_worker.schemas import HighlightClip, SubtitleSegment, TemplateId
 from shorts_worker.worker_pipeline import (
     BatchWorker,
-    ProjectDeferredForIngestionRoute,
     ProjectTimelineTarget,
     _caption_compile_options,
     _initial_title_text_styles,
     _offset_highlight_clip,
-    _project_caption_options,
     _relative_source_transcript,
     _subtitle_template_timing_lead_frames,
     _unified_template_subtitle,
@@ -915,61 +907,6 @@ def test_retryable_extractor_failure_rotates_inline_to_the_next_route(tmp_path) 
     )
 
 
-def test_project_route_capacity_defers_immediately_without_thirty_second_poll(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    worker = _worker(tmp_path, BotCheckError("bot check"))
-    worker.ingestion.configured_route_count = 20
-    worker.ingestion.egress_class_for.return_value = "webshare_isp"
-    worker.repository.ingestion_capacity_requeue_enabled.return_value = True
-    worker.repository.rotate_ingestion_route.return_value = None
-    worker.repository.defer_project_for_ingestion_route.return_value = "deferred"
-    monkeypatch.setenv("AWS_BATCH_JOB_ID", "batch-generation-3")
-
-    with pytest.raises(ProjectDeferredForIngestionRoute) as caught:
-        worker._download_with_inline_route_rotation(
-            job_id="job-a",
-            job_attempt=1,
-            youtube_url="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-            destination=tmp_path / "source",
-            initial_route_id="webshare-03",
-            expected_dispatch_generation=3,
-        )
-
-    assert caught.value.action == "deferred"
-    worker.repository.rotate_ingestion_route.assert_called_once()
-    worker.repository.defer_project_for_ingestion_route.assert_called_once_with(
-        "job-a",
-        expected_dispatch_generation=3,
-        expected_batch_job_id="batch-generation-3",
-        attempted_route_ids=["webshare-03"],
-    )
-    worker.repository.fail_job.assert_not_called()
-
-
-def test_delayed_generation_zero_worker_cannot_claim_a_newer_generation(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    worker = _worker(tmp_path, AssertionError("download must not start"))
-    worker.repository.get_job.return_value.update({
-        "pipeline_version": 2,
-        "project_dispatch_generation": 2,
-    })
-    worker.repository.claim_project_run.return_value = None
-    monkeypatch.setenv("PROJECT_DISPATCH_GENERATION", "0")
-
-    worker.project("job-a")
-
-    worker.repository.claim_project_run.assert_called_once_with(
-        "job-a",
-        resume=False,
-        expected_dispatch_generation=0,
-    )
-    worker.ingestion.download_bundle.assert_not_called()
-
-
 def test_inline_rotation_can_try_all_twenty_configured_routes(tmp_path) -> None:
     worker = _worker(tmp_path, AssertionError("replaced below"))
     worker.ingestion.configured_route_count = 20
@@ -1424,11 +1361,7 @@ def test_project_finishes_user_outputs_before_timeline_postprocessing() -> None:
 def test_caption_template_projects_capture_the_padded_edit_timeline() -> None:
     source = inspect.getsource(BatchWorker.project)
 
-    timeline_creation = source[
-        source.index("edit_timeline_clips = ("):
-        source.index("if subtitle_template_id and edit_timeline_clips:")
-    ]
-    assert "subtitle_template_id" not in timeline_creation
+    assert "and not subtitle_template_id" not in source
     assert "caption_editor_sources.get(index)" in source
 
 
@@ -1563,26 +1496,21 @@ def test_caption_layout_failure_is_not_mislabeled_as_missing_voice() -> None:
     )
 
 
-@pytest.mark.parametrize("template_id", ["highlight", "pop"])
-@pytest.mark.parametrize("translated", [True, False])
-@pytest.mark.parametrize("v4", [True, False])
-def test_project_caption_style_preserves_preset_and_translated_settings(
-    template_id, translated, v4,
-):
-    options = _project_caption_options(
-        {"output_language": "ja", "video_aspect_ratio": "9:16",
-         "subtitle_template_snapshot": {
-             "captionPlacement": "upper", "timingLeadFrames": 7,
-             "font": {"id": "paperlogy"},
-         }},
-        None, template_id="basic" if translated else template_id,
-        translated=translated, initial_render_v4=v4,
-    )
-    assert options["caption_placement"] == "upper"
-    assert options["timing_lead_frames"] == (4 if translated else 7)
-    assert options["font_id"] == ("noto-sans-jp" if translated else "paperlogy")
-    assert options["template_id"] == ("basic" if translated else template_id)
-    assert options["schema_version"] == (4 if v4 else 3)
+def test_project_isolates_unavailable_or_uncompilable_caption_clips() -> None:
+    source = inspect.getsource(BatchWorker.project)
+
+    assert "TranscriptionRangeUnavailable" in source
+    assert "project_caption_clip_rejected" in source
+    assert 'subtitle_template_snapshot.get("captionPlacement")' in source
+    assert "caption_placement=caption_placement" in source
+    assert source.count(
+        "timing_lead_frames=caption_timing_lead_frames",
+    ) == 2
+    assert source.count("CaptionCompileError,") >= 2
+    assert source.count("RenderError,") >= 2
+    assert source.count("TranscriptionError,") >= 2
+    assert "len(compiled_clips) < required_minimum_count" in source
+    assert "clips = [clip for clip, _spec in compiled_clips]" in source
 
 
 def test_subtitle_template_timing_lead_defaults_stable_and_accepts_admin() -> None:
@@ -1590,23 +1518,6 @@ def test_subtitle_template_timing_lead_defaults_stable_and_accepts_admin() -> No
     assert _subtitle_template_timing_lead_frames({}) == 4
     assert _subtitle_template_timing_lead_frames({"timingLeadFrames": 4}) == 4
     assert _subtitle_template_timing_lead_frames({"timingLeadFrames": 7}) == 7
-
-
-@pytest.mark.parametrize("language", ["ja", "ko", "en"])
-@pytest.mark.parametrize("custom", [False, True])
-def test_language_project_caption_font_supports_japanese_without_translation(language, custom):
-    subtitle = TemplateSubtitleLayer(
-        visible=True, y=1400, max_width=900, color="#FFFFFF",
-        font_id="paperlogy", font_size=48,
-    ) if custom else None
-    options = _project_caption_options(
-        {"language_test_release_id": "pinned-release", "output_language": language,
-         "subtitle_template_snapshot": {"font": {"id": "paperlogy"}}},
-        subtitle, template_id="pop", translated=False, initial_render_v4=True,
-    )
-    assert options["font_id"] == ("noto-sans-jp" if language == "ja" else "paperlogy")
-    assert options["template_id"] == "pop"
-    assert options["timing_lead_frames"] == 4
 
 
 @pytest.mark.parametrize("value", [-1, 31, True, "7"])
@@ -1774,147 +1685,6 @@ def _editor_document_rerender_worker(tmp_path, completion_result) -> BatchWorker
     return worker
 
 
-@pytest.mark.parametrize("drift", [0.08, 0.2, 0.5])
-def test_editor_document_rerender_accepts_small_timeline_metadata_drift(
-    tmp_path, drift: float,
-) -> None:
-    worker = _editor_document_rerender_worker(tmp_path, {})
-    item = worker.repository.get_short.return_value
-    item["edit_timeline_start_seconds"] += drift
-    item["edit_timeline_end_seconds"] -= drift
-
-    worker.rerender(EDITOR_DOCUMENT_SHORT_ID)
-
-    worker.repository.complete_editor_document_rerender.assert_called_once()
-    document = worker.editor_renderer.extract_sequence.call_args.kwargs["document"]
-    assert document.video.timeline_start_seconds == 10
-    assert document.video.timeline_end_seconds == 20
-    assert document.video.selection_start_seconds == 11
-
-
-def test_editor_document_rerender_still_rejects_replaced_source_range(tmp_path) -> None:
-    worker = _editor_document_rerender_worker(tmp_path, {})
-    item = worker.repository.get_short.return_value
-    item["edit_timeline_start_seconds"] += 10
-    item["edit_timeline_end_seconds"] += 10
-
-    with pytest.raises(ValueError, match="타임라인 범위"):
-        worker.rerender(EDITOR_DOCUMENT_SHORT_ID)
-
-    worker.storage.download.assert_not_called()
-    worker.repository.complete_editor_document_rerender.assert_not_called()
-
-
-@pytest.mark.parametrize("expanded_ready", [False, True])
-@pytest.mark.parametrize("source_start,source_end,expanded_end", [
-    (10, 20, 50),
-    (2.32, 66.89, 96.89),  # Project 13307's original and expanded bounds.
-])
-def test_editor_document_keeps_requested_source_when_background_capture_finishes(
-    tmp_path, expanded_ready: bool,
-    source_start: float, source_end: float, expanded_end: float,
-) -> None:
-    worker = _editor_document_rerender_worker(tmp_path, {})
-    item = worker.repository.get_short.return_value
-    # The accepted document uses the clean clip's 10..20 clock. The background
-    # capture expands it to 0..50 while the edit is queued.
-    item["start_seconds"] = source_start
-    item["end_seconds"] = source_end
-    item["pending_edit_snapshot"]["video"].update({
-        "timelineStartSeconds": source_start,
-        "timelineEndSeconds": source_end,
-        "selectionStartSeconds": source_start + 1,
-        "selectionEndSeconds": source_start + 6,
-    })
-    item["edit_timeline_s3_key"] = (
-        "edit-sources/expanded-timeline.mp4" if expanded_ready else None
-    )
-    item["edit_timeline_start_seconds"] = 0 if expanded_ready else None
-    item["edit_timeline_end_seconds"] = expanded_end if expanded_ready else None
-    original_document = json.loads(json.dumps(item["pending_edit_snapshot"]))
-    clean_caption_spec = {"schemaVersion": 3, "templateId": "pop", "cues": []}
-    expanded_caption_spec = {
-        "schemaVersion": 3, "templateId": "pop", "cues": [],
-        "expandedSource": True,
-    }
-    item["subtitle_template_id"] = "pop"
-    item["caption_render_spec"] = {
-        **clean_caption_spec,
-        "editorSource": {"spec": expanded_caption_spec},
-    }
-
-    worker.rerender(EDITOR_DOCUMENT_SHORT_ID)
-
-    assert worker.storage.download.call_args_list[0].args[0] == "edit-sources/clean.mp4"
-    document = worker.editor_renderer.extract_sequence.call_args.kwargs["document"]
-    assert document.video.timeline_start_seconds == source_start
-    assert document.video.timeline_end_seconds == source_end
-    assert document.video.clips[0].source_start_seconds == 1
-    assert item["pending_edit_snapshot"] == original_document
-    assert worker.editor_renderer.render.call_args.kwargs["caption_render_spec"] is (
-        item["caption_render_spec"]
-    )
-    completion = worker.repository.complete_editor_document_rerender.call_args.kwargs
-    assert completion["start_seconds"] == pytest.approx(source_start + 1)
-    assert completion["duration_seconds"] == 3.5
-
-
-@pytest.mark.render
-@pytest.mark.skipif(
-    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
-    reason="ffmpeg and ffprobe are required",
-)
-def test_editor_source_race_extracts_original_frames_and_preserves_output_length(
-    tmp_path,
-) -> None:
-    worker = _editor_document_rerender_worker(tmp_path, {})
-    item = worker.repository.get_short.return_value
-    item.update({
-        "start_seconds": 10,
-        "end_seconds": 20,
-        "edit_timeline_start_seconds": 0,
-        "edit_timeline_end_seconds": 50,
-    })
-    clean_source = tmp_path / "original-clean.mp4"
-    subprocess.run([
-        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-        "-f", "lavfi", "-i", "color=c=blue:s=160x90:r=30:d=10",
-        "-c:v", "libx264", "-preset", "ultrafast", str(clean_source),
-    ], check=True, capture_output=True, timeout=30)
-
-    def download_requested_source(key, destination):
-        if str(destination).endswith("timeline.mp4"):
-            assert key == "edit-sources/clean.mp4"
-            return clean_source
-        return tmp_path / "channel.png"
-
-    worker.storage.download.side_effect = download_requested_source
-    renderer = EditorDocumentRenderer(Settings(
-        temp_dir=tmp_path,
-        ffmpeg_timeout_seconds=60,
-        ffmpeg_threads=2,
-        clean_clip_preset="ultrafast",
-    ))
-    worker.editor_renderer.extract_sequence.side_effect = renderer.extract_sequence
-
-    def check_extracted_frames(**kwargs):
-        clean = kwargs["clean_path"]
-        probe = json.loads(subprocess.check_output([
-            "ffprobe", "-v", "error", "-show_format", "-of", "json", str(clean),
-        ], timeout=30))
-        assert float(probe["format"]["duration"]) == pytest.approx(3.5, abs=0.04)
-        pixel = subprocess.check_output([
-            "ffmpeg", "-v", "error", "-i", str(clean), "-frames:v", "1",
-            "-vf", "scale=1:1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-",
-        ], timeout=30)
-        assert pixel[2] > 200 and pixel[0] < 20 and pixel[1] < 20
-        return clean
-
-    worker.editor_renderer.render.side_effect = check_extracted_frames
-    worker.rerender(EDITOR_DOCUMENT_SHORT_ID)
-    worker.repository.complete_editor_document_rerender.assert_called_once()
-
-
 def test_editor_document_rerender_promotes_one_atomic_snapshot(tmp_path) -> None:
     worker = _editor_document_rerender_worker(tmp_path, {
         "output_s3_key": "outputs/session-a/job-a/short-a/v1.mp4",
@@ -1976,118 +1746,6 @@ def test_editor_document_rerender_forwards_trusted_caption_template_spec(
         worker.editor_renderer.render.call_args.kwargs["caption_render_spec"]
         is caption_spec
     )
-    assert (
-        worker.editor_renderer.render.call_args.kwargs["caption_composition_spec"]
-        is caption_spec
-    )
-
-
-def test_editor_document_rerender_hides_stored_v4_caption_spec_when_disabled(
-    tmp_path,
-) -> None:
-    worker = _editor_document_rerender_worker(tmp_path, {})
-    snapshot = json.loads(
-        (Path(__file__).resolve().parents[2] / "test-fixtures" /
-         "editor-document-v3.json").read_text()
-    )
-    snapshot.update({
-        "sourceShortId": EDITOR_DOCUMENT_SHORT_ID,
-        "baseRenderVersion": 1,
-    })
-    snapshot["channel"].update({
-        "thumbnailUrl": None,
-        "thumbnailAssetKey": (
-            "edit-sources/session-a/job-a/short-a/editor-assets/"
-            "0123456789abcdef0123456789abcdef.png"
-        ),
-    })
-    snapshot["subtitles"]["enabled"] = False
-    snapshot["overlays"]["textOverlays"] = []
-    snapshot["overlays"]["layerOrder"] = [
-        "video", "title", "comment", "channel",
-    ]
-    caption_spec = compile_caption_render_spec(
-        [TranscriptWord(text="복원", start=11, end=11.5, provider="test")],
-        template_id="pop",
-        clip_start=10,
-        clip_end=20,
-        video_aspect_ratio="16:9",
-        schema_version=4,
-    )
-    snapshot["renderSpec"] = compile_initial_editor_render_spec_v4(
-        title=snapshot["title"]["text"],
-        template_id=snapshot["template"]["id"],
-        video_aspect_ratio=snapshot["video"]["aspectRatio"],
-        font_scale=snapshot["title"]["fontScale"],
-    )
-    item = worker.repository.get_short.return_value
-    item["pending_edit_snapshot"] = snapshot
-    item["subtitle_template_id"] = "pop"
-    item["caption_render_spec"] = caption_spec
-
-    worker.rerender(EDITOR_DOCUMENT_SHORT_ID)
-
-    render_kwargs = worker.editor_renderer.render.call_args.kwargs
-    assert render_kwargs["caption_render_spec"] is None
-    assert render_kwargs["caption_composition_spec"] is caption_spec
-    assert render_kwargs["caption_overlay_only"] is False
-    assert item["caption_render_spec"] is caption_spec
-
-
-def test_editor_document_rerender_restores_stored_v4_caption_spec_when_enabled(
-    tmp_path,
-) -> None:
-    worker = _editor_document_rerender_worker(tmp_path, {})
-    snapshot = json.loads(
-        (Path(__file__).resolve().parents[2] / "test-fixtures" /
-         "editor-document-v3.json").read_text()
-    )
-    snapshot.update({
-        "sourceShortId": EDITOR_DOCUMENT_SHORT_ID,
-        "baseRenderVersion": 1,
-    })
-    snapshot["channel"].update({
-        "thumbnailUrl": None,
-        "thumbnailAssetKey": (
-            "edit-sources/session-a/job-a/short-a/editor-assets/"
-            "0123456789abcdef0123456789abcdef.png"
-        ),
-    })
-    snapshot["subtitles"]["enabled"] = True
-    snapshot["overlays"]["textOverlays"] = []
-    snapshot["overlays"]["layerOrder"] = [
-        "video", "title", "comment", "channel",
-    ]
-    caption_spec = compile_caption_render_spec(
-        [TranscriptWord(text="복원", start=11, end=11.5, provider="test")],
-        template_id="pop",
-        clip_start=10,
-        clip_end=20,
-        video_aspect_ratio="16:9",
-        schema_version=4,
-    )
-    snapshot["renderSpec"] = compile_initial_editor_render_spec_v4(
-        title=snapshot["title"]["text"],
-        template_id=snapshot["template"]["id"],
-        video_aspect_ratio=snapshot["video"]["aspectRatio"],
-        font_scale=snapshot["title"]["fontScale"],
-        caption_render_spec=caption_spec,
-    )
-    item = worker.repository.get_short.return_value
-    item["pending_edit_snapshot"] = snapshot
-    item["subtitle_template_id"] = "pop"
-    item["caption_render_spec"] = caption_spec
-
-    worker.rerender(EDITOR_DOCUMENT_SHORT_ID)
-
-    assert (
-        worker.editor_renderer.render.call_args.kwargs["caption_render_spec"]
-        is caption_spec
-    )
-    assert (
-        worker.editor_renderer.render.call_args.kwargs["caption_composition_spec"]
-        is caption_spec
-    )
 
 
 def test_editor_document_rerender_uses_padded_caption_source_with_timeline(
@@ -2119,10 +1777,6 @@ def test_editor_document_rerender_uses_padded_caption_source_with_timeline(
 
     assert (
         worker.editor_renderer.render.call_args.kwargs["caption_render_spec"]
-        is editor_spec
-    )
-    assert (
-        worker.editor_renderer.render.call_args.kwargs["caption_composition_spec"]
         is editor_spec
     )
 
@@ -2186,10 +1840,6 @@ def test_editor_document_rerender_compiles_authoritative_stored_word_timing(
         worker.editor_renderer.render.call_args.kwargs["caption_overlay_only"]
         is True
     )
-    assert (
-        worker.editor_renderer.render.call_args.kwargs["caption_composition_spec"]
-        is None
-    )
 
 
 def test_editor_document_rerender_v2_preserves_legacy_subtitle_fallback(
@@ -2237,10 +1887,6 @@ def test_editor_document_rerender_v2_preserves_legacy_subtitle_fallback(
     assert (
         worker.editor_renderer.render.call_args.kwargs["caption_overlay_only"]
         is False
-    )
-    assert (
-        worker.editor_renderer.render.call_args.kwargs["caption_composition_spec"]
-        is None
     )
 
 

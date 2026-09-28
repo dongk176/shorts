@@ -8,16 +8,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from .config import Settings
-from .content_language import CONTENT_LANGUAGES, text_matches_language
 from .errors import ShortsMakerError
-from .language_context import language_context
-from .localized_selection import (
-    LocalizedSelectionError,
-    SelectionAttempt,
-    repair_instruction,
-    request_candidates,
-)
-from .prompt_language import translated_selection_messages
 from .schemas import (
     AI_CLIP_FALLBACK_SECONDS,
     AI_CLIP_MAX_SECONDS,
@@ -25,13 +16,10 @@ from .schemas import (
     MAX_HOOK_TITLE_CHARS,
     OUTPUT_LANGUAGE_NAMES,
     HighlightClip,
-    LocalizedSelectionResponse,
     OutputLanguage,
     SelectionResponse,
     SubtitleSegment,
 )
-from .subtitle_translation import MODEL as TRANSLATION_MODEL
-from .subtitle_translation import translation_required
 from .title_wrapping import manual_title_lines
 
 
@@ -93,10 +81,15 @@ def overlap_seconds(left: HighlightClip, right: HighlightClip) -> float:
 
 
 FALLBACK_TITLE_LINES = {
-    language: tuple(CONTENT_LANGUAGES[language]["title"]) for language in OutputLanguage
+    OutputLanguage.KO: ("놓치면 안 되는", "핵심 장면"),
+    OutputLanguage.EN: ("The Moment You", "Cannot Miss"),
+    OutputLanguage.JA: ("見逃せない", "重要な瞬間"),
+    OutputLanguage.ZH_CN: ("不容错过的", "关键时刻"),
+    OutputLanguage.ES: ("Un momento que", "debes conocer"),
+    OutputLanguage.FR: ("Le moment à", "ne pas manquer"),
+    OutputLanguage.DE: ("Diesen Moment", "nicht verpassen"),
+    OutputLanguage.PT_BR: ("Um momento que", "você deve ver"),
 }
-
-LOCALIZED_TITLE_LANGUAGES = {OutputLanguage.EN, OutputLanguage.JA}
 
 
 def _clean_title_line(value: str) -> str:
@@ -107,29 +100,7 @@ def _clean_title_line(value: str) -> str:
     return " ".join(clean.split()).strip(" -–—.,!?…\"'")
 
 
-def _two_line_title(
-    value: str, output_language: OutputLanguage, *, relaxed_titles: bool = False,
-) -> str:
-    if relaxed_titles:
-        # AI owns the wording; keep names and quotations regardless of script.
-        lines = [line.strip() for line in manual_title_lines(value) if line.strip()]
-        if len(lines) == 2 and len("\n".join(lines)) <= MAX_HOOK_TITLE_CHARS:
-            return "\n".join(lines)
-        clean = " ".join(lines)[:MAX_HOOK_TITLE_CHARS - 1]
-        if clean:
-            spaces = [i for i, char in enumerate(clean) if char == " "]
-            split = (min(spaces, key=lambda i: abs(i - len(clean) / 2))
-                     if spaces else len(clean) // 2)
-            parts = [part.strip() for part in (clean[:split], clean[split:])]
-            return "\n".join(part for part in parts if part)
-    if not text_matches_language(value, output_language):
-        return "\n".join(FALLBACK_TITLE_LINES[output_language])
-    if output_language in LOCALIZED_TITLE_LANGUAGES:
-        lines = [" ".join(line.split()) for line in manual_title_lines(value)]
-        minimum, maximum = (1, MAX_HOOK_TITLE_CHARS // 2) if relaxed_titles else (5, 18)
-        if len(lines) == 2 and all(minimum <= len(line) <= maximum for line in lines):
-            return "\n".join(lines)
-        return "\n".join(FALLBACK_TITLE_LINES[output_language])
+def _two_line_title(value: str, output_language: OutputLanguage) -> str:
     manual_lines = [_clean_title_line(line) for line in manual_title_lines(value)]
     manual_lines = [line for line in manual_lines if line]
     if len(manual_lines) >= 2:
@@ -169,14 +140,14 @@ def _fallback_title(
     index: int,
     output_language: OutputLanguage,
 ) -> str:
-    """Keep Korean passage fallback; other languages need known localized copy."""
+    """Use the selected passage itself instead of leaking the source video title."""
     passage = " ".join(
         segment.text
         for segment in transcript
         if segment.end > start and segment.start < end
     )
     passage = " ".join(passage.split()).strip(" -–—.,!?…\"'")
-    if output_language == OutputLanguage.KO and text_matches_language(passage, output_language):
+    if passage:
         return _two_line_title(passage, output_language)
     first, second = FALLBACK_TITLE_LINES[output_language]
     return f"{first}\n{second} {index}"
@@ -214,7 +185,7 @@ def deterministic_fallback(
                 index + 1,
                 output_language,
             ),
-            reason=CONTENT_LANGUAGES[output_language]["reason"],
+            reason="자막 또는 AI를 사용할 수 없어 영상 전체에 고르게 배치한 구간입니다.",
             selection_provider="deterministic",
             selection_length_adjustment="none",
             selection_repositioned=False,
@@ -277,7 +248,6 @@ def normalize_clips(
     backfill: bool = True,
     selection_provider: str | None = None,
     selection_model: str | None = None,
-    relaxed_titles: bool = False,
 ) -> list[HighlightClip]:
     """Reject invalid AI times and enforce at most five seconds of pairwise overlap."""
     if duration_seconds <= 0 or required_count < 1:
@@ -350,7 +320,7 @@ def normalize_clips(
             rounded_raw_end = None
             rounded_raw_duration = None
         hook_title = (
-            _two_line_title(candidate.hook_title, output_language, relaxed_titles=relaxed_titles)
+            _two_line_title(candidate.hook_title, output_language)
             if record_raw_selection
             else _fallback_title(
                 transcript or [],
@@ -390,8 +360,8 @@ def normalize_clips(
         accept(
             candidate,
             candidate_index=candidate_index,
-            provider=candidate.selection_provider or selection_provider,
-            model=candidate.selection_model or selection_model,
+            provider=selection_provider,
+            model=selection_model,
             record_raw_selection=True,
         )
     if backfill and len(accepted) < minimum_count:
@@ -415,13 +385,6 @@ class TranscriptSelector:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
 
-    def _gemini_selection_model(
-        self, source_language: str | None, output_language: OutputLanguage,
-    ) -> str:
-        if translation_required(source_language, output_language):
-            return TRANSLATION_MODEL
-        return self.settings.gemini_text_model
-
     @staticmethod
     def _transcript_text(segments: list[SubtitleSegment]) -> str:
         lines: list[str] = []
@@ -442,20 +405,9 @@ class TranscriptSelector:
         transcript: list[SubtitleSegment],
         required_count: int,
         output_language: OutputLanguage = OutputLanguage.KO,
-        source_language: str | None = None,
     ) -> list[dict[str, str]]:
         language_name = OUTPUT_LANGUAGE_NAMES[output_language]
         minimum_count = minimum_clip_count(required_count)
-        translated = translated_selection_messages(
-            video_title=video_title, duration_seconds=duration_seconds,
-            transcript=self._transcript_text(transcript),
-            transcript_source="\n".join(segment.text for segment in transcript),
-            minimum_count=minimum_count, required_count=required_count,
-            min_seconds=AI_CLIP_MIN_SECONDS, max_seconds=AI_CLIP_MAX_SECONDS,
-            output_language=output_language, source_language=source_language,
-        )
-        if translated is not None:
-            return translated
         system = (
             "너는 대한민국 상위 0.1% 조회수를 만들어내는 탑티어 숏폼 기획자이자 편집자야.\n\n"
             "아래 제공되는 유튜브 롱폼 대본을 분석해서, 대중의 시선을 사로잡을 쇼츠용 "
@@ -499,7 +451,7 @@ class TranscriptSelector:
             "- 형식: 각 쇼츠당 반드시 2행으로 작성할 것.\n"
             "- 글자 수: 1행과 2행을 각각 공백 포함 5~18자로 작성할 것.\n"
             "- 톤앤매너: 군더더기 없이 직관적이고 타격감 있는 구어체 단어를 사용할 것.\n"
-            f"- 원본 언어와 관계없이 제목은 반드시 자연스러운 {language_name} 구어체로 작성할 것.\n"
+            f"- 자연스러운 {language_name} 구어체로 작성할 것.\n"
             "- 1행은 hook_title_line1, 2행은 hook_title_line2에 줄바꿈 없는 문자열로 "
             "반환할 것.\n\n"
             "[선정 이유]\n"
@@ -515,9 +467,6 @@ class TranscriptSelector:
             "\n\n타임스탬프 자막:\n"
             f"{self._transcript_text(transcript)}"
         )
-        context = language_context(source_language, output_language)
-        if context:
-            system = context + "\n\n" + system
         return [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
@@ -528,40 +477,19 @@ class TranscriptSelector:
         client: Any,
         model: str,
         messages: list[dict[str, str]],
-        output_language: OutputLanguage = OutputLanguage.KO,
-        source_language: str | None = None,
-        *,
-        max_tokens: int | None = None,
     ) -> list[HighlightClip]:
-        if source_language is not None:
-            return request_candidates(
-                client, model, messages, output_language, max_tokens=max_tokens,
-            ).clips
-        response_schema = (
-            LocalizedSelectionResponse
-            if output_language in LOCALIZED_TITLE_LANGUAGES else SelectionResponse
-        )
         response = client.beta.chat.completions.parse(
             model=model,
             messages=messages,
-            response_format=response_schema,
-            **({"max_tokens": max_tokens} if max_tokens is not None else {}),
+            response_format=SelectionResponse,
         )
         if not response.choices:
             raise ValueError("하이라이트 후보가 비어 있습니다.")
         parsed = response.choices[0].message.parsed
         if parsed is None:
             raise ValueError("구조화 응답을 해석할 수 없습니다.")
-        if not isinstance(parsed, response_schema):
-            parsed = response_schema.model_validate(
-                parsed.model_dump() if isinstance(parsed, SelectionResponse) else parsed,
-            )
-        if output_language in LOCALIZED_TITLE_LANGUAGES and any(
-            not text_matches_language(text, output_language)
-            for candidate in parsed.clips
-            for text in (candidate.hook_title_line1, candidate.hook_title_line2, candidate.reason)
-        ):
-            raise ValueError("Localized selection contains text in the wrong language.")
+        if not isinstance(parsed, SelectionResponse):
+            parsed = SelectionResponse.model_validate(parsed)
         return [
             HighlightClip(
                 start_seconds=candidate.start_seconds,
@@ -583,8 +511,6 @@ class TranscriptSelector:
         self,
         *,
         messages: list[dict[str, str]],
-        output_language: OutputLanguage = OutputLanguage.KO,
-        source_language: str | None = None,
     ) -> list[HighlightClip]:
         from openai import OpenAI
 
@@ -594,66 +520,12 @@ class TranscriptSelector:
             timeout=self.settings.ai_timeout_seconds,
             max_retries=1,
         )
-        limits = (
-            {"max_tokens": self.settings.gemini_max_output_tokens}
-            if self.settings.gemini_max_output_tokens is not None else {}
-        )
-        model = self._gemini_selection_model(source_language, output_language)
-        if source_language is not None and output_language in LOCALIZED_TITLE_LANGUAGES:
-            try:
-                return self._parse_selection(
-                    client, model, messages,
-                    output_language, source_language,
-                    **limits,
-                )
-            except LocalizedSelectionError as error:
-                _log_selection_event(
-                    "highlight_selection_validation", provider="gemini",
-                    code=error.code, rejected=error.attempt.rejected,
-                    accepted_count=len(error.attempt.clips),
-                )
-                if error.code in {"output_limit", "provider_refusal"}:
-                    raise
-                accepted = error.attempt.clips
-                _log_selection_event("highlight_selection_repair", provider="gemini", attempt=1)
-                try:
-                    repaired = self._parse_selection(
-                        client, model,
-                        [*messages, {"role": "user", "content": repair_instruction(
-                            output_language, error,
-                        )}], output_language, source_language,
-                        **limits,
-                    )
-                except LocalizedSelectionError as repair_error:
-                    replacements = [
-                        c for c in repair_error.attempt.clips if not any(
-                            overlap_seconds(c, old) > 5 for old in accepted
-                        )
-                    ]
-                    repair_error.attempt.clips = [*accepted, *replacements[
-                        :len(error.attempt.rejected) or len(replacements)
-                    ]]
-                    raise
-                except Exception as repair_error:
-                    # A failed repair must not erase already valid candidates.
-                    raise LocalizedSelectionError(
-                        "repair_provider_error", SelectionAttempt(clips=accepted),
-                    ) from repair_error
-                repaired = [c for c in repaired if not any(
-                    overlap_seconds(c, old) > 5 for old in accepted
-                )][:len(error.attempt.rejected) or len(repaired)]
-                return [*accepted, *repaired]
-        return self._parse_selection(
-            client, model, messages, output_language, source_language,
-            **limits,
-        )
+        return self._parse_selection(client, self.settings.gemini_text_model, messages)
 
     def _select_with_openai(
         self,
         *,
         messages: list[dict[str, str]],
-        output_language: OutputLanguage = OutputLanguage.KO,
-        source_language: str | None = None,
     ) -> list[HighlightClip]:
         from openai import OpenAI
 
@@ -666,8 +538,6 @@ class TranscriptSelector:
             client,
             self.settings.openai_highlight_fallback_model,
             messages,
-            output_language,
-            source_language,
         )
 
     def select(
@@ -678,23 +548,20 @@ class TranscriptSelector:
         transcript: list[SubtitleSegment],
         required_count: int,
         output_language: OutputLanguage = OutputLanguage.KO,
-        source_language: str | None = None,
     ) -> list[HighlightClip]:
         minimum_count = minimum_clip_count(required_count)
-
         messages = self._selection_messages(
             video_title=video_title,
             duration_seconds=duration_seconds,
             transcript=transcript,
             required_count=required_count,
             output_language=output_language,
-            source_language=source_language,
         )
 
         providers = (
             (
                 "gemini",
-                self._gemini_selection_model(source_language, output_language),
+                self.settings.gemini_text_model,
                 self.settings.gemini_enabled,
                 self._select_with_gemini,
             ),
@@ -705,8 +572,6 @@ class TranscriptSelector:
                 self._select_with_openai,
             ),
         )
-        localized = source_language is not None
-        retained: list[HighlightClip] = []
         for provider, model, configured, select_provider in providers:
             if not transcript:
                 _log_selection_event(
@@ -735,30 +600,9 @@ class TranscriptSelector:
                 minimum_clip_count=minimum_count,
             )
             try:
-                try:
-                    candidates = (
-                        select_provider(
-                            messages=messages,
-                            output_language=output_language,
-                            **({"source_language": source_language}
-                               if source_language is not None else {}),
-                        )
-                        if output_language in LOCALIZED_TITLE_LANGUAGES or localized
-                        else select_provider(messages=messages)
-                    )
-                except LocalizedSelectionError as error:
-                    _log_selection_event(
-                        "highlight_selection_validation", provider=provider,
-                        code=error.code, rejected=error.attempt.rejected,
-                        accepted_count=len(error.attempt.clips),
-                    )
-                    candidates = error.attempt.clips
-                if retained:
-                    candidates = [c for c in candidates if not any(
-                        overlap_seconds(c, old) > 5 for old in retained
-                    )][:max(0, required_count - len(retained))]
+                candidates = select_provider(messages=messages)
                 normalized = normalize_clips(
-                    [*retained, *candidates],
+                    candidates,
                     video_title=video_title,
                     duration_seconds=duration_seconds,
                     transcript=transcript,
@@ -767,7 +611,6 @@ class TranscriptSelector:
                     backfill=False,
                     selection_provider=provider,
                     selection_model=model,
-                    relaxed_titles=localized,
                 )
             except Exception as exc:
                 _log_selection_event(
@@ -781,8 +624,6 @@ class TranscriptSelector:
                     minimum_clip_count=minimum_count,
                 )
                 continue
-            if localized:
-                retained = normalized
             if len(normalized) < minimum_count:
                 _log_selection_event(
                     "highlight_selection_provider",
@@ -815,13 +656,12 @@ class TranscriptSelector:
             return normalized
 
         fallback = normalize_clips(
-            retained if localized else [],
+            [],
             video_title=video_title,
             duration_seconds=duration_seconds,
             required_count=required_count,
             transcript=transcript,
             output_language=output_language,
-            relaxed_titles=localized,
         )
         _log_selection_event(
             "highlight_selection_completed",

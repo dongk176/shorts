@@ -39,37 +39,6 @@ def test_editor_document_rejects_selection_clip_drift() -> None:
         EditorDocument.model_validate(value)
 
 
-@pytest.mark.parametrize("drift", [0.08, 0.5])
-def test_editor_document_repairs_redundant_selection_times(drift: float) -> None:
-    value = json.loads(FIXTURE.read_text())
-    original_clips = value["video"]["clips"]
-    value["video"]["selectionStartSeconds"] += drift
-    value["video"]["selectionEndSeconds"] -= drift
-
-    document = EditorDocument.model_validate(value)
-
-    assert document.video.selection_start_seconds == 11
-    assert document.video.selection_end_seconds == 16
-    assert [clip.model_dump(by_alias=True) for clip in document.video.clips] == original_clips
-    assert document.video.output_duration_seconds == 3.5
-
-
-@pytest.mark.parametrize("fixture_name", ["editor-document-v2.json", "editor-document-v3.json"])
-def test_editor_document_clips_small_subtitle_overrun(fixture_name: str) -> None:
-    value = json.loads((FIXTURE.parent / fixture_name).read_text())
-    duration = value["video"]["timelineEndSeconds"] - value["video"]["timelineStartSeconds"]
-    value["subtitles"]["segments"] = [
-        {"start": duration - 1, "end": duration + 0.4, "text": "마지막 문장"},
-        {"start": duration + 0.1, "end": duration + 0.5, "text": "영상 밖"},
-    ]
-
-    document = EditorDocument.model_validate(value)
-
-    assert [segment.model_dump() for segment in document.subtitles.segments] == [
-        {"start": duration - 1, "end": duration, "text": "마지막 문장"},
-    ]
-
-
 def test_editor_document_rejects_two_channel_thumbnail_sources() -> None:
     value = json.loads(FIXTURE.read_text())
     value["channel"]["thumbnailAssetKey"] = (

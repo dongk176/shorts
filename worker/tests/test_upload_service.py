@@ -2174,6 +2174,7 @@ def test_database_heartbeat_error_does_not_stop_task_protection_refresh(
 def test_protection_refresh_and_disable_are_serialized_with_event_barriers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(time, "monotonic", lambda: 100.0)
     protection = TaskScaleInProtection(_config())
     entered, proceed, disabled = (threading.Event() for _ in range(3))
     updates = []
@@ -2184,9 +2185,11 @@ def test_protection_refresh_and_disable_are_serialized_with_event_barriers(
             entered.set()
             assert proceed.wait(3)
         protection._enabled = enabled
-        # A newly booted CI runner can have a monotonic clock below the
-        # 60-second refresh floor. Make the refresh due independent of uptime.
-        protection._last_refresh = float("-inf")
+        refresh_seconds = max(
+            60.0,
+            protection.expires_in_minutes * 60.0 / 3.0,
+        )
+        protection._last_refresh = time.monotonic() - refresh_seconds - 1.0
 
     monkeypatch.setattr(protection, "_update", update)
     protection.enable()
@@ -2198,7 +2201,7 @@ def test_protection_refresh_and_disable_are_serialized_with_event_barriers(
 
     release = threading.Thread(target=disable, daemon=True)
     refresh.start()
-    assert entered.wait(5)
+    assert entered.wait(3)
     release.start()
     try:
         assert not disabled.wait(0.03)

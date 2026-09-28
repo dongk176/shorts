@@ -25,10 +25,9 @@ test("legacy editor global CSS remains byte-for-byte at the approved baseline", 
 
   assert.equal(
     digest,
-    // Promoted 9baf6bec (dpl_CWuWwXGXTYiVMPfYXUBZLBYBmrcp), checked 2026-09-23.
-    // Since 51d911f only the seven scoped full-frame showcase lines changed
-    // (bf137f86); legacy editor CSS is unchanged. See docs/localized-showcase-20260920.md.
-    "31c950d3825d06fed9e2334089ea0c70759e958e807c88aed83c055b8005efa0",
+    // Current promoted 61dd66db (dpl_H6Esa6HtUNFETBicas7Z8tT94ZHn), checked 2026-09-28.
+    // This release changes no CSS. Retain an exact digest guard at that baseline.
+    "a2d61dd522e6792ae2fd19487995f5ae4487d631cc04b3351dca9ef3d92dc39b",
     "Do not change the approved global CSS baseline without a dedicated public UI review.",
   );
 });
@@ -38,6 +37,12 @@ test("every candidate editor selector is scoped below editor-v2-root", async () 
   const root = postcss.parse(css);
 
   root.walkRules((rule) => {
+    // Existing promoted banner stays byte-identical; new unscoped rules are forbidden.
+    if (rule.selector === ".editor-apply-error") {
+      assert.equal(createHash("sha256").update(rule.toString()).digest("hex"),
+        "3a17e0bccee248695596c676b9ddf556d5d7234e05f0e3560661dfe30b6d4eb6");
+      return;
+    }
     for (const selector of rule.selectors) {
       assert.match(
         selector.trim(),
@@ -213,19 +218,17 @@ test("release workflow promotes one tested digest without deploying the website"
   ]) assert.match(registrar, new RegExp(lane));
   assert.match(registrar, /editor-release-probe/);
   assert.match(workflow, /make verify/);
-  assert.match(workflow, /secrets\.EDITOR_TEST_DATABASE_URL/);
-  assert.match(workflow, /secrets\.EDITOR_TEST_DATABASE_FINGERPRINT/);
-  assert.match(workflow, /EDITOR_TEST_SUPABASE_PROJECT_REF/);
-  assert.match(workflow, /PRODUCTION_SUPABASE_PROJECT_REF/);
-  assert.match(
-    workflow,
-    /node scripts\/apply-supabase\.mjs --non-production[\s\S]*202608260008_editor_release_probe_attestation\.sql/,
-  );
-  assert.match(
-    workflow,
-    /202608260008_editor_release_probe_attestation\.sql[\s\\\n]*202608270001_fix_editor_release_object_cardinality\.sql/,
-  );
-  assert.doesNotMatch(workflow, /node scripts\/apply-supabase\.mjs\s*\n\s*$/m);
+  assert.doesNotMatch(workflow, /secrets\.EDITOR_TEST_DATABASE_(?:URL|FINGERPRINT)/);
+  assert.doesNotMatch(workflow, /node scripts\/apply-supabase\.mjs/);
+  assert.match(workflow, /python scripts\/verify-isolated-release-schema\.py/);
+  const isolatedSchema = await source("scripts/verify-isolated-release-schema.py");
+  assert.match(isolatedSchema, /"--network", "none"/);
+  assert.match(isolatedSchema, /"--tmpfs", "\/var\/lib\/postgresql\/data:rw,size=512m"/);
+  assert.match(isolatedSchema, /postgres@sha256:[0-9a-f]{64}/);
+  assert.match(isolatedSchema, /FILE_UPLOAD_SUCCESSOR_TEST_CONTAINER/);
+  assert.match(isolatedSchema, /PROJECT_TARGET_SUCCESSOR_TEST_CONTAINER/);
+  assert.match(isolatedSchema, /finally:[\s\S]*"rm", "--force", name/);
+  assert.doesNotMatch(isolatedSchema, /"--publish"|"-p"|"--network", "host"/);
   assert.match(workflow, /EDITOR_RELEASE_ECR_REPOSITORY_URI/);
   assert.match(workflow, /\.projectTargets \| keys \| length == 5/);
   assert.match(workflow, /GITHUB_STEP_SUMMARY/);
@@ -241,11 +244,11 @@ test("release workflow promotes one tested digest without deploying the website"
   assert.doesNotMatch(workflow, /vars\.AWS_WORKER_BUILD_ROLE_ARN/);
   assert.match(
     workflow,
-    /github\.ref == 'refs\/tags\/editor-v4-render-parity-20260902-4'/,
+    /github\.ref == 'refs\/tags\/editor-v4-render-parity-20260928-2'/,
   );
   assert.deepEqual(
     [...new Set(workflow.match(/editor-v4-render-parity-[0-9]{8}-[0-9]+/g))],
-    ["editor-v4-render-parity-20260902-4"],
+    ["editor-v4-render-parity-20260928-2"],
   );
   assert.equal(workflow.match(/fetch-depth: 0/g)?.length, 2);
   assert.equal(workflow.match(/fetch-tags: true/g)?.length, 2);

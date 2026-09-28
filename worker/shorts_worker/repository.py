@@ -777,9 +777,6 @@ class WorkerRepository:
             return connection.execute(
                 """
                 select s.*, j.channel_thumbnail_url,
-                  to_jsonb(j)->>'language_test_release_id' as language_test_release_id,
-                  case when to_jsonb(j)->>'language_test_release_id' is not null
-                  then j.output_language else 'ko' end as comment_output_language,
                   transcript.words as transcript_words,
                   transcript.source_offset_seconds as transcript_source_offset_seconds
                 from shorts_mvp.generated_shorts s
@@ -822,13 +819,7 @@ class WorkerRepository:
             ).fetchone()
             return row
 
-    def claim_project_run(
-        self,
-        job_id: str,
-        *,
-        resume: bool,
-        expected_dispatch_generation: int,
-    ) -> dict[str, Any] | None:
+    def claim_project_run(self, job_id: str, *, resume: bool) -> dict[str, Any] | None:
         with self.connect() as connection, connection.transaction():
             if resume:
                 return connection.execute(
@@ -838,13 +829,12 @@ class WorkerRepository:
                         stage_completed_count=0,stage_total_count=0,
                         heartbeat_at=now(),error_code=null,error_message=null
                     where id=%s and pipeline_version=2
-                      and project_dispatch_generation=%s
                       and preparation_finished_at is not null
                       and project_resume_count=1
                       and status not in ('completed','failed','expired','deleted')
                     returning attempt_count,deadline_at
                     """,
-                    (job_id, expected_dispatch_generation),
+                    (job_id,),
                 ).fetchone()
             row = connection.execute(
                 """
@@ -856,13 +846,11 @@ class WorkerRepository:
                     error_code=null,error_message=null,error_details='{}'::jsonb,
                     range_download_status='pending',downloaded_media_duration_seconds=null,
                     downloaded_media_bytes=null,range_download_verified_at=null
-                where id=%s and pipeline_version=2
-                  and project_dispatch_generation=%s
-                  and status in ('queued','retry_waiting')
+                where id=%s and pipeline_version=2 and status='queued'
                   and deadline_at > now() + interval '5 minutes'
                 returning attempt_count,deadline_at
                 """,
-                (job_id, expected_dispatch_generation),
+                (job_id,),
             ).fetchone()
             if row:
                 connection.execute(
@@ -870,42 +858,6 @@ class WorkerRepository:
                     (job_id,),
                 )
             return row
-
-    def ingestion_capacity_requeue_enabled(self) -> bool:
-        with self.connect() as connection:
-            row = connection.execute(
-                """
-                select enabled
-                from shorts_mvp.runtime_feature_flags
-                where flag_key='ingestion_capacity_requeue_v1'
-                """
-            ).fetchone()
-            return bool(row and row["enabled"])
-
-    def defer_project_for_ingestion_route(
-        self,
-        job_id: str,
-        *,
-        expected_dispatch_generation: int,
-        expected_batch_job_id: str | None,
-        attempted_route_ids: list[str],
-    ) -> str:
-        with self.connect() as connection:
-            row = connection.execute(
-                """
-                select action
-                from shorts_mvp.defer_project_for_ingestion_route(
-                  %s,%s,%s,%s::text[]
-                )
-                """,
-                (
-                    job_id,
-                    expected_dispatch_generation,
-                    expected_batch_job_id,
-                    attempted_route_ids,
-                ),
-            ).fetchone()
-            return str(row["action"] if row else "stale")
 
     def set_project_attempt_selected(self, job_id: str, slot_index: int) -> None:
         with self.connect() as connection:
@@ -1123,10 +1075,7 @@ class WorkerRepository:
         with self.connect() as connection:
             return list(connection.execute(
                 """
-                select s.*,j.channel_thumbnail_url,a.slot_index,
-                  to_jsonb(j)->>'language_test_release_id' as language_test_release_id,
-                  case when to_jsonb(j)->>'language_test_release_id' is not null
-                  then j.output_language else 'ko' end as comment_output_language
+                select s.*,j.channel_thumbnail_url,a.slot_index
                 from shorts_mvp.project_output_attempts a
                 join shorts_mvp.generated_shorts s on s.id=a.generated_short_id
                 join shorts_mvp.video_jobs j on j.id=a.job_id
@@ -1800,10 +1749,7 @@ class WorkerRepository:
             return list(
                 connection.execute(
                     """
-                select s.*, j.channel_thumbnail_url,
-                  to_jsonb(j)->>'language_test_release_id' as language_test_release_id,
-                  case when to_jsonb(j)->>'language_test_release_id' is not null
-                  then j.output_language else 'ko' end as comment_output_language
+                select s.*, j.channel_thumbnail_url
                 from shorts_mvp.generated_shorts s
                 join shorts_mvp.video_jobs j on j.id=s.job_id
                 where s.job_id=%s and s.render_shard_index=%s and s.deleted_at is null

@@ -76,11 +76,6 @@ def _word_space_glyph(font: TTFont) -> tuple[str, int]:
 def normalized_editor_font_bytes(font_id: EditorFontId) -> bytes:
     """Return the bundled face with an explicit deterministic U+0020 mapping."""
     path = (EDITOR_FONT_DIRECTORY / EDITOR_FONT_FILE_IDS[font_id]).resolve()
-    # This pinned full-CJK TTF already contains an explicit U+0020 mapping.
-    # Avoid serializing its large variation tables on every fresh worker.
-    # The font-space and glyph tests verify this face; old font bytes stay as-is.
-    if font_id == EditorFontId.NOTO_SANS_JP:
-        return path.read_bytes()
     try:
         font = TTFont(str(path), recalcBBoxes=False, recalcTimestamp=False)
         glyph_name, _advance = _word_space_glyph(font)

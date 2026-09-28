@@ -7,7 +7,7 @@ import unicodedata
 from collections.abc import Iterable, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -52,7 +52,6 @@ CAPTION_FONT_FAMILIES = {
     EditorFontId.SUIT: "SUIT",
     EditorFontId.SPOQA_HAN_SANS_NEO: "Spoqa Han Sans Neo",
     EditorFontId.NOTO_SANS_KR: "Noto Sans KR",
-    EditorFontId.NOTO_SANS_JP: "Noto Sans CJK JP",
     EditorFontId.NANUM_SQUARE_NEO: "NanumSquare Neo",
     EditorFontId.SANDBOX_AGGRO: "SB Aggro",
     EditorFontId.JUA: "Jua",
@@ -113,7 +112,6 @@ _NO_SPACE_BEFORE = frozenset(",.!?:;)]}%。！？、，．：；）」』】》�
 _NO_SPACE_AFTER = frozenset("([{（「『【《〈")
 _SENTENCE_END_RE = re.compile(r"[.!?。！？]+[\"'”’」』】）)]*$")
 _CJK_RE = re.compile(r"[\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af]")
-_KANA_RE = re.compile(r"[\u3041-\u3096\u30a1-\u30fa\uff66-\uff9d]")
 _HANGUL_TOKEN_RE = re.compile(r"[\uac00-\ud7af]+")
 _EXPRESSIVE_REPEAT_RE = re.compile(r"(.)\1{5,}")
 
@@ -824,6 +822,59 @@ def _fit_display_words(
     return fitted
 
 
+def _without_display_periods(words: Sequence[_CaptionWord]) -> list[_CaptionWord]:
+    """Remove ASCII full stops only from rendered caption text.
+
+    This runs after sentence partitioning, so punctuation still controls cue
+    boundaries. Period-only provider tokens are folded into an adjacent word
+    to retain the original source indexes and spoken timing without reserving
+    an invisible pop-caption slot.
+    """
+    cleaned: list[_CaptionWord] = []
+    pending_start_frame: int | None = None
+    pending_source_indexes: tuple[int, ...] = ()
+    for word in words:
+        text = word.text.replace(".", "")
+        if text:
+            cleaned.append(
+                _CaptionWord(
+                    text=text,
+                    start_frame=(
+                        min(pending_start_frame, word.start_frame)
+                        if pending_start_frame is not None
+                        else word.start_frame
+                    ),
+                    end_frame=word.end_frame,
+                    space_before=bool(cleaned) and word.space_before,
+                    source_indexes=pending_source_indexes + word.source_indexes,
+                    speech_start_frame=word.speech_start_frame,
+                    speech_end_frame=word.speech_end_frame,
+                )
+            )
+            pending_start_frame = None
+            pending_source_indexes = ()
+            continue
+        if cleaned:
+            previous = cleaned[-1]
+            cleaned[-1] = _CaptionWord(
+                text=previous.text,
+                start_frame=previous.start_frame,
+                end_frame=max(previous.end_frame, word.end_frame),
+                space_before=previous.space_before,
+                source_indexes=previous.source_indexes + word.source_indexes,
+                speech_start_frame=previous.speech_start_frame,
+                speech_end_frame=word.speech_end_frame,
+            )
+        else:
+            pending_start_frame = (
+                min(pending_start_frame, word.start_frame)
+                if pending_start_frame is not None
+                else word.start_frame
+            )
+            pending_source_indexes += word.source_indexes
+    return cleaned
+
+
 def _wrap_word_indexes(
     words: Sequence[_CaptionWord],
     *,
@@ -887,46 +938,27 @@ def _partition_words(
     max_lines: int = 2,
     require_word_frames: bool = False,
     word_separator: str = CAPTION_WORD_SEPARATOR,
-    preferred_breaks: set[int] | None = None,
 ) -> list[list[_CaptionWord]]:
     groups: list[list[_CaptionWord]] = []
     current: list[_CaptionWord] = []
-    for word_index, word in enumerate(words):
-        while current:
-            separated = (
-                word.start_frame - current[-1].end_frame >= gap_frames
-                or bool(_SENTENCE_END_RE.search(current[-1].text))
-            )
-            too_many = max_words is not None and len(current) >= max_words
-            too_long = word.end_frame - current[0].start_frame > max_duration_frames
-            too_fast = (
-                require_word_frames
-                and word.end_frame - current[0].start_frame < len(current) + 1
-            )
-            too_wide = not _would_fit_phrase(
+    for word in words:
+        should_break = bool(current) and (
+            word.start_frame - current[-1].end_frame >= gap_frames
+            or bool(_SENTENCE_END_RE.search(current[-1].text))
+            or (max_words is not None and len(current) >= max_words)
+            or word.end_frame - current[0].start_frame > max_duration_frames
+            or (require_word_frames and word.end_frame - current[0].start_frame < len(current) + 1)
+            or not _would_fit_phrase(
                 [*current, word],
                 font_size=font_size,
                 max_width=max_width,
                 max_lines=max_lines,
                 word_separator=word_separator,
             )
-            if not (separated or too_many or too_long or too_fast or too_wide):
-                break
-            split_at = len(current)
-            if preferred_breaks is not None and not separated and not too_many:
-                group_start = word_index - len(current)
-                boundary = next((
-                    index for index in range(word_index, group_start, -1)
-                    if index in preferred_breaks
-                ), None)
-                if boundary is not None:
-                    split_at = boundary - group_start
-                elif not too_wide and not too_fast:
-                    # Two seconds is a target: finish one intact phrase when
-                    # there is room. Width and frame limits remain mandatory.
-                    break
-            groups.append(current[:split_at])
-            current = current[split_at:]
+        )
+        if should_break:
+            groups.append(current)
+            current = []
         current.append(word)
         if _SENTENCE_END_RE.search(word.text):
             groups.append(current)
@@ -1127,17 +1159,21 @@ def _basic_or_highlight_cues(
     word_separator = (
         CAPTION_HIGHLIGHT_WORD_SEPARATOR if highlighted else CAPTION_WORD_SEPARATOR
     )
-    groups = _partition_words(
-        words,
-        gap_frames=round(0.42 * fps),
-        max_words=None,
-        font_size=font_size,
-        max_width=measured_max_width,
-        max_duration_frames=round(3.2 * fps),
-        max_lines=1,
-        require_word_frames=highlighted,
-        word_separator=word_separator,
-    )
+    groups = [
+        cleaned
+        for group in _partition_words(
+            words,
+            gap_frames=round(0.42 * fps),
+            max_words=None,
+            font_size=font_size,
+            max_width=measured_max_width,
+            max_duration_frames=round(3.2 * fps),
+            max_lines=1,
+            require_word_frames=highlighted,
+            word_separator=word_separator,
+        )
+        if (cleaned := _without_display_periods(group))
+    ]
     cues: list[dict[str, object]] = []
     previous_end_frame = 0
     for index, group in enumerate(groups):
@@ -1206,12 +1242,6 @@ def _basic_or_highlight_cues(
             if highlighted
             else [{"startFrame": start_frame, "endFrame": end_frame}]
         )
-        if not highlighted:
-            # Plain captions are phrase-timed. Trimming a translated phrase
-            # must not remove words using invented word-to-speech alignment.
-            for word in cue["words"]:
-                word.update(startFrame=start_frame, endFrame=end_frame,
-                            speechStartFrame=start_frame, speechEndFrame=end_frame)
         cues.append(cue)
     return cues
 
@@ -1292,31 +1322,6 @@ def _pop_event_positions(
     return positions
 
 
-@lru_cache(maxsize=1)
-def _japanese_phrase_parser():
-    import budoux
-
-    return budoux.load_default_japanese_parser()
-
-
-def _japanese_phrase_breaks(words: Sequence[_CaptionWord]) -> set[int]:
-    # Only select existing provider boundaries. The parser never rewrites
-    # caption text or changes the individual word/speech timestamps.
-    phrases = _japanese_phrase_parser().parse("".join(word.text for word in words))
-    offsets: set[int] = set()
-    offset = 0
-    for phrase in phrases:
-        offset += len(phrase)
-        offsets.add(offset)
-    boundaries: set[int] = set()
-    offset = 0
-    for index, word in enumerate(words):
-        if offset in offsets:
-            boundaries.add(index)
-        offset += len(word.text)
-    return boundaries
-
-
 def _pop_cues(
     words: list[_CaptionWord],
     *,
@@ -1327,20 +1332,20 @@ def _pop_cues(
 ) -> list[dict[str, object]]:
     outline = 8
     max_width = safe_area["width"] - outline * 2
-    # Japanese speech providers can return one character per timed word.
-    # Prefer readable phrase boundaries within the existing display limits.
-    japanese = any(_KANA_RE.search(word.text) for word in words)
-    groups = _partition_words(
-        words,
-        gap_frames=round(0.25 * fps),
-        max_words=None if japanese else 3,
-        font_size=font_size,
-        max_width=round(max_width / 1.12),
-        max_duration_frames=round(2.0 * fps),
-        max_lines=1,
-        require_word_frames=True,
-        preferred_breaks=_japanese_phrase_breaks(words) if japanese else None,
-    )
+    groups = [
+        cleaned
+        for group in _partition_words(
+            words,
+            gap_frames=round(0.25 * fps),
+            max_words=3,
+            font_size=font_size,
+            max_width=round(max_width / 1.12),
+            max_duration_frames=round(2.0 * fps),
+            max_lines=1,
+            require_word_frames=True,
+        )
+        if (cleaned := _without_display_periods(group))
+    ]
     center_x = safe_area["x"] + safe_area["width"] / 2
     center_y = safe_area["y"] + safe_area["height"] / 2
     cues: list[dict[str, object]] = []
@@ -1446,8 +1451,8 @@ def rebuild_caption_cue_text(
     font_size: int | None = None,
     schema_version: int = 3,
 ) -> list[dict[str, object]]:
-    """Reflow edited text with punctuation; an empty edit hides only this cue."""
-    if template_id not in CAPTION_TEMPLATE_IDS:
+    """Reflow one trusted cue while preserving its compiled frame window."""
+    if template_id not in {"highlight", "pop"}:
         raise CaptionCompileError("편집할 수 없는 자막 템플릿입니다.")
     if fps != CAPTION_FPS:
         raise CaptionCompileError("편집 자막 프레임레이트가 올바르지 않습니다.")
@@ -1458,7 +1463,7 @@ def rebuild_caption_cue_text(
         raise CaptionCompileError("편집 자막 표시 구간이 올바르지 않습니다.")
     tokens = text.strip().split()
     if not tokens:
-        return []
+        raise CaptionCompileError("편집 자막 내용이 비어 있습니다.")
 
     # Caption specs cap a cue at twenty words and animated templates require at
     # least one output frame per word. Keep arbitrary user copy renderable by
@@ -1503,7 +1508,7 @@ def rebuild_caption_cue_text(
         safe_area=safe_area,
         font_size=font_size,
     )
-    return (
+    rebuilt = (
         _pop_cues(
             words,
             safe_area=safe_area,
@@ -1514,13 +1519,16 @@ def rebuild_caption_cue_text(
         if template_id == "pop"
         else _basic_or_highlight_cues(
             words,
-            highlighted=template_id == "highlight",
+            highlighted=True,
             safe_area=safe_area,
             fps=fps,
             font_size=font_size or 72,
             schema_version=schema_version,
         )
     )
+    if not rebuilt:
+        raise CaptionCompileError("편집 자막을 다시 배치하지 못했습니다.")
+    return rebuilt
 
 
 def _reflow_caption_cues_for_clips(
@@ -1635,18 +1643,12 @@ def _reflow_caption_cues_for_clips(
             for window_index, (clip_start, clip_end, _output_start) in enumerate(
                 merged_windows
             ):
-                # Cue handoffs include the display lead and may end before a
-                # retained word is spoken. Only actual video cuts remove it.
-                spoken_visible_start = max(speech_start, clip_start)
-                spoken_visible_end = min(speech_end, clip_end)
+                spoken_visible_start = max(speech_start, cue_start, clip_start)
+                spoken_visible_end = min(speech_end, cue_end, clip_end)
                 if spoken_visible_end <= spoken_visible_start:
                     continue
-                visible_start = max(word_start, clip_start)
-                visible_end = min(word_end, clip_end)
-                if edited_text is not None:
-                    # A user's replacement text keeps its chosen cue envelope.
-                    visible_start = max(visible_start, cue_start)
-                    visible_end = min(visible_end, cue_end)
+                visible_start = max(word_start, cue_start, clip_start)
+                visible_end = min(word_end, cue_end, clip_end)
                 if visible_end <= visible_start:
                     continue
                 score = (
@@ -1724,30 +1726,6 @@ def _reflow_caption_cues_for_clips(
             continue
 
         for retained in retained_groups:
-            if template_id == "basic":
-                # Plain captions store the whole phrase's display window on
-                # every word. Feeding those shared anchors back to the word
-                # partitioner makes a >3.2s phrase split into one-frame cues.
-                # Cuts have already retained the complete phrase above. Give
-                # layout (not speech) proportional anchors within that window;
-                # the compiler restores phrase timing on the resulting words.
-                start = min(word.start_frame for word in retained)
-                end = max(word.end_frame for word in retained)
-                total = sum(max(1, len(word.text)) for word in retained)
-                consumed = 0
-                distributed: list[_CaptionWord] = []
-                for word in retained:
-                    word_start = start + round((end - start) * consumed / total)
-                    consumed += max(1, len(word.text))
-                    word_end = start + round((end - start) * consumed / total)
-                    distributed.append(replace(
-                        word,
-                        start_frame=word_start,
-                        end_frame=word_end,
-                        speech_start_frame=word_start,
-                        speech_end_frame=word_end,
-                    ))
-                retained = distributed
             retained = _fit_display_words(
                 retained,
                 template_id=template_id,
@@ -1974,17 +1952,11 @@ def _line_text(
     text_color: str,
     accent_color: str,
     word_separator: str,
-    hide_separator_ink: bool = False,
 ) -> str:
     result = ""
     for line_position, word_index in enumerate(indexes):
         word = words[word_index]
         prefix = word_separator if line_position and word.get("spaceBefore") else ""
-        if hide_separator_ink and prefix == CAPTION_WORD_SEPARATOR:
-            # Some Linux fallback faces draw a visible label for U+2009.
-            # Keep its shaped advance (and the saved preview geometry), but
-            # suppress whitespace ink including outline, then restore words.
-            prefix = rf"{{\alpha&HFF&}}{prefix}{{\alpha&H00&}}"
         color = accent_color if word_index == active_index else text_color
         result += f"{{\\1c{_ass_color(color)}}}{prefix}{_ass_escape(str(word['text']))}"
     return result
@@ -2032,7 +2004,7 @@ def create_caption_ass(spec: dict[str, Any], output_path: Path) -> Path:
         events = list(cue.get("events") or [])
         if not words or not events:
             continue
-        if schema_version == 4 and template_id in {"basic", "highlight"}:
+        if schema_version == 4 and template_id == "highlight":
             with _caption_font_context(font_id):
                 expected_separator_advance = canonical_px_v4(
                     _measure(
@@ -2202,7 +2174,6 @@ def create_caption_ass(spec: dict[str, Any], output_path: Path) -> Path:
                     word_separator=str(
                         cue.get("wordSeparator") or CAPTION_WORD_SEPARATOR
                     ),
-                    hide_separator_ink=schema_version == 4 and template_id == "basic",
                 )
                 for line in cue.get("lines") or []
             ]

@@ -414,7 +414,7 @@ def test_korean_sentence_punctuation_prevents_cross_sentence_merge() -> None:
 
 
 @pytest.mark.parametrize("template_id", ["basic", "highlight", "pop"])
-def test_new_captions_preserve_punctuation_and_decimal_text(
+def test_ascii_periods_are_removed_only_from_rendered_caption_text(
     template_id: str,
 ) -> None:
     spec = _compile(
@@ -423,15 +423,17 @@ def test_new_captions_preserve_punctuation_and_decimal_text(
             _word(".", 0.2, 0.3),
             _word("둘째.", 0.3, 0.6, space_before=True),
             _word("3.14", 0.6, 0.9, space_before=True),
-            _word("v1.2", 0.9, 1.2, space_before=True),
         ],
         template_id,
-        clip_end=1.3,
+        clip_end=1.0,
     )
     rendered_words = [word for cue in spec["cues"] for word in cue["words"]]
 
-    assert [word["text"] for word in rendered_words] == ["첫째", ".", "둘째.", "3.14", "v1.2"]
-    assert [word["sourceWordIndexes"] for word in rendered_words] == [[0], [1], [2], [3], [4]]
+    assert all("." not in word["text"] for word in rendered_words)
+    assert [word["text"] for word in rendered_words] == ["첫째", "둘째", "314"]
+    first = rendered_words[0]
+    assert first["sourceWordIndexes"] == [0, 1]
+    assert first["endFrame"] == round(0.3 * 30)
 
 
 @pytest.mark.parametrize("template_id", ["basic", "highlight"])
@@ -591,9 +593,6 @@ def test_highlight_word_spacing_matches_regular_space_while_pop_stays_six_pixels
         clip_end=0.5,
     )
     assert legacy_basic["cues"][0]["wordSeparator"] == CAPTION_WORD_SEPARATOR
-    assert r"\alpha&HFF&" not in create_caption_ass(
-        legacy_basic, tmp_path / "legacy-basic.ass"
-    ).read_text(encoding="utf-8")
 
     legacy_highlight = _compile(
         [
@@ -636,54 +635,6 @@ def test_highlight_word_spacing_matches_regular_space_while_pop_stays_six_pixels
             CAPTION_POP_SPACED_GAP_PX,
             abs=0.01,
         )
-
-
-@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is required")
-def test_v4_basic_separator_has_no_ink_and_preserves_both_words(tmp_path: Path) -> None:
-    # Paperlogy has no U+2009 glyph. Linux fallback fonts can display a boxed
-    # THIN SPACE label there, unlike the blank fallback used by macOS/Chrome.
-    spec = compile_caption_render_spec(
-        [_word("M", 0, 0.4), _word("M", 0.4, 0.8, space_before=True)],
-        template_id="basic",
-        clip_start=0,
-        clip_end=1,
-        video_aspect_ratio=VideoAspectRatio.LANDSCAPE,
-        font_id=EditorFontId.PAPERLOGY,
-        font_size=96,
-        schema_version=4,
-    )
-    spec["style"]["outlineWidth"] = 0
-    ass_path = create_caption_ass(spec, tmp_path / "basic.ass")
-    fonts = prepare_caption_fonts(tmp_path / "fonts", spec)
-    frame = tmp_path / "basic.png"
-    subprocess.run(
-        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i",
-         "color=black:size=1080x1920:rate=30:duration=0.1",
-         "-vf", f"subtitles=filename='{ass_path}':fontsdir='{fonts}'",
-         "-frames:v", "1", str(frame)],
-        check=True, capture_output=True, timeout=60,
-        env={**os.environ, "XDG_CACHE_HOME": str(tmp_path / "font-cache")},
-    )
-    with Image.open(frame).convert("RGB") as image:
-        bounds = image.getbbox()
-        assert bounds is not None
-        crop = image.crop(bounds)
-        visible = [
-            any(max(crop.getpixel((x, y))) > 50 for y in range(crop.height))
-            for x in range(crop.width)
-        ]
-    runs = []
-    start = None
-    for index, ink in enumerate([*visible, False]):
-        if ink and start is None:
-            start = index
-        elif not ink and start is not None:
-            runs.append((start, index))
-            start = None
-    assert len(runs) == 2, "Only the two words may have ink; the separator must be blank"
-    assert abs((runs[0][1] - runs[0][0]) - (runs[1][1] - runs[1][0])) <= 1
-    assert runs[0][1] - runs[0][0] > 40, "Restoring alpha must keep both words visible"
-    assert runs[1][0] - runs[0][1] >= 4
 
 
 def test_project_3259_pop_spacing_uses_six_pixels_and_zero_for_joined_tokens() -> None:
@@ -1585,61 +1536,6 @@ def test_plain_split_does_not_duplicate_a_caption_word() -> None:
     assert [word["text"] for cue in cues for word in cue["words"]] == [
         "경계단어"
     ]
-
-
-@pytest.mark.parametrize("template_id", ["basic", "highlight", "pop"])
-@pytest.mark.parametrize("schema_version", [3, 4])
-@pytest.mark.parametrize("text", [".", "...", "3.14 . 좋아요.", "Hello... そうです。"])
-def test_edited_caption_preserves_punctuation_after_cuts_and_reflow(
-    template_id: str, schema_version: int, text: str,
-) -> None:
-    source = _editable_caption_cue(
-        start_frame=0, end_frame=60, word_ranges=[("원본", 0, 60)],
-    )
-    arguments = {
-        "template_id": template_id,
-        "safe_area": {"x": 120, "y": 1080, "width": 840, "height": 140},
-        "schema_version": schema_version,
-    }
-    edited = reflow_caption_cues_for_clips(
-        [source], clip_windows=[(5, 55, 0)], cue_edits={2: text}, **arguments,
-    )
-    # A saved result may be reflowed again for a later cut or layout change.
-    reopened = reflow_caption_cues_for_clips(
-        edited, clip_windows=[(0, 50, 0)], **arguments,
-    )
-    for cues in (edited, reopened):
-        rendered_text = "".join(word["text"] for cue in cues for word in cue["words"])
-        assert rendered_text == text.replace(" ", "")
-        assert all(0 <= cue["startFrame"] < cue["endFrame"] <= 50 for cue in cues)
-    assert source["words"][0]["text"] == "원본"
-
-
-@pytest.mark.parametrize("template_id", ["basic", "highlight", "pop"])
-@pytest.mark.parametrize("text", ["", " \n\t "])
-def test_empty_caption_edit_omits_only_its_cue(template_id: str, text: str) -> None:
-    source = [
-        _editable_caption_cue(
-            source_cue_index=0, start_frame=0, end_frame=30,
-            word_ranges=[("삭제", 0, 30)],
-        ),
-        _editable_caption_cue(
-            source_cue_index=1, start_frame=60, end_frame=90,
-            word_ranges=[("유지", 60, 90)],
-        ),
-    ]
-    arguments = {
-        "template_id": template_id,
-        "safe_area": {"x": 120, "y": 1080, "width": 840, "height": 140},
-        "clip_windows": [(0, 90, 0)],
-    }
-    cues = reflow_caption_cues_for_clips(source, cue_edits={0: text}, **arguments)
-    assert [word["text"] for cue in cues for word in cue["words"]] == ["유지"]
-    assert cues[0]["sourceCueIndex"] == 1
-    assert (cues[0]["startFrame"], cues[0]["endFrame"]) == (60, 90)
-    assert reflow_caption_cues_for_clips(
-        source, cue_edits={0: text, 1: text}, **arguments,
-    ) == []
 
 
 def test_edited_caption_adjacent_split_matches_unsplit_output() -> None:

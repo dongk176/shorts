@@ -20,7 +20,6 @@ from pathlib import Path
 from uuid import uuid4
 
 from .background_assets import download_owned_background
-from .caption_composition import with_caption_comment_layout
 from .caption_templates import (
     CAPTION_ACCENT,
     CAPTION_STABLE_TIMING_LEAD_FRAMES,
@@ -31,7 +30,6 @@ from .comment_generator import CommentClipInput, CommentGenerator
 from .config import Settings
 from .editor_renderer import (
     EditorDocumentRenderer,
-    caption_spec_for_padded_timeline,
     editor_highlight_subtitles_enabled,
     editor_subtitle_render_mode,
     project_caption_render_spec_v4,
@@ -47,14 +45,13 @@ from .errors import (
     TranscriptionError,
 )
 from .ingestion import DownloadedAssetBundle, YtDlpIngestionProvider
-from .language_context import resolve_source_language
-from .language_test import verify_language_test_job
 from .media import media_duration, probe_media, run_command
 from .overlays import (
     contrasting_title_text_color,
     default_title_text_styles,
     ensure_title_text_background,
 )
+from .preset_channel_position import preset_version
 from .queueing import WorkQueue
 from .release_identity import (
     initial_render_v4_opt_in,
@@ -64,7 +61,6 @@ from .render_spec_v4 import compile_initial_editor_render_spec_v4
 from .renderer import VideoRenderer
 from .repository import WorkerRepository
 from .schemas import (
-    EDITOR_TIMELINE_METADATA_TOLERANCE_SECONDS,
     CommentOverlay,
     CustomTemplateConfig,
     EditorDocument,
@@ -79,15 +75,6 @@ from .schemas import (
 )
 from .selector import TranscriptSelector, minimum_clip_count
 from .storage import ObjectStorage
-from .subtitle_translation import (
-    POLICY as SUBTITLE_TRANSLATION_POLICY,
-)
-from .subtitle_translation import (
-    SubtitleTranslator,
-    translated_words,
-    translation_required,
-    translation_segments,
-)
 from .subtitles import (
     ELEVENLABS_FALLBACK_POLICY,
     OPENAI_STABLE_POLICY,
@@ -114,14 +101,6 @@ class UploadSourceCleanupError(RuntimeError):
     def __init__(self, workspace: Path) -> None:
         super().__init__("업로드 작업 원본을 안전하게 삭제하지 못했습니다.")
         self.workspace = workspace
-
-
-class ProjectDeferredForIngestionRoute(RuntimeError):
-    """The current task relinquished its project to the durable route queue."""
-
-    def __init__(self, action: str) -> None:
-        super().__init__(action)
-        self.action = action
 
 
 def cleanup_uploaded_project_workspace(workspace: Path, *, attempts: int = 3) -> None:
@@ -190,25 +169,6 @@ class ProjectTimelineTarget:
     caption_editor_source: dict[str, object] | None = None
 
 
-def translated_clip_job(
-    job: dict[str, object], outcome: dict[str, object] | None
-) -> dict[str, object]:
-    """Persist translation availability in the existing per-short snapshot."""
-    if outcome is None:
-        return job
-    snapshot = job.get("subtitle_template_snapshot")
-    return {
-        **job,
-        "subtitle_template_id": None
-        if outcome["status"] == "unavailable"
-        else job.get("subtitle_template_id"),
-        "subtitle_template_snapshot": {
-            **(snapshot if isinstance(snapshot, dict) else {}),
-            "translationOutcome": outcome,
-        },
-    }
-
-
 def edit_timeline_clip(
     clip: HighlightClip,
     source_duration_seconds: float,
@@ -252,36 +212,6 @@ def _caption_compile_options(
         "caption_max_width": subtitle.max_width,
         "font_size": subtitle.font_size,
         "text_color": subtitle.color,
-    }
-
-
-def _project_caption_options(
-    job: dict[str, object],
-    subtitle: TemplateSubtitleLayer | None,
-    *,
-    template_id: str,
-    translated: bool,
-    initial_render_v4: bool,
-) -> dict[str, object]:
-    """Use the same presentation settings for the first render and editable timeline."""
-    snapshot = job.get("subtitle_template_snapshot")
-    snapshot = snapshot if isinstance(snapshot, dict) else {}
-    font = snapshot.get("font")
-    font = font if isinstance(font, dict) else {}
-    return {
-        "template_id": template_id,
-        "video_aspect_ratio": VideoAspectRatio(str(job.get("video_aspect_ratio") or "1:1")),
-        "caption_placement": str(snapshot.get("captionPlacement") or "lower"),
-        "accent_color": subtitle.accent_color
-        if subtitle is not None else _preset_brand_color(job) or CAPTION_ACCENT,
-        "font_id": "noto-sans-jp"
-        if job.get("output_language") == "ja"
-        and (translated or job.get("language_test_release_id"))
-        else subtitle.font_id if subtitle is not None else font.get("id"),
-        "timing_lead_frames": CAPTION_STABLE_TIMING_LEAD_FRAMES if translated
-        else _subtitle_template_timing_lead_frames(snapshot),
-        "schema_version": 4 if initial_render_v4 else 3,
-        **_caption_compile_options(subtitle),
     }
 
 
@@ -923,7 +853,6 @@ class BatchWorker:
         observation: dict[str, object] | None = None,
         words_out: list[TranscriptWord] | None = None,
         unavailable_ranges_out: list[tuple[float, float]] | None = None,
-        source_language: str | None = None,
     ) -> list[SubtitleSegment]:
         try:
             result = (
@@ -933,13 +862,9 @@ class BatchWorker:
                     start_seconds=start_seconds,
                     duration_seconds=duration_seconds,
                     policy=policy,
-                    **({"source_language": source_language} if source_language else {}),
                 )
                 if limit_audio
-                else self.transcriber.transcribe(
-                    source, work_dir, policy=policy,
-                    **({"source_language": source_language} if source_language else {}),
-                )
+                else self.transcriber.transcribe(source, work_dir, policy=policy)
             )
         except TranscriptionError as exc:
             _log_event(
@@ -1136,29 +1061,15 @@ class BatchWorker:
         *,
         resume: bool = False,
         prepared_source: Path | None = None,
-        expected_dispatch_generation: int | None = None,
     ) -> None:
         """Run one pipeline-v2 project inside a single Fargate task."""
         job = self.repository.get_job(job_id)
         if not job:
             raise KeyError(job_id)
-        verify_language_test_job(job)
         if int(job.get("pipeline_version") or 1) != 2:
             raise ValueError("project command requires pipeline_version=2")
         initial_render_v4 = verify_initial_render_v4_runtime(job) is not None
-        dispatch_generation = int(job.get("project_dispatch_generation") or 0)
-        if expected_dispatch_generation is None:
-            raw_dispatch_generation = os.getenv("PROJECT_DISPATCH_GENERATION")
-            expected_dispatch_generation = (
-                int(raw_dispatch_generation)
-                if raw_dispatch_generation is not None
-                else dispatch_generation
-            )
-        claimed = self.repository.claim_project_run(
-            job_id,
-            resume=resume,
-            expected_dispatch_generation=expected_dispatch_generation,
-        )
+        claimed = self.repository.claim_project_run(job_id, resume=resume)
         if not claimed:
             return
 
@@ -1391,9 +1302,6 @@ class BatchWorker:
                                 youtube_url=str(job["youtube_url"]),
                                 destination=work_dir / "source",
                                 initial_route_id=route_id,
-                                expected_dispatch_generation=(
-                                    expected_dispatch_generation
-                                ),
                             )
                         )
                         source = bundle.video_path
@@ -1519,10 +1427,6 @@ class BatchWorker:
                             job.get("transcription_policy") or OPENAI_STABLE_POLICY
                         ),
                         observation=transcription_observation,
-                        source_language=(
-                            str(job["source_language_hint"])
-                            if job.get("source_language_hint") in {"ko", "en", "ja"} else None
-                        ),
                         words_out=(transcript_words if subtitle_template_id else None),
                         unavailable_ranges_out=(
                             transcription_unavailable_ranges
@@ -1542,7 +1446,9 @@ class BatchWorker:
                     duration_seconds=selected_duration_seconds,
                 )
                 if subtitle_template_id and not transcript_words:
-                    _log_event("project_caption_words_unavailable", job_id=job_id)
+                    raise TranscriptionError(
+                        "자막 템플릿에 필요한 단어 타임스탬프가 비어 있습니다."
+                    )
                 transcription_seconds = time.monotonic() - transcription_started_at
                 self.repository.merge_job_performance_metrics(
                     job_id,
@@ -1556,12 +1462,6 @@ class BatchWorker:
                     },
                 )
                 self.repository.stage(job_id, "selecting", 42, "쇼츠로 만들 장면을 찾고 있습니다.")
-                source_language = resolve_source_language(
-                    job.get("source_language_hint"), transcription_observation.get("languageCode"),
-                )
-                needs_translation = translation_required(
-                    source_language, str(job["output_language"]),
-                )
                 target_count = int(job["planned_short_count"])
                 required_minimum_count = minimum_clip_count(target_count)
                 selection_started_at = time.monotonic()
@@ -1572,10 +1472,6 @@ class BatchWorker:
                         transcript=selection_transcript,
                         required_count=target_count,
                         output_language=OutputLanguage(str(job["output_language"])),
-                        **(
-                            {"source_language": source_language}
-                            if source_language is not None else {}
-                        ),
                     )[:target_count]
                 for clip in clips:
                     _validate_clip_in_source_window(
@@ -1596,99 +1492,48 @@ class BatchWorker:
                         }
                     },
                 )
-                display_transcript = selection_transcript
-                subtitle_translation = None
-                translation_outcomes: dict[int, dict[str, object]] = {}
-                if needs_translation:
-                    assert source_language is not None
-                    windows = [
-                        edit_timeline_clip(clip, selected_duration_seconds)
-                        if getattr(self.settings, "edit_timeline_capture_enabled", False) else clip
-                        for clip in clips
-                    ]
-                    priority_windows = [(clip.start_seconds, clip.end_seconds) for clip in clips]
-                    selected_segments = translation_segments(
-                        selection_transcript,
-                        [(clip.start_seconds, clip.end_seconds) for clip in windows],
-                        priority_windows=priority_windows,
-                    )
-                    translator = SubtitleTranslator(self.settings)
-                    self.repository.stage(job_id, "selecting", 45, "자막을 번역하고 있습니다.")
-                    try:
-                        translation_result = translator.translate_partial(
-                            selected_segments,
-                            source_language=source_language,
-                            output_language=str(job["output_language"]),
-                            priority_windows=priority_windows,
-                        )
-                        display_transcript = translation_result.segments
-                        translation_outcomes = {
-                            index: translation_result.outcome(
-                                clip.start_seconds,
-                                clip.end_seconds,
-                                window.start_seconds,
-                                window.end_seconds,
-                            )
-                            for index, (clip, window) in enumerate(
-                                zip(clips, windows, strict=True), 1
-                            )
-                        }
-                    finally:
-                        self.repository.merge_job_performance_metrics(
-                            job_id, {"subtitleTranslation": translator.metrics},
-                        )
-                    transcript_words = translated_words([
-                        segment.model_copy(update={
-                            "start": segment.start + source_offset_seconds,
-                            "end": segment.end + source_offset_seconds,
-                        }) for segment in display_transcript
-                    ])
-                    subtitle_translation = {
-                        "policy": SUBTITLE_TRANSLATION_POLICY,
-                        "sourceLanguage": source_language,
-                        "outputLanguage": str(job["output_language"]),
-                        "requestedTemplateId": stored_subtitle_template_id or None,
-                    }
-                    # Use a plain style for selected captions. Script translation
-                    # keeps the template's existing caption selection and visibility.
-                    if subtitle_template_id:
-                        subtitle_template_id = "basic"
                 caption_render_specs: dict[int, dict[str, object]] = {}
                 caption_editor_sources: dict[int, dict[str, object]] = {}
-                caption_unavailable: set[int] = set()
-                caption_options = (
-                    _project_caption_options(
-                        job,
-                        unified_template_subtitle,
-                        template_id=subtitle_template_id,
-                        translated=subtitle_translation is not None,
-                        initial_render_v4=initial_render_v4,
+                subtitle_template_snapshot = job.get("subtitle_template_snapshot")
+                caption_timing_lead_frames = (
+                    _subtitle_template_timing_lead_frames(
+                        subtitle_template_snapshot,
                     )
-                    if subtitle_template_id else {}
+                    if subtitle_template_id
+                    else CAPTION_STABLE_TIMING_LEAD_FRAMES
                 )
                 if subtitle_template_id:
-                    compiled_clips: list[tuple[HighlightClip, dict[str, object] | None]] = []
+                    aspect_ratio = VideoAspectRatio(
+                        str(job.get("video_aspect_ratio") or "1:1")
+                    )
+                    caption_placement = (
+                        str(subtitle_template_snapshot.get("captionPlacement") or "lower")
+                        if isinstance(subtitle_template_snapshot, dict)
+                        else "lower"
+                    )
+                    snapshot_font = (
+                        subtitle_template_snapshot.get("font")
+                        if isinstance(subtitle_template_snapshot, dict)
+                        else None
+                    )
+                    caption_font_id = (
+                        snapshot_font.get("id")
+                        if isinstance(snapshot_font, dict)
+                        else None
+                    )
+                    compiled_clips: list[tuple[HighlightClip, dict[str, object]]] = []
                     rejected_caption_clips = 0
                     for original_index, clip in enumerate(clips, start=1):
                         absolute_clip = _offset_highlight_clip(
                             clip,
                             source_offset_seconds,
                         )
-                        if (
-                            translation_outcomes.get(original_index, {}).get("status")
-                            == "unavailable"
-                        ):
-                            rejected_caption_clips += 1
-                            compiled_clips.append((clip, None))
-                            continue
                         if any(
                             unavailable_end > absolute_clip.start_seconds
                             and unavailable_start < absolute_clip.end_seconds
                             for unavailable_start, unavailable_end
                             in transcription_unavailable_ranges
                         ):
-                            caption_unavailable.add(original_index)
-                            compiled_clips.append((clip, None))
                             rejected_caption_clips += 1
                             _log_event(
                                 "project_caption_clip_rejected",
@@ -1700,17 +1545,32 @@ class BatchWorker:
                         try:
                             caption_spec = compile_caption_render_spec(
                                 transcript_words,
+                                template_id=subtitle_template_id,
                                 clip_start=absolute_clip.start_seconds,
                                 clip_end=absolute_clip.end_seconds,
-                                **caption_options,
+                                video_aspect_ratio=aspect_ratio,
+                                caption_placement=caption_placement,
+                                accent_color=(
+                                    unified_template_subtitle.accent_color
+                                    if unified_template_subtitle is not None
+                                    else _preset_brand_color(job) or CAPTION_ACCENT
+                                ),
+                                font_id=(
+                                    unified_template_subtitle.font_id
+                                    if unified_template_subtitle is not None
+                                    else caption_font_id
+                                ),
+                                timing_lead_frames=caption_timing_lead_frames,
+                                schema_version=4 if initial_render_v4 else 3,
+                                **_caption_compile_options(
+                                    unified_template_subtitle
+                                ),
                             )
                         except (
                             CaptionCompileError,
                             RenderError,
                             TranscriptionError,
                         ) as exc:
-                            caption_unavailable.add(original_index)
-                            compiled_clips.append((clip, None))
                             rejected_caption_clips += 1
                             _log_event(
                                 "project_caption_clip_rejected",
@@ -1719,48 +1579,57 @@ class BatchWorker:
                                 error_type=type(exc).__name__,
                             )
                             continue
-                        if subtitle_translation:
-                            caption_spec["translation"] = subtitle_translation
-                        caption_spec = with_caption_comment_layout(
-                            caption_spec, template_id=job["template_id"],
-                            video_aspect_ratio=job.get("video_aspect_ratio"),
-                            custom_template=_custom_template_config(job),
-                        )
                         compiled_clips.append((clip, caption_spec))
+                    if len(compiled_clips) < required_minimum_count:
+                        raise TranscriptionError(
+                            "자막을 만들 수 있는 음성 구간이 부족합니다."
+                        )
                     clips = [clip for clip, _spec in compiled_clips]
                     caption_render_specs = {
                         index: spec
                         for index, (_clip, spec) in enumerate(compiled_clips, start=1)
-                        if spec is not None
                     }
                     self.repository.merge_job_performance_metrics(
                         job_id,
                         {
                             "captionValidation": {
-                                "acceptedCount": len(caption_render_specs),
+                                "acceptedCount": len(compiled_clips),
                                 "rejectedCount": rejected_caption_clips,
                                 "minimumCount": required_minimum_count,
                             }
                         },
                     )
                 clip_subtitles = {
-                    index: self._relative_subtitles(display_transcript, clip)
+                    index: self._relative_subtitles(selection_transcript, clip)
                     for index, clip in enumerate(clips, start=1)
                 }
-                edit_timeline_clips = (
-                    {
-                        index: edit_timeline_clip(clip, selected_duration_seconds)
-                        for index, clip in enumerate(clips, start=1)
-                    }
-                    if (getattr(self.settings, "edit_timeline_capture_enabled", False))
-                    else {}
-                )
+                edit_timeline_clips = {
+                    index: edit_timeline_clip(clip, selected_duration_seconds)
+                    for index, clip in enumerate(clips, start=1)
+                } if (
+                    getattr(self.settings, "edit_timeline_capture_enabled", False)
+                ) else {}
                 if subtitle_template_id and edit_timeline_clips:
+                    aspect_ratio = VideoAspectRatio(
+                        str(job.get("video_aspect_ratio") or "1:1")
+                    )
+                    caption_placement = (
+                        str(subtitle_template_snapshot.get("captionPlacement") or "lower")
+                        if isinstance(subtitle_template_snapshot, dict)
+                        else "lower"
+                    )
+                    snapshot_font = (
+                        subtitle_template_snapshot.get("font")
+                        if isinstance(subtitle_template_snapshot, dict)
+                        else None
+                    )
+                    caption_font_id = (
+                        snapshot_font.get("id")
+                        if isinstance(snapshot_font, dict)
+                        else None
+                    )
+                    unavailable_timeline_indexes: list[int] = []
                     for index, timeline_clip in edit_timeline_clips.items():
-                        if index in caption_unavailable:
-                            continue
-                        if translation_outcomes.get(index, {}).get("status") == "unavailable":
-                            continue
                         absolute_timeline_clip = _offset_highlight_clip(
                             timeline_clip,
                             source_offset_seconds,
@@ -1768,16 +1637,26 @@ class BatchWorker:
                         try:
                             timeline_spec = compile_caption_render_spec(
                                 transcript_words,
+                                template_id=subtitle_template_id,
                                 clip_start=absolute_timeline_clip.start_seconds,
                                 clip_end=absolute_timeline_clip.end_seconds,
-                                **caption_options,
-                            )
-                            if subtitle_translation:
-                                timeline_spec["translation"] = subtitle_translation
-                            timeline_spec = with_caption_comment_layout(
-                                timeline_spec, template_id=job["template_id"],
-                                video_aspect_ratio=job.get("video_aspect_ratio"),
-                                custom_template=_custom_template_config(job),
+                                video_aspect_ratio=aspect_ratio,
+                                caption_placement=caption_placement,
+                                accent_color=(
+                                    unified_template_subtitle.accent_color
+                                    if unified_template_subtitle is not None
+                                    else _preset_brand_color(job) or CAPTION_ACCENT
+                                ),
+                                font_id=(
+                                    unified_template_subtitle.font_id
+                                    if unified_template_subtitle is not None
+                                    else caption_font_id
+                                ),
+                                timing_lead_frames=caption_timing_lead_frames,
+                                schema_version=4 if initial_render_v4 else 3,
+                                **_caption_compile_options(
+                                    unified_template_subtitle
+                                ),
                             )
                             if initial_render_v4:
                                 selected_clip = _offset_highlight_clip(
@@ -1808,20 +1687,14 @@ class BatchWorker:
                             RenderError,
                             TranscriptionError,
                         ) as exc:
+                            unavailable_timeline_indexes.append(index)
                             _log_event(
                                 "caption_edit_timeline_rejected",
                                 job_id=job_id,
                                 clip_index=index,
                                 error_type=type(exc).__name__,
                             )
-                            selected_spec = caption_render_specs.get(index)
-                            if selected_spec is None:
-                                continue
-                            timeline_spec = caption_spec_for_padded_timeline(
-                                selected_spec,
-                                start_seconds=absolute_timeline_clip.start_seconds,
-                                end_seconds=absolute_timeline_clip.end_seconds,
-                            )
+                            continue
                         caption_editor_sources[index] = {
                             "timelineStartSeconds": round(
                                 absolute_timeline_clip.start_seconds,
@@ -1833,8 +1706,10 @@ class BatchWorker:
                             ),
                             "spec": timeline_spec,
                         }
+                    for index in unavailable_timeline_indexes:
+                        edit_timeline_clips.pop(index, None)
                 edit_timeline_subtitles = {
-                    index: self._relative_subtitles(display_transcript, timeline_clip)
+                    index: self._relative_subtitles(selection_transcript, timeline_clip)
                     for index, timeline_clip in edit_timeline_clips.items()
                 }
                 comments_by_clip: dict[int, list[dict[str, object]]] = {
@@ -1847,9 +1722,7 @@ class BatchWorker:
                             hook_title=clip.hook_title,
                             reason=clip.reason,
                             duration_seconds=clip.end_seconds - clip.start_seconds,
-                            transcript=self._relative_subtitles(selection_transcript, clip),
-                            output_language=OutputLanguage(str(job.get("output_language") or "ko")),
-                            source_language=source_language,
+                            transcript=clip_subtitles[index],
                         )
                         for index, clip in enumerate(clips, start=1)
                     ]
@@ -1857,9 +1730,7 @@ class BatchWorker:
                     used_comment_fallback = False
                     with PhaseResourceMonitor(self.settings.task_vcpus) as comment_resources:
                         try:
-                            comments_by_clip = self.comment_generator.generate(
-                                comment_inputs,
-                            )
+                            comments_by_clip = self.comment_generator.generate(comment_inputs)
                         except Exception as exc:
                             used_comment_fallback = True
                             _log_event(
@@ -1872,7 +1743,6 @@ class BatchWorker:
                                     item.duration_seconds,
                                     count=item.target_count,
                                     clip_index=item.clip_index,
-                                    output_language=item.output_language,
                                 )
                                 for item in comment_inputs
                             }
@@ -1933,7 +1803,7 @@ class BatchWorker:
                             executor.submit(
                                 self._prepare_project_clip,
                                 job_id=job_id,
-                                job=translated_clip_job(job, translation_outcomes.get(index)),
+                                job=job,
                                 source=source,
                                 source_probe=source_probe,
                                 work_dir=work_dir,
@@ -1942,13 +1812,7 @@ class BatchWorker:
                                 subtitles=clip_subtitles[index],
                                 comments=comments_by_clip.get(index, []),
                                 caption_render_spec=caption_render_specs.get(index),
-                                caption_enabled=(
-                                    False
-                                    if (index in caption_unavailable or translation_outcomes.get(
-                                        index, {},
-                                    ).get("status") == "unavailable")
-                                    else subtitle_template_enabled
-                                ),
+                                caption_enabled=subtitle_template_enabled,
                             ): index
                             for index, _clip in enumerate(clips, start=1)
                         }
@@ -2071,15 +1935,6 @@ class BatchWorker:
                         elapsed_seconds=round(batch_total_seconds, 3),
                         **timeline_summary,
                     )
-        except ProjectDeferredForIngestionRoute as exc:
-            _log_event(
-                "project_ingestion_route_deferred",
-                job_id=job_id,
-                action=exc.action,
-                dispatch_generation=expected_dispatch_generation,
-                resource_tier=resource_tier,
-            )
-            return
         except Exception as exc:
             error_code = (
                 exc.code if isinstance(exc, IngestionError) else type(exc).__name__
@@ -2167,7 +2022,6 @@ class BatchWorker:
             compile_initial_editor_render_spec_v4(
                 title=clip.hook_title,
                 template_id=str(job["template_id"]),
-                output_language=str(job.get("output_language") or "ko"),
                 video_aspect_ratio=str(job.get("video_aspect_ratio") or "1:1"),
                 font_scale=1,
                 title_text_styles=initial_title_text_styles,
@@ -2663,7 +2517,6 @@ class BatchWorker:
         result: str,
         cooldown_seconds: int,
         attempted_route_ids: list[str],
-        wait_seconds: float | None = None,
     ) -> str | None:
         next_route_id = self.repository.rotate_ingestion_route(
             job_id,
@@ -2675,19 +2528,12 @@ class BatchWorker:
         if next_route_id:
             return next_route_id
 
-        bounded_wait_seconds = (
-            self.INGESTION_ROUTE_WAIT_SECONDS
-            if wait_seconds is None
-            else max(0.0, wait_seconds)
-        )
-        if bounded_wait_seconds <= 0:
-            return None
-        wait_deadline = time.monotonic() + bounded_wait_seconds
+        wait_deadline = time.monotonic() + self.INGESTION_ROUTE_WAIT_SECONDS
         _log_event(
             "ingestion_route_wait_started",
             job_id=job_id,
             attempted_route_count=len(attempted_route_ids),
-            max_wait_seconds=bounded_wait_seconds,
+            max_wait_seconds=self.INGESTION_ROUTE_WAIT_SECONDS,
         )
         while time.monotonic() < wait_deadline:
             remaining = wait_deadline - time.monotonic()
@@ -2711,7 +2557,6 @@ class BatchWorker:
         youtube_url: str,
         destination: Path,
         initial_route_id: str | None,
-        expected_dispatch_generation: int | None = None,
     ) -> tuple[DownloadedAssetBundle, str | None]:
         if not initial_route_id:
             return (
@@ -2734,10 +2579,6 @@ class BatchWorker:
         attempted_route_ids: list[str] = []
         route_id = initial_route_id
         route_is_leased = True
-        capacity_requeue_enabled = bool(
-            expected_dispatch_generation is not None
-            and self.repository.ingestion_capacity_requeue_enabled()
-        )
 
         try:
             while True:
@@ -2794,36 +2635,9 @@ class BatchWorker:
                         result=route_result,
                         cooldown_seconds=cooldown_seconds,
                         attempted_route_ids=attempted_route_ids,
-                        wait_seconds=(0 if capacity_requeue_enabled else None),
                     )
                     route_is_leased = bool(next_route_id)
                     if not next_route_id:
-                        if capacity_requeue_enabled:
-                            action = self.repository.defer_project_for_ingestion_route(
-                                job_id,
-                                expected_dispatch_generation=(
-                                    expected_dispatch_generation
-                                ),
-                                expected_batch_job_id=(
-                                    str(os.getenv("AWS_BATCH_JOB_ID") or "").strip()
-                                    or None
-                                ),
-                                attempted_route_ids=attempted_route_ids,
-                            )
-                            if action in {"deferred", "expired", "stale"}:
-                                raise ProjectDeferredForIngestionRoute(action) from exc
-                            if action == "disabled":
-                                next_route_id = self._claim_next_ingestion_route(
-                                    job_id=job_id,
-                                    current_route_id=None,
-                                    result=route_result,
-                                    cooldown_seconds=0,
-                                    attempted_route_ids=attempted_route_ids,
-                                )
-                                route_is_leased = bool(next_route_id)
-                                if next_route_id:
-                                    route_id = next_route_id
-                                    continue
                         raise RetryExhaustedIngestionError(
                             "대기 시간 안에 사용할 수 있는 ISP 경로를 확보하지 못했습니다.",
                             code="ingestion_route_wait_exhausted",
@@ -2890,7 +2704,6 @@ class BatchWorker:
         job = self.repository.get_job(job_id)
         if not job:
             raise KeyError(job_id)
-        verify_language_test_job(job)
         if job.get("subtitle_template_id"):
             raise TranscriptionError(
                 "자막 완성형 템플릿은 프로젝트 파이프라인 v2가 필요합니다."
@@ -3002,37 +2815,23 @@ class BatchWorker:
                     )
 
                 self.repository.stage(job_id, "transcribing", 28, "영상 내용을 분석하고 있습니다.")
-                transcription_observation = {}
                 transcript = self._transcribe_source(
                     job_id=job_id,
                     source=source,
                     work_dir=work_dir,
                     duration_seconds=downloaded_duration_seconds,
-                    observation=transcription_observation,
-                    source_language=(
-                        str(job["source_language_hint"])
-                        if job.get("source_language_hint") in {"ko", "en", "ja"} else None
-                    ),
                     policy=str(
                         job.get("transcription_policy") or OPENAI_STABLE_POLICY
                     ),
                 )
 
                 self.repository.stage(job_id, "selecting", 42, "쇼츠로 만들 장면을 찾고 있습니다.")
-                source_language = resolve_source_language(
-                    job.get("source_language_hint"), transcription_observation.get("languageCode"),
-                )
-                if source_language is not None:
-                    self.repository.merge_job_performance_metrics(
-                        job_id, {"transcription": transcription_observation},
-                    )
                 clips = self.selector.select(
                     video_title=job["video_title"],
                     duration_seconds=downloaded_duration_seconds,
                     transcript=transcript,
                     required_count=int(job["expected_short_count"]),
                     output_language=OutputLanguage(job["output_language"]),
-                    **({"source_language": source_language} if source_language is not None else {}),
                 )
                 if not clips:
                     raise RuntimeError("사용할 수 있는 하이라이트 구간이 없습니다.")
@@ -3066,8 +2865,6 @@ class BatchWorker:
                             reason=clip.reason,
                             duration_seconds=clip.end_seconds - clip.start_seconds,
                             transcript=clip_subtitles[index],
-                            output_language=OutputLanguage(str(job.get("output_language") or "ko")),
-                            source_language=source_language,
                         )
                         for index, clip in enumerate(clips, start=1)
                     ]
@@ -3084,7 +2881,6 @@ class BatchWorker:
                                 item.duration_seconds,
                                 count=item.target_count,
                                 clip_index=item.clip_index,
-                                output_language=item.output_language,
                             )
                             for item in comment_inputs
                         }
@@ -3364,7 +3160,6 @@ class BatchWorker:
         job = self.repository.get_job(job_id)
         if not job:
             raise KeyError(job_id)
-        verify_language_test_job(job)
         verify_initial_render_v4_runtime(job)
         if job["status"] in {"completed", "failed", "expired", "deleted"}:
             return
@@ -3503,7 +3298,6 @@ class BatchWorker:
                 subtitles_enabled=bool(item["subtitles_enabled"]),
                 work_dir=work_dir,
                 prefix="initial",
-                comment_output_language=str(item.get("comment_output_language") or "ko"),
                 title_font_scale=float(item["title_font_scale"]),
                 channel_thumbnail_path=channel_thumbnail_path,
                 video_aspect_ratio=VideoAspectRatio(str(item.get("video_aspect_ratio") or "1:1")),
@@ -3511,6 +3305,7 @@ class BatchWorker:
                 comment_channel_below=_preset_comment_channel_below(item),
                 comment_channel_fixed=_preset_comment_channel_fixed(item),
                 fixed_preset_channel=_preset_fixed_channel_position(item),
+                preset_version=preset_version(item),
                 title_text_styles=title_text_styles,
                 custom_template_config=_custom_template_config(item),
                 caption_render_spec=(
@@ -3658,38 +3453,6 @@ class BatchWorker:
             if document.base_render_version != int(item["render_version"]):
                 raise ValueError("편집 문서의 기준 렌더 버전이 일치하지 않습니다.")
             captured_timeline_key = item.get("edit_timeline_s3_key")
-
-            def matches_document_timeline(start: float, end: float) -> bool:
-                return (
-                    abs(document.video.timeline_start_seconds - start)
-                    <= EDITOR_TIMELINE_METADATA_TOLERANCE_SECONDS
-                    and abs(document.video.timeline_end_seconds - end)
-                    <= EDITOR_TIMELINE_METADATA_TOLERANCE_SECONDS
-                )
-
-            # A background capture may publish a wider timeline after this edit
-            # was accepted. Its document still addresses the original clean
-            # clip. That clip is immutable for base_render_version and remains
-            # available until this render commits, so keep using it (including
-            # its caption source) instead of switching clocks mid-request.
-            if (
-                captured_timeline_key
-                and not matches_document_timeline(
-                    float(item["edit_timeline_start_seconds"]),
-                    float(item["edit_timeline_end_seconds"]),
-                )
-                and item.get("clean_clip_s3_key")
-                and matches_document_timeline(
-                    float(item["start_seconds"]),
-                    float(item["end_seconds"]),
-                )
-            ):
-                captured_timeline_key = None
-                _log_event(
-                    "editor_retained_requested_clean_source",
-                    short_id=short_id,
-                    base_render_version=document.base_render_version,
-                )
             edit_source_key = (
                 str(captured_timeline_key)
                 if captured_timeline_key
@@ -3705,15 +3468,10 @@ class BatchWorker:
                 if captured_timeline_key
                 else float(item["end_seconds"])
             )
-            if not matches_document_timeline(timeline_start, timeline_end):
-                _log_event(
-                    "editor_timeline_range_mismatch",
-                    short_id=short_id,
-                    document_start=document.video.timeline_start_seconds,
-                    document_end=document.video.timeline_end_seconds,
-                    source_start=timeline_start,
-                    source_end=timeline_end,
-                )
+            if (
+                abs(document.video.timeline_start_seconds - timeline_start) > 0.051
+                or abs(document.video.timeline_end_seconds - timeline_end) > 0.051
+            ):
                 raise ValueError("편집 문서의 타임라인 범위가 일치하지 않습니다.")
 
             self.repository.mark_editor_render_request_rendering(short_id)
@@ -3765,21 +3523,12 @@ class BatchWorker:
                 else None
             )
             if (
-                document.subtitles.enabled
-                and item.get("subtitle_template_id")
+                item.get("subtitle_template_id")
                 and resolved_caption_render_spec is None
             ):
                 raise ValueError(
                     "이전 자막 형식은 새 편집기에서 지원하지 않습니다."
                 )
-            translation_snapshot = item.get("subtitle_template_snapshot")
-            translation_outcome = (
-                translation_snapshot.get("translationOutcome", {})
-                if isinstance(translation_snapshot, dict) else {}
-            )
-            if (translation_outcome.get("status") == "unavailable"
-                    and editor_highlight_subtitles_enabled(document)):
-                raise ValueError("번역이 완료되지 않아 자막을 켤 수 없습니다.")
             caption_overlay_only = False
             if (
                 resolved_caption_render_spec is None
@@ -3820,19 +3569,9 @@ class BatchWorker:
                         "선택한 영상 구간에서 단어 타임스탬프를 찾을 수 없습니다."
                     )
                 caption_overlay_only = True
-            visible_caption_render_spec = (
-                resolved_caption_render_spec
-                if document.subtitles.enabled
-                else None
-            )
-            caption_composition_spec = (
-                None
-                if caption_overlay_only
-                else resolved_caption_render_spec
-            )
             subtitle_render_mode = editor_subtitle_render_mode(
                 document,
-                visible_caption_render_spec,
+                resolved_caption_render_spec,
             )
             _log_event(
                 "editor_render_plan",
@@ -3856,10 +3595,8 @@ class BatchWorker:
                 document=document,
                 work_dir=work_dir,
                 channel_thumbnail_path=channel_thumbnail_path,
-                caption_render_spec=visible_caption_render_spec,
-                caption_composition_spec=caption_composition_spec,
+                caption_render_spec=resolved_caption_render_spec,
                 caption_overlay_only=caption_overlay_only,
-                comment_output_language=str(item.get("comment_output_language") or "ko"),
                 **self._background_render_arguments(item, work_dir, document),
             )
             thumbnail_path = work_dir / "thumbnail.jpg"
@@ -3894,7 +3631,7 @@ class BatchWorker:
                 duration_seconds=document.video.output_duration_seconds,
                 subtitle_segments=[
                     segment.model_dump(by_alias=True)
-                    for segment in retime_editor_subtitles(document, resolved_caption_render_spec)
+                    for segment in retime_editor_subtitles(document)
                 ],
             )
             if old_keys is None:
@@ -3928,13 +3665,6 @@ class BatchWorker:
         item = self.repository.get_short(short_id)
         if not item:
             raise KeyError(short_id)
-        if (item.get("language_test_release_id")
-            or os.environ.get("EASYCUT_LANGUAGE_TEST_WORKER") == "true"):
-            parent_job = self.repository.get_job(str(item["job_id"]))
-            if not parent_job:
-                raise KeyError(item["job_id"])
-            verify_language_test_job(parent_job)
-            verify_initial_render_v4_runtime(parent_job)
         pending_snapshot = item.get("pending_edit_snapshot")
         if (
             isinstance(pending_snapshot, dict)
@@ -4044,7 +3774,6 @@ class BatchWorker:
                 subtitles_enabled=bool(render_item["subtitles_enabled"]),
                 work_dir=work_dir,
                 prefix="rerender",
-                comment_output_language=str(item.get("comment_output_language") or "ko"),
                 title_font_scale=float(render_item["title_font_scale"]),
                 channel_thumbnail_path=channel_thumbnail_path,
                 video_aspect_ratio=VideoAspectRatio(
@@ -4054,6 +3783,7 @@ class BatchWorker:
                 comment_channel_below=_preset_comment_channel_below(render_item),
                 comment_channel_fixed=_preset_comment_channel_fixed(render_item),
                 fixed_preset_channel=_preset_fixed_channel_position(render_item),
+                preset_version=preset_version(render_item),
                 title_text_styles=title_text_styles,
                 custom_template_config=_custom_template_config(render_item),
                 caption_render_spec=(

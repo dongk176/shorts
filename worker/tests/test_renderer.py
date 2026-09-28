@@ -182,10 +182,12 @@ def _run(args: list[str]) -> subprocess.CompletedProcess[str]:
         (VideoAspectRatio.FULL_VERTICAL, (1080, 1920)),
     ],
 )
+@pytest.mark.parametrize("preset_version", [3, 4])
 def test_synthetic_video_renders_as_browser_playable_vertical_mp4(
     tmp_path: Path,
     video_aspect_ratio: VideoAspectRatio,
     expected_clean_size: tuple[int, int],
+    preset_version: int,
 ) -> None:
     source = tmp_path / "source.mp4"
     _run(
@@ -276,6 +278,7 @@ def test_synthetic_video_renders_as_browser_playable_vertical_mp4(
         comment_overlays=comments,
         comment_channel_fixed=comment_template,
         fixed_preset_channel=True,
+        preset_version=preset_version,
         metrics_callback=render_metrics.update,
     )
     if comment_template:
