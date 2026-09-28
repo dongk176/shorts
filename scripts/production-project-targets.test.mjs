@@ -77,6 +77,30 @@ test("pins all five production lanes and the approved unified rotation states", 
       imageUri: "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:aedf4fbdfcbd7ef46c6ea42a47fb62d3ec0883100d1bbce5492aab524661e8d6",
       jobDefinitionArn: "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-v4-unified-template-subtitles-ff091cf79333:1",
     }, previous: v4Next },
+    // Registrar-finalized channel-position release 281834ff-8337-48f6-a806-be3f44074249.
+    {
+      "schedulingMode": "fifo",
+      "current": {
+        "releaseId": "unified-template-subtitles-4e73c744e049-v4",
+        "workerSourceGitSha": "4e73c744e049df9f5292c59ea755041309500fb3",
+        "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:8af59b84aa7df9798275769d14047b62c1859564e7348a2010d410315fc6ca59",
+        "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-v4-unified-template-subtitles-4e73c744e049:1",
+        "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-prepare-production",
+        "renderSpecVersion": 4,
+        "captionRenderSpecVersion": 4,
+        "fontManifestSha256": "b9f530954066e89e95fcd2cfb77db558e68530329d3d1d9db17e4e73c859d486"
+      },
+      "previous": {
+        "releaseId": "unified-template-subtitles-ff091cf79333-v4",
+        "workerSourceGitSha": "ff091cf79333e537a0a3c0e01ac58361164295f4",
+        "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:aedf4fbdfcbd7ef46c6ea42a47fb62d3ec0883100d1bbce5492aab524661e8d6",
+        "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-v4-unified-template-subtitles-ff091cf79333:1",
+        "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-prepare-production",
+        "renderSpecVersion": 4,
+        "captionRenderSpecVersion": 4,
+        "fontManifestSha256": "b9f530954066e89e95fcd2cfb77db558e68530329d3d1d9db17e4e73c859d486"
+      }
+    },
   ];
   assert.ok(
     approvedStates.some((approved) => (
