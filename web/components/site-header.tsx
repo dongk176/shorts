@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "@/lib/i18n/navigation";
 import { usePathname } from "@/lib/i18n/navigation";
 import type { ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { HeaderUsageIndicator } from "@/components/header-usage-indicator";
 import { useUsageState } from "@/components/usage-provider";
 import { useI18n } from "@/lib/i18n/provider";
@@ -30,6 +30,12 @@ function NavigationIcon({ path }: { path: string }) {
     strokeLinejoin: "round" as const,
   };
 
+  if (path === "/account") {
+    return <span className="site-nav-icon-frame" aria-hidden="true"><svg {...sharedProps}><circle cx="12" cy="8" r="4" /><path d="M4 21v-2a8 8 0 0 1 16 0v2" /></svg></span>;
+  }
+  if (path === "/") {
+    return <span className="site-nav-icon-frame" aria-hidden="true"><svg {...sharedProps}><path d="M12 5v14M5 12h14" /></svg></span>;
+  }
   if (path === "/projects") {
     return (
       <span className="site-nav-icon-frame" aria-hidden="true">
@@ -143,7 +149,7 @@ function NavigationLinks({ pathname, onNavigate, mobile = false, isEnterprise }:
   );
 }
 
-export function SiteHeader({
+function LegacySiteHeader({
   children,
   showUsageIndicator = true,
   desktopSidebar = false,
@@ -214,4 +220,147 @@ export function SiteHeader({
       </div>
     </header>
   );
+}
+
+
+const sidebarGroups = [
+  { id: "creation", labelKey: "nav.group.creation", items: [
+    { href: "/", labelKey: "nav.create" },
+    { href: "/projects", labelKey: "nav.projects" },
+    { href: "/templates", labelKey: "nav.templates" },
+  ] },
+  { id: "discovery", labelKey: "nav.group.discovery", items: [
+    { href: "/popular", labelKey: "nav.popular" },
+    { href: "/saved-videos", labelKey: "nav.savedVideos" },
+  ] },
+  { id: "help", labelKey: "nav.group.help", items: [
+    { href: "/pricing", labelKey: "nav.pricing" },
+    { href: "/shorts-monetization", labelKey: "nav.shortsGuide" },
+    { href: "/easycut-private", labelKey: null },
+  ] },
+] as const;
+
+type SidebarGroup = typeof sidebarGroups[number]["id"];
+
+function SidebarChevron({ sideways = false }: { sideways?: boolean }) {
+  return <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    {sideways ? <path d="m14 6-6 6 6 6" /> : <path d="m6 9 6 6 6-6" />}
+  </svg>;
+}
+
+function GroupedNavigation({ collapsed, groupsOpen, onToggle, onNavigate, isEnterprise, pathname }: {
+  collapsed: boolean;
+  groupsOpen: Record<SidebarGroup, boolean>;
+  onToggle: (group: SidebarGroup) => void;
+  onNavigate?: () => void;
+  isEnterprise: boolean;
+  pathname: string;
+}) {
+  const { t } = useI18n();
+  const id = useId();
+  return <nav className="sidebar-group-navigation" aria-label={t("nav.primary")}>
+    {sidebarGroups.map(group => {
+      const items = group.items.filter(item => !isEnterprise || !["/pricing", "/easycut-private"].includes(item.href));
+      const open = collapsed || groupsOpen[group.id];
+      return <section className="sidebar-nav-group" key={group.id}>
+        <h2 className="sidebar-group-heading">
+          <button type="button" className="sidebar-group-toggle" aria-expanded={open} aria-controls={`${id}-${group.id}`} onClick={() => onToggle(group.id)} title={t(group.labelKey)}>
+            <span className="sidebar-group-label">{t(group.labelKey)}</span>
+            <SidebarChevron />
+          </button>
+        </h2>
+        <div id={`${id}-${group.id}`} className="sidebar-group-items" hidden={!open}>
+          {items.map(item => {
+            const label = item.labelKey ? t(item.labelKey) : "EASYCUT PRIVATE";
+            const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(`${item.href}/`));
+            return <Link key={item.href} href={item.href} className="sidebar-nav-link" aria-label={label} aria-current={active ? "page" : undefined} title={collapsed ? label : undefined} onClick={onNavigate}>
+              <NavigationIcon path={item.href} /><span className="sidebar-link-label">{label}</span>
+            </Link>;
+          })}
+        </div>
+      </section>;
+    })}
+  </nav>;
+}
+
+function GroupedSiteSidebar({ children, showUsageIndicator }: { children: ReactNode; showUsageIndicator: boolean }) {
+  const pathname = usePathname();
+  const { t, locale } = useI18n();
+  const { isEnterprise } = useUsageState();
+  const [collapsed, setCollapsed] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [groupsOpen, setGroupsOpen] = useState<Record<SidebarGroup, boolean>>({ creation: true, discovery: true, help: true });
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 767px)");
+    const updateViewport = () => setIsMobile(media.matches);
+    updateViewport();
+    media.addEventListener("change", updateViewport);
+    return () => media.removeEventListener("change", updateViewport);
+  }, []);
+  const toggleGroup = (group: SidebarGroup) => {
+    setGroupsOpen(current => ({ ...current, [group]: !current[group] }));
+  };
+
+  useEffect(() => setMenuOpen(false), [pathname, locale]);
+  // Release drawer scroll lock before an account login portal acquires it.
+  useLayoutEffect(() => {
+    const dialog = dialogRef.current;
+    if (!menuOpen || !dialog) return;
+    dialog.showModal();
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const media = window.matchMedia("(min-width: 768px)");
+    const closeOnDesktop = () => { if (media.matches) setMenuOpen(false); };
+    media.addEventListener("change", closeOnDesktop);
+    return () => {
+      media.removeEventListener("change", closeOnDesktop);
+      dialog.close();
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [menuOpen]);
+
+  const brand = <Link href="/" className="sidebar-brand" aria-label={t("nav.homeLabel")} onClick={() => setMenuOpen(false)}>
+    <Image src="/east-cut-logo.png" alt="" width={32} height={32} priority /><span className="sidebar-brand-name">Easy <em>Cut</em></span>
+  </Link>;
+  const navProps = { groupsOpen, onToggle: toggleGroup, isEnterprise, pathname };
+  return <>
+    <header className={`site-header site-header-sidebar grouped-site-sidebar${collapsed ? " is-collapsed" : ""}`}>
+      <div className="sidebar-desktop-content">
+        <div className="sidebar-brand-row">{brand}<button type="button" className="sidebar-icon-button sidebar-collapse-button" aria-label={t(collapsed ? "nav.expandSidebar" : "nav.collapseSidebar")} aria-expanded={!collapsed} onClick={() => setCollapsed(value => !value)}><SidebarChevron sideways /></button></div>
+        {showUsageIndicator ? <div className="sidebar-usage"><HeaderUsageIndicator /></div> : null}
+        <GroupedNavigation {...navProps} collapsed={collapsed} onToggle={group => {
+          if (collapsed) {
+            setCollapsed(false);
+            setGroupsOpen(current => ({ ...current, [group]: true }));
+          } else toggleGroup(group);
+        }} />
+        <div className="sidebar-account"><div className="sidebar-account-content">{!isMobile ? children : null}</div>{collapsed ? <Link href="/settings" className="sidebar-account-shortcut" aria-label={t("nav.accountSettings")} title={t("nav.accountSettings")}><NavigationIcon path="/account" /></Link> : null}</div>
+      </div>
+      <div className="sidebar-mobile-bar">
+        {brand}{showUsageIndicator ? <HeaderUsageIndicator mobile /> : null}
+        <button type="button" className="sidebar-icon-button" aria-label={t("nav.openMenu")} aria-expanded={menuOpen} aria-controls="sidebar-mobile-dialog" onClick={() => setMenuOpen(true)}><svg aria-hidden="true" viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16" /></svg></button>
+      </div>
+    </header>
+    <dialog ref={dialogRef} id="sidebar-mobile-dialog" className="sidebar-mobile-drawer" aria-label={t("nav.mobilePrimary")} onCancel={() => setMenuOpen(false)} onClose={() => setMenuOpen(false)} onClick={event => {
+      if (event.target !== event.currentTarget) return;
+      const bounds = event.currentTarget.getBoundingClientRect();
+      if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) setMenuOpen(false);
+    }}>
+      <div className="sidebar-drawer-content">
+        <div className="sidebar-brand-row">{brand}<button autoFocus type="button" className="sidebar-icon-button" aria-label={t("nav.closeMenu")} onClick={() => setMenuOpen(false)}><svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="m6 6 12 12M18 6 6 18" /></svg></button></div>
+        {showUsageIndicator ? <div className="sidebar-usage"><HeaderUsageIndicator /></div> : null}
+        <GroupedNavigation {...navProps} collapsed={false} onNavigate={() => setMenuOpen(false)} />
+        <div className="sidebar-account"><div className="sidebar-account-content" onClick={() => setMenuOpen(false)}>{isMobile ? children : null}</div></div>
+      </div>
+    </dialog>
+  </>;
+}
+
+export function SiteHeader(props: { children: ReactNode; showUsageIndicator?: boolean; desktopSidebar?: boolean }) {
+  return props.desktopSidebar
+    ? <GroupedSiteSidebar showUsageIndicator={props.showUsageIndicator ?? true}>{props.children}</GroupedSiteSidebar>
+    : <LegacySiteHeader {...props} />;
 }
