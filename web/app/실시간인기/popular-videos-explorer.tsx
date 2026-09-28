@@ -17,7 +17,8 @@ import { normalizePopularQuery } from "@/lib/popular-text-search";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { PopularFiltersPlanOverlay } from "@/components/popular-filters-plan-overlay";
-import { ContentLanguageSelect } from "@/components/content-language-select";
+import { PopularFilterSelect } from "@/components/popular-filter-select";
+import { usePopularLanguage, type PopularLanguage } from "@/lib/use-popular-language";
 import type {
   PopularDiscoveryPeriod,
   PopularVideo,
@@ -60,18 +61,22 @@ const categoryOptions: Array<{ value: PopularVideoCategory }> = [
 ];
 
 const compactFilterCopy = {
-  ko: { title: "필터", language: "영상 언어", allLanguages: "전체", korean: "한국어", japanese: "일본어", english: "영어", period: "수집 기간", remove: "조건 해제", shortSearch: "제목·채널 검색" },
-  en: { title: "Filters", language: "Video language", allLanguages: "All", korean: "Korean", japanese: "Japanese", english: "English", period: "Collection period", remove: "Remove filter", shortSearch: "Search titles or channels" },
-  ja: { title: "フィルター", language: "動画の言語", allLanguages: "すべて", korean: "韓国語", japanese: "日本語", english: "英語", period: "収集期間", remove: "条件を解除", shortSearch: "タイトル・チャンネル検索" },
+  ko: { title: "필터", language: "언어", allLanguages: "전체 언어", korean: "한국어", japanese: "일본어", english: "영어", period: "수집 기간", remove: "조건 해제", shortSearch: "제목·채널 검색" },
+  en: { title: "Filters", language: "Language", allLanguages: "All languages", korean: "Korean", japanese: "Japanese", english: "English", period: "Collection period", remove: "Remove filter", shortSearch: "Search titles or channels" },
+  ja: { title: "フィルター", language: "言語", allLanguages: "すべての言語", korean: "韓国語", japanese: "日本語", english: "英語", period: "収集期間", remove: "条件を解除", shortSearch: "タイトル・チャンネル検索" },
 };
+
+function languageOptions(locale: SiteLocale, japaneseEnabled = true): Array<{value: PopularLanguage; label: string}> {
+  const copy = compactFilterCopy[locale];
+  return [{value: "all", label: copy.allLanguages}, {value: "ko", label: copy.korean},
+    ...(japaneseEnabled ? [{value: "ja" as const, label: copy.japanese}] : []), {value: "en", label: copy.english}];
+}
 
 const reusableGuideDismissedKey = "easycut:reusable-license-guide-dismissed:v1";
 
 type PopularFiltersDraft = {
   category: PopularVideoCategory;
-  koreanOnly: boolean;
-  japaneseOnly: boolean;
-  englishOnly: boolean;
+  language: PopularLanguage;
   longFormOnly: boolean;
   period: PopularDiscoveryPeriod;
 };
@@ -443,7 +448,6 @@ function PopularFiltersDialog({ open, japaneseEnabled, locale, draft, onDraftCha
   }, [open]);
 
   if (!open) return null;
-  const selectClass = "mt-2 min-h-11 w-full rounded-xl border border-white/15 bg-[#202628] px-3 text-sm text-white outline-none focus-visible:ring-2 focus-visible:ring-[#ff715e]";
   return (
     <dialog ref={dialogRef} aria-modal="true" aria-labelledby="popular-filters-title"
       onCancel={event => { event.preventDefault(); onClose(); }}
@@ -456,27 +460,24 @@ function PopularFiltersDialog({ open, japaneseEnabled, locale, draft, onDraftCha
           <button type="button" onClick={onClose} aria-label={copy.close} className="grid h-11 w-11 place-items-center rounded-lg text-2xl text-neutral-400 hover:bg-white/5 hover:text-white">×</button>
         </header>
         <div className="space-y-5">
-          <label className="block text-sm font-semibold text-neutral-300">{copy.category}
-            <select aria-label={copy.category} value={draft.category} onChange={event => onDraftChange({ ...draft, category: event.target.value as PopularVideoCategory })} className={selectClass}>
-              {categoryOptions.map(option => <option key={option.value} value={option.value}>{copy.categories[option.value]}</option>)}
-            </select>
-          </label>
-          <fieldset>
-            <legend className="mb-2 text-sm font-semibold text-neutral-300">{compact.language}</legend>
-            <div className="flex gap-2">
-              {[{ value: "all", label: compact.allLanguages }, { value: "ko", label: compact.korean }, ...(japaneseEnabled ? [{ value: "ja", label: compact.japanese }] : []), { value: "en", label: compact.english }].map(option => {
-                const selected = option.value === (draft.koreanOnly ? "ko" : draft.japaneseOnly ? "ja" : draft.englishOnly ? "en" : "all");
-                return <button key={option.value} type="button" aria-pressed={selected}
-                  onClick={() => onDraftChange({ ...draft, koreanOnly: option.value === "ko", japaneseOnly: option.value === "ja", englishOnly: option.value === "en" })}
-                  className={`min-h-11 flex-1 rounded-xl border px-2 text-sm font-semibold ${selected ? "border-[#ff715e]/60 bg-[#ff715e]/10 text-[#ff9b8d]" : "border-white/10 text-neutral-300 hover:bg-white/5"}`}>{option.label}</button>;
-              })}
-            </div>
-          </fieldset>
-          <label className="block text-sm font-semibold text-neutral-300">{compact.period}
-            <select aria-label={compact.period} value={draft.period} onChange={event => onDraftChange({ ...draft, period: event.target.value as PopularDiscoveryPeriod })} className={selectClass}>
-              {discoveryPeriodOptions.map(option => <option key={option.value} value={option.value}>{option.labels[locale]}</option>)}
-            </select>
-          </label>
+          <div>
+            <p className="mb-2 text-sm font-semibold text-neutral-300">{copy.category}</p>
+            <PopularFilterSelect id="popular-draft-category" label={copy.category} closeLabel={copy.close}
+              value={draft.category} options={categoryOptions.map(option => ({value: option.value, label: copy.categories[option.value]}))}
+              onChange={category => onDraftChange({...draft, category})} />
+          </div>
+          <div>
+            <p className="mb-2 text-sm font-semibold text-neutral-300">{compact.language}</p>
+            <PopularFilterSelect id="popular-draft-language" label={compact.language} closeLabel={copy.close}
+              value={draft.language} options={languageOptions(locale, japaneseEnabled || draft.language === "ja")}
+              onChange={language => onDraftChange({...draft, language})} />
+          </div>
+          <div>
+            <p className="mb-2 text-sm font-semibold text-neutral-300">{compact.period}</p>
+            <PopularFilterSelect id="popular-draft-period" label={compact.period} closeLabel={copy.close}
+              value={draft.period} options={discoveryPeriodOptions.map(option => ({value: option.value, label: option.labels[locale]}))}
+              onChange={period => onDraftChange({...draft, period})} />
+          </div>
           <button type="button" role="switch" aria-checked={draft.longFormOnly} onClick={() => onDraftChange({ ...draft, longFormOnly: !draft.longFormOnly })}
             className="flex min-h-11 w-full items-center justify-between gap-3 text-sm font-semibold text-neutral-200">
             {copy.longForm}<FilterSwitch checked={draft.longFormOnly} />
@@ -691,9 +692,10 @@ export function PopularVideosExplorer({
   const composing = useRef(false);
   const searching = Boolean(searchQuery);
   const [dataType, setDataType] = useState<"trending" | "views">("trending");
-  const [englishOnly, setEnglishOnly] = useState(false);
-  const [japaneseOnly, setJapaneseOnly] = useState(false);
-  const [koreanOnly, setKoreanOnly] = useState(false);
+  const {language, ready: languageReady, setLanguage} = usePopularLanguage(locale, canUseFilters, accountKey);
+  const englishOnly = language === "en";
+  const japaneseOnly = language === "ja";
+  const koreanOnly = language === "ko";
   const [longFormOnly, setLongFormOnly] = useState(false);
   const [reusableOnly, setReusableOnly] = useState(false);
   const [catalogEnabled, setCatalogEnabled] = useState(false);
@@ -717,9 +719,7 @@ export function PopularVideosExplorer({
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filterDraft, setFilterDraft] = useState<PopularFiltersDraft>({
     category: "all",
-    englishOnly: false,
-    japaneseOnly: false,
-    koreanOnly: false,
+    language: "all",
     longFormOnly: false,
     period: "all",
   });
@@ -738,6 +738,7 @@ export function PopularVideosExplorer({
   }, [activeVideoId]);
 
   useEffect(() => {
+    if (!languageReady) return;
     const controller = new AbortController();
     loadMoreController.current?.abort();
     setLoading(true);
@@ -751,7 +752,7 @@ export function PopularVideosExplorer({
         if (!result.ok) {
           const body = await result.json().catch(() => ({})) as { detail?: string; code?: string };
           if (body.code === "JAPANESE_DISCOVERY_DISABLED" && !controller.signal.aborted) {
-            setJapaneseOnly(false); setJapaneseEnabled(false);
+            setLanguage("all", false); setJapaneseEnabled(false);
             return null;
           }
           throw new Error(body.detail || uiCopy.loadFailed);
@@ -767,7 +768,7 @@ export function PopularVideosExplorer({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [searchQuery, searching, category, dataType, discoveryPeriod, filterInteractionId, koreanOnly, japaneseOnly, englishOnly, locale, longFormOnly, reusableOnly, retryCount, uiCopy.loadFailed]);
+  }, [languageReady, searchQuery, searching, category, dataType, discoveryPeriod, filterInteractionId, koreanOnly, japaneseOnly, englishOnly, locale, longFormOnly, reusableOnly, retryCount, uiCopy.loadFailed, setLanguage]);
 
   const visibleVideoIds = response?.items.map(video => video.videoId).join(",") || "";
   useEffect(() => {
@@ -784,7 +785,8 @@ export function PopularVideosExplorer({
         .then(states => {
           if (controller.signal.aborted) return;
           if (states.some(state => state?.japaneseEnabled === false) && (japaneseOnly || response.japaneseEnabled)) {
-            setJapaneseOnly(false); setRetryCount(value => value + 1); return;
+            if (japaneseOnly) setLanguage("all", false);
+            setRetryCount(value => value + 1); return;
           }
           if (response.collectionWindowKey && states.some(state => state?.collectionWindowKey && state.collectionWindowKey !== response.collectionWindowKey)) {
             setRetryCount(value => value + 1); return;
@@ -805,7 +807,7 @@ export function PopularVideosExplorer({
         }).catch(() => undefined).finally(() => { checking = false; });
     }, 60_000);
     return () => { clearInterval(timer); controller.abort(); };
-  }, [searching, catalogEnabled, dataType, response?.generation, response?.collectionWindowStart, response?.collectionWindowKey, response?.japaneseEnabled, japaneseOnly, visibleVideoIds, reusableOnly]);
+  }, [searching, catalogEnabled, dataType, response?.generation, response?.collectionWindowStart, response?.collectionWindowKey, response?.japaneseEnabled, japaneseOnly, visibleVideoIds, reusableOnly, setLanguage]);
 
   const loadMore = async () => {
     if (!response?.nextCursor || loadingMore) return;
@@ -826,7 +828,7 @@ export function PopularVideosExplorer({
       if (!result.ok) {
         const body = await result.json().catch(() => ({})) as { detail?: string; code?: string };
         if (body.code === "JAPANESE_DISCOVERY_DISABLED") {
-          setJapaneseOnly(false); setJapaneseEnabled(false);
+          setLanguage("all", false); setJapaneseEnabled(false);
           return;
         }
         throw new Error(body.detail || uiCopy.loadMoreFailed);
@@ -906,15 +908,13 @@ export function PopularVideosExplorer({
       setPlanOverlayOpen(true);
       return;
     }
-    setFilterDraft({ category, koreanOnly, japaneseOnly, englishOnly, longFormOnly, period: discoveryPeriod });
+    setFilterDraft({ category, language, longFormOnly, period: discoveryPeriod });
     setFiltersOpen(true);
   };
   const applyFilters = () => {
     applyFilter(() => {
       setCategory(filterDraft.category);
-      setKoreanOnly(filterDraft.koreanOnly);
-      setJapaneseOnly(filterDraft.japaneseOnly);
-      setEnglishOnly(filterDraft.englishOnly);
+      setLanguage(filterDraft.language);
       setLongFormOnly(filterDraft.longFormOnly);
       setDiscoveryPeriod(filterDraft.period);
     });
@@ -1007,13 +1007,9 @@ export function PopularVideosExplorer({
             </fieldset>
           )}
           <div className="hidden shrink-0 md:block">
-            <span id="popular-period-label" className="sr-only">{compactFilterCopy[locale].period}</span>
-            <ContentLanguageSelect
-              id="popular-period" labelledBy="popular-period-label" value={discoveryPeriod}
-              options={discoveryPeriodOptions.map(option => ({ value: option.value, label: option.labels[locale] }))}
-              onChange={period => applyFilter(() => setDiscoveryPeriod(period))}
-              className="min-w-32"
-            />
+            <PopularFilterSelect id="popular-period" label={compactFilterCopy[locale].period} closeLabel={filterCopy.close}
+              value={discoveryPeriod} options={discoveryPeriodOptions.map(option => ({value: option.value, label: option.labels[locale]}))}
+              onChange={period => applyFilter(() => setDiscoveryPeriod(period))} className="min-w-32" />
           </div>
           </div>
           <div className="flex min-w-0 items-center justify-between gap-3 md:hidden">
@@ -1022,7 +1018,7 @@ export function PopularVideosExplorer({
               className="flex min-h-11 items-center gap-2 text-sm font-semibold text-neutral-300 hover:text-white md:hidden">
               <FilterSwitch checked={reusableOnly} />{uiCopy.reusableOnly}
             </button>
-            <button type="button" aria-haspopup="dialog" aria-expanded={filtersOpen} onClick={openFilters}
+            <button type="button" aria-label={compactFilterCopy[locale].title} aria-haspopup="dialog" aria-expanded={filtersOpen} onClick={openFilters}
               className={`flex min-h-11 shrink-0 items-center gap-2 rounded-xl border px-3 text-sm font-bold hover:bg-white/5 ${activeFilterCount ? "border-[#ff715e]/50 text-[#ff9b8d]" : "border-white/20 text-neutral-200"}`}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5" aria-hidden="true"><path d="M4 7h7m4 0h5M4 17h3m4 0h9" /><circle cx="13" cy="7" r="2" /><circle cx="9" cy="17" r="2" /></svg>
               {compactFilterCopy[locale].title}{activeFilterCount > 0 && <span className="text-xs tabular-nums">{activeFilterCount}</span>}
@@ -1031,22 +1027,10 @@ export function PopularVideosExplorer({
         <fieldset className="hidden min-w-0 max-w-full md:ml-auto md:block">
           <legend className="sr-only">{compactFilterCopy[locale].title}</legend>
           <div className="flex flex-wrap items-center justify-end gap-2">
+            <PopularFilterSelect id="popular-language" label={compactFilterCopy[locale].language} closeLabel={filterCopy.close}
+              value={language} options={languageOptions(locale, !response || japaneseEnabled || japaneseOnly)} showLabel
+              onChange={next => applyFilter(() => setLanguage(next))} className="min-w-44" />
             {[
-              { tone: "emerald", label: uiCopy.koreanOnly, checked: koreanOnly, toggle: () => applyFilter(() => {
-                setKoreanOnly(current => !current);
-                setJapaneseOnly(false);
-                setEnglishOnly(false);
-              }) },
-              { tone: "sky", label: uiCopy.japaneseOnly, checked: japaneseOnly, toggle: () => applyFilter(() => {
-                setJapaneseOnly(current => !current);
-                setKoreanOnly(false);
-                setEnglishOnly(false);
-              }) },
-              { tone: "amber", label: uiCopy.englishOnly, checked: englishOnly, toggle: () => applyFilter(() => {
-                setEnglishOnly(current => !current);
-                setKoreanOnly(false);
-                setJapaneseOnly(false);
-              }) },
               { tone: "coral", label: uiCopy.longFormOnly, checked: longFormOnly, toggle: () => applyFilter(() => setLongFormOnly(current => !current)) },
               { tone: "violet", label: uiCopy.reusableOnly, checked: reusableOnly, toggle: toggleReusable },
             ].map(({ label, checked, toggle, tone }) => {
@@ -1079,7 +1063,7 @@ export function PopularVideosExplorer({
         {activeFilterCount > 0 && <div className="mt-2 flex flex-wrap gap-2">
           {[
             ...(category !== "all" ? [{ key: "category", label: filterCopy.categories[category], clear: () => setCategory("all") }] : []),
-            ...(koreanOnly || japaneseOnly || englishOnly ? [{ key: "language", label: koreanOnly ? uiCopy.koreanOnly : japaneseOnly ? uiCopy.japaneseOnly : uiCopy.englishOnly, clear: () => { setKoreanOnly(false); setJapaneseOnly(false); setEnglishOnly(false); } }] : []),
+            ...(koreanOnly || japaneseOnly || englishOnly ? [{ key: "language", label: koreanOnly ? uiCopy.koreanOnly : japaneseOnly ? uiCopy.japaneseOnly : uiCopy.englishOnly, clear: () => setLanguage("all") }] : []),
             ...(longFormOnly ? [{ key: "length", label: uiCopy.longFormOnly, clear: () => setLongFormOnly(false) }] : []),
             ...(discoveryPeriod !== "all" ? [{ key: "period", label: discoveryPeriodOptions.find(option => option.value === discoveryPeriod)!.labels[locale], clear: () => setDiscoveryPeriod("all") }] : []),
           ].map(chip => <button key={chip.key} type="button" onClick={() => applyFilter(chip.clear)} aria-label={`${chip.label} · ${compactFilterCopy[locale].remove}`}
@@ -1146,9 +1130,7 @@ export function PopularVideosExplorer({
         onClose={() => setFiltersOpen(false)}
         onReset={() => setFilterDraft({
           category: "all",
-          englishOnly: false,
-          japaneseOnly: false,
-          koreanOnly: false,
+          language: "all",
           longFormOnly: false,
           period: "all",
         })}

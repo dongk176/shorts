@@ -8,6 +8,7 @@ export function ContentLanguageSelect<Value extends string>({
   id,
   labelledBy,
   describedBy,
+  prefix,
   value,
   options,
   onChange,
@@ -17,6 +18,7 @@ export function ContentLanguageSelect<Value extends string>({
   id: string;
   labelledBy: string;
   describedBy?: string;
+  prefix?: string;
   value: Value;
   options: readonly { value: Value; label: string }[];
   onChange: (value: Value) => void;
@@ -91,7 +93,7 @@ export function ContentLanguageSelect<Value extends string>({
           expanded ? "border-[#ff8f7f]/60" : "border-white/15 hover:border-white/30 hover:bg-neutral-800"
         }`}
       >
-        <span id={valueId} className="min-w-0 truncate">{options[selectedIndex]?.label}</span>
+        <span className="min-w-0 truncate">{prefix && <span aria-hidden="true" className="mr-1.5 text-neutral-400">{prefix} ·</span>}<span id={valueId}>{options[selectedIndex]?.label}</span></span>
         <svg
           aria-hidden="true"
           viewBox="0 0 20 20"

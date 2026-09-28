@@ -17,13 +17,18 @@ function props(element: Element | null) {
   const key=Object.keys(element!).find(key=>key.startsWith("__reactProps$"))!;
   return (element as unknown as Record<string, Record<string, (...args: unknown[])=>void>>)[key];
 }
-async function setup(access=true, locale="ko", { deferInitial=false, searchEnabled=true } = {}) {
+async function setup(access=true, locale="ko", { deferInitial=false, searchEnabled=true, storage=new Map<string,string>(), storageUnavailable=false, accountKey }: {
+  deferInitial?:boolean; searchEnabled?:boolean; storage?:Map<string,string>; storageUnavailable?:boolean; accountKey?:string;
+} = {}) {
   language.locale=locale;
   const {window,document}=parseHTML("<html><body><div id='app'></div></body></html>");
   vi.stubGlobal("window",window);vi.stubGlobal("document",document);vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT",true);
   (window.HTMLElement.prototype as HTMLDialogElement).showModal = function () { this.setAttribute("open", ""); };
   (window.HTMLElement.prototype as HTMLDialogElement).close = function () { this.removeAttribute("open"); };
-  Object.defineProperty(window, "localStorage", { configurable: true, value: { getItem: () => "1" } });
+  Object.defineProperty(window, "localStorage", { configurable: true, value: {
+    getItem: (key:string) => { if (storageUnavailable) throw new Error("blocked"); return key.includes("reusable-license") ? "1" : storage.get(key) ?? null; },
+    setItem: (key:string,value:string) => { if (storageUnavailable) throw new Error("blocked"); storage.set(key,value); },
+  } });
   const requests: {url:URL;signal:AbortSignal;resolve:(response:Response)=>void}[]=[];
   vi.stubGlobal("fetch",vi.fn((url:string, options:RequestInit) => {
     const parsedUrl = new URL(url, "http://localhost");
@@ -33,15 +38,20 @@ async function setup(access=true, locale="ko", { deferInitial=false, searchEnabl
   }));
   const container=document.getElementById("app")!;
   root=createRoot(container as unknown as Element);
-  await act(async()=>{root!.render(<PopularVideosExplorer searchEnabled={searchEnabled} canUseFilters={access} isAuthenticated={access} onRequireLogin={()=>{}}/>);});
-  const respond=async(index:number,body:Record<string,unknown>={},status=200)=>act(async()=>requests[index].resolve(Response.json({items:[],updatedAt:new Date().toISOString(),searchEnabled:true,...body},{status})));
+  await act(async()=>{root!.render(<PopularVideosExplorer searchEnabled={searchEnabled} canUseFilters={access} isAuthenticated={access} accountKey={accountKey} onRequireLogin={()=>{}}/>);});
+  const respond=async(index:number,body:Record<string,unknown>={},status=200)=>act(async()=>requests[index].resolve(Response.json({items:[],updatedAt:new Date().toISOString(),searchEnabled:true,japaneseEnabled:true,...body},{status})));
   if (!deferInitial) await respond(0);
   const input=()=>container.querySelector("#popular-search")!;
   const type=async(value:string)=>act(async()=>props(input()).onChange({target:{value}}));
   const submit=async()=>act(async()=>props(container.querySelector('form[role="search"]')).onSubmit({preventDefault(){}}));
-  const button = (text: string) => Array.from(container.querySelectorAll("button")).find(button => button.textContent === text)!;
+  const button = (text: string) => Array.from(container.querySelectorAll("button")).find(button => button.textContent === text || button.getAttribute("aria-label") === text)!;
   const click = async (element: Element) => act(async () => props(element).onClick());
-  return {container,requests,respond,input,type,submit,button,click};
+  const select = async (id:string,label:string,mobile=false) => {
+    await click(container.querySelector(`#${id}${mobile ? "-mobile" : ""}`)!);
+    const scope=container.querySelector(`#${id}${mobile ? "-sheet" : "-options"}`)!;
+    await click(Array.from(scope.querySelectorAll('[role="option"]')).find(option=>option.textContent===label)!);
+  };
+  return {container,requests,respond,input,type,submit,button,click,select,storage};
 }
 describe("stable popular loading UI", () => {
   it("shows search before the first response and preserves text through a failed load", async () => {
@@ -139,10 +149,10 @@ describe("compact popular filters", () => {
   it("applies category, language, period and length together; cancel discards drafts", async () => {
     const page = await setup();
     await page.click(page.button("필터"));
-    const selects = page.container.querySelectorAll("dialog select");
-    await act(async () => props(selects[0]).onChange({target: {value: "sports"}}));
-    await page.click(page.button("한국어"));
-    await act(async () => props(selects[1]).onChange({target: {value: "week"}}));
+    expect(page.container.querySelector("select")).toBeNull();
+    await page.select("popular-draft-category", "스포츠", true);
+    await page.select("popular-draft-language", "한국어", true);
+    await page.select("popular-draft-period", "최근 7일", true);
     await page.click(page.container.querySelector('dialog [role="switch"]')!);
     expect(page.requests).toHaveLength(1);
     await page.click(page.button("적용"));
@@ -151,12 +161,12 @@ describe("compact popular filters", () => {
     expect(page.container.querySelector("dialog")).toBeNull();
     await page.respond(1);
     expect(page.container.querySelector('[aria-label="최근 7일 · 조건 해제"]')).not.toBeNull();
-    await page.click(page.container.querySelector('[aria-haspopup="dialog"][aria-expanded]')!);
-    await act(async () => props(page.container.querySelector("dialog select")).onChange({target: {value: "music"}}));
+    await page.click(page.button("필터"));
+    await page.select("popular-draft-category", "음악", true);
     await page.click(page.container.querySelector('[aria-label="필터 닫기"]')!);
     expect(page.requests).toHaveLength(2);
-    await page.click(page.container.querySelector('[aria-haspopup="dialog"][aria-expanded]')!);
-    expect((page.container.querySelector("dialog select") as HTMLSelectElement).value).toBe("sports");
+    await page.click(page.button("필터"));
+    expect(page.container.querySelector("#popular-draft-category-mobile")?.textContent).toContain("스포츠");
     await page.click(page.button("초기화"));
     expect(page.requests).toHaveLength(2);
     await page.click(page.button("적용"));
@@ -187,8 +197,8 @@ describe("compact popular filters", () => {
     const page = await setup();
     await page.type("축구"); await page.submit(); await page.respond(1);
     await page.click(page.button("필터"));
-    await act(async () => props(page.container.querySelector("dialog select")).onChange({target: {value: "sports"}}));
-    await page.click(page.button("한국어")); await page.click(page.button("적용")); await page.respond(2);
+    await page.select("popular-draft-category", "스포츠", true);
+    await page.select("popular-draft-language", "한국어", true); await page.click(page.button("적용")); await page.respond(2);
     await page.click(page.container.querySelector('[aria-label="스포츠 · 조건 해제"]')!);
     expect(Object.fromEntries(page.requests[3].url.searchParams)).toMatchObject({q: "축구", category: "all", korean: "true"});
     expect(page.requests[3].url.searchParams.has("cursor")).toBe(false);
@@ -203,37 +213,84 @@ describe("compact popular filters", () => {
   });
 });
 
-describe("English language controls", () => {
-  it("orders all five desktop filters and preserves English through search and pagination", async () => {
+describe("language dropdown and custom mobile sheets", () => {
+  it.each([["ko","korean","언어"],["en","english","Language"],["ja","japanese","言語"]])("uses the %s page language on first entry", async (locale, parameter, label) => {
+    const page=await setup(true,locale);
+    expect(page.requests).toHaveLength(1);
+    expect(page.requests[0].url.searchParams.get(parameter)).toBe("true");
+    expect(page.container.querySelector("#popular-language")?.textContent).toContain(label);
+    expect(Array.from(page.container.querySelectorAll('fieldset button[role="switch"]')).map(button=>button.textContent)).toHaveLength(2);
+  });
+  it("changes language exclusively and preserves it through search and pagination", async () => {
     const page=await setup();
-    const labels=Array.from(page.container.querySelectorAll('fieldset button[role="switch"]')).map(button=>button.textContent);
-    expect(labels).toEqual(["한국어만","일본어만","영어만","롱폼만","재사용 허용만"]);
-    await page.click(page.button("한국어만")); await page.respond(1);
-    await page.click(page.button("영어만"));
-    expect(Object.fromEntries(page.requests[2].url.searchParams)).toMatchObject({english:"true",korean:"false",japanese:"false"});
-    await page.respond(2);
+    await page.select("popular-language", "영어");
+    expect(Object.fromEntries(page.requests[1].url.searchParams)).toMatchObject({english:"true",korean:"false",japanese:"false"});
+    await page.respond(1);
     await page.type("football"); await page.submit();
     const video={videoId:"fixture0001",title:"Football",channelName:"Test",viewCount:100,category:"sports",license:"youtube",durationSeconds:300,publishedAt:new Date().toISOString(),thumbnailUrl:"/test.jpg"};
-    await page.respond(3,{items:[video],nextCursor:"english-next"});
+    await page.respond(2,{items:[video],nextCursor:"english-next"});
     await page.click(page.button("더 보기"));
-    expect(Object.fromEntries(page.requests[4].url.searchParams)).toMatchObject({english:"true",q:"football",cursor:"english-next"});
-    await page.respond(4);
-    await page.click(page.button("일본어만"));
-    expect(Object.fromEntries(page.requests[5].url.searchParams)).toMatchObject({english:"false",korean:"false",japanese:"true"});
+    expect(Object.fromEntries(page.requests[3].url.searchParams)).toMatchObject({english:"true",q:"football",cursor:"english-next"});
+    await page.respond(3);
+    await page.select("popular-language", "일본어");
+    expect(Object.fromEntries(page.requests[4].url.searchParams)).toMatchObject({english:"false",korean:"false",japanese:"true"});
   });
-  it("applies and clears the mobile English draft", async () => {
+  it.each(["영어", "전체 언어"])("remembers %s across visits and page languages", async selection => {
+    const storage=new Map<string,string>();
+    const page=await setup(true,"ko",{storage,accountKey:"account-a"});
+    await page.select("popular-language",selection);
+    await act(async()=>root!.unmount()); root=undefined;
+    const restored=await setup(true,"ja",{storage,accountKey:"account-a"});
+    expect(restored.requests).toHaveLength(1);
+    expect(Object.fromEntries(restored.requests[0].url.searchParams)).toMatchObject({english:String(selection==="영어"),korean:"false",japanese:"false"});
+  });
+  it("does not reuse another account's preference and works when browser storage is blocked",async()=>{
+    const storage=new Map([["easycut:popular-language:v1:account-a","en"]]);
+    const page=await setup(true,"ja",{storage,accountKey:"account-b",storageUnavailable:true});
+    expect(page.requests[0].url.searchParams.get("japanese")).toBe("true");
+    await page.select("popular-language","韓国語");
+    expect(page.requests[1].url.searchParams.get("korean")).toBe("true");
+  });
+  it("applies the mobile language only on Apply, and cancels a custom choice without affecting its parent", async () => {
     const page=await setup();
-    await page.click(page.button("필터")); await page.click(page.button("영어"));
+    await page.click(page.button("필터"));
+    await page.select("popular-draft-language","영어",true);
     expect(page.requests).toHaveLength(1);
+    expect(page.storage.size).toBe(0);
+    await page.click(page.container.querySelector("#popular-draft-period-mobile")!);
+    expect(page.container.querySelectorAll("dialog")).toHaveLength(2);
+    const preventDefault=vi.fn();
+    await act(async()=>props(page.container.querySelector("#popular-draft-period-sheet")).onCancel({preventDefault,stopPropagation:vi.fn()}));
+    expect(preventDefault).toHaveBeenCalled();
+    expect(page.container.querySelectorAll("dialog")).toHaveLength(1);
+    expect(document.body.style.overflow).toBe("hidden");
     await page.click(page.button("적용"));
     expect(page.requests[1].url.searchParams.get("english")).toBe("true");
+    expect(page.storage.get("easycut:popular-language:v1:anonymous")).toBe("en");
     await page.respond(1);
     await page.click(page.container.querySelector('[aria-label="영어만 · 조건 해제"]')!);
     expect(page.requests[2].url.searchParams.get("english")).toBe("false");
+    expect(page.storage.get("easycut:popular-language:v1:anonymous")).toBe("all");
   });
-  it("keeps English behind the existing filter entitlement", async () => {
-    const page=await setup(false); await page.click(page.button("영어만"));
+  it("discards an uncommitted language selection when the filter sheet is dismissed",async()=>{
+    const page=await setup(); await page.click(page.button("필터"));
+    await page.select("popular-draft-language","영어",true);
+    await page.click(page.container.querySelector('[aria-label="필터 닫기"]')!);
+    expect(page.requests).toHaveLength(1); expect(page.storage.size).toBe(0);
+    await page.click(page.button("필터"));
+    expect(page.container.querySelector("#popular-draft-language-mobile")?.textContent).toContain("한국어");
+  });
+  it("keeps restricted visitors on the public list and shows the existing entitlement guide", async () => {
+    const page=await setup(false,"en",{storage:new Map([["easycut:popular-language:v1:anonymous","en"]])});
+    expect(Object.fromEntries(page.requests[0].url.searchParams)).toMatchObject({english:"false",korean:"false",japanese:"false"});
+    await page.select("popular-language","English");
     expect(page.requests).toHaveLength(1);
     expect(page.container.querySelector('[data-testid="existing-plan-guide"]')).not.toBeNull();
+  });
+  it("falls back to all languages if Japanese collection is disabled",async()=>{
+    const page=await setup(true,"ja",{deferInitial:true});
+    await page.respond(0,{code:"JAPANESE_DISCOVERY_DISABLED"},503);
+    expect(page.requests[1].url.searchParams.get("japanese")).toBe("false");
+    expect(page.storage.size).toBe(0);
   });
 });
