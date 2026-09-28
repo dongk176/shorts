@@ -59,6 +59,13 @@ jobs:
             worker/requirements.txt
             worker/requirements-dev.txt
 
+      - name: Install required video verification tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          ffmpeg -version
+          ffprobe -version
+
       - name: Install verification dependencies
         run: |
           python -m pip install -r worker/requirements-dev.txt
