@@ -57,10 +57,14 @@ export function resolveEditedTemplateSelection({
     };
   }
 
+  const presetSnapshot = typeof existing.templateSnapshot?.presetVersion === "number"
+    && existing.templateSnapshot.presetVersion >= 4
+    ? { presetVersion: 4 } : CURRENT_PRESET_TEMPLATE_SNAPSHOT;
+
   if (effectiveRequestedCustomTemplateId === null) {
     return {
       customTemplateId: null,
-      templateSnapshot: CURRENT_PRESET_TEMPLATE_SNAPSHOT,
+      templateSnapshot: presetSnapshot,
     };
   }
 
@@ -73,6 +77,6 @@ export function resolveEditedTemplateSelection({
 
   return {
     customTemplateId: null,
-    templateSnapshot: CURRENT_PRESET_TEMPLATE_SNAPSHOT,
+    templateSnapshot: presetSnapshot,
   };
 }

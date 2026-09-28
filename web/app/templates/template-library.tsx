@@ -1,5 +1,6 @@
 "use client";
 
+import { presetChannelCenterY } from "@/lib/preset-channel-position";
 import { useUiText } from "@/lib/i18n/use-ui-text";
 
 import Link from "@/lib/i18n/navigation";
@@ -14,8 +15,6 @@ import { videoAspectRatioOptions } from "@/lib/contracts";
 import {
   COMMENT_BACKGROUND_COLOR,
   COMMENT_CAPTURE_LANDSCAPE_LIFT_PX,
-  COMMENT_CAPTURE_SQUARE_CHANNEL_CENTER_Y,
-  PRESET_SQUARE_CHANNEL_CENTER_Y,
   TEMPLATE_PRESET_COMMENT_SAMPLE,
   createUnifiedSubtitleTemplateConfig,
   isTemplateConfigV5,
@@ -207,9 +206,7 @@ function CommentCaptureCard({ comment }: { comment: CommentOverlay }) {
 
 function FixedPresetChannel({ template }: { template: TemplateShowcase }) {
   const commentTemplate = template.id === "comment-capture";
-  const centerY = commentTemplate
-    ? COMMENT_CAPTURE_SQUARE_CHANNEL_CENTER_Y
-    : PRESET_SQUARE_CHANNEL_CENTER_Y;
+  const centerY = presetChannelCenterY(template.id, commentTemplate ? "16:9" : "5:4");
   const foreground = commentTemplate ? "#FFFFFF" : template.channel;
   const background = commentTemplate ? COMMENT_BACKGROUND_COLOR : template.background;
   return (

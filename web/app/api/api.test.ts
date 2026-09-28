@@ -2629,7 +2629,7 @@ describe("job API security and idempotency", () => {
       test.id,
       test.videoAspectRatio,
       expect.objectContaining({
-        presetVersion: 3,
+        presetVersion: 4,
         brandColor: "#FF715E",
         config: expect.objectContaining({
           schemaVersion: 5,
@@ -2702,7 +2702,7 @@ describe("job API security and idempotency", () => {
         "insert into shorts_mvp.video_jobs",
       ));
     expect(insertCall?.slice(1)).toEqual(expect.arrayContaining([
-      expect.objectContaining({ presetVersion: 3, brandColor: "#FF715E" }),
+      expect.objectContaining({ presetVersion: 4, brandColor: "#FF715E" }),
       "elevenlabs_primary_openai_fallback",
       "subtitle_templates",
       process.env.SUBTITLE_TEMPLATES_BATCH_TARGET_RELEASE_ID,
@@ -3290,7 +3290,7 @@ describe("job API security and idempotency", () => {
     expect(response.status).toBe(202);
   });
 
-  it("versions every new supported comment preset job for the square-reference channel layout", async () => {
+  it("versions every new supported comment preset job for the versioned ratio-specific channel layout", async () => {
     const db = dbWithRows([], [analysisRow]);
     const tx = dbWithRows(
       [],
@@ -3316,11 +3316,11 @@ describe("job API security and idempotency", () => {
     const insertCall = tx.mock.calls.find(([strings]) =>
       Array.from(strings as TemplateStringsArray).join("").includes("insert into shorts_mvp.video_jobs"),
     );
-    expect(insertCall?.slice(1)).toContainEqual({ presetVersion: 3 });
+    expect(insertCall?.slice(1)).toContainEqual({ presetVersion: 4 });
     expect(insertCall?.slice(1)).toContain("16:9");
   });
 
-  it("versions non-comment preset jobs for the square-reference channel position", async () => {
+  it("versions non-comment preset jobs for the versioned ratio-specific channel position", async () => {
     const db = dbWithRows([], [analysisRow]);
     const tx = dbWithRows(
       [],
@@ -3346,7 +3346,7 @@ describe("job API security and idempotency", () => {
     const insertCall = tx.mock.calls.find(([strings]) =>
       Array.from(strings as TemplateStringsArray).join("").includes("insert into shorts_mvp.video_jobs"),
     );
-    expect(insertCall?.slice(1)).toContainEqual({ presetVersion: 3 });
+    expect(insertCall?.slice(1)).toContainEqual({ presetVersion: 4 });
   });
 
   it.each(["4:5", "9:16"] as const)(

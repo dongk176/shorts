@@ -8,7 +8,7 @@ import type { ResolvedTemplateExecutionSnapshot } from "@/lib/template-execution
 const resolvedExecution: ResolvedTemplateExecutionSnapshot = {
   resolvedTemplateId: "dark-minimal",
   resolvedVideoAspectRatio: "9:16",
-  templateSnapshot: { presetVersion: 3, brandColor: "#35E6E3" },
+  templateSnapshot: { presetVersion: 4, brandColor: "#35E6E3" },
   subtitleTemplateSnapshot: null,
   usesUnifiedTemplateSubtitleCanary: false,
 };
@@ -43,14 +43,14 @@ describe("shared initial render contract", () => {
     expect(upload.usesUnifiedTemplateSubtitleCandidate).toBe(true);
     expect(upload.videoAspectRatio).toBe("9:16");
     expect(upload.templateSnapshot).toMatchObject({
-      presetVersion: 3,
+      presetVersion: 4,
       brandColor: "#35E6E3",
       config: {
         schemaVersion: 5,
         video: { aspectRatio: "9:16", y: 0, height: 1920 },
         title: { y: 271 },
         subtitle: { variant: "pop", y: 1500 },
-        channel: { y: 1790 },
+        channel: { y: 1674 },
       },
     });
   });

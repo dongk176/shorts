@@ -34,6 +34,7 @@ from .overlays import (
     create_custom_comment_overlay,
     create_panel_overlays,
 )
+from .preset_channel_position import preset_channel_center_y
 from .render_spec_v4 import draw_editor_title_spec_v4
 from .schemas import (
     CommentOverlay,
@@ -452,6 +453,7 @@ class VideoRenderer:
         comment_channel_below: bool = False,
         comment_channel_fixed: bool = False,
         fixed_preset_channel: bool = False,
+        preset_version: int = 3,
         title_text_styles: list[TitleTextStyle] | None = None,
         custom_template_config: CustomTemplateConfig | None = None,
         caption_render_spec: dict[str, object] | None = None,
@@ -618,7 +620,8 @@ class VideoRenderer:
                 overlay_mode=True,
             )
             channel_overlay_y = (
-                PRESET_SQUARE_CHANNEL_CENTER_Y - PRESET_CHANNEL_OVERLAY_HEIGHT // 2
+                preset_channel_center_y(template_id.value, video_aspect_ratio.value, preset_version)
+                - PRESET_CHANNEL_OVERLAY_HEIGHT // 2
             )
         if saved_comment_rect is not None and template_id is TemplateId.COMMENT_CAPTURE:
             channel_image = caption_comment_channel_image(
@@ -636,7 +639,9 @@ class VideoRenderer:
                 comment_channel_center_y = None
             elif comment_channel_fixed:
                 comment_channel_center_y = (
-                    COMMENT_CAPTURE_SQUARE_CHANNEL_CENTER_Y - layout.bottom_y
+                    preset_channel_center_y(
+                        template_id.value, video_aspect_ratio.value, preset_version,
+                    ) - layout.bottom_y
                 )
             elif (
                 comment_channel_below

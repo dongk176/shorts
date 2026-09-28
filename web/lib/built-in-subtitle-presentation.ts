@@ -1,3 +1,4 @@
+import { subtitleChannelRect } from "./preset-channel-position";
 import type { VideoAspectRatio } from "./contracts";
 import { contrastingTitleTextColor } from "./brand-color-contrast";
 import { DEFAULT_EDITOR_FONT_ID, type EditorFontId } from "./editor-fonts";
@@ -17,19 +18,21 @@ import {
 export function builtInSubtitlePresentation({
   id,
   videoAspectRatio,
+  legacyChannelPosition = false,
   captionPlacement = "lower",
   brandColor = SUBTITLE_TEMPLATE_BRAND_COLOR,
   fontId = DEFAULT_EDITOR_FONT_ID,
   timingLeadFrames = STABLE_SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES,
 }: {
   id: SubtitleTemplateSelectionId;
+  legacyChannelPosition?: boolean;
   videoAspectRatio: VideoAspectRatio;
   captionPlacement?: SubtitleCaptionPlacement;
   brandColor?: TemplatePresetColor;
   fontId?: EditorFontId;
   timingLeadFrames?: number;
 }) {
-  const style = subtitleTemplateStyleSnapshot(
+  const originalStyle = subtitleTemplateStyleSnapshot(
     id,
     videoAspectRatio,
     brandColor,
@@ -37,6 +40,16 @@ export function builtInSubtitlePresentation({
     fontId,
     timingLeadFrames,
   );
+  const style = legacyChannelPosition ? originalStyle : {
+    ...originalStyle,
+    layout: {
+      ...originalStyle.layout,
+      channel: subtitleChannelRect(
+        videoAspectRatio, originalStyle.layout.channel, originalStyle.layout.caption,
+        originalStyle.channel.iconSizePx,
+      ),
+    },
+  };
   const { layout } = style;
   const config = createUnifiedSubtitleTemplateConfig(id);
   config.video = { ...config.video, ...layout.video, aspectRatio: videoAspectRatio };

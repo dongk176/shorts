@@ -182,7 +182,7 @@ describe("template execution snapshot", () => {
     }, access)).resolves.toEqual({
       resolvedTemplateId: "dark-red",
       resolvedVideoAspectRatio: "1:1",
-      templateSnapshot: { presetVersion: 3 },
+      templateSnapshot: { presetVersion: 4 },
       subtitleTemplateSnapshot: null,
       usesUnifiedTemplateSubtitleCanary: false,
     });

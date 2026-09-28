@@ -42,7 +42,7 @@ describe("built-in subtitle ratio contract", () => {
     }
   });
   it.each(["highlight", "pop"] as const)("preserves the established 16:9 lower %s layout", (id) => {
-    expect(builtInSubtitlePresentation({ id, videoAspectRatio: "16:9" }).config)
+    expect(builtInSubtitlePresentation({ id, videoAspectRatio: "16:9", legacyChannelPosition: true }).config)
       .toEqual(createUnifiedSubtitleTemplateConfig(id));
   });
 });

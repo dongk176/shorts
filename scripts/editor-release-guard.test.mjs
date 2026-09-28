@@ -25,10 +25,9 @@ test("legacy editor global CSS remains byte-for-byte at the approved baseline", 
 
   assert.equal(
     digest,
-    // Promoted 9baf6bec (dpl_CWuWwXGXTYiVMPfYXUBZLBYBmrcp), checked 2026-09-23.
-    // Since 51d911f only the seven scoped full-frame showcase lines changed
-    // (bf137f86); legacy editor CSS is unchanged. See docs/localized-showcase-20260920.md.
-    "31c950d3825d06fed9e2334089ea0c70759e958e807c88aed83c055b8005efa0",
+    // Current promoted 61dd66db (dpl_H6Esa6HtUNFETBicas7Z8tT94ZHn), checked 2026-09-28.
+    // This release changes no CSS. Retain an exact digest guard at that baseline.
+    "a2d61dd522e6792ae2fd19487995f5ae4487d631cc04b3351dca9ef3d92dc39b",
     "Do not change the approved global CSS baseline without a dedicated public UI review.",
   );
 });
@@ -38,6 +37,12 @@ test("every candidate editor selector is scoped below editor-v2-root", async () 
   const root = postcss.parse(css);
 
   root.walkRules((rule) => {
+    // Existing promoted banner stays byte-identical; new unscoped rules are forbidden.
+    if (rule.selector === ".editor-apply-error") {
+      assert.equal(createHash("sha256").update(rule.toString()).digest("hex"),
+        "3a17e0bccee248695596c676b9ddf556d5d7234e05f0e3560661dfe30b6d4eb6");
+      return;
+    }
     for (const selector of rule.selectors) {
       assert.match(
         selector.trim(),

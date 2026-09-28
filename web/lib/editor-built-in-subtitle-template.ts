@@ -91,14 +91,19 @@ export function resolveBuiltInSubtitleTemplateSnapshot(input: {
     )
     ? normalizedAccentColor as TemplatePresetColor
     : null;
+  const presetVersion = [input.templateSnapshot, input.fallbackTemplateSnapshot].some(
+    (snapshot) => snapshot && typeof snapshot === "object" && "presetVersion" in snapshot
+      && typeof snapshot.presetVersion === "number" && snapshot.presetVersion >= 4,
+  ) ? 4 : 3;
   const { config } = builtInSubtitlePresentation({
     id: selectionId,
+    legacyChannelPosition: presetVersion < 4,
     videoAspectRatio: input.videoAspectRatio ?? "16:9",
     captionPlacement: input.captionPlacement,
     brandColor: accentColor ?? undefined,
   });
   return {
-    presetVersion: 3,
+    presetVersion,
     ...(accentColor ? { brandColor: accentColor } : {}),
     config,
   } as EditorDocumentJsonObject;

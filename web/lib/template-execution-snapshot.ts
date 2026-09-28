@@ -105,7 +105,7 @@ export type ResolvedTemplateExecutionSnapshot = {
   resolvedVideoAspectRatio: VideoAspectRatio;
   templateSnapshot:
     | ReturnType<typeof templateSnapshotFromRow>
-    | { presetVersion: 3; brandColor?: TemplatePresetColor };
+    | { presetVersion: 3 | 4; brandColor?: TemplatePresetColor };
   subtitleTemplateSnapshot:
     | ReturnType<typeof unifiedSubtitleSnapshotFromTemplateConfig>
     | null;
@@ -130,7 +130,7 @@ export async function resolveTemplateExecutionSnapshot(
       resolvedTemplateId: input.templateId,
       resolvedVideoAspectRatio: input.videoAspectRatio,
       templateSnapshot: {
-        presetVersion: 3,
+        presetVersion: 4,
         ...(input.brandColor ? { brandColor: input.brandColor } : {}),
       },
       subtitleTemplateSnapshot: null,

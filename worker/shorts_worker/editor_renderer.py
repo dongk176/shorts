@@ -38,6 +38,7 @@ from .overlays import (
     ensure_title_text_background,
     wrap_korean_title,
 )
+from .preset_channel_position import preset_channel_center_y
 from .render_spec_v4 import (
     canonical_px_v4,
     draw_editor_title_spec_v4,
@@ -1473,10 +1474,9 @@ def create_editor_channel_layer(
     else:
         base_font_size = 45
         center_x = CANVAS_WIDTH / 2
-        center_y = (
-            COMMENT_CAPTURE_SQUARE_CHANNEL_CENTER_Y
-            if document.template.id is TemplateId.COMMENT_CAPTURE
-            else PRESET_SQUARE_CHANNEL_CENTER_Y
+        center_y = preset_channel_center_y(
+            document.template.id.value, document.video.aspect_ratio.value,
+            document.template.preset_version,
         )
         foreground = TEMPLATE_STYLES[document.template.id].channel
         background = None

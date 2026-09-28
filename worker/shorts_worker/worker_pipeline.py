@@ -55,6 +55,7 @@ from .overlays import (
     default_title_text_styles,
     ensure_title_text_background,
 )
+from .preset_channel_position import preset_version, with_preset_channel_position
 from .queueing import WorkQueue
 from .release_identity import (
     initial_render_v4_opt_in,
@@ -2151,6 +2152,7 @@ class BatchWorker:
         clean_metrics: dict[str, object] = {}
         source_offset_seconds = float(job.get("normalized_source_start_seconds") or 0.0)
         initial_v4 = initial_render_v4_opt_in(job)
+        caption_render_spec = with_preset_channel_position(caption_render_spec, job)
         visible_caption_spec = (
             caption_render_spec if caption_enabled is not False else None
         )
@@ -3511,6 +3513,7 @@ class BatchWorker:
                 comment_channel_below=_preset_comment_channel_below(item),
                 comment_channel_fixed=_preset_comment_channel_fixed(item),
                 fixed_preset_channel=_preset_fixed_channel_position(item),
+                preset_version=preset_version(item),
                 title_text_styles=title_text_styles,
                 custom_template_config=_custom_template_config(item),
                 caption_render_spec=(
@@ -4054,6 +4057,7 @@ class BatchWorker:
                 comment_channel_below=_preset_comment_channel_below(render_item),
                 comment_channel_fixed=_preset_comment_channel_fixed(render_item),
                 fixed_preset_channel=_preset_fixed_channel_position(render_item),
+                preset_version=preset_version(render_item),
                 title_text_styles=title_text_styles,
                 custom_template_config=_custom_template_config(render_item),
                 caption_render_spec=(

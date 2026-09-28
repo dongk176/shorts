@@ -34,7 +34,7 @@ export function createInitialRenderContract(input: {
     : null;
   const builtInSubtitleSnapshot = presentation
     ? {
-        presetVersion: 3 as const,
+        presetVersion: 4 as const,
         ...(input.brandColor ? { brandColor: input.brandColor } : {}),
         config: presentation.config,
       }

@@ -1,4 +1,5 @@
 "use client";
+import { presetChannelCenterY } from "@/lib/preset-channel-position";
 import dynamic from "next/dynamic";
 const AdminPublishingButton = dynamic(() => import("@/components/admin-publishing-button").then(module => module.AdminPublishingButton), { ssr: false });
 
@@ -167,7 +168,6 @@ import {
 import {
   COMMENT_BACKGROUND_COLOR,
   COMMENT_CAPTURE_LANDSCAPE_LIFT_PX,
-  COMMENT_CAPTURE_SQUARE_CHANNEL_CENTER_Y,
   PRESET_SQUARE_CHANNEL_CENTER_Y,
   isTemplateConfigV5,
   stockBackgrounds,
@@ -1111,6 +1111,7 @@ function CommentCaptureChannel({
 }
 
 function FixedPresetChannel({
+  centerY = PRESET_SQUARE_CHANNEL_CENTER_Y,
   channelName,
   channelThumbnailUrl,
   foreground,
@@ -1125,6 +1126,7 @@ function FixedPresetChannel({
   channelThumbnailUrl: string | null;
   foreground: string;
   background: string;
+  centerY?: number;
   fontFamily?: string;
   fontWeight?: number;
   selected?: boolean;
@@ -1146,7 +1148,7 @@ function FixedPresetChannel({
     <div
       className="pointer-events-none absolute inset-x-0 z-20 flex items-center justify-center text-[4.2cqw] font-semibold"
       style={{
-        top: `${PRESET_SQUARE_CHANNEL_CENTER_Y / 19.2}%`,
+        top: `${centerY / 19.2}%`,
         color: foreground,
         fontFamily,
         fontWeight,
@@ -1486,8 +1488,8 @@ function TemplatePreview({ template, videoAspectRatio, channelName, channelThumb
           : null}
       </div>
       {template.id === "comment-capture"
-        ? <CommentCaptureChannel channelName={channelName} channelThumbnailUrl={channelThumbnailUrl} fixedCenterY={COMMENT_CAPTURE_SQUARE_CHANNEL_CENTER_Y} />
-        : <FixedPresetChannel channelName={channelName} channelThumbnailUrl={channelThumbnailUrl} foreground={template.channel} background={template.background} />}
+        ? <CommentCaptureChannel channelName={channelName} channelThumbnailUrl={channelThumbnailUrl} fixedCenterY={presetChannelCenterY(template.id, layout.option.value)} />
+        : <FixedPresetChannel centerY={presetChannelCenterY(template.id, layout.option.value)} channelName={channelName} channelThumbnailUrl={channelThumbnailUrl} foreground={template.channel} background={template.background} />}
     </div>
   );
 }
@@ -5641,7 +5643,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
     : null;
   const savedCaptionCommentRect = !activeCustomTemplate
     ? captionCompositionRect(captionTemplateEditorSpec, "comment") : undefined;
-  const savedCaptionChannelRect = savedCaptionCommentRect
+  const savedCaptionChannelRect = (savedCaptionCommentRect || (!activeCustomTemplate && presetVersion >= 4))
     ? captionCompositionRect(captionTemplateEditorSpec, "channel") : undefined;
   const translatedPresetCommentRect = templateId === "comment-capture"
     && !activeCustomTemplate && captionTemplateEditorSpec?.templateId === "basic"
@@ -9142,7 +9144,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
       ...before,
       templateId: value,
       activeCustomTemplate: null,
-      presetVersion: 3,
+      presetVersion: before.presetVersion >= 4 ? 4 : 3,
       templateSelectionTouched: true,
       overlayLayout: replaceTemplateTextOverlays(
         resetEditorOverlayGeometry(before.overlayLayout), null, previewDuration,
@@ -11059,11 +11061,11 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                   && captionTemplatePreviewSnapshot
                   && <CaptionTemplateEditorChannel
                     fontId={renderSpec?.channel.font.fontId ?? channelFontId}
-                    fitSavedCommentChannel={Boolean(savedCaptionChannelRect)}
+                    fitSavedCommentChannel={Boolean(savedCaptionCommentRect)}
                     rect={savedCaptionChannelRect ?? captionTemplatePreviewSnapshot.layout.channel}
-                    fontSize={savedCaptionChannelRect ? 42 : captionTemplatePreviewSnapshot.channel.fontSizePx}
-                    iconSize={savedCaptionChannelRect ? 52 : captionTemplatePreviewSnapshot.channel.iconSizePx}
-                    gap={savedCaptionChannelRect ? 15 : captionTemplatePreviewSnapshot.channel.gapPx}
+                    fontSize={savedCaptionCommentRect ? 42 : captionTemplatePreviewSnapshot.channel.fontSizePx}
+                    iconSize={savedCaptionCommentRect ? 52 : captionTemplatePreviewSnapshot.channel.iconSizePx}
+                    gap={savedCaptionCommentRect ? 15 : captionTemplatePreviewSnapshot.channel.gapPx}
                     channelName={renderChannel}
                     channelThumbnailUrl={renderChannelThumbnailUrl}
                     fontFamily={channelFontFamily}
@@ -11081,7 +11083,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                   ? <CommentCaptureChannel
                       channelName={renderChannel}
                       channelThumbnailUrl={renderChannelThumbnailUrl}
-                      fixedCenterY={COMMENT_CAPTURE_SQUARE_CHANNEL_CENTER_Y}
+                      fixedCenterY={presetChannelCenterY(templateId, originalAspectRatio, presetVersion)}
                       fontFamily={channelFontFamily}
                       fontWeight={renderSpec?.channel.font.resolvedWeight}
                       selected={overlayPreviewEnabled && selectedOverlay === "channel"}
@@ -11091,6 +11093,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                         : undefined}
                     />
                   : <FixedPresetChannel
+                      centerY={presetChannelCenterY(templateId, originalAspectRatio, presetVersion)}
                       channelName={renderChannel}
                       channelThumbnailUrl={renderChannelThumbnailUrl}
                       foreground={template.channel}

@@ -51,7 +51,7 @@ function documentWithSnapshot(snapshot: NonNullable<ReturnType<
 
 describe("built-in subtitle template editor snapshot", () => {
   it.each(subtitleRatioCases)("restores $id $videoAspectRatio $captionPlacement and preserves the saved snapshot", (test) => {
-    const expected = builtInSubtitlePresentation(test).config;
+    const expected = builtInSubtitlePresentation({ ...test, legacyChannelPosition: true }).config;
     const input = {
       templateId: "dark-minimal" as const, subtitleTemplateId: test.id,
       videoAspectRatio: test.videoAspectRatio, captionPlacement: test.captionPlacement,
