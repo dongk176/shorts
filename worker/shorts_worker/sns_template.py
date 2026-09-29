@@ -213,6 +213,7 @@ def generate_copy(
     if client:
         try:
             for _ in range(2):
+                raw = ""
                 try:
                     response = client.chat.completions.create(
                         model=model, messages=messages, response_format={"type": "json_object"}

@@ -29,7 +29,7 @@ def main() -> None:
     image_digest = (
         _running_container_image_digest() if args.upload else os.getenv("WORKER_IMAGE_DIGEST")
     )
-    prefix = f"verification/sns-template/{sha}"
+    prefix = f"outputs/sns-template-verification/{sha}"
     fixtures = {
         "ko": (
             "퇴근 1분 전 내 모습",
