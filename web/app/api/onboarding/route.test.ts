@@ -38,12 +38,13 @@ describe("user onboarding API", () => {
       required: true,
       version: 2,
       storedVersion: null,
+      occupation: null,
     });
     expect(response.headers.get("Cache-Control")).toBe("private, no-store");
   });
 
   it("does not require onboarding after a response was stored", async () => {
-    mocks.getDb.mockReturnValue(dbWithRows([{ onboardingVersion: 1 }]));
+    mocks.getDb.mockReturnValue(dbWithRows([{ onboardingVersion: 1, occupation: "education" }]));
 
     const response = await GET();
 
@@ -52,7 +53,17 @@ describe("user onboarding API", () => {
       required: false,
       version: 2,
       storedVersion: 1,
+      occupation: "education",
     });
+  });
+
+  it("only reads the authenticated caller's occupation and never caches it publicly", async () => {
+    const db = dbWithRows([{ onboardingVersion: 2, occupation: "creator" }]);
+    mocks.getDb.mockReturnValue(db);
+    const response = await GET();
+    expect((await response.json()).occupation).toBe("creator");
+    expect(db.mock.calls[0].slice(1)).toEqual([userId]);
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
   });
 
   it("keeps older v2 rows without discovery data migration-compatible", () => {

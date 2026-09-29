@@ -11,6 +11,7 @@ import { useWelcomeOverlayStage } from "@/components/welcome-overlay-queue";
 import type { OnboardingWelcomeAnnouncement } from "@/lib/onboarding-welcome";
 import { userFacingErrorMessage } from "@/lib/public-error";
 import {
+  USER_ONBOARDING_UPDATED_EVENT,
   userDiscoverySourceOptions,
   userOccupationOptions,
   userUsagePurposeOptions,
@@ -167,6 +168,7 @@ export function UserOnboardingOverlay() {
         }),
       });
       await responseBody<{ completed: true }>(response);
+      window.dispatchEvent(new CustomEvent(USER_ONBOARDING_UPDATED_EVENT, { detail: { accountId } }));
       const announcement = await claimOnboardingWelcomeAnnouncement();
       void refreshUsage();
       if (announcement) {

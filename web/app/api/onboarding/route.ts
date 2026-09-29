@@ -3,6 +3,7 @@ import { getDb } from "@/lib/db";
 import { apiError } from "@/lib/http";
 import {
   USER_ONBOARDING_VERSION,
+  parseUserOccupation,
   userOnboardingSubmissionSchema,
 } from "@/lib/user-onboarding";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
@@ -20,7 +21,7 @@ export async function GET() {
   try {
     const session = await requireAuthenticatedMvpSession();
     const rows = await getDb()`
-      select onboarding_version
+      select onboarding_version, occupation
       from shorts_mvp.user_onboarding_profiles
       where user_id=${session.userId}
       limit 1
@@ -29,6 +30,7 @@ export async function GET() {
       required: !rows[0],
       version: USER_ONBOARDING_VERSION,
       storedVersion: rows[0] ? Number(rows[0].onboardingVersion) : null,
+      occupation: parseUserOccupation(rows[0]?.occupation),
     });
   } catch (error) {
     const response = apiError(error, "온보딩 정보를 불러오지 못했습니다.");

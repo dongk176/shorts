@@ -1,0 +1,65 @@
+.root {
+  width: 100%;
+  min-width: 0;
+  text-align: center;
+  word-break: normal;
+  overflow-wrap: anywhere;
+  hyphens: none;
+}
+.root:lang(ko) { word-break: keep-all; }
+.root:lang(ja) { line-break: strict; }
+.heading { position: relative; }
+.title {
+  margin: 0;
+  font-size: clamp(1.75rem, 4vw, 2.8rem);
+  line-height: 1.2;
+  font-weight: 900;
+  letter-spacing: -.05em;
+  text-wrap: balance;
+}
+.stage { display: grid; width: 100%; min-width: 0; }
+/* Every slide reserves the same grid cell, including the tallest translated copy. */
+.slide {
+  grid-area: 1 / 1;
+  align-self: center;
+  min-width: 0;
+  width: 100%;
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity .2s ease;
+}
+.active { visibility: visible; opacity: 1; }
+.line { display: block; }
+.accent {
+  color: transparent;
+  background: linear-gradient(95deg,#ff715e 8%,#ff8b7b 30%,#ffb4a8 48%,#cf9cda 68%,#a078ff 92%);
+  background-clip: text;
+  -webkit-background-clip: text;
+}
+.phrase { display: inline-block; max-width: 100%; }
+.description {
+  max-width: 42rem;
+  margin: 1.25rem auto 0;
+  font-size: .875rem;
+  font-weight: 500;
+  line-height: 1.75rem;
+  color: #d4d4d4;
+  text-wrap: pretty;
+}
+.toggle {
+  position: absolute;
+  right: 0;
+  top: -32px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(255,255,255,.13);
+  border-radius: 50%;
+  color: #99999f;
+  background: rgba(20,20,24,.5);
+}
+.toggle:hover, .toggle:focus-visible { color: white; border-color: #a078ff; }
+@media (min-width: 640px) { .description { font-size: 1rem; } }
+@media (max-width: 640px) { .title { letter-spacing: -.045em; } }
+@media (prefers-reduced-motion: reduce) { .slide { transition: none; } }

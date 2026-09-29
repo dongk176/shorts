@@ -46,6 +46,7 @@ import {
 import { EstimatedProcessingOverlay } from "@/components/project-card";
 import { ProjectCollection } from "@/components/project-collection";
 import { ProjectReveal } from "@/components/project-reveal";
+import { HomeHero } from "@/components/home-hero";
 import { ReusableViewCounter } from "@/components/reusable-view-counter";
 import { PaidProjectFeatureOverlay } from "@/components/paid-project-feature-overlay";
 import {
@@ -14623,8 +14624,12 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         className={adminTemplateLayoutEnabled ? "order-[-2]" : ""}
       />
       <section className={`hero mx-auto flex w-full max-w-4xl flex-col items-center text-center ${adminTemplateLayoutEnabled ? "order-[-2]" : ""}`}>
-        <h1 className="hero-title">{t("home.heroLine1")}<br /><span>{t("home.heroLine2")}</span></h1>
-        <p className="mx-auto mt-5 max-w-2xl text-sm font-medium leading-7 text-neutral-300 sm:text-base">{t("home.heroDescription")}</p>
+        <HomeHero
+          accountId={state?.user?.id ?? null}
+          locale={locale}
+          fallback={[t("home.heroLine1"), t("home.heroLine2")]}
+          description={t("home.heroDescription")}
+        />
         {uploadModeVisible ? (
           <div className="source-input-mode mt-8 w-full max-w-3xl" role="tablist" aria-label={t("home.sourceMode")}>
             <button

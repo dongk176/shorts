@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 export const USER_ONBOARDING_VERSION = 2;
+export const USER_ONBOARDING_UPDATED_EVENT = "easycut:onboarding-updated";
 
 export const userOccupationOptions = [
   { value: "creator", label: "크리에이터·유튜버" },
@@ -90,8 +91,14 @@ export const userOnboardingSubmissionSchema = z.object({
   discoverySourceOther: value.discoverySource === "other" ? value.discoverySourceOther! : null,
 }));
 
+export function parseUserOccupation(value: unknown): UserOccupation | null {
+  return userOccupationOptions.some((option) => option.value === value)
+    ? value as UserOccupation : null;
+}
+
 export type UserOnboardingStatus = {
   required: boolean;
   version: number;
   storedVersion: number | null;
+  occupation: UserOccupation | null;
 };
