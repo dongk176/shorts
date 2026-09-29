@@ -25,7 +25,14 @@ SIZES = {
     "9:16": (720, 1280),
 }
 # Character budgets guide the model; measured glyph widths are authoritative.
-BUDGETS = {"ko": (18, 20, 6), "en": (28, 32, 12), "ja": (15, 16, 6)}
+BUDGETS = {"ko": (16, 18, 6), "en": (26, 28, 12), "ja": (13, 14, 6)}
+
+
+def copy_budgets(ratio: str, language: str) -> tuple[int, int, int]:
+    title, body, tag = BUDGETS[language]
+    if ratio == "9:16":
+        body = {"ko": 13, "en": 22, "ja": 11}[language]
+    return title, body, tag
 
 
 @dataclass(frozen=True)
@@ -95,7 +102,7 @@ def fit_text(text: str, face: ImageFont.FreeTypeFont, width: int, spacing: float
 
 def validate_copy(value: Any, ratio: str, language: str) -> dict[str, Any]:
     layout = sns_layout(ratio)
-    title_max, body_max, tag_max = BUDGETS[language]
+    title_max, body_max, tag_max = copy_budgets(ratio, language)
     if not isinstance(value, dict) or set(value) != {"title", "body", "hashtags"}:
         raise ValueError("Return title, body and hashtags.")
     title, body, tags = value["title"], value["body"], value["hashtags"]
@@ -108,12 +115,17 @@ def validate_copy(value: Any, ratio: str, language: str) -> dict[str, Any]:
         for line in body
     ):
         raise ValueError(f"Write body lines of up to {body_max} characters each.")
-    if text_width(title, font(80, language), -3) > 900 or any(
-        text_width(line, font(72, language, 600), -1.7) > layout.body_width for line in body
-    ):
-        raise ValueError(
-            "Use shorter wording that fits the same font size; keep the central meaning."
-        )
+    title_width = text_width(title, font(80, language), -3)
+    if title_width > 900:
+        target = max(1, int(len(title) * 900 / title_width * 0.85))
+        raise ValueError(f"Rewrite title as a complete phrase of up to {target} characters.")
+    for index, line in enumerate(body):
+        measured = text_width(line, font(72, language, 600), -1.7)
+        if measured > layout.body_width:
+            target = max(1, int(len(line) * layout.body_width / measured * 0.85))
+            raise ValueError(
+                f"Rewrite body line {index + 1} as a complete phrase of up to {target} characters."
+            )
     if not isinstance(tags, list) or len(tags) != (3 if layout.hashtags else 0):
         raise ValueError(f"Return {3 if layout.hashtags else 0} hashtags.")
     if any(
@@ -133,7 +145,7 @@ def copy_messages(
     *, title: str, reason: str, transcript: str, ratio: str, language: str
 ) -> list[dict[str, str]]:
     layout = sns_layout(ratio)
-    title_max, body_max, tag_max = BUDGETS[language]
+    title_max, body_max, tag_max = copy_budgets(ratio, language)
     audience = {
         "ko": "자연스러운 한국어 구어체",
         "en": "natural conversational English",
@@ -208,6 +220,19 @@ def generate_copy(
                     raw = response.choices[0].message.content or ""
                     return {**validate_copy(json.loads(raw), ratio, language), "source": "ai"}
                 except (ValueError, TypeError) as error:
+                    print(
+                        json.dumps(
+                            {
+                                "event": "sns_copy_repair",
+                                "ratio": ratio,
+                                "language": language,
+                                "reason": str(error),
+                            }
+                        ),
+                        flush=True,
+                    )
+                    if raw:
+                        messages.append({"role": "assistant", "content": raw})
                     messages.append(
                         {"role": "user", "content": "Revise the same scene. " + str(error)}
                     )
@@ -365,8 +390,8 @@ def render_sns(
     resize = (
         f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
         f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=white"
-        if ratio == "9:16" else
-        f"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height}"
+        if ratio == "9:16"
+        else f"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height}"
     )
     filters = (
         f"[0:v]setpts=PTS-STARTPTS,fps={fps},{resize},setsar=1,"
