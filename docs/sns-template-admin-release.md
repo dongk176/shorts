@@ -30,7 +30,9 @@
 SNS 릴리스는 기존의 검증된 immutable release 배정 구조만 재사용하며, 별도 ID와
 고유한 작업 정의를 추가한다. 운영 submitter 코드·일반 registry·언어 settings는
 수정하지 않는다. 새로운 워커는 SNS marker를 검사하고 일반 작업을 거절한다.
-일반 워커로 SNS 작업을 보내는 fallback은 없다. DB 스키마 변경은 필요 없다.
+일반 워커로 SNS 작업을 보내는 fallback은 없다. 테이블/컬럼 변경은 없다. `202609300001_sns_admin_generation.sql`은 관리자 전용 SNS
+검증 함수를 추가하고 기존 접수 함수의 처음에 SNS 분기만 삽입한다. 일반 작업 검사
+본문은 그대로 보존하며 실제 PostgreSQL 엔진에서 공개/관리자 접근을 함께 검사한다.
 
 ## 검증·배포
 
