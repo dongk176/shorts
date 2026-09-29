@@ -12923,7 +12923,7 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
                   </div>
                   <div className="short-detail-column">
                     <div className="short-source-range"><span>{ui("원본 영상 타임라인")}</span><strong>◷ {formatTimestamp(item.startSeconds)} ~ {formatTimestamp(item.endSeconds)}</strong></div>
-                    <details className="short-detail-disclosure">
+                    <details className="short-detail-disclosure" open>
                       <summary>{ui("AI 설명·스크립트 보기")}</summary>
                       <div className="short-detail-disclosure-content">
                         <div className="short-highlight-note"><strong>{ui("✦ AI 하이라이트")}</strong><p data-i18n-skip>{item.highlightReason.trim()}</p></div>
