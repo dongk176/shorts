@@ -46,7 +46,7 @@ import {
 import { EstimatedProcessingOverlay } from "@/components/project-card";
 import { ProjectCollection } from "@/components/project-collection";
 import { ProjectReveal } from "@/components/project-reveal";
-import { HomeHero } from "@/components/home-hero";
+import { PersonalizedHomeHero } from "@/components/home-hero";
 import { ReusableViewCounter } from "@/components/reusable-view-counter";
 import { PaidProjectFeatureOverlay } from "@/components/paid-project-feature-overlay";
 import {
@@ -14624,8 +14624,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         className={adminTemplateLayoutEnabled ? "order-[-2]" : ""}
       />
       <section className={`hero mx-auto flex w-full max-w-4xl flex-col items-center text-center ${adminTemplateLayoutEnabled ? "order-[-2]" : ""}`}>
-        <HomeHero
-          accountId={state?.user?.id ?? null}
+        <PersonalizedHomeHero
           locale={locale}
           fallback={[t("home.heroLine1"), t("home.heroLine2")]}
           description={t("home.heroDescription")}

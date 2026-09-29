@@ -3,10 +3,12 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { parseHTML } from "linkedom";
-import { HomeHero, HomeHeroPresentation, japaneseHeroPhrases } from "./home-hero";
+import { HomeHero, HomeHeroPresentation, PersonalizedHomeHero, japaneseHeroPhrases } from "./home-hero";
 import { heroAudienceForOccupation, heroHeadlines } from "@/lib/i18n/hero-headlines";
 import { USER_ONBOARDING_UPDATED_EVENT } from "@/lib/user-onboarding";
 
+const account = vi.hoisted(() => ({ accountId: "app-account-a" }));
+vi.mock("@/components/usage-provider", () => ({ useUsageState: () => account }));
 let root: Root | undefined;
 afterEach(async () => {
   if (root) await act(async () => root!.unmount());
@@ -106,6 +108,17 @@ describe("home headline personalization", () => {
     await ui.clickToggle();
     await ui.advance(3000);
     expect(ui.active()).toBe(heroHeadlines.ko.creator[1].join(""));
+  });
+  it("refreshes the real home immediately after onboarding using the app-account identity", async () => {
+    const ui = await setup();
+    const fetcher = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ occupation: null }) });
+    vi.stubGlobal("fetch", fetcher);
+    await ui.show(<PersonalizedHomeHero {...copy} />);
+    expect(ui.active()).toBe(copy.fallback.join(""));
+    fetcher.mockResolvedValue({ ok: true, json: async () => ({ occupation: "employee_freelancer" }) });
+    await act(async () => { ui.window.dispatchEvent(new ui.window.CustomEvent(USER_ONBOARDING_UPDATED_EVENT, { detail: { accountId: "app-account-a" } })); });
+    expect(ui.active()).toBe(heroHeadlines.ko.side_hustle[0].join(""));
+    expect(fetcher).toHaveBeenCalledTimes(2);
   });
   it("loads only signed-in profiles, reacts to onboarding, resets locale, and does not leak copy across accounts", async () => {
     const ui = await setup();

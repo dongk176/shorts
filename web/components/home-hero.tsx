@@ -16,6 +16,7 @@ import {
   type UserOccupation,
   type UserOnboardingStatus,
 } from "@/lib/user-onboarding";
+import { useUsageState } from "@/components/usage-provider";
 import styles from "./home-hero.module.css";
 
 let japaneseParser: Parser | undefined;
@@ -174,4 +175,10 @@ export function HomeHero({ accountId, ...copy }: HeroCopyProps & { accountId: st
   const occupation = profile?.accountId === accountId ? profile?.occupation ?? null : null;
   const audience = heroAudienceForOccupation(occupation);
   return <HomeHeroPresentation key={`${accountId}:${copy.locale}:${audience}`} {...copy} audience={audience} />;
+}
+
+// The onboarding event uses the app account ID, not the authentication provider ID.
+export function PersonalizedHomeHero(copy: HeroCopyProps) {
+  const { accountId } = useUsageState();
+  return <HomeHero {...copy} accountId={accountId} />;
 }
