@@ -40,9 +40,9 @@ describe('one shared publishing dialog',()=>{
   expect(document.querySelectorAll('dialog').length).toBe(1);
   expect(document.querySelectorAll('.publish-trigger').length).toBe(1);
   expect(document.body.textContent).toContain('Connect your YouTube channel');
-  await click('.publish-tabs button:nth-child(2)');expect(document.querySelector('[data-platform="tiktok"]')).not.toBeNull();
-  await click('.publish-tabs button:nth-child(3)');expect(document.querySelector('[data-platform="instagram"]')).not.toBeNull();
-  await click('.publish-tabs button:nth-child(4)');expect(document.querySelector('[data-platform="threads"]')).not.toBeNull();
+  await click('.publish-tabs button:nth-child(2)');expect(document.body.textContent).toContain('This platform is coming soon.');
+  await click('.publish-tabs button:nth-child(3)');expect(document.body.textContent).toContain('This platform is coming soon.');
+  await click('.publish-tabs button:nth-child(4)');expect(document.body.textContent).toContain('This platform is coming soon.');
   await click('.publish-close');await click('.publish-trigger');
   expect(document.querySelector('.publish-tabs .is-active')?.textContent).toBe('YouTube');
  });
@@ -52,14 +52,14 @@ describe('one shared publishing dialog',()=>{
   expect(document.querySelectorAll('dialog').length).toBe(1);
   expect(document.body.textContent).toContain('Your channel is connected.');
  });
- it('retains the Meta-only reviewer UI without requesting YouTube data',async()=>{
+ it('shows coming-soon placeholders without requesting platform data when YouTube is unavailable',async()=>{
   const {document,click,fetcher}=await render({metaOnly:true});await click('.publish-trigger');
-  expect(Array.from(document.querySelectorAll('.publish-tabs button')).map(x=>visibleLabel(x as unknown as Element))).toEqual(['Instagram','Threads']);
+  expect(Array.from(document.querySelectorAll('.publish-tabs button')).map(x=>visibleLabel(x as unknown as Element))).toEqual(['YouTube','TikTok','Instagram','Threads']);
   expect(fetcher).not.toHaveBeenCalled();
  });
- it('uses the same dialog for the restricted YouTube reviewer without granting other platforms',async()=>{
+ it('shows placeholders for other platforms even for a YouTube-only account',async()=>{
   const {document,click}=await render({youtubeEnabled:true,metaOnly:true,metaEnabled:false});await click('.publish-trigger');
-  expect(Array.from(document.querySelectorAll('.publish-tabs button')).map(x=>visibleLabel(x as unknown as Element))).toEqual(['YouTube']);
+  expect(Array.from(document.querySelectorAll('.publish-tabs button')).map(x=>visibleLabel(x as unknown as Element))).toEqual(['YouTube','TikTok','Instagram','Threads']);
   expect(document.querySelectorAll('dialog').length).toBe(1);
  });
 });

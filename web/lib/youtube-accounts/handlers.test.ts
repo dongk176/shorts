@@ -7,7 +7,7 @@ import { HttpError } from "@/lib/http";
 
 const actor = { userId: "11111111-1111-4111-8111-111111111111", sessionId: "authenticated-server-session" };
 const origin = "http://localhost:3001";
-const uploads = { cleanup: vi.fn(), capabilities: vi.fn(()=>({nonPrivateUploads:false})), list: vi.fn(), create: vi.fn(), run: vi.fn() };
+const uploads = { attribution: vi.fn(async()=>null), cleanup: vi.fn(), capabilities: vi.fn(()=>({nonPrivateUploads:false})), list: vi.fn(), create: vi.fn(), run: vi.fn() };
 const service = { list: vi.fn(), start: vi.fn(), disconnect: vi.fn(), disconnectStatus: vi.fn(), disconnectState: vi.fn(), callback: vi.fn(), eligibility: vi.fn() };
 const request = (path: string, method = "GET", body?: unknown, from = origin) => new Request(origin + path, { method, headers: method === "GET" ? {} : { origin: from, "content-type": "application/json" }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
 beforeEach(() => {

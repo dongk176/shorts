@@ -1,6 +1,6 @@
 import "server-only";
 import path from "node:path";
-import { reviewConfig, assertHostedYoutubeAccess } from "./review-access";
+import { reviewConfig, assertHostedYoutubeAccess, canUseYoutubeAdminPublishing } from "./review-access";
 import { HostedYoutubeSources } from "./hosted-sources";
 import { YoutubeAccountUploads } from "./uploads";
 import { getDb } from "@/lib/db";
@@ -38,7 +38,10 @@ export function accountServices() {
   const store = new YoutubeAccountStore(getDb(), config.hosted ? (userId, shortId, db) => assertHostedYoutubeAccess(db, userId, shortId) : undefined);
   const google = new YoutubeAccountGoogle(config);
   const service = new YoutubeAccounts(store, vault, google, async userId => {
-    if (config.hosted) { await assertHostedYoutubeAccess(getDb(), userId); return; }
+    if (config.hosted) {
+      await assertHostedYoutubeAccess(getDb(), userId);
+      if (userId === config.grant.userId || await canUseYoutubeAdminPublishing(getDb(), userId)) return;
+    }
     // Publishing must retain the same paid entitlement as downloading this output.
     assertPaidProjectActionAccess(await getBillingSummary(getDb(), userId), "download");
   });

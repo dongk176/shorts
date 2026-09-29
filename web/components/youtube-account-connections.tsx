@@ -6,6 +6,7 @@ import { clearYoutubeDrafts } from "@/lib/youtube-accounts/browser-data";
 import { useCallback, useEffect, useState } from "react";
 import Link from "@/lib/i18n/navigation";
 
+import type { YoutubeAttribution } from "@/lib/youtube-accounts/attribution";
 import { YoutubeAccountUpload } from "./youtube-account-upload";
 import { PlatformIcon } from "./publish-ui";
 import type { Connection } from "@/lib/youtube-accounts/contracts";
@@ -32,12 +33,13 @@ export function YoutubeAccountConnections({ shortId, title, previewUrl }: { shor
   return()=>{window.clearInterval(timer);window.removeEventListener("focus",tick);};
  },[reconnectDeadline]);
  const [managing,setManaging]=useState(false);
+ const [attribution,setAttribution]=useState<YoutubeAttribution|null>(null);
  useEffect(()=>{
   const controller=new AbortController();
   fetch(`/api/youtube/accounts${shortId?`?shortId=${encodeURIComponent(shortId)}`:""}`,{cache:"no-store",signal:controller.signal}).then(async r=>{
    if([401,403,404].includes(r.status))return;
    const b=await r.json();if(!r.ok)throw Error(b.detail||"채널 정보를 불러오지 못했습니다.");
-   if(!controller.signal.aborted){setConnections(b.connections);setDisconnectState(b.disconnectStatus||"none");updateReconnectDelay(b.reconnectAfterSeconds);setVisible(true);}
+   if(!controller.signal.aborted){setConnections(b.connections);setAttribution(b.attribution || null);setDisconnectState(b.disconnectStatus||"none");updateReconnectDelay(b.reconnectAfterSeconds);setVisible(true);}
   }).catch(e=>{if(!controller.signal.aborted){setVisible(true);setMessage(e.message);}});
   const url=new URL(window.location.href),outcome=url.searchParams.get("youtubeAccount");
   if(outcome){
@@ -76,7 +78,7 @@ export function YoutubeAccountConnections({ shortId, title, previewUrl }: { shor
  if(!shortId)return <section data-i18n-skip className="publish-channels" aria-label={yt("연동된 채널")}><header className="publish-section-heading"><h2>YouTube</h2></header>{deletionNotice}{channelCard}{message&&<p role="status" className="publish-notice">{youtubeMessage(message,locale)}</p>}</section>;
  return <div data-i18n-skip>
      {message&&<p role="status" className="publish-notice">{youtubeMessage(message,locale)}</p>}{deletionNotice}
-     {!active.length?<div className="publish-connect-layout"><div className="publish-empty"><span className="publish-connect-symbol"><PlatformIcon/></span><h3>{yt("YouTube 채널을 연결해 주세요")}</h3><p>{yt("한 번 연결하면 프로젝트에서 바로 업로드할 수 있어요.")}</p><button className="publish-primary" disabled={busy||reconnectSeconds>0} onClick={()=>void connect()}>{busy?yt("연결하는 중…"):reconnectSeconds>0?yt("연결 대기 {seconds}초",{seconds:reconnectSeconds}):yt("＋ YouTube 연결하기")}</button><span className="publish-note">{yt("연결 후 이 화면에서 계속할 수 있습니다.")}</span></div><aside className="publish-preview">{previewUrl&&<video src={previewUrl} controls playsInline preload="metadata"/>}<strong data-i18n-content>{title ?? yt("이지컷 영상")}</strong><span>{yt("업로드할 영상")}</span></aside></div>:managing?<div className="publish-manage"><button className="publish-text-button" onClick={()=>setManaging(false)}>{yt("← 업로드 설정으로 돌아가기")}</button>{channelCard}<Link className="publish-text-button" href="/publish/channels">{yt("전체 채널 관리 ↗")}</Link></div>:<YoutubeAccountUpload shortId={shortId} title={title ?? yt("이지컷 영상")} connections={connections} previewUrl={previewUrl} onManage={()=>setManaging(v=>!v)}/>}
+     {!active.length?<div className="publish-connect-layout"><div className="publish-empty"><span className="publish-connect-symbol"><PlatformIcon/></span><h3>{yt("YouTube 채널을 연결해 주세요")}</h3><p>{yt("한 번 연결하면 프로젝트에서 바로 업로드할 수 있어요.")}</p><button className="publish-primary" disabled={busy||reconnectSeconds>0} onClick={()=>void connect()}>{busy?yt("연결하는 중…"):reconnectSeconds>0?yt("연결 대기 {seconds}초",{seconds:reconnectSeconds}):yt("＋ YouTube 연결하기")}</button><span className="publish-note">{yt("연결 후 이 화면에서 계속할 수 있습니다.")}</span></div><aside className="publish-preview">{previewUrl&&<video src={previewUrl} controls playsInline preload="metadata"/>}<strong data-i18n-content>{title ?? yt("이지컷 영상")}</strong><span>{yt("업로드할 영상")}</span></aside></div>:managing?<div className="publish-manage"><button className="publish-text-button" onClick={()=>setManaging(false)}>{yt("← 업로드 설정으로 돌아가기")}</button>{channelCard}<Link className="publish-text-button" href="/publish/channels">{yt("전체 채널 관리 ↗")}</Link></div>:<YoutubeAccountUpload attribution={attribution} shortId={shortId} title={title ?? yt("이지컷 영상")} connections={connections} previewUrl={previewUrl} onManage={()=>setManaging(v=>!v)}/>}
      {(!active.length&&connections.length>0)&&<div className="publish-manage">{channelCard}</div>}
  </div>;
 }

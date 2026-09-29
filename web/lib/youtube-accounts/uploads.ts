@@ -7,6 +7,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { Sql } from "postgres";
 import { z } from "zod";
 import { HttpError } from "@/lib/http";
+import { sourceAttribution } from "./attribution-server";
 import { privacyValues } from "./visibility";
 import { uuid, type Actor } from "./contracts";
 import type { TokenVault } from "./crypto";
@@ -33,6 +34,10 @@ export class YoutubeAccountUploads {
     await this.accounts.list(actor, shortId);
     const rows=await this.db`select id,short_id,title,status,progress,video_id,error_message,requested_privacy,actual_privacy,privacy_checked_at,created_at from shorts_mvp.youtube_account_uploads where user_id=${actor.userId} and short_id=${shortId} order by created_at desc`;
     return rows.map(row=>this.view(row));
+  }
+  async attribution(actor: Actor, shortId: string) {
+    await this.accounts.list(actor, shortId);
+    return sourceAttribution(this.db, actor.userId, shortId);
   }
   async preview(actor: Actor, shortId: string) {
     await this.accounts.list(actor, shortId);

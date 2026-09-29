@@ -50,6 +50,12 @@ export async function canUseYoutubeAdminPublishing(db: Sql | TransactionSql, use
 }
 
 export async function assertHostedYoutubeAccess(db: Sql | TransactionSql, userId: string, shortId?: string, allowExpired = false) {
-  if (await canUseYoutubeAdminPublishing(db, userId)) return;
-  assertReviewAccess(userId, shortId, allowExpired);
+  const { grant } = reviewConfig();
+  if (userId === grant.userId) { assertReviewAccess(userId, shortId || undefined, allowExpired); return; }
+  const users = await db`select id from shorts_mvp.app_users where id=${userId} and withdrawn_at is null`;
+  if (!users.length) throw new HttpError(403, "YouTube upload access is unavailable.");
+}
+
+export async function canUseYoutubePublishing(db: Sql | TransactionSql, userId: string) {
+  try { await assertHostedYoutubeAccess(db, userId); return true; } catch { return false; }
 }

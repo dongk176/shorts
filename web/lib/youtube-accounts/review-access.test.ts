@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
-import { assertReviewAccess, assertHostedYoutubeAccess, canUseYoutubeAdminPublishing, reviewConfig, REVIEW_CLIENT_ID } from "./review-access";
+import { assertReviewAccess, assertHostedYoutubeAccess, canUseYoutubeAdminPublishing, reviewConfig, canUseYoutubePublishing, REVIEW_CLIENT_ID } from "./review-access";
 const userId = "11111111-1111-4111-8111-111111111111", shortId = "22222222-2222-4222-8222-222222222222";
 const grant = { userId, shortId, expiresAt: "2026-10-20T00:00:00Z" };
 const env: NodeJS.ProcessEnv = { NODE_ENV: "production", YOUTUBE_ACCOUNTS_MODE: "review", YOUTUBE_ACCOUNTS_CLIENT_ID: REVIEW_CLIENT_ID, YOUTUBE_ACCOUNTS_CLIENT_SECRET: "test", VERCEL_ENV: "production", VERCEL_PROJECT_ID: "prj_bQyHRVC3Pfzq2dvUnAqEDlw66GOw", DATABASE_URL: "postgres://postgres.mvcprswvfybudtopepuj:test@aws-1-ap-northeast-2.pooler.supabase.com/postgres", YOUTUBE_REVIEWER_ACCESS: JSON.stringify(grant) };
@@ -41,4 +41,16 @@ it("preserves reviewer clip and expiry restrictions with admin publishing enable
   vi.setSystemTime(new Date(grant.expiresAt));
   await expect(assertHostedYoutubeAccess(db(false), userId, shortId)).rejects.toThrow();
   await expect(assertHostedYoutubeAccess(db(false), userId, undefined, true)).resolves.toBeUndefined();
+});
+
+it("allows active ordinary members while rejecting missing or withdrawn accounts", async () => {
+  vi.stubEnv("YOUTUBE_ADMIN_REVIEW_ENABLED", "false");
+  const queryMock = vi.fn(async (...args: [TemplateStringsArray, string]) => { void args; return [{id: adminId}]; });
+  const active = queryMock as unknown as Parameters<typeof canUseYoutubePublishing>[0];
+  await expect(assertHostedYoutubeAccess(active, adminId)).resolves.toBeUndefined();
+  expect(await canUseYoutubePublishing(active, adminId)).toBe(true);
+  const [query] = queryMock.mock.calls[0];
+  expect(query.join("?")).toContain("withdrawn_at is null");
+  expect(query.join("?")).not.toContain("is_admin=true");
+  expect(await canUseYoutubePublishing(db(false), adminId)).toBe(false);
 });

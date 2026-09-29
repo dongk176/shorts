@@ -12,6 +12,7 @@ import { YoutubeAccounts } from "./service";
 import { YoutubeAccountGoogle } from "./google";
 import { YoutubeRetention } from "./retention";
 import { withYoutubeWithdrawal } from "./withdrawal";
+import { sourceAttribution } from "./attribution-server";
 import { SCOPES } from "./contracts";
 
 const A = { userId: "11111111-1111-4111-8111-111111111111", sessionId: "session-a" };
@@ -42,7 +43,8 @@ beforeAll(async () => {
   await pg.exec(`create role anon; create role authenticated; create role service_role bypassrls;
     create schema shorts_mvp; grant usage on schema shorts_mvp to anon,authenticated,service_role;
     create table shorts_mvp.app_users(id uuid primary key, withdrawn_at timestamptz);
-    create table shorts_mvp.video_jobs(id uuid primary key,user_id uuid,project_number integer,status text,is_example boolean,user_deleted_at timestamptz);
+    create table shorts_mvp.video_jobs(id uuid primary key,user_id uuid,project_number integer,status text,is_example boolean,user_deleted_at timestamptz,source_type text default 'youtube',youtube_video_id text,video_title text,channel_name text,youtube_metadata_verified_at timestamptz,created_at timestamptz default now());
+    create table shorts_mvp.youtube_catalog(video_id text,metadata jsonb,availability text,verified_at timestamptz,metadata_pending_at timestamptz);
     create table shorts_mvp.generated_shorts(id uuid primary key,job_id uuid,user_id uuid,status text,deleted_at timestamptz,expires_at timestamptz,output_s3_key text,render_version integer);
     set app.youtube_review_release='20260922';`);
   await pg.exec(fs.readFileSync(path.resolve(process.cwd(), "../supabase/migrations/202609220001_youtube_reviewer_accounts.sql"), "utf8"));
@@ -467,4 +469,16 @@ describe("hosted reviewer source boundary", () => {
     await expect(guarded.finish(pending,[{channelId:CHANNEL_A,channelTitle:'Test',ciphertext:'cipher'}],SCOPES)).rejects.toThrow();
     expect(await guarded.list(A.userId)).toEqual([]);
   });
+});
+
+it("loads attribution only for the owner's source and ignores stale catalogue licenses", async () => {
+  await pg.exec(`truncate shorts_mvp.youtube_catalog; update shorts_mvp.video_jobs set youtube_video_id='F-Dp78NJwlU',video_title='Original',channel_name='Source channel',youtube_metadata_verified_at=now() where id='${JA}';
+    insert into shorts_mvp.youtube_catalog values ('F-Dp78NJwlU','{"title":"Original","channelName":"Source channel","license":"creativeCommon"}','public',now(),null);`);
+  expect(await sourceAttribution(tag(pg), A.userId, SA)).toMatchObject({title:"Original",author:"Source channel",ccBy:true,url:"https://www.youtube.com/watch?v=F-Dp78NJwlU"});
+  expect(await sourceAttribution(tag(pg), B.userId, SA)).toBeNull();
+  vi.stubEnv("YOUTUBE_API_KEY", "");
+  try {
+    await pg.exec("update shorts_mvp.youtube_catalog set verified_at=now()-interval '31 days'");
+    expect(await sourceAttribution(tag(pg), A.userId, SA)).toMatchObject({ccBy:false});
+  } finally { vi.unstubAllEnvs(); }
 });

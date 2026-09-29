@@ -18,11 +18,11 @@ async function handle(fn: () => Promise<Response>) {
   catch (error) { return privateResponse(apiError(error, "채널 연결을 처리하지 못했습니다.")); }
 }
 export const connectionsGet = (request: Request) => handle(async () => {
-  const { service, actor } = await accountContext(true);
+  const { service, uploads, actor } = await accountContext(true);
   const shortId = new URL(request.url).searchParams.get("shortId") || undefined;
   const connections = await service.list(actor, shortId);
   const state = await service.disconnectState(actor);
-  return NextResponse.json({ connections, disconnectStatus: state.status, reconnectAfterSeconds: state.retryAfterSeconds });
+  return NextResponse.json({ connections, disconnectStatus: state.status, reconnectAfterSeconds: state.retryAfterSeconds, ...(shortId ? { attribution: await uploads.attribution(actor, uuid.parse(shortId)) } : {}) });
 });
 export const oauthStart = (request: Request) => handle(async () => {
   assertSameOriginJsonRequest(request);
