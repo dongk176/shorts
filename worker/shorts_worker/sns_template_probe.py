@@ -97,6 +97,9 @@ def main() -> None:
                 case_dir / name for name in ("source.mp4", "output.mp4", "frame.png")
             )
             x, y, width, height = sns_layout(ratio).video
+            source_width, source_height = (
+                (1280, 720) if (ratio, language) == ("9:16", "ko") else (width, height)
+            )
             cmd = [
                 "ffmpeg",
                 "-v",
@@ -105,7 +108,7 @@ def main() -> None:
                 "-f",
                 "lavfi",
                 "-i",
-                f"color=c=blue:s={width}x{height}:r=10:d=0.5",
+                f"color=c=blue:s={source_width}x{source_height}:r=10:d=0.5",
                 "-f",
                 "lavfi",
                 "-i",
@@ -163,6 +166,7 @@ def main() -> None:
                 "ratio": ratio,
                 "language": language,
                 "videoRect": [x, y, width, height],
+                "sourceSize": [source_width, source_height],
                 "content": content,
                 "frameKey": f"{prefix}/{case_dir.name}.png",
             }

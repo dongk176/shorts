@@ -388,12 +388,8 @@ def render_sns(
     duration = media_duration(probe)
     fps = min(30.0, video_fps(probe))
     x, y, width, height = layout.video
-    resize = (
-        f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
-        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=white"
-        if ratio == "9:16"
-        else f"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height}"
-    )
+    # Fill the selected frame; a portrait source retains its full height in 9:16.
+    resize = f"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height}"
     filters = (
         f"[0:v]setpts=PTS-STARTPTS,fps={fps},{resize},setsar=1,"
         f"pad=1080:1920:{x}:{y}:color=white[video];[video][1:v]overlay=0:0:format=auto[out]"

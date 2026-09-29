@@ -160,3 +160,55 @@ def test_brand_contrast_and_fixed_title_geometry(tmp_path):
             assert image.getpixel((100, 160))[:3] == (
                 (0, 0, 0) if color == "#000000" else (255, 255, 255)
             )
+
+
+@pytest.mark.render
+def test_wide_source_fills_selected_portrait_frame(tmp_path):
+    source = tmp_path / "wide.mp4"
+    assert (
+        run_command(
+            [
+                "ffmpeg",
+                "-v",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=blue:s=640x360:r=10:d=0.5",
+                "-c:v",
+                "libx264",
+                str(source),
+            ],
+            timeout=30,
+            cwd=tmp_path,
+        ).returncode
+        == 0
+    )
+    output = tmp_path / "portrait.mp4"
+    render_sns(
+        Settings(ffmpeg_threads=2, clean_clip_preset="ultrafast"),
+        clean_path=source,
+        output_path=output,
+        work_dir=tmp_path,
+        ratio="9:16",
+        snapshot={
+            "snsContent": {"title": "제목", "body": ["본문"], "hashtags": []},
+            "snsLanguage": "ko",
+        },
+        channel="채널",
+        avatar=None,
+    )
+    frame = tmp_path / "frame.png"
+    assert (
+        run_command(
+            ["ffmpeg", "-v", "error", "-y", "-i", str(output), "-frames:v", "1", str(frame)],
+            timeout=30,
+            cwd=tmp_path,
+        ).returncode
+        == 0
+    )
+    with Image.open(frame) as picture:
+        for y in (620, 1220, 1810):
+            red, green, blue = picture.getpixel((540, y))[:3]
+            assert blue > 180 and red < 60 and green < 60
