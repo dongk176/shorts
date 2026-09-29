@@ -30,22 +30,22 @@ export function WelcomeOverlayQueueProvider({
 }) {
   const { accountId, authenticated } = useUsageState();
   const [stage, setStage] = useState<WelcomeOverlayStage>(
-    authenticated ? "onboarding" : "done",
+    "youtube-launch",
   );
 
   useEffect(() => {
-    setStage(authenticated ? "onboarding" : "done");
+    setStage("youtube-launch");
   }, [accountId, authenticated]);
 
   const complete = useCallback(
     (completedStage: Exclude<WelcomeOverlayStage, "done">) => {
       setStage((current) => (
         current === completedStage
-          ? nextWelcomeOverlayStage(completedStage)
+          ? completedStage === "youtube-launch" && !authenticated ? "done" : nextWelcomeOverlayStage(completedStage)
           : current
       ));
     },
-    [],
+    [authenticated],
   );
 
   const value = useMemo(

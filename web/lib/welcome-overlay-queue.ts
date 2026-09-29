@@ -1,4 +1,5 @@
 export const welcomeOverlayStages = [
+  "youtube-launch",
   "onboarding",
   "existing-welcome",
   "sidebar-navigation",

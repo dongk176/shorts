@@ -11,6 +11,7 @@ import { ProjectFeedbackOverlay } from "@/components/project-feedback-overlay";
 import { PaymentMethodRemediationGate } from "@/components/payment-method-remediation-gate";
 import { SidebarNavigationAnnouncement } from "@/components/sidebar-navigation-announcement";
 import { UserOnboardingOverlay } from "@/components/user-onboarding-overlay";
+import { YoutubeLaunchAnnouncement } from "@/components/youtube-launch-announcement";
 import { WelcomeOverlayQueueProvider } from "@/components/welcome-overlay-queue";
 import { UsageProvider, type UsageState } from "@/components/usage-provider";
 import { I18nProvider } from "@/lib/i18n/provider";
@@ -140,6 +141,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
             <WelcomeOverlayQueueProvider>
               {children}
               <ApplicationOverlays>
+                <YoutubeLaunchAnnouncement />
                 <UserOnboardingOverlay />
                 <EditorLaunchAnnouncementOverlay />
                 <SidebarNavigationAnnouncement />

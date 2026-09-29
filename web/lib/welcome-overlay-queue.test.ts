@@ -7,6 +7,7 @@ import {
 describe("welcome overlay queue", () => {
   it("keeps the retired event type-compatible while skipping it in the active queue", () => {
     expect(welcomeOverlayStages).toEqual([
+      "youtube-launch",
       "onboarding",
       "existing-welcome",
       "sidebar-navigation",
@@ -15,6 +16,7 @@ describe("welcome overlay queue", () => {
       "feedback",
       "done",
     ]);
+    expect(nextWelcomeOverlayStage("youtube-launch")).toBe("onboarding");
     expect(nextWelcomeOverlayStage("onboarding")).toBe("existing-welcome");
     expect(nextWelcomeOverlayStage("existing-welcome")).toBe("sidebar-navigation");
     expect(nextWelcomeOverlayStage("sidebar-navigation")).toBe("marketing-email");
