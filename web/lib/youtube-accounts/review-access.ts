@@ -19,7 +19,7 @@ export function reviewConfig(env: NodeJS.ProcessEnv = process.env) {
   const grant = grantSchema.parse(JSON.parse(env.YOUTUBE_REVIEWER_ACCESS || ""));
   const origin = "https://www.easycut.co.kr";
   return { origin, grant, adminReviewEnabled: env.YOUTUBE_ADMIN_REVIEW_ENABLED === "true", clientId: REVIEW_CLIENT_ID, clientSecret: env.YOUTUBE_ACCOUNTS_CLIENT_SECRET,
-    allowedUsers: new Set([grant.userId]), allowNonPrivateUploads: false,
+    allowedUsers: new Set([grant.userId]), allowNonPrivateUploads: true,
     redirectUri: `${origin}/api/youtube/accounts/oauth/callback`, hosted: true as const };
 }
 export function assertReviewAccess(userId: string, shortId?: string, allowExpired = false) {

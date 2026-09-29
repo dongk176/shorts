@@ -8,8 +8,8 @@ beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date("2026-09-22T00:
 afterEach(() => { vi.unstubAllEnvs(); vi.useRealTimers(); });
 it("only permits the approved project, DB and OAuth client with one exact grant", () => {
   expect(reviewConfig().redirectUri).toBe("https://www.easycut.co.kr/api/youtube/accounts/oauth/callback");
-  expect(reviewConfig().allowNonPrivateUploads).toBe(false);
-  vi.stubEnv("YOUTUBE_ACCOUNTS_ALLOW_NON_PRIVATE_UPLOADS","true"); expect(reviewConfig().allowNonPrivateUploads).toBe(false);
+  expect(reviewConfig().allowNonPrivateUploads).toBe(true);
+  vi.stubEnv("YOUTUBE_ACCOUNTS_ALLOW_NON_PRIVATE_UPLOADS","true"); expect(reviewConfig().allowNonPrivateUploads).toBe(true);
   for (const patch of [{VERCEL_ENV:"preview"},{VERCEL_PROJECT_ID:"lab"},{DATABASE_URL:"postgres://test@localhost/db"},{YOUTUBE_ACCOUNTS_CLIENT_ID:"other"},{YOUTUBE_REVIEWER_ACCESS:"{}"},{YOUTUBE_ACCOUNTS_MODE:""}]) expect(() => reviewConfig({...env,...patch})).toThrow();
 });
 it("expires upload access while permitting the existing reviewer to delete connections", () => {
@@ -32,7 +32,7 @@ it("permits administrator-owned sources only when explicitly enabled and recheck
   await expect(assertHostedYoutubeAccess(db(false), adminId, shortId)).rejects.toThrow();
   expect(await canUseYoutubeAdminPublishing(db(false), adminId)).toBe(false);
   vi.stubEnv("YOUTUBE_ACCOUNTS_ALLOW_NON_PRIVATE_UPLOADS", "true");
-  expect(reviewConfig().allowNonPrivateUploads).toBe(false);
+  expect(reviewConfig().allowNonPrivateUploads).toBe(true);
 });
 it("preserves reviewer clip and expiry restrictions with admin publishing enabled", async () => {
   vi.stubEnv("YOUTUBE_ADMIN_REVIEW_ENABLED", "true");
