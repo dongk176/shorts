@@ -460,6 +460,9 @@
 .sidebar-account-shortcut{display:none}
 .sidebar-mobile-drawer{position:fixed;inset:0 auto 0 0;margin:0;width:min(304px,86vw);max-width:none;height:100dvh;max-height:100dvh;padding:0;border:0;border-right:1px solid #30343a;border-radius:0 18px 18px 0;color:#f1f3f5;background:#101417;box-shadow:18px 0 60px rgba(0,0,0,.35)}
 .sidebar-mobile-drawer[open]{animation:sidebar-drawer-enter 200ms cubic-bezier(.2,.7,.2,1)}.sidebar-mobile-drawer::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
+/* Keep the mobile drawer scrollable without showing scrollbar tracks. */
+.sidebar-mobile-drawer,.sidebar-mobile-drawer .sidebar-group-navigation{scrollbar-width:none}
+.sidebar-mobile-drawer::-webkit-scrollbar,.sidebar-mobile-drawer .sidebar-group-navigation::-webkit-scrollbar{display:none;width:0;height:0}
 .sidebar-drawer-content{display:flex;flex-direction:column;height:100%;padding:max(18px,env(safe-area-inset-top)) 16px max(18px,env(safe-area-inset-bottom))}
 .sidebar-mobile-drawer .sidebar-nav-link{min-height:46px;font-size:15px}.sidebar-mobile-drawer .sidebar-group-toggle{min-height:44px}.sidebar-mobile-drawer .sidebar-group-label{font-size:18px}.sidebar-mobile-drawer .sidebar-icon-button{width:44px;min-height:44px}
 @keyframes sidebar-drawer-enter{from{transform:translateX(-100%)}to{transform:translateX(0)}}

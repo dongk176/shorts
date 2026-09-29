@@ -8,7 +8,7 @@ import { categoryShowcase, categoryShowcaseMedia, showcaseCategoryCopy, defaultS
 import styles from "./transformation-showcase.module.css";
 
 const templateChoiceLabels: Partial<Record<ShowcaseStyle, Record<SiteLocale, string>>> = {
-  comment: { ko: "댓글 넣기", en: "Comments", ja: "コメント" },
+  comment: { ko: "댓글 템플릿", en: "Comments", ja: "コメント" },
   highlight: { ko: "자막 강조", en: "Highlights", ja: "字幕強調" },
   minimal: { ko: "깔끔하게", en: "Simple", ja: "シンプル" },
 };

@@ -50,6 +50,11 @@
 @media(min-width: 1280px) { .section { margin-inline: -42px; padding-inline: 36px!important; } }
 @media(max-width: 1000px) { .tabs { justify-content: flex-start; } .stage { grid-template-columns: minmax(0,1fr) 56px minmax(0,1.12fr); gap: 16px; min-height: 380px; } .result { padding-inline: 24px; } }
 @media(max-width: 700px) { .section { margin: 42px -12px 20px; padding: 8px 16px 20px!important; border-radius: 23px!important; } .tabs { margin-top: 0; margin-bottom: 25px; padding-bottom: 12px; } .tabs button { font-size: 15px; min-height: 50px; padding: 13px 16px; } .stage { display: flex; flex-direction: column; gap: 0; min-height: 0; } .source { width: 100%; max-width: 460px; } .sourceFrame { border-radius: 12px; } .sourceMeta strong { font-size: 20px; } .sourceMeta>span { font-size: 15px; } .arrow { transform: rotate(90deg); margin: 19px auto 0; height: 38px; } .result { width: 100%; max-width: 460px; padding: 25px 13px 0; } .fan { aspect-ratio: .86; } .shortButton { border-radius: 12px; } }
+/* Hide only the mobile scrollbar; horizontal touch and keyboard scrolling stay native. */
+@media(max-width: 767px) {
+  .tabs { scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; width: 0; height: 0; }
+}
 @media(prefers-reduced-motion: reduce) { .tabs button, .short { transition: none; } }
 @media(max-width: 700px) { .card0 { left: -5%; transform: rotate(-4deg); } .card2 { left: 63%; transform: rotate(4deg); } }
 .expandedShort { width: min(330px, calc(67vh * 9 / 16)); margin: auto; }
