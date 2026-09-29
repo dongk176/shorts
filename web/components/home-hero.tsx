@@ -24,7 +24,18 @@ export function japaneseHeroPhrases(text: string): string[] {
   japaneseParser ??= new Parser(jaModel);
   // These lead-in phrases can otherwise be joined to the entire following verb,
   // creating a chunk wider than a narrow mobile headline.
-  return japaneseParser.parse(text).flatMap((phrase) => phrase.split(/(?<=そろそろ)|(?<=トレンド)/u));
+  const phrases = japaneseParser.parse(text).flatMap((phrase) => phrase.split(/(?<=そろそろ)|(?<=トレンド)/u));
+  const joined: string[] = [];
+  const katakana = /[ァ-ヺーｦ-ﾟ]/u;
+  for (const phrase of phrases) {
+    const previous = joined.at(-1);
+    // Preserve loanwords such as ショート when the statistical parser suggests
+    // a boundary inside the katakana run (ショー / ト動画を).
+    if (previous && katakana.test(previous.slice(-1)) && katakana.test(phrase[0] ?? "")) {
+      joined[joined.length - 1] = previous + phrase;
+    } else joined.push(phrase);
+  }
+  return joined;
 }
 
 const NaturalText = memo(function NaturalText({ text, locale }: { text: string; locale: SiteLocale }) {

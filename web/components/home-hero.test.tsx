@@ -61,6 +61,17 @@ describe("home headline personalization", () => {
     expect(phrases.join("")).toBe(text);
     expect(phrases.length).toBeGreaterThan(2);
     expect(phrases.some(part => part.includes("作成します。"))).toBe(true);
+    expect(phrases.some(part => part.includes("ショート動画"))).toBe(true);
+    expect(phrases.some(part => part.includes("30〜60秒"))).toBe(true);
+    for (const lines of [...heroHeadlines.ja.creator, ...heroHeadlines.ja.side_hustle]) {
+      for (const line of lines) {
+        const pieces = japaneseHeroPhrases(line);
+        expect(pieces.join("")).toBe(line);
+        for (let index = 1; index < pieces.length; index++) {
+          expect(/[ァ-ヺーｦ-ﾟ]$/u.test(pieces[index - 1]) && /^[ァ-ヺーｦ-ﾟ]/u.test(pieces[index])).toBe(false);
+        }
+      }
+    }
   });
   it("server-renders the original fallback description without inserting forced new lines", () => {
     const html = renderToStaticMarkup(<HomeHeroPresentation {...copy} audience={null} />);
