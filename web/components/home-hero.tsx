@@ -64,7 +64,7 @@ type HeroCopyProps = {
   description: string;
 };
 
-// Kept separate from the app so a 3-second tick never rerenders the editor/form.
+// Kept separate from the app so a rotation tick never rerenders the editor/form.
 export function HomeHeroPresentation({ audience, locale, fallback, description }: HeroCopyProps & {
   audience: HeroAudience | null;
 }) {

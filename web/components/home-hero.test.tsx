@@ -79,21 +79,21 @@ describe("home headline personalization", () => {
     expect(html).not.toContain("<br");
     expect(html).not.toContain("<button");
   });
-  it("switches every 3 seconds and loops through all 20 without changing its accessible heading", async () => {
+  it("switches every 5 seconds and loops through all 20 without changing its accessible heading", async () => {
     const ui = await setup();
     await ui.show(<HomeHeroPresentation {...copy} audience="creator" />);
     const heading = ui.document.querySelector("h1")!.getAttribute("aria-label");
-    await ui.advance(2999);
+    await ui.advance(4999);
     expect(ui.active()).toBe(heroHeadlines.ko.creator[0].join(""));
     await ui.advance(1);
     expect(ui.active()).toBe(heroHeadlines.ko.creator[1].join(""));
     for (let index = 2; index <= 20; index++) {
-      await ui.advance(3000);
+      await ui.advance(5000);
       expect(ui.active()).toBe(heroHeadlines.ko.creator[index % 20].join(""));
     }
     expect(ui.document.querySelector("h1")!.getAttribute("aria-label")).toBe(heading);
   });
-  it("pauses while hidden or manually paused and resumes with a full 3 seconds", async () => {
+  it("pauses while hidden or manually paused and resumes with a full 5 seconds", async () => {
     const ui = await setup();
     await ui.show(<HomeHeroPresentation {...copy} audience="side_hustle" />);
     await ui.advance(1500);
@@ -101,14 +101,14 @@ describe("home headline personalization", () => {
     await ui.advance(30000);
     expect(ui.active()).toBe(heroHeadlines.ko.side_hustle[0].join(""));
     await ui.visibility(false);
-    await ui.advance(2999);
+    await ui.advance(4999);
     expect(ui.active()).toBe(heroHeadlines.ko.side_hustle[0].join(""));
     await ui.advance(1);
     await ui.clickToggle();
     await ui.advance(15000);
     expect(ui.active()).toBe(heroHeadlines.ko.side_hustle[1].join(""));
     await ui.clickToggle();
-    await ui.advance(3000);
+    await ui.advance(5000);
     expect(ui.active()).toBe(heroHeadlines.ko.side_hustle[2].join(""));
   });
   it("starts paused for reduced motion, allowing explicit play", async () => {
@@ -117,7 +117,7 @@ describe("home headline personalization", () => {
     await ui.advance(12000);
     expect(ui.active()).toBe(heroHeadlines.ko.creator[0].join(""));
     await ui.clickToggle();
-    await ui.advance(3000);
+    await ui.advance(5000);
     expect(ui.active()).toBe(heroHeadlines.ko.creator[1].join(""));
   });
   it("refreshes the real home immediately after onboarding using the app-account identity", async () => {

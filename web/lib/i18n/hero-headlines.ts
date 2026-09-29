@@ -3,7 +3,7 @@ import type { UserOccupation } from "@/lib/user-onboarding";
 
 export type HeroAudience = "creator" | "side_hustle";
 export type HeroHeadline = readonly [string, string];
-export const HERO_ROTATION_INTERVAL_MS = 3_000;
+export const HERO_ROTATION_INTERVAL_MS = 5_000;
 
 export function heroAudienceForOccupation(occupation: UserOccupation | null): HeroAudience | null {
   switch (occupation) {

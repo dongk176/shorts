@@ -26,9 +26,15 @@
   width: 100%;
   visibility: hidden;
   opacity: 0;
-  transition: opacity .2s ease;
+  /* Keep the outgoing copy visible until its fade finishes. */
+  transition: opacity .4s ease-in, visibility 0s linear .4s;
 }
-.active { visibility: visible; opacity: 1; }
+.active {
+  visibility: visible;
+  opacity: 1;
+  /* Let the previous copy fade out before bringing in the next headline. */
+  transition: opacity .6s ease-out .4s, visibility 0s linear;
+}
 .line { display: block; }
 .accent {
   color: transparent;
