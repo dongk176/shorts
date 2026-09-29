@@ -15,6 +15,7 @@ const navigation = [
   { href: "/pricing", labelKey: "nav.pricing", path: "/pricing" },
   { href: "/popular", labelKey: "nav.popular", path: "/popular" },
   { href: "/saved-videos", labelKey: "nav.savedVideos", path: "/saved-videos" },
+  { href: "/publish/channels", labelKey: "nav.channels", path: "/publish/channels" },
   { href: "/shorts-monetization", labelKey: "nav.shortsGuide", path: "/shorts-monetization" },
 ] as const;
 
@@ -30,6 +31,9 @@ function NavigationIcon({ path }: { path: string }) {
     strokeLinejoin: "round" as const,
   };
 
+  if (path === "/publish/channels") {
+    return <span className="site-nav-icon-frame" aria-hidden="true"><svg {...sharedProps}><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 10.5 6.8-4M8.6 13.5l6.8 4"/></svg></span>;
+  }
   if (path === "/account") {
     return <span className="site-nav-icon-frame" aria-hidden="true"><svg {...sharedProps}><circle cx="12" cy="8" r="4" /><path d="M4 21v-2a8 8 0 0 1 16 0v2" /></svg></span>;
   }
@@ -232,6 +236,7 @@ const sidebarGroups = [
   { id: "discovery", labelKey: "nav.group.discovery", items: [
     { href: "/popular", labelKey: "nav.popular" },
     { href: "/saved-videos", labelKey: "nav.savedVideos" },
+    { href: "/publish/channels", labelKey: "nav.channels" },
   ] },
   { id: "help", labelKey: "nav.group.help", items: [
     { href: "/pricing", labelKey: "nav.pricing" },

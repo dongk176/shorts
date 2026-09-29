@@ -2,6 +2,10 @@ import type { SiteLocale } from "@/lib/i18n/config";
 
 // Product copy only. Never pass channel names, video titles or descriptions here.
 export const youtubeCopy: Record<string, readonly [string, string]> = {
+ "해당 플랫폼은 서비스 준비중입니다.": ["This platform is coming soon.", "このプラットフォームはサービス準備中です。"],
+ "채널 연동": ["Channel connections", "チャンネル連携"],
+ "채널을 연결하고, 프로젝트에서 바로 업로드하세요.": ["Connect a channel and upload directly from your projects.", "チャンネルを連携して、プロジェクトから直接アップロードしましょう。"],
+ "채널 정보를 불러오는 중…": ["Loading channels…", "チャンネル情報を読み込み中…"],
  "이지컷 영상": ["EasyCut video", "EasyCut 動画"],
  "채널 정보를 불러오지 못했습니다.": ["Could not load your channels.", "チャンネル情報を読み込めませんでした。"],
  "채널이 연결되었습니다.": ["Your channel is connected.", "チャンネルを連携しました。"],
