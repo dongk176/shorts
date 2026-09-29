@@ -1,10 +1,12 @@
+import type { SiteLocale } from "./config";
+
 // Original review text, names, ratings, and claims are preserved.
 // Translations are displayed with an explicit Korean-original notice.
 export const customerReviews = [
   { name: "김지훈", rating: 5, role: "직장인 (부업)", review: "편집 귀찮아서 한 번 써봤는데 진짜 좋긴해요. 댓글 퀄리티가 수정이 조금 필요하긴한데 괜찮은 거 꽤 많이 나옴. 어차피 나중에 수정 가능해서 잘 쓰고 있음요.", translations: { en: "I tried it because I couldn’t be bothered to edit, and it’s actually pretty good. Some comments need a little tweaking, but plenty turn out well. You can edit them afterwards anyway, so I’ve kept using it.", ja: "編集が面倒で試してみたら、思った以上によかったです。コメントは少し直したいものもあるけど、そのまま使えるものも結構あります。あとから編集できるので、今も使っています。" } },
   { name: "Alex_Choi", rating: 5, role: "전업 크리에이터", review: "영상은 그렇다 쳐도 아니 무슨 AI가 드립을 치네요??!ㅋㅋㅋㅋㅋ 실제 댓글보다 재밌어서 좋아요.", translations: { en: "The videos are one thing, but the AI actually cracks jokes?! Haha. Some are funnier than real comments. I love it.", ja: "動画もいいけど、AIがボケてくるのは予想外でした（笑）。本物のコメントより面白いこともあって、気に入っています。" } },
-  { name: "이민수", rating: 5, role: "마케터 / 대행사", review: "솔직히 모르고 쇼츠 넘기다 보면 절대 모를 듯;;;", translations: { en: "Honestly, if I came across one while scrolling through Shorts, I’d never know.", ja: "正直、知らずにショートを見ていたら絶対に気づかないと思います。" } },
-  { name: "jay_studio", rating: 5, role: "직장인 (부업)", review: "걍 내 인생 딸깍템임… 추천합니다.", translations: { en: "This has become my go-to one-click tool. Definitely recommend it.", ja: "もう手放せない、ワンクリックで済む便利ツールです。おすすめ。" } },
+  { name: "이민수", rating: 5, role: "마케터 / 대행사", review: "솔직히 모르고 쇼츠 넘기다 보면 절대 모를 듯;;;", translations: { en: "Honestly, if I came across one while scrolling through Shorts, I’d never know.", ja: "何も知らずにショートを見ていたら、AIで作ったとは気づかないと思います。" } },
+  { name: "jay_studio", rating: 5, role: "직장인 (부업)", review: "걍 내 인생 딸깍템임… 추천합니다.", translations: { en: "This is my go-to tool for getting Shorts done with a few clicks. Definitely recommend it.", ja: "もう手放せません。数クリックでショートを作れるので、本当に助かっています。おすすめです。" } },
   { name: "박현우", rating: 5, role: "전업 크리에이터", review: "1달 결제하고 써봤는데, 조회수 바로 터짐 1년결제 합니다요!", translations: { en: "I paid for a month to try it out, and the views took off straight away. Going for the annual plan now!", ja: "1か月だけ契約して使ってみたら、すぐに再生回数が伸びました。今度は年間プランにします！" } },
   { name: "creator_09", rating: 4, role: "마케터 / 대행사", review: "다 좋은데, 댓글 패턴이 살짝 비슷비슷한 느낌? 근데 영상마다는 다르게 만들어줘서 3분 정도만 편집하면 바로 쓸 수 있을 정도.", translations: { en: "It’s good overall, though the comments can feel a bit repetitive. They do change from video to video, and about three minutes of editing gets them ready to post.", ja: "全体的にはいいですが、コメントのパターンが少し似ている感じはあります。でも動画ごとに変えてくれるので、3分くらい直せばそのまま使えます。" } },
   { name: "최유진", rating: 4, role: "전업 크리에이터", review: "영상 퀄리티는 진짜 미쳤는데, 가끔 맥락 못 잡고 헛소리하는 댓글 하나씩 껴있음 ㅋㅋㅋ 그건 제가 알아서 지우고 올립니다.", translations: { en: "The video quality is amazing, but every now and then there’s a comment that completely misses the point, haha. I just delete those before posting.", ja: "動画のクオリティは本当にすごいです。ただ、ときどき文脈を外した謎のコメントが混ざります（笑）。そこは自分で消してから投稿しています。" } },
@@ -21,5 +23,24 @@ export const customerReviews = [
   { name: "오지훈", rating: 5, role: "전업 크리에이터", review: "편집자 동생한테 미안하지만... 걔 월급 줄 돈으로 이거 돌리니까 효율 10배는 나옴요;; 미안하다 고맙다!!!", translations: { en: "I feel bad for my younger friend who edits videos, but using this instead of paying them has been at least ten times more efficient. Sorry, and thank you!", ja: "編集を頼んでいた年下の知り合いには申し訳ないけど、その人に払っていたお金でこれを使うと、効率が10倍は違います。ごめん、そしてありがとう！" } },
   { name: "Sarah_J", rating: 5, role: "마케터 / 대행사", review: "솔직히 요즘 실시간 트렌드 바로 반영해서 템플릿 짜주는 건 반칙 아닙니까? 다른 숏폼 서비스들 긴장 좀 해야 할 듯.", translations: { en: "Making templates that keep up with current trends feels almost unfair. Other short-form video tools should be paying attention.", ja: "今のトレンドをすぐに反映したテンプレートを作ってくれるのは、ちょっと反則級だと思います。他のショート動画サービスもうかうかしていられないですね。" } },
   { name: "신영우", rating: 5, role: "전업 크리에이터", review: "와 댓글 창 보고 소름 돋았네;; 이거 AI가 쓴 거 맞음? 릴스에 올렸더니 애들 진짜 사람인 줄 알고 키보드 배틀 뜨고 있음 개웃김 ㅋㅋㅋㅋ", translations: { en: "The comments gave me chills. Did AI really write these? I posted to Reels and people thought they were real, then started arguing about them. So funny, haha.", ja: "コメント欄を見て鳥肌が立ちました。本当にAIが書いたんですか？ リールに投稿したら、本物のコメントだと思った人たちが言い合いを始めていて笑いました。" } },
-  { name: "Emily_Park", rating: 5, role: "전업 크리에이터", review: "솔직히 다른 사람한테 추천 안 할 듯… 내가 다 해먹게..ㅋㅋㅋㅋㅋㅋ", translations: { en: "Honestly, I might not recommend this to anyone. I want to keep it all to myself, haha.", ja: "正直、他の人にはおすすめしたくないかも。自分だけで使いたいので（笑）。" } },
+  { name: "Emily_Park", rating: 5, role: "전업 크리에이터", review: "솔직히 다른 사람한테 추천 안 할 듯… 내가 다 해먹게..ㅋㅋㅋㅋㅋㅋ", translations: { en: "Honestly, I might not recommend this to anyone. I want to keep it all to myself, haha.", ja: "正直、人には教えたくないかも…。自分だけの秘密にしておきたいです（笑）。" } },
 ] as const;
+
+// Transliteration preserves the reviewer identity; usernames remain unchanged.
+const localizedReviewNames: Record<string, Record<"en" | "ja", string>> = {
+  "김지훈": { en: "Kim Ji-hoon", ja: "キム・ジフン" },
+  "이민수": { en: "Lee Min-su", ja: "イ・ミンス" },
+  "박현우": { en: "Park Hyun-woo", ja: "パク・ヒョヌ" },
+  "최유진": { en: "Choi Yu-jin", ja: "チェ・ユジン" },
+  "정성민": { en: "Jung Sung-min", ja: "チョン・ソンミン" },
+  "윤서준": { en: "Yoon Seo-jun", ja: "ユン・ソジュン" },
+  "송지아": { en: "Song Ji-a", ja: "ソン・ジア" },
+  "한동훈": { en: "Han Dong-hoon", ja: "ハン・ドンフン" },
+  "임지수": { en: "Lim Ji-su", ja: "イム・ジス" },
+  "오지훈": { en: "Oh Ji-hoon", ja: "オ・ジフン" },
+  "신영우": { en: "Shin Young-woo", ja: "シン・ヨンウ" },
+};
+
+export function customerReviewDisplayName(name: string, locale: SiteLocale): string {
+  return locale === "ko" ? name : localizedReviewNames[name]?.[locale] ?? name;
+}

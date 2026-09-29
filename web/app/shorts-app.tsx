@@ -11,7 +11,7 @@ import { useUiText } from "@/lib/i18n/use-ui-text";
 import { browserLocalizedHref } from "@/lib/i18n/routing";
 
 import reviewStyles from "./customer-reviews.module.css";
-import { customerReviews } from "@/lib/i18n/customer-reviews";
+import { customerReviews, customerReviewDisplayName } from "@/lib/i18n/customer-reviews";
 import { sourceLanguages, type SourceLanguage } from "@/lib/language-context";
 import { Fragment, FormEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type {
@@ -872,9 +872,9 @@ function CustomerReviews() {
                     </div>
                     <blockquote data-i18n-skip lang={reviewLocale}>{reviewLocale === "ko" ? review.review : review.translations[reviewLocale]}</blockquote>
                     <footer>
-                      <span data-i18n-skip className="customer-review-avatar" aria-hidden="true">{review.name.slice(0, 1)}</span>
+                      <span data-i18n-skip className="customer-review-avatar" aria-hidden="true">{customerReviewDisplayName(review.name, reviewLocale).slice(0, 1)}</span>
                       <span>
-                        <strong data-i18n-skip>{review.name}</strong>
+                        <strong data-i18n-skip>{customerReviewDisplayName(review.name, reviewLocale)}</strong>
                         <small>{localizedValue(locale, {
                           ko: review.role,
                           en: review.role === "전업 크리에이터" ? "Full-time creator" : review.role === "영상 편집자" ? "Video editor" : review.role === "마케터 / 대행사" ? "Marketer / agency" : "Creator with a full-time job",
@@ -14624,6 +14624,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       />
       <section className={`hero mx-auto flex w-full max-w-4xl flex-col items-center text-center ${adminTemplateLayoutEnabled ? "order-[-2]" : ""}`}>
         <h1 className="hero-title">{t("home.heroLine1")}<br /><span>{t("home.heroLine2")}</span></h1>
+        <p className="mx-auto mt-5 max-w-2xl text-sm font-medium leading-7 text-neutral-300 sm:text-base">{t("home.heroDescription")}</p>
         {uploadModeVisible ? (
           <div className="source-input-mode mt-8 w-full max-w-3xl" role="tablist" aria-label={t("home.sourceMode")}>
             <button
@@ -14663,7 +14664,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
               </div>
               <button disabled={busy} className="ai-button">{busy ? t("home.checking") : t("home.convert")}</button>
             </form>
-            <p className="mt-3 text-xs font-medium text-neutral-500">{t("home.sourceDurationHint")}</p>
+            <p className="mt-4 text-xs font-medium leading-6 text-neutral-400 sm:text-sm">{t("home.sourceDurationHint")}</p>
           </>
         ) : (
           <div className="mt-3 w-full max-w-3xl">

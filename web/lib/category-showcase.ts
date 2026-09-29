@@ -25,7 +25,7 @@ export const showcaseCategoryCopy: Record<ShowcaseCategory, Record<SiteLocale, {
     },
     "ja": {
       "headline": "トークの見どころを短く",
-      "description": "掛け合いも本音も、会話の流れを活かしてショートに仕上げます"
+      "description": "軽いやり取りから本音まで、会話の流れを活かしてショートに仕上げます。"
     }
   },
   "entertainment": {

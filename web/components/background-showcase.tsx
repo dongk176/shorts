@@ -230,12 +230,12 @@ export function BackgroundShowcase() {
     <section className="background-showcase-section" aria-labelledby="background-showcase-title">
       <div className="background-showcase-heading">
         <h2 id="background-showcase-title" className="hero-title">
-          {localizedValue(locale, { ko: "이 영상과 댓글, 전부", en: "Clipped and captioned", ja: "切り抜きも字幕も、" })}
+          {localizedValue(locale, { ko: "핵심 장면 편집부터", en: "From video highlights", ja: "見どころの編集から" })}
           <br />
-          {localizedValue(locale, { ko: "AI가 만들었어요", en: "by AI", ja: "AIで。" })}
+          {localizedValue(locale, { ko: "자막·댓글 문구까지 AI로", en: "to AI captions and comment overlays", ja: "字幕もコメント風テキストもAIで" })}
         </h2>
         <p className="mx-auto mt-5 max-w-2xl text-sm leading-6 text-[#d5aaa4] sm:text-base">
-          {localizedValue(locale, { ko: "⬇ 소름 돋게 자연스러운 AI의 실제 댓글 ⬇", en: "Comment overlays, bold captions, clean edits. Find your style.", ja: "コメント風も、強調字幕も、シンプルも。好きなスタイルで。" })}
+          {localizedValue(locale, { ko: "댓글 캡처 템플릿은 AI가 만든 댓글 문구를 댓글창처럼 영상에 보여주는 스타일이에요. 실제 시청자 댓글을 가져오는 기능은 아닙니다.", en: "The comment overlay template displays AI-written reactions as comment cards in your video. It does not import real viewer comments.", ja: "コメント風テンプレートは、AIが作成したリアクションをコメント欄のように動画に表示するスタイルです。実際の視聴者コメントを取得する機能ではありません。" })}
         </p>
       </div>
       <div

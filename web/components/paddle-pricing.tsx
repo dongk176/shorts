@@ -119,7 +119,7 @@ const copy = {
     title: "必要な分だけ、選べるプラン",
     month: "/ 月",
     tax: "税込・毎月のお支払い",
-    recommend: "おすすめ・高コスパ",
+    recommend: "高コスパ",
     maximumSaving: "最大割引",
     equivalent: "/ 月換算",
     monthlyEquivalent: "月額換算",
@@ -160,7 +160,7 @@ const copy = {
     minutes: (n: number) => `毎月${n}分の元動画を処理`,
     jobs: (n: number) => `同時に${n}件まで処理`,
     retention: "プロジェクトを30日間保存",
-    popular: "人気動画の検索フィルター",
+    popular: "リアルタイム急上昇の検索フィルター",
     terms:
       "EasyCut Proは毎月、パッケージは選択した3・6・12か月ごとの一括払いで自動更新されます。処理時間は毎月リセットされ、翌月に繰り越されません。お支払い方法の変更・解約は、設定の「お支払い・契約管理」から行えます。",
     confirm: "お支払いを確認し、処理時間を反映しています…",
@@ -480,7 +480,7 @@ export function PaddlePricing({
               <article key={p.code}
                 className={`pricing-card ${i === 1 ? "pricing-card-popular" : i === 2 ? "pricing-card-pro" : ""} ${styles.planCard} ${styles.localPlanCard} ${styles.paddlePlanCard} ${i === 1 ? styles.mobilePlanStarter : i === 2 ? styles.mobilePlanExpert : styles.mobilePlanPro}`}>
                 {i === 1 && (months === 6 || months === 12) && (
-                  <span className={`pricing-badge ${styles.localReasonableBadge} ${styles.paddleBadge}`}>{months === 12 ? t.maximumSaving : t.recommend}</span>
+                  <span className={`pricing-badge ${styles.localReasonableBadge} ${styles.paddleBadge}`}>{discount ? `${discount.percent}%${language === "ja" ? "OFF" : " off"}` : months === 12 ? t.maximumSaving : t.recommend}</span>
                 )}
                 <div className="pricing-plan-name"><h2>{t.names[i]}</h2></div>
                 <p className={styles.localPlanDescription}>{t.descriptions[i]}</p>

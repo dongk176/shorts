@@ -23,7 +23,7 @@ export const sourceRangeGuideSteps = [
     id: "usage",
     eyebrow: "사용량 안내",
     title: "선택한 길이만큼만 차감돼요",
-    description: "원본 영상 전체가 아니라 선택한 구간의 길이만큼 사용량이 차감됩니다. 예상 쇼츠 수도 선택한 길이를 기준으로 계산돼요.",
+    description: "원본 영상 전체가 아니라 선택한 구간의 길이만큼 사용량이 차감됩니다. 예상 쇼츠 수도 선택한 길이를 기준으로 계산돼요. 결과가 나올 때까지의 대기시간과는 다릅니다.",
     targetSelector: '[data-source-range-guide="usage"]',
     placement: "below" as const,
   },

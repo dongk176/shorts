@@ -81,8 +81,8 @@ export function BrandColorPicker({
       className="w-full min-w-0"
     >
       <legend className="sr-only">{ui("브랜드 컬러")}</legend>
-      <div ref={rootRef} className={`relative grid min-w-0 grid-cols-[72px_minmax(0,1fr)] items-center gap-3 transition-opacity ${disabled ? "opacity-[.45]" : ""}`}>
-        <span className="w-[72px] shrink-0 text-xs font-semibold text-neutral-400">{ui("브랜드 컬러")}</span>
+      <div ref={rootRef} className={`relative grid min-w-0 grid-cols-1 items-center gap-x-3 gap-y-2 min-[420px]:grid-cols-[max-content_minmax(0,1fr)] transition-opacity ${disabled ? "opacity-[.45]" : ""}`}>
+        <span className="shrink-0 whitespace-nowrap text-xs font-semibold text-neutral-400">{ui("브랜드 컬러")}</span>
         <div className="flex min-w-0 max-w-full items-center gap-2">
           {displayedCompactOptions.map((option, index) => colorButton(
             option,

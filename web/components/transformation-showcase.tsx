@@ -238,10 +238,7 @@ function Showcase({ locale, showSwipeGuide, onSwipe }: { locale: SiteLocale; sho
     else return;
     event.preventDefault(); setSoundEnabled(false); setCenteredShort(1); setSelected(categoryShowcase[next].id); tabsRef.current[next]?.focus(); tabsRef.current[next]?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" });
   }
-  return <section ref={sectionRef} id="category-showcase" className={styles.section} aria-labelledby={`${id}-heading`} data-i18n-skip data-reduced-motion={reducedMotion}>
-    <header className={styles.heading}>
-      <h2 id={`${id}-heading`}>{localizedValue(locale, { ko: "긴 영상 하나 넣으면,", en: "Start with one long video", ja: "長い動画を1本入れると、" })}<br /><span>{localizedValue(locale, { ko: "쇼츠가 이렇게 나와요", en: "Get Shorts like these", ja: "こんなショートが作れます" })}</span></h2>
-    </header>
+  return <section ref={sectionRef} id="category-showcase" className={styles.section} aria-label={localizedValue(locale, { ko: "카테고리별 쇼츠 예시", en: "Shorts examples by category", ja: "ジャンル別のショート動画サンプル" })} data-i18n-skip data-reduced-motion={reducedMotion}>
     <div className={styles.tabs} role="tablist" aria-label={localizedValue(locale, { ko: "영상 카테고리", en: "Video categories", ja: "動画のジャンル" })}>
       {categoryShowcase.map((item, index) => <button key={item.id} ref={(element) => { tabsRef.current[index] = element; }} type="button" role="tab" id={`${id}-tab-${item.id}`} aria-controls={`${id}-panel`} aria-selected={selected === item.id} tabIndex={selected === item.id ? 0 : -1} onClick={() => { setSelected(item.id); setCenteredShort(1); setSoundEnabled(false); }} onKeyDown={(event) => selectTab(event, index)}><CategoryIcon category={item.id} />{item.label[locale]}</button>)}
     </div>
