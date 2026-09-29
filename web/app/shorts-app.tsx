@@ -1,4 +1,6 @@
 "use client";
+
+import { SnsTemplatePicker } from "@/components/sns-template-picker";
 import { presetChannelCenterY } from "@/lib/preset-channel-position";
 import dynamic from "next/dynamic";
 const AdminPublishingButton = dynamic(() => import("@/components/admin-publishing-button").then(module => module.AdminPublishingButton), { ssr: false });
@@ -12887,7 +12889,9 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
                     />
                     <SubtitleTranslationNotice outcome={item.subtitleTranslation} locale={locale} />
                     <div className="short-result-actions">
-                      {job.isExample || itemIsRerendering || subtitleEditorUnavailable
+                      {item.templateSnapshot?.snsTemplateVersion === 1
+                        ? <span className="tool-button short-edit-button text-neutral-400">SNS 템플릿 · 생성 테스트</span>
+                        : job.isExample || itemIsRerendering || subtitleEditorUnavailable
                         ? <button disabled title={ui(job.isExample ? "예시 작업은 편집할 수 없습니다." : item.subtitleTemplateId ? item.captionRenderSpec ? "현재 편집기에서는 이 자막 영상을 편집할 수 없습니다." : "이전 자막 형식은 새 편집기에서 지원하지 않습니다." : undefined)} className="tool-button short-edit-button cursor-not-allowed opacity-40">{ui(item.subtitleTemplateId ? "✎ 편집 준비 중" : "✎ 편집하기")}</button>
                         : <Link
                             data-project-guide={item.id === guideEditShortId ? "edit" : undefined}
@@ -13252,6 +13256,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     initialState ? "ready" : "loading",
   );
   const [stateLoadError, setStateLoadError] = useState<string | null>(null);
+  const [snsTemplateSelected, setSnsTemplateSelected] = useState(false);
   const [sourceMode, setSourceMode] = useState<"youtube" | "upload">("youtube");
   const [youtubeUrl, setYoutubeUrl] = useState(resumedDraft?.youtubeUrl ?? "");
   const [analysis, setAnalysis] = useState<YoutubeAnalysis | null>(resumedDraft?.analysis ?? null);
@@ -13376,6 +13381,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     templateId, subtitleTemplateId, subtitleCaptionPlacement, brandColor, customTemplateId, videoAspectRatio]);
   const uploadModeEnabled = state?.capabilities.fileUpload === true;
   const uploadModeVisible = !state?.user || uploadModeEnabled;
+  const snsTemplateActive = snsTemplateSelected && sourceMode === "youtube" && state?.capabilities.snsTemplate === true;
   const uploadSourceActive = sourceMode === "upload" && uploadModeEnabled && uploadVideo !== null;
   const uploadExitGuardActive = uploadPreparationActive || uploadTransferActive;
   const uploadLifecycleOverlayOpen = uploadExitGuardActive || uploadCompletionOpen;
@@ -13461,7 +13467,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         (template) => template.id === customTemplateId,
       )
     : undefined;
-  const effectiveVideoAspectRatio = selectedPersonalTemplate?.config.video.aspectRatio ?? videoAspectRatio;
+  const effectiveVideoAspectRatio = snsTemplateActive ? videoAspectRatio : selectedPersonalTemplate?.config.video.aspectRatio ?? videoAspectRatio;
   const closeCreationRestriction = useCallback(() => setCreationRestrictionOpen(false), []);
   const closeConcurrentJobNotice = useCallback(() => setConcurrentJobNoticeOpen(false), []);
   const closeLongSourceNotice = useCallback(() => {
@@ -14349,8 +14355,9 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     }
     const requestPayload = {
       analysisId: analysis.analysisId,
-      templateId,
-      customTemplateId: canUseCustomTemplates ? customTemplateId : null,
+      templateId: snsTemplateActive ? "white-yellow" : templateId,
+      ...(snsTemplateActive ? { snsTemplate: true, brandColor } : {}),
+      customTemplateId: !snsTemplateActive && canUseCustomTemplates ? customTemplateId : null,
       ...(canUseCustomTemplates && customTemplateId ? {
         customTemplateVersion: personalTemplates.find((template) => template.id === customTemplateId)?.version,
       } : {}),
@@ -14361,7 +14368,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       ...(sourceRangeSelectionEnabled
         ? { rangeStartSeconds: sourceRangeStartSeconds, rangeEndSeconds: sourceRangeEndSeconds }
         : {}),
-      ...(subtitleTemplateSelectionEnabled && subtitleTemplateId
+      ...(!snsTemplateActive && subtitleTemplateSelectionEnabled && subtitleTemplateId
         ? { subtitleTemplateId, subtitleCaptionPlacement }
         : {}),
       ...(brandColorSelectionEnabled && !customTemplateId ? { brandColor } : {}),
@@ -14879,7 +14886,20 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
               <p className="mt-3 text-xs text-neutral-400">{languageText.preserved}</p>
             </section>
           )}
-          <TemplatePicker
+          {state?.capabilities.snsTemplate && sourceMode === "youtube" && (
+            <label className="flex items-center gap-3 rounded-xl border border-amber-300/25 p-4 text-sm font-semibold">
+              <input type="checkbox" checked={snsTemplateActive} disabled={busy}
+                onChange={(event) => { setSnsTemplateSelected(event.target.checked); if (event.target.checked) {
+                  setCustomTemplateId(null); setSubtitleTemplateId(null); setTemplateId("white-yellow");
+                } }} />
+              SNS 템플릿으로 제작 · 관리자 전용
+            </label>
+          )}
+          {snsTemplateActive ? <SnsTemplatePicker
+            ratio={videoAspectRatio} onRatioChange={setVideoAspectRatio}
+            brandColor={brandColor} onBrandColorChange={setBrandColor}
+            channelName={selectedSource.channelName} thumbnailUrl={selectedSource.thumbnailUrl}
+            disabled={busy} /> : <TemplatePicker
             translationNotice={languageTestActive && (sourceLanguage === "auto" || sourceLanguage !== outputLanguage)
               ? languageText.translation : null}
             value={templateId}
@@ -14925,7 +14945,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
                 setVideoAspectRatio(template.config.video.aspectRatio);
               }
             }}
-          />
+          />}
           {analysisCreationBlocked && analysis && (
             <button type="button" onClick={() => { setCreationRestrictionReason(analysis.creationBlockReason || "영상 이용 제한을 확인했습니다."); setCreationRestrictionOpen(true); }} className="min-h-11 w-full rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-100 transition hover:bg-red-500/15">
               {ui("생성 불가 사유 보기")}</button>

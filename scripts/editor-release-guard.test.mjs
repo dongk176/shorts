@@ -25,9 +25,9 @@ test("legacy editor global CSS remains byte-for-byte at the approved baseline", 
 
   assert.equal(
     digest,
-    // Current promoted 61dd66db (dpl_H6Esa6HtUNFETBicas7Z8tT94ZHn), checked 2026-09-28.
+    // Current promoted de6a5c74 (dpl_ABreAxaSKKAhK57p2cjgeQkHrr8o), checked 2026-09-30.
     // This release changes no CSS. Retain an exact digest guard at that baseline.
-    "a2d61dd522e6792ae2fd19487995f5ae4487d631cc04b3351dca9ef3d92dc39b",
+    "eb03ff1e170fb3969d458d60153ab8857281a25e6f5d616494132d29e740a27a",
     "Do not change the approved global CSS baseline without a dedicated public UI review.",
   );
 });

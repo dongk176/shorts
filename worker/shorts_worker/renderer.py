@@ -362,6 +362,7 @@ class VideoRenderer:
         video_aspect_ratio: VideoAspectRatio = VideoAspectRatio.SQUARE,
         source_probe: dict[str, object] | None = None,
         metrics_callback: RenderMetricsCallback | None = None,
+        preserve_source_frame: bool = False,
     ) -> Path:
         work_dir.mkdir(parents=True, exist_ok=True)
         duration = clip.end_seconds - clip.start_seconds
@@ -389,8 +390,10 @@ class VideoRenderer:
             str(self.settings.ffmpeg_threads),
             "-vf",
             (
-                f"scale={CANVAS_WIDTH}:{target_height}:force_original_aspect_ratio=increase,"
-                f"crop={CANVAS_WIDTH}:{target_height},fps={fps:.3f}"
+                f"scale=1080:1920:force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1,fps={fps:.3f}"
+                 if preserve_source_frame else
+                 f"scale={CANVAS_WIDTH}:{target_height}:force_original_aspect_ratio=increase,"
+                 f"crop={CANVAS_WIDTH}:{target_height},fps={fps:.3f}"
             ),
             "-c:v",
             "libx264",
@@ -462,8 +465,14 @@ class VideoRenderer:
         metrics_callback: RenderMetricsCallback | None = None,
         uploaded_background_path: Path | None = None,
         comment_output_language: str = "ko",
+        sns_template_snapshot: dict[str, object] | None = None,
     ) -> Path:
         work_dir.mkdir(parents=True, exist_ok=True)
+        if sns_template_snapshot is not None:
+            from .sns_template import render_sns
+            return render_sns(self.settings, clean_path=clean_path, output_path=output_path,
+                work_dir=work_dir, ratio=video_aspect_ratio.value, snapshot=sns_template_snapshot,
+                channel=channel_name, avatar=channel_thumbnail_path)
         probe_started_at = time.monotonic()
         probe = probe_media(clean_path, timeout=min(30, self.settings.ffmpeg_timeout_seconds))
         input_probe_seconds = time.monotonic() - probe_started_at

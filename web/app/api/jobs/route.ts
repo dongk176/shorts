@@ -1,3 +1,4 @@
+import { lockSnsTemplateAdmission } from "@/lib/sns-template-release";
 import { lockLanguageTestAdmission, languageTestTarget, languageTestUnavailable } from "@/lib/language-test";
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
@@ -66,6 +67,7 @@ const schema = z.object({
   videoAspectRatio: z.enum(videoAspectRatios).default("1:1"),
   outputLanguage: z.enum(outputLanguages).default("ko"),
   languageTest: z.boolean().default(false),
+  snsTemplate: z.boolean().default(false),
   sourceLanguage: z.enum(["auto", "ko", "en", "ja"]).optional(),
   rightsConfirmed: z.boolean().optional(),
   requestId: z.string().uuid(),
@@ -85,6 +87,9 @@ const noShortsThankYouEventReward: ShortsThankYouEventGrant = {
 export async function POST(request: Request) {
   try {
     const input = schema.parse(await request.json());
+    if (input.snsTemplate && (input.customTemplateId || input.subtitleTemplateId || input.templateId !== "white-yellow")) {
+      throw new HttpError(400, "SNS 템플릿의 제작 설정을 확인해 주세요.");
+    }
     if (input.subtitleCaptionPlacement && !input.subtitleTemplateId) {
       throw new HttpError(400, "자막 위치는 자막 템플릿과 함께 선택해 주세요.");
     }
@@ -104,6 +109,9 @@ export async function POST(request: Request) {
     }
     const rightsConfirmed = input.rightsConfirmed === true;
     const session = await requireAuthenticatedMvpSession();
+    if (input.snsTemplate && session.isAdmin !== true) {
+      throw new HttpError(403, "관리자만 SNS 템플릿을 테스트할 수 있습니다.", "SNS_TEMPLATE_ADMIN_ONLY");
+    }
     const db = getDb();
     const enterpriseAccess = await assertEnterpriseSessionServiceAccess(db, session);
     const enterpriseUsage = enterpriseAccess.accountType === "enterprise";
@@ -293,8 +301,9 @@ export async function POST(request: Request) {
           status: concurrentExisting[0].status,
         };
       }
-      const languageTest = usesLanguageFeature
-        ? await lockLanguageTestAdmission(tx, session.userId) : null;
+      const languageTest = input.snsTemplate
+        ? await lockSnsTemplateAdmission(tx, session.userId)
+        : usesLanguageFeature ? await lockLanguageTestAdmission(tx, session.userId) : null;
       if (languageTest && executionBackend !== "aws_batch") throw languageTestUnavailable();
       shortsThankYouEventReward =
         await issueShortsThankYouEventGrantIfEligible(tx, session.userId);
@@ -319,7 +328,9 @@ export async function POST(request: Request) {
       });
       const resolvedTemplateId = renderContract.templateId;
       const resolvedVideoAspectRatio = renderContract.videoAspectRatio;
-      const templateSnapshot = renderContract.templateSnapshot;
+      const templateSnapshot = input.snsTemplate
+        ? { presetVersion: 4, snsTemplateVersion: 1, brandColor: input.brandColor ?? "#000000" }
+        : renderContract.templateSnapshot;
       const subtitleTemplateSnapshot = renderContract.subtitleTemplateSnapshot;
       const usesUnifiedTemplateSubtitleCandidate =
         renderContract.usesUnifiedTemplateSubtitleCandidate;

@@ -1,3 +1,4 @@
+import { snsTemplateRelease } from "./sns-template-release";
 import type { SiteLocale } from "./i18n/config";
 import { languageFeatureAllowed, languageTestStatus } from "./language-test";
 import type { User } from "@supabase/supabase-js";
@@ -85,6 +86,7 @@ async function readMvpState(
       billing,
       paymentMethodAction: null,
       capabilities: {
+        snsTemplate: false,
         fileUpload: false,
         customTemplateDesign: false,
         unifiedTemplateSubtitles: false,
@@ -136,6 +138,8 @@ async function readMvpState(
     paymentMethodAction,
     usage,
     capabilities: {
+      snsTemplate: session.isAdmin === true
+        ? await snsTemplateRelease(db).then(() => true).catch(() => false) : false,
       languageTest: session.userId !== null
         ? await stage("language_access", () => languageTestStatus(db)
           .then((state) => languageFeatureAllowed(state, session.isAdmin === true))

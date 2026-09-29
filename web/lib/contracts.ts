@@ -321,6 +321,7 @@ export type MvpState = {
   paymentMethodAction: PaymentMethodAction;
   usage: UsageSnapshot;
   capabilities: {
+    snsTemplate?: boolean;
     languageTest?: boolean;
     fileUpload: boolean;
     customTemplateDesign?: boolean;

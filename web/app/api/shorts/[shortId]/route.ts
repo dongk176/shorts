@@ -89,6 +89,9 @@ export async function PATCH(request: Request, context: { params: Promise<{ short
         and s.status='ready' and s.output_s3_key is not null
     `;
     if (!existing[0]) throw new Error("편집할 쇼츠를 찾을 수 없습니다.");
+    if (existing[0].templateSnapshot?.snsTemplateVersion === 1) {
+      throw new HttpError(409, "SNS 템플릿은 생성·다운로드 테스트만 지원합니다.", "SNS_TEMPLATE_GENERATION_ONLY");
+    }
     if (storedShortHasCustomDesign(existing[0])) {
       throw new HttpError(
         409,

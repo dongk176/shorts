@@ -59,6 +59,9 @@ export async function POST(_: Request, context: { params: Promise<{ shortId: str
         and s.output_s3_key is not null
     `;
     if (!rows[0]) throw new Error("재렌더링할 쇼츠를 찾을 수 없습니다.");
+    if (rows[0].templateSnapshot?.snsTemplateVersion === 1) {
+      throw new HttpError(409, "SNS 템플릿은 생성·다운로드 테스트만 지원합니다.", "SNS_TEMPLATE_GENERATION_ONLY");
+    }
     if (storedShortHasCustomDesign(rows[0])) {
       throw new HttpError(409, "내 배경·텍스트를 유지하려면 최신 편집 화면에서 적용해 주세요.", "CUSTOM_TEMPLATE_DESIGN_EDITOR_REQUIRED");
     }

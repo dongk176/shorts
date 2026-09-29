@@ -84,9 +84,13 @@ export function languageTestTarget(state: { registry: z.infer<typeof languageTes
 /** Existing projects remain editable after admission is switched off. The caller
  * must supply an owned short ID; a requested release alone never grants access. */
 export async function languageTestEditorRelease(db: Db, userId: string | null, shortId: string): Promise<EditorReleaseAssignment | null> {
-  const marker = await db`select to_jsonb(j)->>'language_test_release_id' as language_test_release_id
+  const marker = await db`select to_jsonb(j)->>'language_test_release_id' as language_test_release_id,
+    s.template_snapshot->>'snsTemplateVersion' as sns_template_version
     from shorts_mvp.generated_shorts s join shorts_mvp.video_jobs j on j.id=s.job_id
     where s.id=${shortId} and j.user_id=${userId} and s.user_id=${userId}`;
+  if (marker[0]?.snsTemplateVersion) {
+    throw new HttpError(409, "SNS 템플릿은 생성·다운로드 테스트만 지원합니다.", "SNS_TEMPLATE_GENERATION_ONLY");
+  }
   if (!marker[0]?.languageTestReleaseId) return null;
   const rows = await db`select e.id,e.ui_version,e.document_version,e.font_manifest_sha256
     from shorts_mvp.generated_shorts s join shorts_mvp.video_jobs j on j.id=s.job_id

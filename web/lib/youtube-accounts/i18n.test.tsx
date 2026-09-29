@@ -13,7 +13,8 @@ describe("publishing language",()=>{
   expect(render("Sample video","My channel")).not.toMatch(/[가-힣]/);
   const authored=render("공개","연결됨");
   expect(authored).toContain('value="공개"');
-  expect(authored).toMatch(/<option[^>]*value="c"[^>]*>연결됨<\/option>/);
+  expect(authored).toContain('role="combobox"');
+  expect(authored).toContain("<span>연결됨</span>");
   expect(authored).toContain(locale==="en"?"Destination channel":"投稿先チャンネル");
  });
  it("renders countdown, privacy result and errors in the current language",()=>{

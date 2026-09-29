@@ -48,10 +48,10 @@ describe("home headline personalization", () => {
   it.each(["ko", "en", "ja"] as const)("has 20 distinct two-line headlines per audience in %s", locale => {
     for (const headlines of Object.values(heroHeadlines[locale])) {
       expect(headlines).toHaveLength(20);
-      expect(new Set(headlines.map(lines => lines.join(" "))).size).toBe(20);
+      expect(new Set(headlines.map((lines: readonly string[]) => lines.join(" "))).size).toBe(20);
       for (const lines of headlines) {
         expect(lines).toHaveLength(2);
-        expect(lines.every(line => line.trim() && !/[.。]$/.test(line))).toBe(true);
+        expect(lines.every((line: string) => line.trim() && !/[.。]$/.test(line))).toBe(true);
       }
     }
   });

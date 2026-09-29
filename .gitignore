@@ -50,3 +50,7 @@ htmlcov/
 
 # Regenerable copies; paid downloadable editions live in web/private.
 /output/pdf/shorts-guides/
+
+# Local SNS release verification outputs and reusable Python runtime.
+/output/sns-template-release/
+/worker/.venv

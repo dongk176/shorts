@@ -29,7 +29,8 @@ describe("public home experience", () => {
     expect(homeSource).toContain("hero mx-auto flex w-full max-w-4xl");
     expect(homeSource).toContain('className={`url-console w-full max-w-3xl ${uploadModeVisible ? "mt-3" : "mt-8"}`}');
     expect(homeSource).not.toContain('<span aria-hidden="true">✦</span>');
-    expect(homeSource).not.toContain('t("home.heroDescription")');
+    // The current promoted hero includes its localized explanation.
+    expect(homeSource).toContain('t("home.heroDescription")');
   });
 });
 

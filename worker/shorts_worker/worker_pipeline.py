@@ -79,6 +79,7 @@ from .schemas import (
     fallback_comment_overlays,
 )
 from .selector import TranscriptSelector, minimum_clip_count
+from .sns_template import generate_copy, sns_snapshot
 from .storage import ObjectStorage
 from .subtitle_translation import (
     POLICY as SUBTITLE_TRANSLATION_POLICY,
@@ -2151,6 +2152,16 @@ class BatchWorker:
         clean_key: str | None = None
         clean_metrics: dict[str, object] = {}
         source_offset_seconds = float(job.get("normalized_source_start_seconds") or 0.0)
+        if snapshot := sns_snapshot(job):
+            content = generate_copy(self.settings, title=clip.hook_title, reason=clip.reason,
+                transcript=" ".join(segment.text for segment in subtitles),
+                ratio=str(job.get("video_aspect_ratio") or "1:1"),
+                language=str(job.get("output_language") or "ko"))
+            clip = clip.model_copy(update={"hook_title": content["title"]})
+            job = {**job, "template_snapshot": {**snapshot, "snsContent": content,
+                   "snsLanguage": str(job.get("output_language") or "ko")}}
+            caption_enabled = False
+            caption_render_spec = None
         initial_v4 = initial_render_v4_opt_in(job)
         caption_render_spec = with_preset_channel_position(caption_render_spec, job)
         visible_caption_spec = (
@@ -2193,6 +2204,7 @@ class BatchWorker:
                     str(job.get("video_aspect_ratio") or "1:1")
                 ),
                 source_probe=source_probe,
+                **({"preserve_source_frame": True} if sns_snapshot(job) else {}),
                 metrics_callback=clean_metrics.update,
             )
             upload_started_at = time.monotonic()
@@ -3531,6 +3543,7 @@ class BatchWorker:
                 ),
                 title_accent_color=_preset_brand_color(item),
                 metrics_callback=render_metrics.update,
+                **({"sns_template_snapshot": sns_snapshot(item)} if sns_snapshot(item) else {}),
                 **self._background_render_arguments(item, work_dir),
             )
             thumbnail_started_at = time.monotonic()
