@@ -6,6 +6,8 @@ const homeSource = readFileSync(new URL("../app/shorts-app.tsx", import.meta.url
 const projectsSource = readFileSync(new URL("../app/projects/page.tsx", import.meta.url), "utf8");
 const projectListSource = readFileSync(new URL("./project-list.tsx", import.meta.url), "utf8");
 
+const collectionSource = readFileSync(new URL("./project-collection.tsx", import.meta.url), "utf8");
+
 describe("mobile project card containment", () => {
   it("keeps each card and its metadata inside the mobile column", () => {
     expect(cardSource).toContain("w-full min-w-0 max-w-full");
@@ -15,8 +17,9 @@ describe("mobile project card containment", () => {
 
   it("uses one minmax-zero column on both project lists", () => {
     const mobileColumn = "grid grid-cols-[minmax(0,1fr)] gap-5 sm:grid-cols-2 lg:grid-cols-3";
-    expect(homeSource).toContain(mobileColumn);
+    expect(homeSource).toContain("<ProjectCollection");
     expect(projectsSource).toContain("<ProjectList");
-    expect(projectListSource).toContain(mobileColumn);
+    expect(projectListSource).toContain("<ProjectCollection");
+    expect(collectionSource).toContain(mobileColumn);
   });
 });

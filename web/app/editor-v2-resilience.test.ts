@@ -58,7 +58,8 @@ describe("editor v2 resilience", () => {
     expect(editorSource).toContain(
       "editorDraftDocumentSnapshotSchema.safeParse(",
     );
-    expect(editorSource).not.toContain('"임시 저장됨"');
+    expect(editorSource).toContain('"임시 저장됨"');
+    expect(editorSource).toContain('"영상 반영 전 · 적용 필요"');
   });
 
   it("saves the full current draft with Command-S and Control-S", () => {

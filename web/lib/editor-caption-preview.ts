@@ -114,6 +114,24 @@ export function resolveEditorCaptionTextEditTarget(
   };
 }
 
+export function resolveActiveEditorCaptionTextEditTarget(
+  previewSpec: CaptionRenderSpec,
+  sourceSpec: CaptionRenderSpec,
+  timeSeconds: number,
+  cueEdits: EditorSubtitleCueEdit[] = [],
+): EditorCaptionTextEditTarget | null {
+  const frame = Math.floor(Math.max(0, timeSeconds) * previewSpec.fps);
+  const cueIndex = previewSpec.cues.findIndex((cue) => (
+    cue.events.some((event) => event.startFrame <= frame && frame < event.endFrame)
+  ));
+  if (cueIndex < 0) return null;
+  return resolveEditorCaptionTextEditTarget(
+    sourceSpec,
+    editorCaptionCueSourceIndex(previewSpec.cues[cueIndex], cueIndex),
+    cueEdits,
+  );
+}
+
 export function editorCaptionTextDraftChanged(
   initialText: string,
   value: string,

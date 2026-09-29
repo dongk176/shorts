@@ -5,6 +5,19 @@ type Phrase = readonly [ko: string, en: string, ja: string];
 // Legacy page copy is kept here while the product moves to semantic message keys.
 // User-provided and generated content is intentionally excluded from this table.
 const phrases: readonly Phrase[] = [
+  ["문구 수정 버튼으로 현재 자막을 고치고, 아래에서 모양을 조정하세요.", "Use Edit text to change this caption, then adjust its style below.", "テキストを編集ボタンで現在の字幕を修正し、下でスタイルを調整できます。"],
+  ["자막이 나오는 구간에서 일시정지해 주세요.", "Pause where a caption is visible.", "字幕が表示される位置で一時停止してください。"],
+  ["문구 수정", "Edit text", "テキストを編集"],
+  ["현재 자막", "Current caption", "現在の字幕"],
+  ["현재 영상과 같음", "No video changes", "動画の変更なし"],
+  ["영상 반영 전 · 적용 필요", "Not applied to video", "動画に未反映"],
+  ["영상 적용 요청 중…", "Requesting video update…", "動画の更新をリクエスト中…"],
+  ["편집 내용 자동 저장", "Draft autosave", "下書きを自動保存"],
+  ["임시 저장 실패", "Draft save failed", "下書き保存に失敗"],
+  ["임시 저장됨", "Draft saved", "下書き保存済み"],
+  ["임시 저장 중…", "Saving draft…", "下書きを保存中…"],
+  ["AI 설명·스크립트 보기", "View AI notes & script", "AIの説明・スクリプトを見る"],
+  ["예시 작업 둘러보기", "Browse examples", "サンプルを見る"],
   ["선택한 영상을 확인해 주세요", "Please check the selected video", "選択した動画を確認してください"],
   ["3분부터 3시간까지의 원본 영상을 선택해 주세요.", "Choose a source video between 3 minutes and 3 hours long.", "3分以上3時間以内の元動画を選択してください。"],
   ["5GB 이하 영상 파일을 선택해 주세요.", "Choose a video file no larger than 5GB.", "5GB以下の動画ファイルを選択してください。"],

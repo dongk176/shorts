@@ -43,7 +43,8 @@ import {
   EditorTextOverlayPreview,
   EditorTextTimeline,
 } from "@/components/editor-text-overlay-preview";
-import { EstimatedProcessingOverlay, ProjectCard } from "@/components/project-card";
+import { EstimatedProcessingOverlay } from "@/components/project-card";
+import { ProjectCollection } from "@/components/project-collection";
 import { ProjectReveal } from "@/components/project-reveal";
 import { ReusableViewCounter } from "@/components/reusable-view-counter";
 import { PaidProjectFeatureOverlay } from "@/components/paid-project-feature-overlay";
@@ -105,6 +106,7 @@ import {
   editorCaptionVerticalOffsetBounds,
   measureEditorCaptionText,
   resolveEditorCaptionTextEditTarget,
+  resolveActiveEditorCaptionTextEditTarget,
   retimeCaptionRenderSpecForEditor,
   sanitizeEditorCaptionCueEdits,
   updateEditorCaptionCueText,
@@ -4535,6 +4537,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
   const [editorDraftStatusNow, setEditorDraftStatusNow] = useState(
     () => Date.now(),
   );
+  const [appliedEditorFingerprint, setAppliedEditorFingerprint] = useState<string | null>(null);
   const editorDraftBaselineRef = useRef<string | null>(null);
   const editorDraftWriteTimerRef = useRef<number | null>(null);
   const editorDraftWriteRevisionRef = useRef(0);
@@ -5130,6 +5133,19 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
     editorRenderSpecVersion,
     preserveV4TitleHorizontalOffset,
   ]);
+  const currentEditorFingerprint = useMemo(
+    () => editorDocumentSemanticFingerprint(editorSemanticDocumentSnapshot),
+    [editorSemanticDocumentSnapshot],
+  );
+  useEffect(() => {
+    if (editorGuideReady && editorDraftLookupComplete) {
+      setAppliedEditorFingerprint((initial) => initial ?? currentEditorFingerprint);
+    }
+  }, [currentEditorFingerprint, editorDraftLookupComplete, editorGuideReady]);
+  const hasUnappliedEditorChanges = appliedEditorFingerprint !== null && (
+    appliedEditorFingerprint !== currentEditorFingerprint
+    || Boolean(captionTextDraft && captionTextDraft.text !== captionTextDraft.initialText)
+  );
   const editorDocumentSnapshot = useMemo(() => (
     seedEditorDocumentInitialRenderSpec(
       editorSemanticDocumentSnapshot,
@@ -5721,6 +5737,14 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
     ? renderVideoClips[selectedVideoClipIndex]
     : null;
   const displayedPreviewTime = Math.max(0, Math.min(previewDuration, relativePreviewTime));
+  const activeCaptionTextTarget = captionTemplatePreviewSpec && editableCaptionSourceSpec
+    ? resolveActiveEditorCaptionTextEditTarget(
+        captionTemplatePreviewSpec,
+        editableCaptionSourceSpec,
+        displayedPreviewTime,
+        subtitleLayout.cueEdits,
+      )
+    : null;
   const previewSegments = segments;
   const activeSubtitleIndex = previewSegments.findIndex((segment) => (
     editTimeline
@@ -10410,24 +10434,26 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                 }}
               >↷</button>
             </div>}
-            {overlayPreviewEnabled && editorDraftLookupComplete && <span
-              className={`editor-draft-status is-${editorDraftSaveState}`}
+            {overlayPreviewEnabled && editorDraftLookupComplete && <div
+              className="editor-save-status"
               role="status"
               aria-live="polite"
-              title={ui("이 브라우저에 임시 저장 · ⌘S 또는 Ctrl+S로 지금 저장")}
+              title={`${ui("이 브라우저에 임시 저장 · ⌘S 또는 Ctrl+S로 지금 저장")} · ${ui(editorDraftSavedAgoLabel(editorDraftSavedAt, editorDraftStatusNow))}`}
             >
-              <span aria-hidden="true" />
-              {ui(editorDraftSaveState === "saving"
-                ? "저장 중..."
-                : editorDraftSaveState === "saved"
-                  ? editorDraftSavedAgoLabel(
-                      editorDraftSavedAt,
-                      editorDraftStatusNow,
-                    )
-                  : editorDraftSaveState === "error"
-                    ? "저장 실패"
-                    : "자동 저장")}
-            </span>}
+              <span className={`editor-draft-status is-${editorDraftSaveState}`}>
+                <span aria-hidden="true" />
+                {ui(editorDraftSaveState === "saving"
+                  ? "임시 저장 중…"
+                  : editorDraftSaveState === "saved"
+                    ? "임시 저장됨"
+                    : editorDraftSaveState === "error"
+                      ? "임시 저장 실패"
+                      : "편집 내용 자동 저장")}
+              </span>
+              <span className={`editor-video-apply-status${hasUnappliedEditorChanges ? " is-pending" : ""}`}>
+                {ui(saving ? "영상 적용 요청 중…" : hasUnappliedEditorChanges ? "영상 반영 전 · 적용 필요" : "현재 영상과 같음")}
+              </span>
+            </div>}
             <button type="button" onPointerDown={preserveInvalidCaptionTextFocus} onClick={closeEditorAfterSavingCaptionDraft} className="editor-close-button" aria-label={ui("편집기에서 나가기")}>
               <span className="editor-close-icon" aria-hidden="true">×</span>
               <span className="editor-close-label">{ui("나가기")}</span>
@@ -10453,7 +10479,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
         </div>
       </header>}
       <div className={standalone
-        ? `editor-page-body${overlayPreviewEnabled ? " has-editor-tool-sidebar" : ""}${desktopSidebarOpen ? "" : overlayPreviewEnabled ? " is-tool-panel-closed" : " is-sidebar-collapsed"}`
+        ? `editor-page-body${mobileControlsOpen ? " has-mobile-controls-open" : ""}${overlayPreviewEnabled ? " has-editor-tool-sidebar" : ""}${desktopSidebarOpen ? "" : overlayPreviewEnabled ? " is-tool-panel-closed" : " is-sidebar-collapsed"}`
         : `editor-dialog-body grid max-h-[95vh] w-full max-w-6xl overflow-y-auto rounded-t-2xl border border-white/10 bg-[#151517] sm:rounded-2xl${overlayPreviewEnabled ? " has-editor-tool-sidebar" : ""}${desktopSidebarOpen ? "" : overlayPreviewEnabled ? " is-tool-panel-closed" : " is-sidebar-collapsed"}`}
         aria-busy={!paidAccessBlocked && !editorGuideReady}
       >
@@ -11614,6 +11640,28 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                   {ui(subtitlesEnabled ? "켜짐" : "꺼짐")}
                 </button>
               </header>
+              {subtitlesEnabled && captionTextEditingEnabled && <div className="editor-caption-text-entry">
+                <div>
+                  <span>{ui("현재 자막")}</span>
+                  <p data-i18n-skip={Boolean(activeCaptionTextTarget || activeSubtitle) || undefined}>
+                    {activeCaptionTextTarget?.currentText || (!editableCaptionSourceSpec ? activeSubtitle?.text : null) || ui("자막이 나오는 구간에서 일시정지해 주세요.")}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={editableCaptionSourceSpec ? !activeCaptionTextTarget : !activeSubtitle}
+                  onClick={() => {
+                    videoRef.current?.pause();
+                    setMobileControlsOpen(false);
+                    if (activeCaptionTextTarget) {
+                      beginEditorCaptionTextEdit(activeCaptionTextTarget.sourceCueIndex);
+                    } else if (!editableCaptionSourceSpec && activeSubtitle) {
+                      finishPendingEditorInteractions();
+                      setEditingSubtitleIndex(activeSubtitleIndex);
+                    }
+                  }}
+                >{ui("문구 수정")}</button>
+              </div>}
               {subtitlesEnabled
                 ? editableCaptionSourceSpec
                   ? <>
@@ -11621,7 +11669,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                 {editableCaptionSourceSpec.templateId === "basic"
                   ? "번역 자막은 팝업·강조 효과 없이 기본형으로 표시됩니다. 위치·글꼴·크기·색상을 바꾸거나 자막을 더블클릭해 문구를 수정할 수 있습니다."
                   : captionTextEditingEnabled
-                  ? t("editor.captionTimingHint", { frames: editableCaptionSourceSpec.timingLeadFrames ?? SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES })
+                  ? ui("문구 수정 버튼으로 현재 자막을 고치고, 아래에서 모양을 조정하세요.")
                   : <>{ui("자막의 위치·글꼴·크기·색상을 조정할 수 있습니다. 정확한 자막 구간이 저장되지 않은 영상에서는 문구 편집을 지원하지 않습니다.")}</>}
               </p>
               <div className="mb-6">
@@ -12874,12 +12922,17 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
                     )}
                   </div>
                   <div className="short-detail-column">
-                    <div className="short-highlight-note"><strong>{ui("✦ AI 하이라이트")}</strong><p data-i18n-skip>{item.highlightReason.trim()}</p></div>
                     <div className="short-source-range"><span>{ui("원본 영상 타임라인")}</span><strong>◷ {formatTimestamp(item.startSeconds)} ~ {formatTimestamp(item.endSeconds)}</strong></div>
-                    <section className="short-script-panel">
-                      <h3>{ui("스크립트")}</h3>
-                      <p data-i18n-skip>{script}</p>
-                    </section>
+                    <details className="short-detail-disclosure">
+                      <summary>{ui("AI 설명·스크립트 보기")}</summary>
+                      <div className="short-detail-disclosure-content">
+                        <div className="short-highlight-note"><strong>{ui("✦ AI 하이라이트")}</strong><p data-i18n-skip>{item.highlightReason.trim()}</p></div>
+                        <section className="short-script-panel">
+                          <h3>{ui("스크립트")}</h3>
+                          <p data-i18n-skip>{script}</p>
+                        </section>
+                      </div>
+                    </details>
                   </div>
                 </div>
               </article>
@@ -14693,13 +14746,13 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         <div className="mb-5 flex items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-2">
             <h2 className="text-2xl font-bold">{state.user ? t("home.projects") : t("home.exampleProjects")}</h2>
-            <span className="text-sm text-neutral-500">({state.recentJobs.length})</span>
+            <span className="text-sm text-neutral-500">({state.user ? state.recentJobs.filter((job) => !job.isExample).length : state.recentJobs.length})</span>
           </div>
           <Link href="/projects" className="inline-flex min-h-10 shrink-0 items-center rounded-xl border border-white/10 px-4 text-sm font-bold text-neutral-200 transition hover:border-white/25 hover:bg-white/[.06] hover:text-white">
             {t("home.viewAll")} <span className="ml-2" aria-hidden="true">→</span>
           </Link>
         </div>
-        <div className="grid grid-cols-[minmax(0,1fr)] gap-5 sm:grid-cols-2 lg:grid-cols-3">{state.recentJobs.map((job) => <ProjectCard key={job.id} job={job} />)}</div>
+        <ProjectCollection projects={state.recentJobs} authenticated={Boolean(state.user)} />
       </section> : null}
       {state?.user ? <TransformationShowcase /> : null}
       <BackgroundShowcase />

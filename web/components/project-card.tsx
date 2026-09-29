@@ -304,11 +304,11 @@ export function ProjectCard({ job }: { job: ProjectListItem }) {
           target="_blank"
           rel="noopener noreferrer"
           aria-label={locale === "ko" ? `프로젝트 /${job.projectNumber}: ${job.videoTitle} 새 탭에서 열기` : locale === "en" ? `Open project /${job.projectNumber}: ${job.videoTitle} in a new tab` : `プロジェクト /${job.projectNumber}: ${job.videoTitle} を新しいタブで開く`}
-          className="block w-full min-w-0 overflow-hidden rounded-[13px]"
+          className="project-card-link block w-full min-w-0 overflow-hidden rounded-[13px]"
         >
-          <div className="relative aspect-video overflow-hidden bg-neutral-900">
+          <div className="project-card-thumbnail relative aspect-video overflow-hidden bg-neutral-900">
             {job.thumbnailUrl ? <YoutubeThumbnail key={`${job.thumbnailUrl}:${job.stage}:${job.status}`} src={job.thumbnailUrl} alt="" fill unoptimized className={`object-cover transition duration-300 group-hover:scale-[1.03] ${isProcessing ? "grayscale" : ""}`} /> : null}
-            <div className="absolute left-2 top-2 z-10 flex flex-col items-start gap-1.5">
+            <div className="project-card-badges absolute left-2 top-2 z-10 flex flex-col items-start gap-1.5">
               {job.isExample && <span className="rounded bg-[#ff5540] px-2.5 py-1 text-[11px] font-extrabold text-white shadow-lg">{locale === "ko" ? "예시 작업" : locale === "en" ? "Example" : "サンプル"}</span>}
               {daysUntilExpiration !== null && <span className="rounded bg-black/75 px-2 py-1 text-[11px] font-semibold text-white backdrop-blur-sm">{ui(projectExpired ? (locale === "ko" ? "만료됨" : locale === "en" ? "Expired" : "期限切れ") : daysUntilExpiration > 0 ? (locale === "ko" ? `${daysUntilExpiration}일 뒤 만료` : locale === "en" ? `Expires in ${daysUntilExpiration} ${daysUntilExpiration === 1 ? "day" : "days"}` : `あと${daysUntilExpiration}日で期限切れ`) : (locale === "ko" ? "오늘 만료" : locale === "en" ? "Expires today" : "本日期限切れ"))}</span>}
             </div>
@@ -318,9 +318,9 @@ export function ProjectCard({ job }: { job: ProjectListItem }) {
               ? <EstimatedProcessingOverlay operationKey={`rerender:${rerenderingShort.id}:${rerenderingShort.renderVersion}`} durationSeconds={rerenderingShort.durationSeconds} rerender minimumProgress={rerenderingShort.rerenderProgress} />
               : <EstimatedProcessingOverlay operationKey={`create:${job.id}`} durationSeconds={job.sourceDurationSeconds} createdAt={job.createdAt} job={job} />)}
           </div>
-          <div className="p-4">
+          <div className="project-card-copy p-4">
             <h3 data-i18n-skip className="line-clamp-1 text-sm font-bold text-white">{job.videoTitle}</h3>
-            <div className="mt-3 flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-neutral-500">
+            <div className="project-card-meta mt-3 flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-neutral-500">
               <span className={`min-w-0 break-words ${projectExpired ? "text-neutral-500" : rerenderingShort ? "text-violet-300" : job.status === "completed" ? "text-emerald-400" : job.status === "failed" ? "text-red-400" : "text-neutral-400"}`}>{ui(projectExpired ? `● ${locale === "ko" ? "만료됨" : locale === "en" ? "Expired" : "期限切れ"}` : rerenderingShort ? `● ${locale === "ko" ? "수정 반영 중" : locale === "en" ? "Applying edits" : "編集を反映中"}` : job.status === "completed" ? `● ${locale === "ko" ? "완료" : locale === "en" ? "Complete" : "完了"}` : job.status === "failed" ? `● ${locale === "ko" ? "생성 실패" : locale === "en" ? "Creation failed" : "作成に失敗"}` : job.status === "retry_waiting" ? `● ${locale === "ko" ? "원본 영상을 준비하고 있습니다" : locale === "en" ? "Preparing source video" : "元動画を準備中"}` : `● ${processingLabel(job, locale)}`)}</span>
               {(!isProcessing || rerenderingShort) && <span className="shrink-0">{locale === "ko" ? `쇼츠 ${readyCount || job.shorts.length}개` : locale === "en" ? `${readyCount || job.shorts.length} ${(readyCount || job.shorts.length) === 1 ? "Short" : "Shorts"}` : `ショート動画 ${readyCount || job.shorts.length}本`}</span>}
               <span className="shrink-0">{formatSeoulDate(job.createdAt, locale)}</span>
@@ -329,7 +329,7 @@ export function ProjectCard({ job }: { job: ProjectListItem }) {
           </div>
         </Link>
 
-        <div ref={menuRef} className="absolute right-2 top-2 z-30 h-10 w-10">
+        <div ref={menuRef} className="project-card-menu absolute right-2 top-2 z-30 h-10 w-10">
           <button
             type="button"
             aria-label={locale === "ko" ? `${job.videoTitle} 프로젝트 메뉴` : locale === "en" ? `${job.videoTitle} project menu` : `${job.videoTitle} プロジェクトメニュー`}

@@ -77,7 +77,7 @@ describe("admin editor subtitle layout", () => {
     expect(editorSource).toContain('spec.templateId === "pop"');
     expect(editorSource).toContain("retimeCaptionRenderSpecForEditor");
     expect(editorSource).toContain(
-      't("editor.captionTimingHint", { frames: editableCaptionSourceSpec.timingLeadFrames ?? SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES })',
+      'ui("문구 수정 버튼으로 현재 자막을 고치고, 아래에서 모양을 조정하세요.")',
     );
     expect(editorSource).toContain("? spec.font.metrics.cssToAssScale");
     expect(editorSource).toContain(": CAPTION_ASS_PREVIEW_FONT_SCALE;");

@@ -4,7 +4,7 @@ import { useI18n } from "@/lib/i18n/provider";
 import { useUiText } from "@/lib/i18n/use-ui-text";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ProjectCard } from "@/components/project-card";
+import { ProjectCollection } from "@/components/project-collection";
 import type { ProjectListPage } from "@/lib/contracts";
 
 export function ProjectList({
@@ -80,16 +80,14 @@ export function ProjectList({
   if (!projects.length) return null;
 
   return (
-    <section className="mt-10" aria-labelledby="project-list-title">
+    <section className="project-list-section mt-10" aria-labelledby="project-list-title">
       <div className="mb-5 flex items-center gap-2">
         <h2 id="project-list-title" className="text-lg font-extrabold text-white">
           {ui(authenticated ? "전체 프로젝트" : "예시 작업")}
         </h2>
         <span className="text-sm text-neutral-500">({initialPage.totalCount})</span>
       </div>
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 sm:grid-cols-2 lg:grid-cols-3">
-        {projects.map((project) => <ProjectCard key={project.id} job={project} />)}
-      </div>
+      <ProjectCollection projects={projects} authenticated={authenticated} />
       {authenticated && (hasMore || error) ? (
         <div ref={sentinelRef} className="mt-8 flex min-h-16 flex-col items-center justify-center gap-3 text-center">
           {error ? <p role="alert" className="text-sm font-bold text-[#ff9b8d]">{ui(error)}</p> : null}

@@ -15,6 +15,7 @@ import {
 } from "./editor-fonts";
 import {
   createEditorHighlightCaptionSpec,
+  resolveActiveEditorCaptionTextEditTarget,
   editorCaptionVerticalOffsetBounds,
   retimeCaptionRenderSpecForEditor,
 } from "./editor-caption-preview";
@@ -887,5 +888,20 @@ describe("editor caption preview timing", () => {
       (text, fontSize) => Array.from(text).length * fontSize * 0.4,
     );
     expect(highlighted?.schemaVersion).toBe(3);
+  });
+});
+
+
+describe("active caption text entry", () => {
+  it("edits the original cue after trimming, using existing text edits", () => {
+    const source = { ...spec, cues: [{ ...spec.cues[0], sourceCueIndex: 7 }] };
+    const preview = retimeCaptionRenderSpecForEditor(source, [{
+      id: "trim", sourceStartSeconds: 0.5, sourceEndSeconds: 1.5,
+    }])!;
+    expect(resolveActiveEditorCaptionTextEditTarget(preview, source, 0.3, [
+      { cueIndex: 7, text: "이미 수정한 문구" },
+    ])).toEqual({ sourceCueIndex: 7, originalText: "선행", currentText: "이미 수정한 문구" });
+    expect(resolveActiveEditorCaptionTextEditTarget(preview, source, 0.1)).toBeNull();
+    expect(resolveActiveEditorCaptionTextEditTarget(preview, source, 25 / 30)).toBeNull();
   });
 });

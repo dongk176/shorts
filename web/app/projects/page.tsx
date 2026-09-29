@@ -43,8 +43,8 @@ export default async function ProjectsPage() {
           autoOpen={!user}
         />
       </SiteHeader>
-      <main className="relative mx-auto w-full max-w-6xl flex-1 px-5 pb-24 pt-10 sm:px-8 sm:pt-14">
-        <div className="flex flex-col gap-6 border-b border-white/10 pb-8 sm:flex-row sm:items-end sm:justify-between">
+      <main className="projects-page-main relative mx-auto w-full max-w-6xl flex-1 px-5 pb-24 pt-10 sm:px-8 sm:pt-14">
+        <div className="projects-page-heading flex flex-col gap-6 border-b border-white/10 pb-8 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs font-extrabold uppercase tracking-[0.2em] text-[#ff9b8d]">Workspace</p>
             <h1 className="mt-3 text-3xl font-black tracking-[-0.045em] text-white sm:text-4xl">{ui("내 프로젝트")}</h1>

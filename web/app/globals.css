@@ -2479,3 +2479,49 @@ main#top > section#results { border: 0; border-radius: 0; padding: 0; background
 }
 
 .language-selector-in-menu { display: none; }
+
+/* Project browsing: work first, optional detail on demand. */
+.project-examples-disclosure { margin-top: 24px; border-top: 1px solid rgba(255,255,255,.1); }
+.project-examples-disclosure > summary,
+.short-detail-disclosure > summary { display: flex; min-height: 48px; align-items: center; gap: 8px; cursor: pointer; list-style: none; color: #d5d1dc; font-size: 13px; font-weight: 700; }
+.project-examples-disclosure > summary::-webkit-details-marker,
+.short-detail-disclosure > summary::-webkit-details-marker { display: none; }
+.project-examples-disclosure > summary::after,
+.short-detail-disclosure > summary::after { content: "⌄"; margin-left: auto; transition: transform .15s; }
+.project-examples-disclosure[open] > summary::after,
+.short-detail-disclosure[open] > summary::after { transform: rotate(180deg); }
+.project-examples-disclosure > summary:focus-visible,
+.short-detail-disclosure > summary:focus-visible { outline: 2px solid #ff9b8d; outline-offset: 3px; border-radius: 8px; }
+.project-examples-disclosure > .project-collection-grid { margin-top: 8px; }
+.short-detail-disclosure { min-width: 0; border: 1px solid rgba(255,255,255,.1); border-radius: 13px; background: rgba(255,255,255,.025); }
+.short-detail-disclosure > summary { padding: 0 16px; }
+.short-detail-disclosure-content { display: flex; flex-direction: column; gap: 12px; padding: 0 12px 12px; }
+.short-detail-column { min-height: 0; }
+@media (max-width: 640px) {
+  .projects-page-main { padding-top: 22px; }
+  .projects-page-heading { flex-direction: row; align-items: center; gap: 12px; padding-bottom: 20px; }
+  .projects-page-heading > div { min-width: 0; }
+  .projects-page-heading p { display: none; }
+  .projects-page-heading h1 { margin-top: 0; font-size: 24px; }
+  .projects-page-heading > a { padding: 0 12px; font-size: 12px; }
+  .project-list-section { margin-top: 22px; }
+  .project-collection-grid { gap: 12px; }
+  .project-card-link { display: grid; grid-template-columns: 104px minmax(0,1fr); min-height: 114px; }
+  .project-card-thumbnail { height: 100%; min-height: 114px; aspect-ratio: auto; }
+  .project-card-copy { min-width: 0; padding: 12px; }
+  .project-card-copy > h3 { padding-right: 28px; -webkit-line-clamp: 2; font-size: 13px; line-height: 1.5; }
+  .project-card-meta { justify-content: flex-start; margin-top: 8px; column-gap: 10px; font-size: 11px; }
+  .project-card-meta > span:last-child { flex-basis: 100%; }
+  .project-card-badges { left: 5px; top: 5px; }
+  .project-card-badges > span { max-width: 94px; padding: 3px 5px; font-size: 10px; }
+  .project-card-menu { right: 4px; top: 4px; }
+  .project-card-menu > button { background: #222226; box-shadow: none; border-color: rgba(255,255,255,.1); }
+  .project-card-copy > p { -webkit-line-clamp: 2; margin-top: 6px; }
+}
+
+@media (max-width: 640px) {
+  .project-card-thumbnail .project-processing-overlay { gap: 0; }
+  .project-card-thumbnail .project-processing-overlay > strong { display: none; }
+  .project-card-thumbnail .brand-progress { width: 48px; height: 48px; }
+  .project-card-thumbnail .brand-progress-value { font-size: 12px; }
+}
