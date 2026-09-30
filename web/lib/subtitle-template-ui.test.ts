@@ -50,7 +50,7 @@ describe("subtitle template UI isolation", () => {
     expect(shortsAppSource).toContain("accentColor={config.title.accentColor}");
     expect(shortsAppSource).toContain("brandColorSelectionEnabled");
     expect(shortsAppSource).toContain("<BrandColorPicker");
-    expect(shortsAppSource).toContain("disabled={Boolean(customTemplateId)}");
+    expect(shortsAppSource).toContain("disabled={!snsTemplateActive && Boolean(customTemplateId)}");
     expect(shortsAppSource).toContain(
       'disabledReason="커스텀 템플릿에 저장된 색상이 적용됩니다."',
     );

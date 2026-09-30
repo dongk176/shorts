@@ -2128,7 +2128,7 @@ function TemplatePicker({
   const ui = useUiText();
   const positionedWordsV4Enabled = isEditorRenderSpecV4Enabled();
   const usablePersonalTemplates = canUseCustomTemplates ? personalTemplates : [];
-  const selectedCustom = usablePersonalTemplates.find((template) => template.id === customTemplateId);
+  const selectedCustom = snsTemplateActive ? undefined : usablePersonalTemplates.find((template) => template.id === customTemplateId);
   const selectedTemplate = templates.find((template) => template.id === value) || templates[0];
   const selectedSubtitleTemplate = subtitleTemplateOptions.find((template) => template.id === subtitleTemplateId);
   const selectedPresetDisplayName = presetTemplateDisplayName(
@@ -2197,7 +2197,7 @@ function TemplatePicker({
         <BrandColorPicker
           value={brandColor}
           onChange={onBrandColorChange}
-          disabled={Boolean(customTemplateId)}
+          disabled={!snsTemplateActive && Boolean(customTemplateId)}
           disabledReason="커스텀 템플릿에 저장된 색상이 적용됩니다."
         />
       )}
@@ -2229,9 +2229,9 @@ function TemplatePicker({
             className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition sm:w-[220px] ${snsTemplateActive ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}
           >
             <SnsTemplatePreview ratio={effectiveAspectRatio} brandColor={brandColor}
-              channelName={channelName} thumbnailUrl={sourceThumbnailUrl} />
+              channelName={channelName} channelThumbnailUrl={channelThumbnailUrl} thumbnailUrl={sourceThumbnailUrl} />
             <span className="mt-2.5 block text-center text-sm font-semibold">SNS 템플릿</span>
-            <span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">관리자 테스트</span>
+            <span className="mt-1 block text-center text-[10px] font-bold" style={{ color: brandColor }}>베타</span>
           </button>
         )}
         {leadingFavoriteCards.map(renderFavoriteCard)}
