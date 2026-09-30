@@ -1,6 +1,6 @@
 "use client";
 
-import { SnsTemplatePicker } from "@/components/sns-template-picker";
+import { SnsTemplatePreview } from "@/components/sns-template-preview";
 import { presetChannelCenterY } from "@/lib/preset-channel-position";
 import dynamic from "next/dynamic";
 const AdminPublishingButton = dynamic(() => import("@/components/admin-publishing-button").then(module => module.AdminPublishingButton), { ssr: false });
@@ -2092,6 +2092,10 @@ function TemplatePicker({
   onBrandColorChange,
   settingsBelowRail,
   translationNotice,
+  snsTemplateAvailable = false,
+  snsTemplateActive = false,
+  onSnsTemplateSelect,
+  sourceThumbnailUrl = "",
 }: {
   value: TemplateId;
   onChange: (value: TemplateId) => void;
@@ -2116,6 +2120,10 @@ function TemplatePicker({
   onBrandColorChange: (value: TemplatePresetColor) => void;
   settingsBelowRail: boolean;
   translationNotice?: string | null;
+  snsTemplateAvailable?: boolean;
+  snsTemplateActive?: boolean;
+  onSnsTemplateSelect?: () => void;
+  sourceThumbnailUrl?: string;
 }) {
   const ui = useUiText();
   const positionedWordsV4Enabled = isEditorRenderSpecV4Enabled();
@@ -2129,7 +2137,7 @@ function TemplatePicker({
     brandColorSelectionEnabled,
   );
   const effectiveAspectRatio = selectedCustom?.config.video.aspectRatio ?? videoAspectRatio;
-  const disabledPresetRatios: VideoAspectRatio[] = !selectedCustom && value === "comment-capture"
+  const disabledPresetRatios: VideoAspectRatio[] = !snsTemplateActive && !selectedCustom && value === "comment-capture"
     ? ["4:5", "9:16"]
     : [];
   const favoriteCards = favoriteTemplateKeys.flatMap<FavoriteTemplateCard>((templateKey) => {
@@ -2153,10 +2161,10 @@ function TemplatePicker({
   );
   const renderFavoriteCard = (card: FavoriteTemplateCard) => {
     if (card.kind === "custom") {
-      const selected = !subtitleTemplateId && customTemplateId === card.template.id;
+      const selected = !snsTemplateActive && !subtitleTemplateId && customTemplateId === card.template.id;
       return <button key={`favorite-custom-${card.template.id}`} type="button" aria-pressed={selected} onClick={() => onCustomTemplateChange(card.template)} className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition sm:w-[220px] ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}><CustomHomeTemplatePreview template={card.template} showUnifiedSubtitle={unifiedTemplateSubtitleCanaryEnabled} positionedWordsV4Enabled={positionedWordsV4Enabled} /><span data-i18n-skip className="mt-2.5 block truncate text-center text-sm font-semibold">{card.template.name}</span><span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">{ui("자주 쓰는 내 템플릿")}</span></button>;
     }
-    const selected = !subtitleTemplateId && !customTemplateId && value === card.template.id;
+    const selected = !snsTemplateActive && !subtitleTemplateId && !customTemplateId && value === card.template.id;
     return (
       <button
         key={`favorite-preset-${card.template.id}`}
@@ -2185,7 +2193,7 @@ function TemplatePicker({
         disabledReason={disabledPresetRatios.length ? "기본 댓글 템플릿에서는 세로형과 세로 꽉참 비율을 사용할 수 없어요. 내 템플릿에서는 모든 비율을 사용할 수 있습니다." : undefined}
         onChange={onVideoAspectRatioChange}
       />
-      {brandColorSelectionEnabled && (
+      {(brandColorSelectionEnabled || snsTemplateActive) && (
         <BrandColorPicker
           value={brandColor}
           onChange={onBrandColorChange}
@@ -2199,9 +2207,9 @@ function TemplatePicker({
     <div id="template-picker">
       <div className="flex items-center gap-3">
         <h2 className="text-xl font-bold">{ui("템플릿")}</h2>
-        <span data-i18n-skip={!selectedSubtitleTemplate && Boolean(selectedCustom) || undefined} className="text-xs font-semibold text-red-300">{selectedSubtitleTemplate?.name || selectedCustom?.name || selectedPresetDisplayName}</span>
+        <span data-i18n-skip={!selectedSubtitleTemplate && Boolean(selectedCustom) || undefined} className="text-xs font-semibold text-red-300">{snsTemplateActive ? "SNS 템플릿" : selectedSubtitleTemplate?.name || selectedCustom?.name || selectedPresetDisplayName}</span>
       </div>
-      {translationNotice && (
+      {!snsTemplateActive && translationNotice && (
         <p role="status" data-subtitle-translation-notice className="mt-3 rounded-xl border border-[#ff715e]/25 bg-[#ff715e]/[.07] px-4 py-3 text-sm leading-6 text-neutral-200">
           {translationNotice}
         </p>
@@ -2212,11 +2220,25 @@ function TemplatePicker({
         className="template-picker-rail mt-4 flex snap-x snap-mandatory gap-3 overflow-x-auto overscroll-x-contain pb-4 pr-2 [&::-webkit-scrollbar]:h-3 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-[rgba(255,255,255,.05)] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border-2 [&::-webkit-scrollbar-thumb]:border-[rgba(0,0,0,.34)] [&::-webkit-scrollbar-thumb]:bg-[rgba(255,255,255,.34)] [&::-webkit-scrollbar-thumb:hover]:bg-[rgba(255,255,255,.5)]"
         style={{ scrollbarColor: "rgba(255,255,255,.34) rgba(255,255,255,.05)", scrollbarWidth: "auto" }}
       >
+        {snsTemplateAvailable && (
+          <button
+            type="button"
+            aria-label="SNS 템플릿"
+            aria-pressed={snsTemplateActive}
+            onClick={onSnsTemplateSelect}
+            className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition sm:w-[220px] ${snsTemplateActive ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}
+          >
+            <SnsTemplatePreview ratio={effectiveAspectRatio} brandColor={brandColor}
+              channelName={channelName} thumbnailUrl={sourceThumbnailUrl} />
+            <span className="mt-2.5 block text-center text-sm font-semibold">SNS 템플릿</span>
+            <span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">관리자 테스트</span>
+          </button>
+        )}
         {leadingFavoriteCards.map(renderFavoriteCard)}
         {subtitleTemplateSelectionEnabled && (
           <>
             {subtitleTemplateOptions.map((option) => {
-              const selected = subtitleTemplateId === option.id;
+              const selected = !snsTemplateActive && subtitleTemplateId === option.id;
               return (
                 <button
                   key={option.id}
@@ -2248,7 +2270,7 @@ function TemplatePicker({
         )}
         {remainingFavoriteCards.map(renderFavoriteCard)}
         {remainingPersonalTemplates.map((template) => {
-          const selected = !subtitleTemplateId && customTemplateId === template.id;
+          const selected = !snsTemplateActive && !subtitleTemplateId && customTemplateId === template.id;
           return <button key={template.id} type="button" aria-pressed={selected} onClick={() => onCustomTemplateChange(template)} className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition sm:w-[220px] ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}><CustomHomeTemplatePreview template={template} showUnifiedSubtitle={unifiedTemplateSubtitleCanaryEnabled} positionedWordsV4Enabled={positionedWordsV4Enabled} /><span data-i18n-skip className="mt-2.5 block truncate text-center text-sm font-semibold">{template.name}</span><span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">{ui("내 템플릿")}</span></button>;
         })}
       </div>
@@ -2288,7 +2310,7 @@ function TemplatePicker({
       <SubtitlePositionGuide
         enabled={subtitlePositionGuideEnabled && subtitleTemplateSelectionEnabled && Boolean(subtitleTemplateId)}
       />
-      {!subtitleTemplateId && !customTemplateId && value === "comment-capture" && (
+      {!snsTemplateActive && !subtitleTemplateId && !customTemplateId && value === "comment-capture" && (
         <p className="mt-3 rounded-xl border border-cyan-300/15 bg-cyan-300/[.06] px-4 py-3 text-sm text-cyan-100">
           {ui("AI가 실제 사람이 작성한 것처럼 자연스러운 댓글을 만들어줘요.")}</p>
       )}
@@ -14886,24 +14908,21 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
               <p className="mt-3 text-xs text-neutral-400">{languageText.preserved}</p>
             </section>
           )}
-          {state?.capabilities.snsTemplate && sourceMode === "youtube" && (
-            <label className="flex items-center gap-3 rounded-xl border border-amber-300/25 p-4 text-sm font-semibold">
-              <input type="checkbox" checked={snsTemplateActive} disabled={busy}
-                onChange={(event) => { setSnsTemplateSelected(event.target.checked); if (event.target.checked) {
-                  setCustomTemplateId(null); setSubtitleTemplateId(null); setTemplateId("white-yellow");
-                } }} />
-              SNS 템플릿으로 제작 · 관리자 전용
-            </label>
-          )}
-          {snsTemplateActive ? <SnsTemplatePicker
-            ratio={videoAspectRatio} onRatioChange={setVideoAspectRatio}
-            brandColor={brandColor} onBrandColorChange={setBrandColor}
-            channelName={selectedSource.channelName} thumbnailUrl={selectedSource.thumbnailUrl}
-            disabled={busy} /> : <TemplatePicker
+          <TemplatePicker
+            snsTemplateAvailable={state?.capabilities.snsTemplate === true && sourceMode === "youtube"}
+            snsTemplateActive={snsTemplateActive}
+            onSnsTemplateSelect={() => {
+              setSnsTemplateSelected(true);
+              setCustomTemplateId(null);
+              setSubtitleTemplateId(null);
+              setTemplateId("white-yellow");
+            }}
+            sourceThumbnailUrl={selectedSource.thumbnailUrl}
             translationNotice={languageTestActive && (sourceLanguage === "auto" || sourceLanguage !== outputLanguage)
               ? languageText.translation : null}
             value={templateId}
             onChange={(nextTemplateId) => {
+              setSnsTemplateSelected(false);
               setSubtitleTemplateId(null);
               setSubtitleCaptionPlacement("lower");
               setTemplateId(nextTemplateId);
@@ -14929,6 +14948,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
             onBrandColorChange={setBrandColor}
             settingsBelowRail={adminTemplateLayoutEnabled}
             onSubtitleTemplateChange={(nextSubtitleTemplateId) => {
+              setSnsTemplateSelected(false);
               if (nextSubtitleTemplateId) markSubtitleTemplateUsed();
               setSubtitleTemplateId(nextSubtitleTemplateId);
               if (nextSubtitleTemplateId) {
@@ -14937,6 +14957,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
               }
             }}
             onCustomTemplateChange={(template) => {
+              setSnsTemplateSelected(false);
               setSubtitleTemplateId(null);
               if (template) setSubtitleCaptionPlacement("lower");
               setCustomTemplateId(template?.id || null);
@@ -14945,7 +14966,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
                 setVideoAspectRatio(template.config.video.aspectRatio);
               }
             }}
-          />}
+          />
           {analysisCreationBlocked && analysis && (
             <button type="button" onClick={() => { setCreationRestrictionReason(analysis.creationBlockReason || "영상 이용 제한을 확인했습니다."); setCreationRestrictionOpen(true); }} className="min-h-11 w-full rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-100 transition hover:bg-red-500/15">
               {ui("생성 불가 사유 보기")}</button>
