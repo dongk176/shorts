@@ -371,7 +371,7 @@ def generate_copy(
             timeout=min(60, settings.ai_timeout_seconds),
             max_retries=0,
         )
-        model = settings.openai_text_model
+        model = settings.openai_comment_fallback_model
     if client:
         try:
             for _ in range(2):
