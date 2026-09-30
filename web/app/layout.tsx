@@ -15,8 +15,10 @@ import { YoutubeLaunchAnnouncement } from "@/components/youtube-launch-announcem
 import { WelcomeOverlayQueueProvider } from "@/components/welcome-overlay-queue";
 import { UsageProvider, type UsageState } from "@/components/usage-provider";
 import { I18nProvider } from "@/lib/i18n/provider";
-import { getRequestMessages } from "@/lib/i18n/server";
-import { DEFAULT_DESCRIPTION, OG_IMAGE_PATH, SITE_NAME, SITE_URL } from "@/lib/seo";
+import { getRequestLocale, getRequestMessages } from "@/lib/i18n/server";
+import { DEFAULT_DESCRIPTION, OG_IMAGE_PATH, SITE_NAME, SITE_URL, createPageMetadata } from "@/lib/seo";
+import { seoBrand, seoDescriptions, seoCopyForPath } from "@/lib/seo-localization";
+import { websiteStructuredData } from "@/lib/seo-structured-data";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 import { RecentUpdatesProvider } from "@/components/recent-updates-provider";
 import updatePosts from "./updates/posts.json";
@@ -25,7 +27,7 @@ import "./site-sidebar.css";
 import "./editor-v2.css";
 import "./payment-checkout.css";
 
-export const metadata: Metadata = {
+const baseMetadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   applicationName: SITE_NAME,
   title: {
@@ -76,6 +78,19 @@ export const metadata: Metadata = {
   },
 };
 
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await getRequestLocale();
+  const copy = seoCopyForPath("/", locale);
+  const localized = createPageMetadata({ title: copy?.title ?? "이지컷 | AI 쇼츠 자동 제작·유튜브 영상 편집", description: seoDescriptions[locale], path: "/", locale });
+  return {
+    ...baseMetadata, ...localized, alternates: undefined,
+    applicationName: seoBrand[locale],
+    title: { default: copy?.title ?? "이지컷 | AI 쇼츠 자동 제작·유튜브 영상 편집", template: `%s | ${locale === "ko" ? SITE_NAME : "EasyCut"}` },
+    authors: [{ name: seoBrand[locale], url: SITE_URL }],
+    creator: locale === "ko" ? "아티룸" : "Artiroom", publisher: locale === "ko" ? "아티룸" : "Artiroom",
+  };
+}
+
 export default async function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   const { locale, messages } = await getRequestMessages();
   const analyticsMeasurementId = process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID;
@@ -91,40 +106,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   };
   const authenticatedUser = await getAuthenticatedUser();
   initialUsageState.authenticated = Boolean(authenticatedUser);
-  const websiteData = {
-    "@context": "https://schema.org",
-    "@graph": [
-      {
-        "@type": "Organization",
-        "@id": `${SITE_URL}/#organization`,
-        name: SITE_NAME,
-        alternateName: ["EasyCut", "Easy Cut"],
-        legalName: "아티룸",
-        url: SITE_URL,
-        logo: {
-          "@type": "ImageObject",
-          url: `${SITE_URL}/east-cut-logo.png`,
-        },
-        contactPoint: {
-          "@type": "ContactPoint",
-          telephone: "+82-10-4836-2874",
-          email: "easycut@easycut.co.kr",
-          contactType: "customer support",
-          availableLanguage: ["Korean", "English", "Japanese"],
-        },
-      },
-      {
-        "@type": "WebSite",
-        "@id": `${SITE_URL}/#website`,
-        url: SITE_URL,
-        name: SITE_NAME,
-        alternateName: ["EasyCut", "Easy Cut"],
-        description: DEFAULT_DESCRIPTION,
-        inLanguage: locale === "ko" ? "ko-KR" : locale === "en" ? "en-US" : "ja-JP",
-        publisher: { "@id": `${SITE_URL}/#organization` },
-      },
-    ],
-  };
+  const websiteData = websiteStructuredData(locale);
 
   return (
     <html lang={locale}>

@@ -1,5 +1,5 @@
 import type { MetadataRoute } from "next";
-import { siteLocales } from "@/lib/i18n/config";
+import { searchLocalesForPath } from "@/lib/seo-localization";
 import { localizedHref } from "@/lib/i18n/routing";
 import { absoluteUrl } from "@/lib/seo";
 import { TEAM_PAGE_VISIBLE } from "@/lib/site-visibility";
@@ -33,9 +33,12 @@ const publicRoutes = [
 export default function sitemap(): MetadataRoute.Sitemap {
   const pages = publicRoutes
     .filter(({ path }) => TEAM_PAGE_VISIBLE || path !== "/team")
-    .flatMap(({ path, changeFrequency, priority }) => siteLocales.map((locale) => ({
+    .flatMap(({ path, changeFrequency, priority }) => searchLocalesForPath(path).map((locale) => ({
       url: absoluteUrl(localizedHref(path, locale)),
-      alternates: { languages: Object.fromEntries(siteLocales.map((language) => [language, absoluteUrl(localizedHref(path, language))])) },
+      ...(searchLocalesForPath(path).length > 1 ? { alternates: { languages: {
+        ...Object.fromEntries(searchLocalesForPath(path).map((language) => [language, absoluteUrl(localizedHref(path, language))])),
+        "x-default": absoluteUrl(localizedHref(path, "ko")),
+      } } } : {}),
       changeFrequency,
       priority,
     })));

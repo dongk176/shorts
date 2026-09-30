@@ -2,11 +2,12 @@ import { createLocalizedPageMetadata } from "@/lib/i18n/metadata";
 import type { Metadata } from "next";
 import { StructuredData } from "@/components/structured-data";
 import { EnterpriseServiceGate } from "@/components/enterprise-service-gate";
-import { DEFAULT_DESCRIPTION, SITE_NAME, SITE_URL } from "@/lib/seo";
+import { DEFAULT_DESCRIPTION, SITE_URL } from "@/lib/seo";
 import { getRequestLocale } from "@/lib/i18n/server";
 import { localizedValue } from "@/lib/i18n/config";
 import { loadMvpState } from "@/lib/mvp-state";
-import { tossPlan } from "@/lib/toss-subscription";
+import { applicationIdentity, publicMonthlyOffer } from "@/lib/seo-structured-data";
+import { paddleConfigured, paddleEnabled } from "@/lib/paddle/config";
 import { ShortsApp } from "./shorts-app";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -30,15 +31,12 @@ export default async function Home() {
     });
     return null;
   });
-  const monthlyPlan = tossPlan("toss_easycut_pro_1m");
+  const monthlyOffer = publicMonthlyOffer(locale, paddleConfigured() && paddleEnabled());
   const applicationData = {
     "@context": "https://schema.org",
     "@type": "WebApplication",
     "@id": `${SITE_URL}/#application`,
-    name: SITE_NAME,
-    alternateName: ["EasyCut", "Easy Cut", "쇼츠 AI"],
-    url: SITE_URL,
-    description: localizedValue(locale, { ko: DEFAULT_DESCRIPTION, en: "AI-powered YouTube Shorts creation with automatic highlights, titles, and captions.", ja: "ハイライト、タイトル、字幕を自動生成するAI YouTubeショート動画制作サービスです。" }),
+    ...applicationIdentity(locale),
     applicationCategory: "MultimediaApplication",
     operatingSystem: "Web",
     browserRequirements: localizedValue(locale, { ko: "최신 웹 브라우저와 JavaScript가 필요합니다.", en: "A modern web browser with JavaScript is required.", ja: "最新のウェブブラウザとJavaScriptが必要です。" }),
@@ -51,16 +49,7 @@ export default async function Home() {
       localizedValue(locale, { ko: "4가지 쇼츠 템플릿", en: "Four Shorts templates", ja: "4種類のショート動画テンプレート" }),
       localizedValue(locale, { ko: "제목과 자막 편집", en: "Title and caption editing", ja: "タイトルと字幕の編集" }),
     ],
-    offers: [
-      {
-        "@type": "Offer",
-        name: monthlyPlan.displayName,
-        description: "월간 구독 · 매월 결제",
-        price: String(monthlyPlan.priceKrw),
-        priceCurrency: "KRW",
-        url: `${SITE_URL}/pricing`,
-      },
-    ],
+    ...(monthlyOffer ? { offers: [monthlyOffer] } : {}),
     provider: { "@id": `${SITE_URL}/#organization` },
   };
   return (

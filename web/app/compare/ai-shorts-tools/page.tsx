@@ -15,7 +15,8 @@ import {
   type PricingV2PlanCode,
 } from "@/lib/pricing-v2";
 import { authProfile } from "@/lib/session";
-import { SITE_URL } from "@/lib/seo";
+import { seoCopyForPath } from "@/lib/seo-localization";
+import { localizedArticle, localizedBreadcrumb } from "@/lib/seo-structured-data";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 
 const PAGE_PATH = "/compare/ai-shorts-tools";
@@ -150,29 +151,12 @@ const selectionGuides = [
 ] as const;
 
 export default async function AiShortsToolsComparisonPage() {
-  const ui = createUiText(await getRequestLocale());
+  const locale = await getRequestLocale();
+  const ui = createUiText(locale);
   const user = await getAuthenticatedUser();
-  const articleData = {
-    "@context": "https://schema.org",
-    "@type": "Article",
-    headline: "AI 쇼츠 제작 툴 비교: 이지컷·알파컷·피카클립",
-    description: "이지컷, 알파컷, 피카클립의 공개 기능과 요금 기준을 비교한 가이드",
-    image: `${SITE_URL}/easy-cut-og-1200x630-v3.jpg`,
-    datePublished: PUBLISHED_DATE,
-    dateModified: REVIEWED_DATE,
-    inLanguage: "ko-KR",
-    mainEntityOfPage: `${SITE_URL}${PAGE_PATH}`,
-    author: { "@id": `${SITE_URL}/#organization` },
-    publisher: { "@id": `${SITE_URL}/#organization` },
-  };
-  const breadcrumbData = {
-    "@context": "https://schema.org",
-    "@type": "BreadcrumbList",
-    itemListElement: [
-      { "@type": "ListItem", position: 1, name: "홈", item: SITE_URL },
-      { "@type": "ListItem", position: 2, name: "AI 쇼츠 툴 비교", item: `${SITE_URL}${PAGE_PATH}` },
-    ],
-  };
+  const searchCopy = seoCopyForPath(PAGE_PATH, locale) ?? { title: "AI 쇼츠 제작 툴 비교: 이지컷·알파컷·피카클립", description: "이지컷, 알파컷, 피카클립의 공개 기능과 요금 기준을 비교한 가이드" };
+  const articleData = localizedArticle(locale, PAGE_PATH, searchCopy.title, searchCopy.description, PUBLISHED_DATE, REVIEWED_DATE);
+  const breadcrumbData = localizedBreadcrumb(locale, PAGE_PATH, searchCopy.title.split(" | ")[0]);
   return (
     <div className="app-shell site-chrome min-h-screen text-neutral-100">
       <StructuredData data={articleData} />

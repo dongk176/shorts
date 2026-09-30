@@ -7,7 +7,7 @@ import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { StructuredData } from "@/components/structured-data";
 import { authProfile } from "@/lib/session";
-import { SITE_URL } from "@/lib/seo";
+import { localizedBreadcrumb } from "@/lib/seo-structured-data";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 import { getRequestLocale } from "@/lib/i18n/server";
 import type { SiteLocale } from "@/lib/i18n/config";
@@ -64,14 +64,7 @@ export default async function FaqPage() {
       acceptedAnswer: { "@type": "Answer", text: answer },
     })),
   };
-  const breadcrumbData = {
-    "@context": "https://schema.org",
-    "@type": "BreadcrumbList",
-    itemListElement: [
-      { "@type": "ListItem", position: 1, name: locale === "ko" ? "홈" : locale === "en" ? "Home" : "ホーム", item: SITE_URL },
-      { "@type": "ListItem", position: 2, name: locale === "ko" ? "자주 묻는 질문" : locale === "en" ? "FAQ" : "よくある質問", item: `${SITE_URL}${PAGE_PATH}` },
-    ],
-  };
+  const breadcrumbData = localizedBreadcrumb(locale, PAGE_PATH, { ko: "자주 묻는 질문", en: "FAQ", ja: "よくある質問" }[locale]);
 
   return (
     <div className="app-shell site-chrome min-h-screen text-neutral-100">

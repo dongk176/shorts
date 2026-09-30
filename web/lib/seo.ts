@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
-import { type SiteLocale, siteLocales } from "./i18n/config";
-import { localizedHref, isLocalizedPage, localePath } from "./i18n/routing";
+import { type SiteLocale } from "./i18n/config";
+import { localizedHref } from "./i18n/routing";
+import { searchLocalesForPath, seoBrand } from "./seo-localization";
 
 export const SITE_URL = "https://www.easycut.co.kr";
 export const SITE_NAME = "이지컷";
@@ -35,21 +36,24 @@ export function createPageMetadata({
 }: PageMetadataOptions): Metadata {
   const url = absoluteUrl(localizedHref(path, locale));
   const ogImage = image ?? localizedOgImages[locale];
+  const searchLocales = searchLocalesForPath(path);
+  const indexable = searchLocales.includes(locale);
   return {
     title: { absolute: title },
     description,
+    ...(!indexable ? { robots: { index: false, follow: true, googleBot: { index: false, follow: true } } } : {}),
     alternates: {
       canonical: url,
-      ...(isLocalizedPage(localePath(path).pathname) ? { languages: {
-        ...Object.fromEntries(siteLocales.map((language) => [language, absoluteUrl(localizedHref(path, language))])),
+      languages: indexable && searchLocales.length > 1 ? {
+        ...Object.fromEntries(searchLocales.map((language) => [language, absoluteUrl(localizedHref(path, language))])),
         "x-default": absoluteUrl(localizedHref(path, "ko")),
-      } } : {}),
+      } : {},
     },
     openGraph: {
       type,
       locale: { ko: "ko_KR", en: "en_US", ja: "ja_JP" }[locale],
       url,
-      siteName: locale === "ko" ? SITE_NAME : "Easy Cut",
+      siteName: seoBrand[locale],
       title,
       description,
       images: [{
@@ -72,6 +76,6 @@ export function createNoIndexMetadata(title: string, description: string): Metad
   return {
     title: { absolute: `${title} | 이지컷` },
     description,
-    robots: { index: false, follow: false, nocache: true },
+    robots: { index: false, follow: false, nocache: true, googleBot: { index: false, follow: false } },
   };
 }
