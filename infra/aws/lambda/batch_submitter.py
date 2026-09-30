@@ -990,6 +990,46 @@ def _verify_recorded_previous_project_job(
         raise BatchTargetTrustRejected("Previous project AWS job identity cannot be proven")
 
 
+def _sns_editor_compatible(parent_job: dict[str, Any], release: dict[str, Any]) -> bool:
+    generation_ids = {
+        "8dc98fc0-a5bb-411f-9cc6-0e8dc28648ca",
+        "8af2c7e6-5421-4e93-9671-b0e8bb41de8a",
+    }
+    if (release.get("id") != "406dadcf-f290-4eb8-b82e-a6e8c6b40105"
+        or parent_job.get("language_test_release_id") not in generation_ids
+        or (parent_job.get("template_snapshot") or {}).get("snsTemplateVersion") != 1):
+        return False
+    users = rest("app_users", query=(
+        "select=id,is_admin&id=eq."
+        + urllib.parse.quote(str(parent_job.get("user_id") or ""), safe="")
+        + "&limit=1"
+    )) or []
+    checks = rest("editor_release_checks", query=(
+        "select=details,completed_at&environment=eq.isolated"
+        "&check_name=eq.sns_editor_compatibility&status=eq.passed"
+        f"&release_id=eq.{release['id']}&limit=1"
+    )) or []
+    if (not users or users[0].get("is_admin") is not True
+        or not checks or not checks[0].get("completed_at")):
+        return False
+    details = checks[0].get("details") or {}
+    return (
+        parent_job["language_test_release_id"] in details.get("generationReleaseIds", [])
+        and release.get("status") in {"canary_ready", "canary_active", "approved"}
+        and bool(release.get("staging_verified_at"))
+        and release.get("render_spec_version") == 4
+        and release.get("caption_render_spec_version") == 4
+        and details.get("sourceGitSha") == release.get("git_sha")
+        and details.get("imageDigest") == release.get("worker_image_digest")
+        and details.get("fontManifestSha256") == release.get("font_manifest_sha256")
+        and bool(re.fullmatch(
+            r"arn:aws:batch:ap-northeast-2:181651591905:job-definition/"
+            r"shorts-mvp-editor-release-language-test-sns-edit-[a-f0-9]{12}:[1-9][0-9]*",
+            str(release.get("production_job_definition_arn") or ""),
+        ))
+    )
+
+
 def _editor_release_target(
     pending_request_id: str | None,
     parent_job: dict[str, Any] | None = None,
@@ -1015,7 +1055,8 @@ def _editor_release_target(
         raise RuntimeError("Editor render request has an invalid release channel")
     encoded_release_id = urllib.parse.quote(release_id, safe="")
     releases = rest("editor_releases", query=(
-        "select=id,worker_image_digest,production_job_definition_arn"
+        "select=id,worker_image_digest,production_job_definition_arn,git_sha,status,"
+        "staging_verified_at,render_spec_version,caption_render_spec_version,font_manifest_sha256"
         f"&id=eq.{encoded_release_id}&limit=1"
     )) or []
     if not releases:
@@ -1024,7 +1065,12 @@ def _editor_release_target(
         releases[0].get("production_job_definition_arn") or ""
     )
     language_release = _language_test_release(parent_job) if parent_job else None
-    if language_release and (language_release["id"] != release_id or channel != "canary"):
+    if language_release and (
+        channel != "canary" or (
+            language_release["id"] != release_id
+            and not _sns_editor_compatible(parent_job, releases[0])
+        )
+    ):
         raise BatchTargetTrustRejected("Editor request is not bound to its language-test project")
     definition_pattern = (
         _LANGUAGE_TEST_EDITOR_DEFINITION if language_release else _EDITOR_RELEASE_JOB_DEFINITION
@@ -1590,7 +1636,7 @@ def _submit(payload: dict[str, Any]) -> str | None:
         if shorts[0].get("rerender_batch_job_id"):
             return str(shorts[0]["rerender_batch_job_id"])
         parent_jobs = rest("video_jobs", query=(
-            "select=id,user_id,mvp_session_id,dispatch_priority_class,language_test_release_id,initial_editor_release_id"
+            "select=id,user_id,mvp_session_id,dispatch_priority_class,language_test_release_id,initial_editor_release_id,template_snapshot"
             f"&id=eq.{urllib.parse.quote(str(shorts[0]['job_id']), safe='')}&limit=1"
         )) or []
         parent_job = parent_jobs[0] if parent_jobs else {}

@@ -62,6 +62,7 @@ export function CustomTemplateCanvasPreview({
   positionedWordsV4Enabled = false,
   titleV4Enabled = positionedWordsV4Enabled,
   previewLocale = "ko",
+  fillWidth = false,
 }: {
   template: CustomTemplate;
   firstLine: string;
@@ -71,6 +72,7 @@ export function CustomTemplateCanvasPreview({
   positionedWordsV4Enabled?: boolean;
   titleV4Enabled?: boolean;
   previewLocale?: SiteLocale;
+  fillWidth?: boolean;
 }) {
   const config = template.config;
   const unifiedConfig = showUnifiedSubtitle && isTemplateConfigV5(config)
@@ -82,7 +84,7 @@ export function CustomTemplateCanvasPreview({
   return (
     <div
       data-i18n-content=""
-      className="relative mx-auto aspect-[9/16] w-full max-w-[164px] overflow-hidden rounded-lg"
+      className={`relative mx-auto aspect-[9/16] w-full ${fillWidth ? "" : "max-w-[164px]"} overflow-hidden rounded-lg`}
       style={{ ...templateBackgroundStyle(config.background), containerType: "inline-size" }}
       aria-label={localizedValue(previewLocale, { ko: `${template.name} 쇼츠 미리보기`, en: `${template.name} preview`, ja: `${template.name}のプレビュー` })}
     >

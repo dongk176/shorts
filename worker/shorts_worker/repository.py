@@ -792,6 +792,35 @@ class WorkerRepository:
                 (short_id,),
             ).fetchone()
 
+    def get_sns_editor_binding(self, short_id: str) -> dict[str, Any] | None:
+        with self.connect() as connection:
+            return connection.execute(
+                """
+                select r.id as request_id,r.release_id,r.release_channel,
+                  e.git_sha,e.worker_image_digest,e.font_manifest_sha256,
+                  e.render_spec_version,e.caption_render_spec_version,c.details,
+                  j.language_test_release_id,j.initial_editor_release_id
+                from shorts_mvp.generated_shorts s
+                join shorts_mvp.video_jobs j on j.id=s.job_id
+                join shorts_mvp.app_users u on u.id=j.user_id and u.is_admin
+                join shorts_mvp.editor_render_requests r on r.id=s.pending_edit_request_id
+                  and r.short_id=s.id and r.user_id=s.user_id
+                  and r.base_render_version=s.render_version and r.status in ('queued','rendering')
+                join shorts_mvp.editor_releases e on e.id=r.release_id
+                join shorts_mvp.editor_release_checks c on c.release_id=e.id
+                  and c.environment='isolated' and c.check_name='sns_editor_compatibility'
+                  and c.status='passed' and c.completed_at is not null
+                where s.id=%s and s.user_id=j.user_id and s.status='rerendering'
+                  and s.deleted_at is null and j.user_deleted_at is null and s.expires_at>now()
+                  and s.template_snapshot->>'snsTemplateVersion'='1'
+                  and j.template_snapshot->>'snsTemplateVersion'='1'
+                  and e.staging_verified_at is not null
+                  and e.status in ('canary_ready','canary_active','approved')
+                  and e.ui_version=3 and e.document_version=3
+                """,
+                (short_id,),
+            ).fetchone()
+
     def claim_prepare_attempt(
         self, job_id: str, *, attempt_override: int | None = None
     ) -> dict[str, Any] | None:

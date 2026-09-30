@@ -312,6 +312,7 @@ import {
   editorDocumentSnapshotSchema,
   editorDocumentOutputDuration,
 } from "@/lib/editor-document-contract";
+import { SnsShortEditor } from "@/components/sns-short-editor";
 import {
   createEditorRenderSpec,
   createEditorRenderSpecV4,
@@ -1466,7 +1467,7 @@ function TemplatePreview({ template, videoAspectRatio, channelName, channelThumb
     <div
       data-template-preview
       data-i18n-content=""
-      className={`relative mx-auto aspect-[9/16] w-full max-w-[164px] overflow-hidden rounded-lg ${foreground}`}
+      className={`relative mx-auto aspect-[9/16] w-full overflow-hidden rounded-lg ${foreground}`}
       style={{ aspectRatio: "9 / 16", background: template.background, containerType: "inline-size" }}
     >
       {titleV4Enabled
@@ -1513,6 +1514,7 @@ function CustomHomeTemplatePreview({
     ? (["AI가 고른 오늘의", "핵심 장면"] as const)
     : templatePresetPresentation[template.baseTemplateId].titleLines).map((line) => translateLegacyText(line, locale));
   return <CustomTemplateCanvasPreview
+    fillWidth
     previewLocale={locale}
     template={template}
     firstLine={titleLines[0]}
@@ -1570,7 +1572,7 @@ function SubtitleTemplatePreview({
       data-subtitle-template-preview={id}
       data-i18n-content=""
       data-video-aspect-ratio={videoAspectRatio}
-      className="relative mx-auto aspect-[9/16] w-full max-w-[150px] overflow-hidden rounded-[10px] bg-black shadow-[inset_0_0_0_1px_rgba(255,255,255,.08)]"
+      className="relative mx-auto aspect-[9/16] w-full overflow-hidden rounded-[10px] bg-black shadow-[inset_0_0_0_1px_rgba(255,255,255,.08)]"
       style={{ containerType: "inline-size" }}
     >
       <TemplateTitleV4Preview
@@ -12911,9 +12913,7 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
                     />
                     <SubtitleTranslationNotice outcome={item.subtitleTranslation} locale={locale} />
                     <div className="short-result-actions">
-                      {item.templateSnapshot?.snsTemplateVersion === 1
-                        ? <span className="tool-button short-edit-button text-neutral-400">SNS 템플릿 · 생성 테스트</span>
-                        : job.isExample || itemIsRerendering || subtitleEditorUnavailable
+                      {job.isExample || itemIsRerendering || subtitleEditorUnavailable
                         ? <button disabled title={ui(job.isExample ? "예시 작업은 편집할 수 없습니다." : item.subtitleTemplateId ? item.captionRenderSpec ? "현재 편집기에서는 이 자막 영상을 편집할 수 없습니다." : "이전 자막 형식은 새 편집기에서 지원하지 않습니다." : undefined)} className="tool-button short-edit-button cursor-not-allowed opacity-40">{ui(item.subtitleTemplateId ? "✎ 편집 준비 중" : "✎ 편집하기")}</button>
                         : <Link
                             data-project-guide={item.id === guideEditShortId ? "edit" : undefined}
@@ -12998,6 +12998,9 @@ export function ShortEditorPage({ projectNumber, shortId, rangeEditingEnabled = 
   if (!project) return <main className="editor-page grid place-items-center text-sm text-neutral-400">{ui("편집기를 준비하고 있습니다…")}</main>;
   if (!item || project.isExample) return <main className="editor-page grid place-items-center p-6 text-center"><div><h1 className="text-lg font-bold">{ui("편집할 수 없는 쇼츠입니다.")}</h1><Link href={`/projects/${projectNumber}`} prefetch={false} className="mt-6 inline-flex rounded-xl bg-white px-5 py-3 text-sm font-bold text-black">{ui("프로젝트로 돌아가기")}</Link></div></main>;
 
+  if (item.templateSnapshot?.snsTemplateVersion === 1) return <SnsShortEditor
+    item={item} projectNumber={project.projectNumber} channelThumbnailUrl={project.channelThumbnailUrl}
+    release={editorRelease} canEdit={Boolean(access?.canEdit)} onChanged={loadProject} />;
   return <Editor item={item} outputLanguage={project.outputLanguage} commentOutputLanguage={project.sourceLanguage ? project.outputLanguage : "ko"} channelThumbnailUrl={project.channelThumbnailUrl} standalone projectLabel={item.hookTitle} projectNumber={project.projectNumber} onClose={closeEditor} onChanged={loadProject} rangeEditingEnabled={rangeEditingEnabled} overlayPreviewEnabled={overlayPreviewEnabled} editorSaveEnabled={editorSaveEnabled} editorRelease={editorRelease} unifiedTemplateSubtitleCanaryEnabled={unifiedTemplateSubtitleCanaryEnabled} customTemplateDesignEnabled={customTemplateDesignEnabled} wordTimedSubtitlesAvailable={item.wordTimedSubtitlesAvailable} paidAccessBlocked={!access?.canEdit} />;
 }
 

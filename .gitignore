@@ -54,3 +54,5 @@ htmlcov/
 # Local SNS release verification outputs and reusable Python runtime.
 /output/sns-template-release/
 /worker/.venv
+
+/output/sns-editor-release/

@@ -5285,3 +5285,52 @@ def test_deadline_cleanup_claims_the_job_before_stopping_workers() -> None:
     assert order[0] == "claim"
     assert order.count("terminate") == 2
     module._delete_keys.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "invalid", [None, "nonadmin", "public", "digest", "missing", "ordinary_snapshot"]
+)
+def test_sns_editor_compatibility_is_narrow_and_attested(invalid):
+    module, _ = _load_lambda("batch_submitter")
+    generation = "8dc98fc0-a5bb-411f-9cc6-0e8dc28648ca"
+    parent = {
+        "language_test_release_id": generation,
+        "user_id": "admin",
+        "template_snapshot": {"snsTemplateVersion": 1},
+    }
+    release = {
+        "id": "406dadcf-f290-4eb8-b82e-a6e8c6b40105",
+        "status": "canary_ready",
+        "staging_verified_at": "now",
+        "git_sha": "a" * 40,
+        "worker_image_digest": "sha256:" + "b" * 64,
+        "font_manifest_sha256": "c" * 64,
+        "render_spec_version": 4,
+        "caption_render_spec_version": 4,
+        "production_job_definition_arn": (
+            "arn:aws:batch:ap-northeast-2:181651591905:job-definition/"
+            "shorts-mvp-editor-release-language-test-sns-edit-aaaaaaaaaaaa:1"
+        ),
+    }
+    proof = {
+        "generationReleaseIds": [generation],
+        "sourceGitSha": release["git_sha"],
+        "imageDigest": release["worker_image_digest"],
+        "fontManifestSha256": release["font_manifest_sha256"],
+    }
+    if invalid == "public":
+        parent["language_test_release_id"] = "5d3b0681-ea40-4729-8201-fa4c57de592f"
+    elif invalid == "digest":
+        proof["imageDigest"] = "sha256:" + "d" * 64
+    elif invalid == "ordinary_snapshot":
+        parent["template_snapshot"] = {}
+    module.rest = MagicMock(
+        side_effect=lambda table, **kwargs: (
+            [{"is_admin": invalid != "nonadmin"}]
+            if table == "app_users"
+            else []
+            if invalid == "missing"
+            else [{"details": proof, "completed_at": "now"}]
+        )
+    )
+    assert module._sns_editor_compatible(parent, release) is (invalid is None)

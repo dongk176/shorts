@@ -3944,7 +3944,11 @@ class BatchWorker:
         item = self.repository.get_short(short_id)
         if not item:
             raise KeyError(short_id)
-        if (item.get("language_test_release_id")
+        if os.environ.get("EASYCUT_SNS_EDITOR_RELEASE_ID"):
+            from .sns_editor import verify_sns_editor_binding
+
+            verify_sns_editor_binding(item, self.repository.get_sns_editor_binding(short_id))
+        elif (item.get("language_test_release_id")
             or os.environ.get("EASYCUT_LANGUAGE_TEST_WORKER") == "true"):
             parent_job = self.repository.get_job(str(item["job_id"]))
             if not parent_job:

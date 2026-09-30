@@ -23,13 +23,14 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--upload", action="store_true")
     parser.add_argument("--ai", action="store_true")
+    parser.add_argument("--editor", action="store_true")
     args = parser.parse_args()
     settings = Settings()
     sha = _embedded_worker_source_git_sha()
     image_digest = (
         _running_container_image_digest() if args.upload else os.getenv("WORKER_IMAGE_DIGEST")
     )
-    prefix = f"outputs/sns-template-verification/{sha}"
+    prefix = f"outputs/sns-{'editor' if args.editor else 'template'}-verification/{sha}"
     fixtures = {
         "ko": (
             "퇴근 1분 전 내 모습",
@@ -51,6 +52,7 @@ def main() -> None:
         "sourceGitSha": sha,
         "imageDigest": image_digest,
         "fontManifestSha256": canonical_editor_font_manifest()["sha256"],
+        "editor": args.editor,
         "cases": [],
     }
     with tempfile.TemporaryDirectory(prefix="sns-probe-") as directory:
@@ -108,11 +110,11 @@ def main() -> None:
                 "-f",
                 "lavfi",
                 "-i",
-                f"color=c=blue:s={source_width}x{source_height}:r=10:d=0.5",
+                f"color=c=blue:s={source_width}x{source_height}:r=10:d=1",
                 "-f",
                 "lavfi",
                 "-i",
-                "sine=frequency=440:duration=0.5",
+                "sine=frequency=440:duration=1",
                 "-vf",
                 "drawbox=x=0:y=0:w=iw:h=30:color=red:t=fill,"
                 "drawbox=x=0:y=ih-30:w=iw:h=30:color=lime:t=fill",
@@ -126,16 +128,58 @@ def main() -> None:
                 str(source),
             ]
             assert run_command(cmd, timeout=30, cwd=case_dir).returncode == 0
-            render_sns(
-                settings,
-                clean_path=source,
-                output_path=output,
-                work_dir=case_dir,
-                ratio=ratio,
-                snapshot={"snsContent": content, "snsLanguage": language, "brandColor": "#FF715E"},
-                channel={"ko": "퇴근연구소", "en": "After Work", "ja": "退勤研究所"}[language],
-                avatar=None,
-            )
+            if args.editor:
+                from .editor_renderer import EditorDocumentRenderer
+                from .schemas import EditorDocument
+
+                value = json.loads(
+                    (Path(__file__).parent / "assets/sns_editor_probe_document.json").read_text()
+                )
+                content["source"] = "edited"
+                value["template"] = {
+                    "id": "white-yellow",
+                    "customTemplateId": None,
+                    "presetVersion": 4,
+                    "snapshot": {
+                        "presetVersion": 4,
+                        "snsTemplateVersion": 1,
+                        "snsContent": content,
+                        "snsLanguage": language,
+                        "brandColor": "#FF715E",
+                    },
+                }
+                value["title"]["text"] = content["title"]
+                value["subtitles"] = {"enabled": False, "segments": []}
+                value["video"] = {
+                    "aspectRatio": ratio,
+                    "timelineStartSeconds": 0,
+                    "timelineEndSeconds": 1,
+                    "selectionStartSeconds": 0,
+                    "selectionEndSeconds": 1,
+                    "clips": [{"id": "sns", "sourceStartSeconds": 0, "sourceEndSeconds": 1}],
+                }
+                EditorDocumentRenderer(settings).render(
+                    clean_path=source,
+                    output_path=output,
+                    work_dir=case_dir,
+                    document=EditorDocument.model_validate(value),
+                    channel_thumbnail_path=None,
+                )
+            else:
+                render_sns(
+                    settings,
+                    clean_path=source,
+                    output_path=output,
+                    work_dir=case_dir,
+                    ratio=ratio,
+                    snapshot={
+                        "snsContent": content,
+                        "snsLanguage": language,
+                        "brandColor": "#FF715E",
+                    },
+                    channel={"ko": "퇴근연구소", "en": "After Work", "ja": "退勤研究所"}[language],
+                    avatar=None,
+                )
             probe = probe_media(output, timeout=20)
             video = next(s for s in probe["streams"] if s["codec_type"] == "video")
             assert (video["width"], video["height"]) == (1080, 1920)

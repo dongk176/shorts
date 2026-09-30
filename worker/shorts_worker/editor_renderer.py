@@ -2113,6 +2113,16 @@ class EditorDocumentRenderer:
         comment_output_language: str = "ko",
     ) -> Path:
         work_dir.mkdir(parents=True, exist_ok=True)
+        if (document.template.snapshot or {}).get("snsTemplateVersion") == 1:
+            from .sns_editor import validate_sns_editor_document
+            from .sns_template import render_sns
+
+            validate_sns_editor_document(document)
+            return render_sns(
+                self.settings, clean_path=clean_path, output_path=output_path, work_dir=work_dir,
+                ratio=document.video.aspect_ratio, snapshot=document.template.snapshot,
+                channel=document.channel.display_name, avatar=channel_thumbnail_path,
+            )
         if document.render_spec is not None and document.render_spec.version == 4:
             verify_editor_font_face_v4(document.render_spec.title.font)
             verify_editor_font_face_v4(document.render_spec.channel.font)

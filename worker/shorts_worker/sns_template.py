@@ -1,4 +1,4 @@
-"""Generation-only SNS layout, used exclusively by an immutable admin release."""
+"""SNS layout shared by isolated administrator generation and editor releases."""
 
 from __future__ import annotations
 

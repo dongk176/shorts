@@ -41,10 +41,10 @@ describe("SNS admin release isolation", () => {
     await expect(snsTemplateRelease(db as unknown as TransactionSql))
       .rejects.toMatchObject({ status: 503, code: "SNS_TEMPLATE_UNAVAILABLE" });
   });
-  it("blocks editing an owned SNS result before resolving an ordinary editor", async () => {
+  it("fails closed before the SNS editor compatibility proof is registered", async () => {
     const db = vi.fn(async () => [{ languageTestReleaseId: SNS_TEMPLATE_RELEASE_ID, snsTemplateVersion: "1" }]);
     await expect(languageTestEditorRelease(db as unknown as TransactionSql, "owner", "short"))
-      .rejects.toMatchObject({ status: 409, code: "SNS_TEMPLATE_GENERATION_ONLY" });
-    expect(db).toHaveBeenCalledTimes(1);
+      .rejects.toMatchObject({ status: 409, code: "SNS_EDITOR_UNAVAILABLE" });
+    expect(db).toHaveBeenCalledTimes(2);
   });
 });
