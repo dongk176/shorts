@@ -5340,11 +5340,34 @@ def test_sns_editor_compatibility_is_narrow_and_attested(invalid):
 def test_sns_public_editor_accepts_only_existing_account_with_proof(known_user):
     module, _ = _load_lambda("batch_submitter")
     generation = "8dc98fc0-a5bb-411f-9cc6-0e8dc28648ca"
-    parent = {"language_test_release_id": generation, "user_id": "ordinary", "template_snapshot": {"snsTemplateVersion": 1}}
-    release = {"id": "77d3b2de-12a4-4b7d-a134-87170b1d3ecf", "status": "canary_ready", "staging_verified_at": "now", "git_sha": "a" * 40,
-        "worker_image_digest": "sha256:" + "b" * 64, "font_manifest_sha256": "c" * 64,
-        "render_spec_version": 4, "caption_render_spec_version": 4,
-        "production_job_definition_arn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-release-language-test-sns-edit-aaaaaaaaaaaa:1"}
-    proof = {"generationReleaseIds": [generation], "sourceGitSha": release["git_sha"], "imageDigest": release["worker_image_digest"], "fontManifestSha256": release["font_manifest_sha256"]}
-    module.rest = MagicMock(side_effect=lambda table, **kwargs: ([{"id": "ordinary", "is_admin": False}] if known_user else []) if table == "app_users" else [{"details": proof, "completed_at": "now"}])
+    parent = {
+        "language_test_release_id": generation,
+        "user_id": "ordinary",
+        "template_snapshot": {"snsTemplateVersion": 1},
+    }
+    release = {
+        "id": "77d3b2de-12a4-4b7d-a134-87170b1d3ecf",
+        "status": "canary_ready",
+        "staging_verified_at": "now",
+        "git_sha": "a" * 40,
+        "worker_image_digest": "sha256:" + "b" * 64,
+        "font_manifest_sha256": "c" * 64,
+        "render_spec_version": 4,
+        "caption_render_spec_version": 4,
+        "production_job_definition_arn": ("arn:aws:batch:ap-northeast-2:181651591905:job-definition/"
+            "shorts-mvp-editor-release-language-test-sns-edit-aaaaaaaaaaaa:1"),
+    }
+    proof = {
+        "generationReleaseIds": [generation],
+        "sourceGitSha": release["git_sha"],
+        "imageDigest": release["worker_image_digest"],
+        "fontManifestSha256": release["font_manifest_sha256"],
+    }
+    module.rest = MagicMock(
+        side_effect=lambda table, **kwargs: (
+            [{"id": "ordinary", "is_admin": False}] if known_user else []
+        )
+        if table == "app_users"
+        else [{"details": proof, "completed_at": "now"}]
+    )
     assert module._sns_editor_compatible(parent, release) is known_user

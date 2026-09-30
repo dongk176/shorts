@@ -995,7 +995,9 @@ def _sns_editor_compatible(parent_job: dict[str, Any], release: dict[str, Any]) 
         "8dc98fc0-a5bb-411f-9cc6-0e8dc28648ca",
         "8af2c7e6-5421-4e93-9671-b0e8bb41de8a",
     }
-    if (release.get("id") not in {"406dadcf-f290-4eb8-b82e-a6e8c6b40105", "77d3b2de-12a4-4b7d-a134-87170b1d3ecf"}
+    if (release.get("id") not in {
+        "406dadcf-f290-4eb8-b82e-a6e8c6b40105", "77d3b2de-12a4-4b7d-a134-87170b1d3ecf"
+    }
         or parent_job.get("language_test_release_id") not in generation_ids
         or (parent_job.get("template_snapshot") or {}).get("snsTemplateVersion") != 1):
         return False
@@ -1010,7 +1012,8 @@ def _sns_editor_compatible(parent_job: dict[str, Any], release: dict[str, Any]) 
         f"&release_id=eq.{release['id']}&limit=1"
     )) or []
     if (not users
-        or (release.get("id") == "406dadcf-f290-4eb8-b82e-a6e8c6b40105" and users[0].get("is_admin") is not True)
+        or (release.get("id") == "406dadcf-f290-4eb8-b82e-a6e8c6b40105"
+            and users[0].get("is_admin") is not True)
         or not checks or not checks[0].get("completed_at")):
         return False
     details = checks[0].get("details") or {}
