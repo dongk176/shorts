@@ -322,6 +322,7 @@ export type MvpState = {
   usage: UsageSnapshot;
   capabilities: {
     snsTemplate?: boolean;
+    communityTemplate?: boolean;
     languageTest?: boolean;
     fileUpload: boolean;
     customTemplateDesign?: boolean;

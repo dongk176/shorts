@@ -2094,6 +2094,9 @@ function TemplatePicker({
   onBrandColorChange,
   settingsBelowRail,
   translationNotice,
+  communityTemplateAvailable = false,
+  communityTemplateActive = false,
+  onCommunityTemplateSelect,
   snsTemplateAvailable = false,
   snsTemplateActive = false,
   onSnsTemplateSelect,
@@ -2122,6 +2125,9 @@ function TemplatePicker({
   onBrandColorChange: (value: TemplatePresetColor) => void;
   settingsBelowRail: boolean;
   translationNotice?: string | null;
+  communityTemplateAvailable?: boolean;
+  communityTemplateActive?: boolean;
+  onCommunityTemplateSelect?: () => void;
   snsTemplateAvailable?: boolean;
   snsTemplateActive?: boolean;
   onSnsTemplateSelect?: () => void;
@@ -2209,7 +2215,7 @@ function TemplatePicker({
     <div id="template-picker">
       <div className="flex items-center gap-3">
         <h2 className="text-xl font-bold">{ui("템플릿")}</h2>
-        <span data-i18n-skip={!selectedSubtitleTemplate && Boolean(selectedCustom) || undefined} className="text-xs font-semibold text-red-300">{snsTemplateActive ? "SNS 템플릿" : selectedSubtitleTemplate?.name || selectedCustom?.name || selectedPresetDisplayName}</span>
+        <span data-i18n-skip={!selectedSubtitleTemplate && Boolean(selectedCustom) || undefined} className="text-xs font-semibold text-red-300">{communityTemplateActive ? "커뮤니티 템플릿" : snsTemplateActive ? "SNS 템플릿" : selectedSubtitleTemplate?.name || selectedCustom?.name || selectedPresetDisplayName}</span>
       </div>
       {!snsTemplateActive && translationNotice && (
         <p role="status" data-subtitle-translation-notice className="mt-3 rounded-xl border border-[#ff715e]/25 bg-[#ff715e]/[.07] px-4 py-3 text-sm leading-6 text-neutral-200">
@@ -2226,9 +2232,9 @@ function TemplatePicker({
           <button
             type="button"
             aria-label="SNS 템플릿"
-            aria-pressed={snsTemplateActive}
+            aria-pressed={snsTemplateActive && !communityTemplateActive}
             onClick={onSnsTemplateSelect}
-            className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition sm:w-[220px] ${snsTemplateActive ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}
+            className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition sm:w-[220px] ${snsTemplateActive && !communityTemplateActive ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}
           >
             <SnsTemplatePreview ratio={effectiveAspectRatio} brandColor={brandColor}
               channelName={channelName} channelThumbnailUrl={channelThumbnailUrl} thumbnailUrl={sourceThumbnailUrl} />
@@ -2236,6 +2242,14 @@ function TemplatePicker({
             <span className="mt-1 block text-center text-[10px] font-bold" style={{ color: brandColor }}>베타</span>
           </button>
         )}
+        {communityTemplateAvailable && <button type="button" aria-label="커뮤니티 템플릿"
+          aria-pressed={communityTemplateActive} onClick={onCommunityTemplateSelect}
+          className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 sm:w-[220px] ${communityTemplateActive ? "border-red-500" : "border-white/10 hover:border-white/30"}`}>
+          <SnsTemplatePreview community ratio={effectiveAspectRatio} brandColor={brandColor}
+            channelName={channelName} channelThumbnailUrl={channelThumbnailUrl} thumbnailUrl={sourceThumbnailUrl} />
+          <span className="mt-2.5 block text-center text-sm font-semibold">커뮤니티 템플릿</span>
+          <span className="mt-1 block text-center text-[10px] text-cyan-300">관리자 테스트</span>
+        </button>}
         {leadingFavoriteCards.map(renderFavoriteCard)}
         {subtitleTemplateSelectionEnabled && (
           <>
@@ -13282,6 +13296,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   );
   const [stateLoadError, setStateLoadError] = useState<string | null>(null);
   const [snsTemplateSelected, setSnsTemplateSelected] = useState(false);
+  const [communityTemplateSelected, setCommunityTemplateSelected] = useState(false);
   const [sourceMode, setSourceMode] = useState<"youtube" | "upload">("youtube");
   const [youtubeUrl, setYoutubeUrl] = useState(resumedDraft?.youtubeUrl ?? "");
   const [analysis, setAnalysis] = useState<YoutubeAnalysis | null>(resumedDraft?.analysis ?? null);
@@ -13406,6 +13421,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     templateId, subtitleTemplateId, subtitleCaptionPlacement, brandColor, customTemplateId, videoAspectRatio]);
   const uploadModeEnabled = state?.capabilities.fileUpload === true;
   const uploadModeVisible = !state?.user || uploadModeEnabled;
+  const communityTemplateActive = communityTemplateSelected && snsTemplateSelected && sourceMode === "youtube" && state?.capabilities.communityTemplate === true;
   const snsTemplateActive = snsTemplateSelected && sourceMode === "youtube" && state?.capabilities.snsTemplate === true;
   const uploadSourceActive = sourceMode === "upload" && uploadModeEnabled && uploadVideo !== null;
   const uploadExitGuardActive = uploadPreparationActive || uploadTransferActive;
@@ -14336,6 +14352,10 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
 
   const createJob = async () => {
     if (!analysis) return;
+    if (communityTemplateSelected && !communityTemplateActive) {
+      setError("커뮤니티 템플릿의 관리자 테스트 연결을 확인해 주세요. 새로고침 후 다시 선택해 주세요.");
+      return;
+    }
     if (analysis.creationAllowed !== true) {
       if (!analysis.creationBlockReason) {
         setCreationRestrictionReason("이 영상은 이용 제한이 확인된 영상입니다.");
@@ -14381,7 +14401,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     const requestPayload = {
       analysisId: analysis.analysisId,
       templateId: snsTemplateActive ? "white-yellow" : templateId,
-      ...(snsTemplateActive ? { snsTemplate: true, brandColor } : {}),
+      ...(snsTemplateActive ? { snsTemplate: true, brandColor, ...(communityTemplateActive ? { communityTemplate: true } : {}) } : {}),
       customTemplateId: !snsTemplateActive && canUseCustomTemplates ? customTemplateId : null,
       ...(canUseCustomTemplates && customTemplateId ? {
         customTemplateVersion: personalTemplates.find((template) => template.id === customTemplateId)?.version,
@@ -14912,9 +14932,16 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
             </section>
           )}
           <TemplatePicker
+            communityTemplateAvailable={state?.capabilities.communityTemplate === true && sourceMode === "youtube"}
+            communityTemplateActive={communityTemplateActive}
+            onCommunityTemplateSelect={() => {
+              setCommunityTemplateSelected(true); setSnsTemplateSelected(true);
+              setCustomTemplateId(null); setSubtitleTemplateId(null); setTemplateId("white-yellow");
+            }}
             snsTemplateAvailable={state?.capabilities.snsTemplate === true && sourceMode === "youtube"}
             snsTemplateActive={snsTemplateActive}
             onSnsTemplateSelect={() => {
+              setCommunityTemplateSelected(false);
               setSnsTemplateSelected(true);
               setCustomTemplateId(null);
               setSubtitleTemplateId(null);
@@ -14925,7 +14952,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
               ? languageText.translation : null}
             value={templateId}
             onChange={(nextTemplateId) => {
-              setSnsTemplateSelected(false);
+              setSnsTemplateSelected(false); setCommunityTemplateSelected(false);
               setSubtitleTemplateId(null);
               setSubtitleCaptionPlacement("lower");
               setTemplateId(nextTemplateId);
@@ -14951,7 +14978,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
             onBrandColorChange={setBrandColor}
             settingsBelowRail={adminTemplateLayoutEnabled}
             onSubtitleTemplateChange={(nextSubtitleTemplateId) => {
-              setSnsTemplateSelected(false);
+              setSnsTemplateSelected(false); setCommunityTemplateSelected(false);
               if (nextSubtitleTemplateId) markSubtitleTemplateUsed();
               setSubtitleTemplateId(nextSubtitleTemplateId);
               if (nextSubtitleTemplateId) {
@@ -14960,7 +14987,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
               }
             }}
             onCustomTemplateChange={(template) => {
-              setSnsTemplateSelected(false);
+              setSnsTemplateSelected(false); setCommunityTemplateSelected(false);
               setSubtitleTemplateId(null);
               if (template) setSubtitleCaptionPlacement("lower");
               setCustomTemplateId(template?.id || null);

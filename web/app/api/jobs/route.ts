@@ -68,6 +68,7 @@ const schema = z.object({
   outputLanguage: z.enum(outputLanguages).default("ko"),
   languageTest: z.boolean().default(false),
   snsTemplate: z.boolean().default(false),
+  communityTemplate: z.boolean().default(false),
   sourceLanguage: z.enum(["auto", "ko", "en", "ja"]).optional(),
   rightsConfirmed: z.boolean().optional(),
   requestId: z.string().uuid(),
@@ -87,6 +88,9 @@ const noShortsThankYouEventReward: ShortsThankYouEventGrant = {
 export async function POST(request: Request) {
   try {
     const input = schema.parse(await request.json());
+    if (input.communityTemplate && !input.snsTemplate) {
+      throw new HttpError(400, "커뮤니티 템플릿의 제작 설정을 확인해 주세요.");
+    }
     if (input.snsTemplate && (input.customTemplateId || input.subtitleTemplateId || input.templateId !== "white-yellow")) {
       throw new HttpError(400, "SNS 템플릿의 제작 설정을 확인해 주세요.");
     }
@@ -109,6 +113,9 @@ export async function POST(request: Request) {
     }
     const rightsConfirmed = input.rightsConfirmed === true;
     const session = await requireAuthenticatedMvpSession();
+    if (input.communityTemplate && session.isAdmin !== true) {
+      throw new HttpError(403, "커뮤니티 템플릿은 관리자만 테스트할 수 있습니다.", "COMMUNITY_TEMPLATE_ADMIN_ONLY");
+    }
     const db = getDb();
     const enterpriseAccess = await assertEnterpriseSessionServiceAccess(db, session);
     const enterpriseUsage = enterpriseAccess.accountType === "enterprise";
@@ -299,7 +306,7 @@ export async function POST(request: Request) {
         };
       }
       const languageTest = input.snsTemplate
-        ? await lockSnsTemplateAdmission(tx, session.userId)
+        ? await lockSnsTemplateAdmission(tx, session.userId, input.communityTemplate)
         : usesLanguageFeature ? await lockLanguageTestAdmission(tx, session.userId) : null;
       if (languageTest && executionBackend !== "aws_batch") throw languageTestUnavailable();
       shortsThankYouEventReward =
@@ -326,7 +333,8 @@ export async function POST(request: Request) {
       const resolvedTemplateId = renderContract.templateId;
       const resolvedVideoAspectRatio = renderContract.videoAspectRatio;
       const templateSnapshot = input.snsTemplate
-        ? { presetVersion: 4, snsTemplateVersion: 1, brandColor: input.brandColor ?? "#000000" }
+        ? { presetVersion: 4, snsTemplateVersion: 1, brandColor: input.brandColor ?? "#000000",
+            ...(input.communityTemplate ? { communityTemplateVersion: 1 } : {}) }
         : renderContract.templateSnapshot;
       const subtitleTemplateSnapshot = renderContract.subtitleTemplateSnapshot;
       const usesUnifiedTemplateSubtitleCandidate =

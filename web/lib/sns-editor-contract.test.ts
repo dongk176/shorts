@@ -17,9 +17,10 @@ describe("SNS edit contract", () => {
     }
   });
   it("uses a separately verified editor without changing generation or public pointers", async () => {
-    const db = vi.fn(async (parts: TemplateStringsArray) => {
+    const db = vi.fn(async (parts: TemplateStringsArray, ...values: unknown[]) => {
       expect(parts.join("?")).not.toMatch(/editor_release_state|language_test_settings|update |insert /i);
-      expect(parts.join("?")).not.toContain("u.is_admin");
+      expect(parts.join("?")).toContain("not ?::boolean or u.is_admin");
+      expect(values[4]).toBe(false); // Public SNS does not require administrator status.
       expect(parts.join("?")).toContain("s.user_id=");
       expect(parts.join("?")).toContain("j.user_id=");
       return [{ id: SNS_EDITOR_RELEASE_ID, fontManifestSha256: "a".repeat(64),

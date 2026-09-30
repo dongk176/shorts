@@ -2155,7 +2155,8 @@ class BatchWorker:
         if snapshot := sns_snapshot(job):
             content = generate_copy(self.settings, title=clip.hook_title, reason=clip.reason,
                 transcript=" ".join(segment.text for segment in subtitles),
-                ratio=str(job.get("video_aspect_ratio") or "1:1"),
+                ratio=("4:5" if snapshot.get("communityTemplateVersion") == 1
+                       else str(job.get("video_aspect_ratio") or "1:1")),
                 language=str(job.get("output_language") or "ko"))
             clip = clip.model_copy(update={"hook_title": content["title"]})
             job = {**job, "template_snapshot": {**snapshot, "snsContent": content,

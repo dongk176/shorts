@@ -1,5 +1,6 @@
 "use client";
 
+import { CommunityTemplatePreview } from "./community-template-preview";
 import { useEffect, useId, useState } from "react";
 import { loadSnsFonts, snsFontFamily } from "@/lib/sns-editor-fonts";
 import type { SnsLanguage } from "@/lib/sns-editor-contract";
@@ -11,7 +12,8 @@ export const snsVideoFrames: Record<VideoAspectRatio, [number, number, number, n
   "1:1": [60, 690, 960, 960], "4:5": [60, 582, 960, 1200], "9:16": [180, 582, 720, 1280],
 };
 
-export function SnsTemplatePreview({ ratio, brandColor, channelName, channelThumbnailUrl, thumbnailUrl, content, videoUrl, videoStart = 0, videoEnd, language = "ko" }: {
+export function SnsTemplatePreview({ community = false, ratio, brandColor, channelName, channelThumbnailUrl, thumbnailUrl, content, videoUrl, videoStart = 0, videoEnd, language = "ko" }: {
+  community?: boolean;
   language?: SnsLanguage;
   ratio: VideoAspectRatio;
   brandColor: string;
@@ -32,6 +34,7 @@ export function SnsTemplatePreview({ ratio, brandColor, channelName, channelThum
   const tall = ratio === "9:16";
   const textX = tall ? 180 : 60;
   const offsetY = portrait ? 0 : 150;
+  if (community) return <CommunityTemplatePreview {...{ ratio, brandColor, channelName, channelThumbnailUrl, thumbnailUrl, content, videoUrl, videoStart, videoEnd, language }} />;
   return (
       <svg viewBox="0 0 1080 1920" role="img" aria-label={`${ratio} SNS 템플릿 예시`}
         className="aspect-[9/16] w-full overflow-hidden rounded-lg" style={{ fontFamily: snsFontFamily(language, 700) }}>

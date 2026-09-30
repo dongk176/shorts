@@ -23,9 +23,11 @@ export function SnsShortEditor({ item, projectNumber, channelThumbnailUrl, relea
   release: EditorReleaseAssignment; canEdit: boolean; onChanged: () => Promise<void>;
 }) {
   const original = item.templateSnapshot!;
+  const community = original.communityTemplateVersion === 1;
+  const name = community ? "커뮤니티" : "SNS";
   const language = (original.snsLanguage || "ko") as SnsLanguage;
   const ratio = item.videoAspectRatio;
-  const limits = snsCopyLimits(ratio, language);
+  const limits = snsCopyLimits(community ? "4:5" : ratio, language);
   const content = original.snsContent as { title: string; body: string[]; hashtags: string[] };
   const [title, setTitle] = useState(content.title);
   const [body, setBody] = useState(content.body);
@@ -66,15 +68,17 @@ export function SnsShortEditor({ item, projectNumber, channelThumbnailUrl, relea
     if (!timeline || !canEdit || busy) return;
     setError(""); setSaving(true);
     try {
-      const snapshot = snsEditedSnapshotSchema(ratio, language).parse({ presetVersion: 4, snsTemplateVersion: 1,
-        snsLanguage: language, brandColor, snsContent: { title, body, hashtags: tags, source: "edited" } });
-      await validateSnsTextWidths(snapshot.snsContent, ratio, language);
+      const snapshot = snsEditedSnapshotSchema(ratio, language, community).parse({ presetVersion: 4, snsTemplateVersion: 1,
+        snsLanguage: language, brandColor, ...(community ? { communityTemplateVersion: 1 } : {}), snsContent: { title, body, hashtags: tags, source: "edited" } });
+      await validateSnsTextWidths(snapshot.snsContent, community ? "4:5" : ratio, language);
+      const { communityTemplateVersion, ...baseSnapshot } = snapshot;
       if (!channel.trim()) throw new Error("채널명을 입력해 주세요.");
       if (start < timeline.timelineStartSeconds || end > timeline.timelineEndSeconds || end - start < 3) {
         throw new Error("편집 범위 안에서 3초 이상의 구간을 선택해 주세요.");
       }
       const document = createEditorDocumentSnapshotV3({ sourceShortId: item.id, baseRenderVersion: item.renderVersion,
-        template: { id: "white-yellow", customTemplateId: null, presetVersion: 4, snapshot },
+        template: { id: "white-yellow", customTemplateId: null, presetVersion: 4,
+          snapshot: communityTemplateVersion === 1 ? { ...baseSnapshot, communityTemplateVersion } : baseSnapshot },
         title: { text: snapshot.snsContent.title, textStyles: [], fontScale: 1 },
         channel: { displayName: channel.trim(), thumbnailUrl: assetKey ? null : avatar, thumbnailAssetKey: assetKey },
         comments: [], subtitles: { enabled: false, segments: [] }, overlays: createInitialEditorOverlayLayout(),
@@ -96,13 +100,13 @@ export function SnsShortEditor({ item, projectNumber, channelThumbnailUrl, relea
   return <main className="min-h-screen bg-[#121212] p-4 text-white sm:p-8">
     <header className="mx-auto mb-6 flex max-w-6xl items-center justify-between gap-3">
       <div><Link href={`/projects/${projectNumber}`} className="text-sm text-neutral-400">← 프로젝트</Link>
-        <h1 className="mt-2 text-xl font-bold">SNS 템플릿 편집 <span className="text-xs" style={{ color: brandColor }}>베타</span></h1></div>
+        <h1 className="mt-2 text-xl font-bold">{name} 템플릿 편집 <span className="text-xs" style={{ color: brandColor }}>베타</span></h1></div>
       <button type="button" onClick={() => void save()} disabled={busy || !timeline || !canEdit}
         className="rounded-xl bg-cyan-300 px-5 py-3 font-bold text-black disabled:opacity-40">{busy ? "영상에 반영 중…" : "수정 반영"}</button>
     </header>
     <div className="mx-auto grid max-w-6xl gap-8 md:grid-cols-[minmax(260px,420px)_1fr]">
       <div className="mx-auto w-full max-w-[360px]">
-        <SnsTemplatePreview language={language} ratio={ratio} brandColor={brandColor} channelName={channel} channelThumbnailUrl={avatar}
+        <SnsTemplatePreview community={community} language={language} ratio={ratio} brandColor={brandColor} channelName={channel} channelThumbnailUrl={avatar}
           thumbnailUrl="" content={{ title, body, hashtags: tags }} videoUrl={timeline?.url}
           videoStart={timeline ? start - timeline.timelineStartSeconds : 0} videoEnd={timeline ? end - timeline.timelineStartSeconds : undefined} />
         <p className="mt-3 text-center text-xs text-neutral-400">영상 {ratio} · 출력 1080 × 1920</p>
@@ -113,7 +117,7 @@ export function SnsShortEditor({ item, projectNumber, channelThumbnailUrl, relea
           <input aria-label={`SNS 본문 ${index + 1}`} className={inputClass} value={line} onChange={e => setBody(body.map((v, i) => i === index ? e.target.value : v))} /></label>)}
         {limits.tags > 0 && <div><p className="text-sm">해시태그 · 각 {limits.tag}자 이내</p><div className="grid grid-cols-3 gap-2">
           {tags.map((tag, index) => <input key={index} aria-label={`SNS 해시태그 ${index + 1}`} className={inputClass} value={tag} onChange={e => setTags(tags.map((v, i) => i === index ? e.target.value : v))} />)}</div></div>}
-        <label className="flex items-center gap-4 text-sm">브랜드 컬러<input aria-label="SNS 브랜드 컬러" type="color" value={brandColor} onChange={e => setBrandColor(e.target.value)} className="h-10 w-16 cursor-pointer rounded" /><span className="text-neutral-400">제목 색은 자동으로 맞춰집니다.</span></label>
+        <label className="flex items-center gap-4 text-sm">브랜드 컬러<input aria-label="SNS 브랜드 컬러" type="color" value={brandColor} onChange={e => setBrandColor(e.target.value)} className="h-10 w-16 cursor-pointer rounded" /><span className="text-neutral-400">{community ? "최상단 네모 배경에 적용됩니다." : "제목 색은 자동으로 맞춰집니다."}</span></label>
         <label className="block text-sm">채널명<input aria-label="SNS 채널명" maxLength={50} className={inputClass} value={channel} onChange={e => setChannel(e.target.value)} /></label>
         <label className="block text-sm">채널 사진<input aria-label="SNS 채널 사진" type="file" accept="image/png,image/jpeg,image/webp" className={inputClass} onChange={async e => {
           const file = e.target.files?.[0]; if (!file) return;

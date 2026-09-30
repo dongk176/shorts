@@ -906,9 +906,9 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
           <AdminYoutubeDiscovery />
           <AdminLanguageTest />
           <section className="rounded-2xl border border-white/10 bg-white/[.025] p-5">
-            <h2 className="text-base font-bold">SNS 템플릿 · 관리자 테스트</h2>
-            <p className="mt-2 text-sm text-neutral-400">제작 화면에서 영상 링크를 확인한 뒤 템플릿 미리보기 목록에서 ‘SNS 템플릿’을 선택하세요. 흰 배경으로 생성·재생·다운로드를 테스트합니다.</p>
-            <Link href="/" className="mt-3 inline-block text-sm font-semibold text-[#ff9b8d] underline">SNS 템플릿 제작 화면 열기</Link>
+            <h2 className="text-base font-bold">커뮤니티 템플릿 · 관리자 테스트</h2>
+            <p className="mt-2 text-sm text-neutral-400">제작 화면에서 영상 링크를 확인한 뒤 ‘커뮤니티 템플릿’을 선택하세요. 관리자에게만 표시되며, 브랜드 컬러는 최상단 네모 배경에 적용됩니다. 영상 비율 5종의 생성·편집·다운로드를 테스트할 수 있습니다.</p>
+            <Link href="/" className="mt-3 inline-block text-sm font-semibold text-[#ff9b8d] underline">커뮤니티 템플릿 테스트하기</Link>
           </section>
           <AdminRuntimeSettings
             initialEnabled={Boolean(runtimeSettingRows[0]?.enabled)}

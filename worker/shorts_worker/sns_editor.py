@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from .community_template import COMMUNITY_EDITOR_RELEASE_ID, COMMUNITY_RELEASE_ID
 from .errors import RenderError
 from .release_identity import verify_initial_render_v4_runtime
 from .schemas import EditorDocument
@@ -36,19 +37,22 @@ def validate_sns_editor_document(document: EditorDocument) -> None:
         raise RenderError("SNS 편집 문서가 올바르지 않습니다.")
     validate_copy(
         {key: content.get(key) for key in ("title", "body", "hashtags")},
-        document.video.aspect_ratio,
+        "4:5" if snapshot.get("communityTemplateVersion") == 1 else document.video.aspect_ratio,
         snapshot["snsLanguage"],
     )
 
 
 def verify_sns_editor_binding(item: dict[str, Any], binding: dict[str, Any] | None) -> None:
+    community = (item.get("template_snapshot") or {}).get("communityTemplateVersion") == 1
+    editor_id = COMMUNITY_EDITOR_RELEASE_ID if community else SNS_EDITOR_RELEASE_ID
+    generation_ids = {COMMUNITY_RELEASE_ID} if community else SNS_GENERATION_RELEASE_IDS
     generation_id = item.get("language_test_release_id")
     details = (binding or {}).get("details") or {}
     if (
         not binding
-        or generation_id not in SNS_GENERATION_RELEASE_IDS
-        or os.environ.get("EASYCUT_SNS_EDITOR_RELEASE_ID") != SNS_EDITOR_RELEASE_ID
-        or str(binding.get("release_id")) != SNS_EDITOR_RELEASE_ID
+        or generation_id not in generation_ids
+        or os.environ.get("EASYCUT_SNS_EDITOR_RELEASE_ID") != editor_id
+        or str(binding.get("release_id")) != editor_id
         or binding.get("release_channel") != "canary"
         or str(binding.get("request_id")) != str(item.get("pending_edit_request_id"))
         or str(binding.get("language_test_release_id")) != generation_id
@@ -60,6 +64,8 @@ def verify_sns_editor_binding(item: dict[str, Any], binding: dict[str, Any] | No
     ):
         raise RenderError("SNS 편집 워커와 저장 요청의 릴리스가 일치하지 않습니다.")
     document = EditorDocument.model_validate(item.get("pending_edit_snapshot"))
+    if ((document.template.snapshot or {}).get("communityTemplateVersion") == 1) != community:
+        raise RenderError("편집 중 템플릿 종류를 변경할 수 없습니다.")
     validate_sns_editor_document(document)
     # Reuse the exact embedded source/ECS digest/font attestation, binding it
     # to this editor request rather than the immutable generation release.

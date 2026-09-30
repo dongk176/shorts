@@ -24,13 +24,18 @@ def main() -> None:
     parser.add_argument("--upload", action="store_true")
     parser.add_argument("--ai", action="store_true")
     parser.add_argument("--editor", action="store_true")
+    parser.add_argument("--community", action="store_true")
     args = parser.parse_args()
     settings = Settings()
+    from .community_template import community_layout
+    layout_for = community_layout if args.community else sns_layout
     sha = _embedded_worker_source_git_sha()
     image_digest = (
         _running_container_image_digest() if args.upload else os.getenv("WORKER_IMAGE_DIGEST")
     )
     prefix = f"outputs/sns-{'editor' if args.editor else 'template'}-verification/{sha}"
+    if args.community:
+        prefix = prefix.replace("sns-", "community-")
     fixtures = {
         "ko": (
             "퇴근 1분 전 내 모습",
@@ -53,6 +58,7 @@ def main() -> None:
         "imageDigest": image_digest,
         "fontManifestSha256": canonical_editor_font_manifest()["sha256"],
         "editor": args.editor,
+        "community": args.community,
         "cases": [],
     }
     with tempfile.TemporaryDirectory(prefix="sns-probe-") as directory:
@@ -68,12 +74,13 @@ def main() -> None:
                     title=title,
                     reason=reason,
                     transcript=transcript,
-                    ratio=ratio,
+                    ratio="4:5" if args.community else ratio,
                     language=language,
                 )
                 assert content["source"] == "ai", (ratio, language, "AI fallback")
                 validate_copy(
-                    {k: content[k] for k in ("title", "body", "hashtags")}, ratio, language
+                    {k: content[k] for k in ("title", "body", "hashtags")}, 
+                    "4:5" if args.community else ratio, language
                 )
             else:
                 lines = {"ko": "퇴근이라 신남", "en": "Time to go home", "ja": "退勤で元気になる"}
@@ -84,8 +91,8 @@ def main() -> None:
                 }
                 content = {
                     "title": title,
-                    "body": [lines[language]] * sns_layout(ratio).body_lines,
-                    "hashtags": tags[language] if sns_layout(ratio).hashtags else [],
+                    "body": [lines[language]] * layout_for(ratio).body_lines,
+                    "hashtags": tags[language] if layout_for(ratio).hashtags else [],
                     "source": "fixture",
                 }
             return ratio, language, content
@@ -98,7 +105,7 @@ def main() -> None:
             source, output, frame = (
                 case_dir / name for name in ("source.mp4", "output.mp4", "frame.png")
             )
-            x, y, width, height = sns_layout(ratio).video
+            x, y, width, height = layout_for(ratio).video
             source_width, source_height = (
                 (1280, 720) if (ratio, language) == ("9:16", "ko") else (width, height)
             )
@@ -143,6 +150,7 @@ def main() -> None:
                     "snapshot": {
                         "presetVersion": 4,
                         "snsTemplateVersion": 1,
+                        **({"communityTemplateVersion": 1} if args.community else {}),
                         "snsContent": content,
                         "snsLanguage": language,
                         "brandColor": "#FF715E",
@@ -173,6 +181,7 @@ def main() -> None:
                     work_dir=case_dir,
                     ratio=ratio,
                     snapshot={
+                        **({"communityTemplateVersion": 1} if args.community else {}),
                         "snsContent": content,
                         "snsLanguage": language,
                         "brandColor": "#FF715E",
@@ -203,7 +212,12 @@ def main() -> None:
                 == 0
             )
             with Image.open(frame) as picture:
-                assert min(picture.getpixel((x, y))[:3]) > 240
+                if args.community:
+                    assert picture.getpixel((20, 20))[0] > 230
+                    assert 90 < picture.getpixel((20, 20))[1] < 135
+                    assert min(picture.getpixel((20, 1900))[:3]) > 240
+                else:
+                    assert min(picture.getpixel((x, y))[:3]) > 240
                 assert picture.getpixel((x + width // 2, y + 10))[0] > 180
                 assert picture.getpixel((x + width // 2, y + height - 10))[1] > 180
             case = {

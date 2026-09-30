@@ -1,3 +1,4 @@
+import { COMMUNITY_EDITOR_RELEASE_ID } from "@/lib/community-template-contract";
 import { SNS_EDITOR_RELEASE_ID, snsEditedSnapshotSchema, type SnsLanguage } from "@/lib/sns-editor-contract";
 import type { VideoAspectRatio } from "@/lib/contracts";
 import { resolveOwnedProjectEditorRelease } from "@/lib/language-test";
@@ -661,16 +662,17 @@ async function applyEditorDocument({
   const document: ValidatedEditorDocumentSnapshot = structuredClone(
     requestedDocument,
   );
+  const communityEditing = existing.templateSnapshot?.communityTemplateVersion === 1;
   const snsEditing = existing.templateSnapshot?.snsTemplateVersion === 1;
   if (snsEditing || requestedDocument.template.snapshot?.snsTemplateVersion === 1) {
-    if (!snsEditing || release.releaseId !== SNS_EDITOR_RELEASE_ID || templateSelectionTouched
+    if (!snsEditing || release.releaseId !== (communityEditing ? COMMUNITY_EDITOR_RELEASE_ID : SNS_EDITOR_RELEASE_ID) || templateSelectionTouched
       || document.template.id !== "white-yellow" || document.template.customTemplateId !== null
       || document.subtitles.enabled || document.comments.length || document.overlays.textOverlays.length) {
       throw new HttpError(400, "SNS 편집 화면에서 다시 저장해 주세요.", "SNS_EDITOR_DOCUMENT_INVALID");
     }
     const language = existing.templateSnapshot?.snsLanguage as SnsLanguage;
     if (!["ko", "en", "ja"].includes(language)) throw new HttpError(400, "SNS 언어 설정을 확인해 주세요.");
-    const edited = snsEditedSnapshotSchema(existing.videoAspectRatio as VideoAspectRatio, language).parse(document.template.snapshot);
+    const edited = snsEditedSnapshotSchema(existing.videoAspectRatio as VideoAspectRatio, language, communityEditing).parse(document.template.snapshot);
     if (edited.snsContent.title !== document.title.text) throw new HttpError(400, "SNS 제목이 일치하지 않습니다.");
     templateSelection.templateSnapshot = edited;
   }

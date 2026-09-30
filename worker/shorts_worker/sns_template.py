@@ -436,7 +436,12 @@ def create_overlay(
     brand_color: str,
     channel: str,
     avatar: Path | None = None,
+    community: bool = False,
 ) -> SnsLayout:
+    if community:
+        from .community_template import create_community_overlay
+        return create_community_overlay(path, ratio=ratio, content=content, language=language,
+            brand_color=brand_color, channel=channel, avatar=avatar)
     layout = sns_layout(ratio)
     image = Image.new("RGBA", (1080, 1920), "white")
     draw = ImageDraw.Draw(image)
@@ -536,6 +541,7 @@ def render_sns(
         brand_color=str(snapshot.get("brandColor") or "#000000"),
         channel=channel,
         avatar=avatar,
+        community=snapshot.get("communityTemplateVersion") == 1,
     )
     probe = probe_media(clean_path, timeout=30)
     duration = media_duration(probe)

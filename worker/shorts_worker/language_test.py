@@ -13,6 +13,9 @@ def verify_language_test_job(job: dict[str, Any]) -> None:
     sns_worker = os.environ.get("EASYCUT_SNS_TEMPLATE_WORKER") == "true"
     if sns != sns_worker:
         raise RenderError("SNS 템플릿 전용 워커 연결이 일치하지 않습니다.")
+    community = (job.get("template_snapshot") or {}).get("communityTemplateVersion") == 1
+    if community != (os.environ.get("EASYCUT_COMMUNITY_TEMPLATE_WORKER") == "true"):
+        raise RenderError("커뮤니티 템플릿 전용 워커 연결이 일치하지 않습니다.")
     marker = job.get("language_test_release_id")
     enabled = os.environ.get("EASYCUT_LANGUAGE_TEST_WORKER") == "true"
     if marker is None and not enabled:
