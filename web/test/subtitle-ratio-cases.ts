@@ -15,10 +15,13 @@ export const subtitleRatioCases = (["highlight", "pop"] as const).flatMap((id) =
     (["center", "lower"] as const).map((captionPlacement) => ({
       id, videoAspectRatio, captionPlacement,
       ...ratioGeometry[videoAspectRatio],
-      channelY: captionPlacement === "lower"
+      y: ratioGeometry[videoAspectRatio].y + (videoAspectRatio === "9:16" ? 0 : 150),
+      titleY: ratioGeometry[videoAspectRatio].titleY + 150,
+      channelY: (captionPlacement === "lower"
         ? ({ "16:9": 1368, "5:4": 1508, "1:1": 1620, "4:5": 1690, "9:16": 1674 }[videoAspectRatio])
-        : ({ "16:9": 1368, "5:4": 1508, "1:1": 1620, "4:5": 1508, "9:16": 1508 }[videoAspectRatio]),
-      captionY: ratioGeometry[videoAspectRatio][captionPlacement === "center" ? "centerY" : "lowerY"],
+        : ({ "16:9": 1368, "5:4": 1508, "1:1": 1620, "4:5": 1508, "9:16": 1508 }[videoAspectRatio])) + (videoAspectRatio === "9:16" ? 0 : 150),
+      captionY: ratioGeometry[videoAspectRatio][captionPlacement === "center" ? "centerY" : "lowerY"]
+        + (videoAspectRatio === "9:16" ? 0 : 150),
     })),
   ),
 );

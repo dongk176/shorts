@@ -113,6 +113,7 @@ export function resolveBuiltInSubtitleTemplateSnapshot(input: {
   const { config } = builtInSubtitlePresentation({
     id: selectionId,
     legacyChannelPosition: presetVersion < 4,
+    legacyLayout: true,
     videoAspectRatio: input.videoAspectRatio ?? "16:9",
     captionPlacement: input.captionPlacement,
     brandColor: accentColor ?? undefined,

@@ -46,3 +46,21 @@ describe("built-in subtitle ratio contract", () => {
       .toEqual(createUnifiedSubtitleTemplateConfig(id));
   });
 });
+
+
+describe("lowered subtitle defaults", () => {
+  it.each(subtitleRatioCases)("$id $videoAspectRatio $captionPlacement preserves spacing and stays on canvas", (test) => {
+    const previous = builtInSubtitlePresentation({ ...test, legacyLayout: true });
+    const next = builtInSubtitlePresentation(test);
+    const shift = test.videoAspectRatio === "9:16" ? 0 : 150;
+    expect(next.config.title.y - previous.config.title.y).toBe(150);
+    expect(next.config.video.y - previous.config.video.y).toBe(shift);
+    expect(next.config.subtitle.y - previous.config.subtitle.y).toBe(shift);
+    expect(next.config.channel.y - previous.config.channel.y).toBe(shift);
+    expect(next.style.safeArea).toEqual(next.style.layout.caption);
+    for (const rect of Object.values(next.style.layout)) {
+      expect(rect.y).toBeGreaterThanOrEqual(0);
+      expect(rect.y + rect.height).toBeLessThanOrEqual(1920);
+    }
+  });
+});

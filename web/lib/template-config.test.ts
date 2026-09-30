@@ -153,7 +153,7 @@ describe("personal template config", () => {
     expect(highlight.video).toEqual({
       aspectRatio: "16:9",
       x: 0,
-      y: 432,
+      y: 582,
       width: 1080,
       height: 608,
       fit: "cover",
@@ -161,21 +161,21 @@ describe("personal template config", () => {
     expect(highlight.title).toMatchObject({
       visible: true,
       x: 540,
-      y: 295,
+      y: 445,
       maxWidth: 920,
       fontSize: 84,
       primaryColor: "#FFFFFF",
       accentColor: "#35E6E3",
     });
     expect(highlight.subtitle).toMatchObject({
-      y: 1158,
+      y: 1308,
       maxWidth: 840,
       color: "#FFFFFF",
     });
     expect(highlight.channel).toMatchObject({
       visible: true,
       x: 540,
-      y: 1790,
+      y: 1840,
       maxWidth: 800,
       fontSize: 48,
       color: "#FFFFFF",

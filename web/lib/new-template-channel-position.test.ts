@@ -6,7 +6,7 @@ import { templateIds, videoAspectRatios } from "./contracts";
 describe("new template channel seed matches the creation presets", () => {
   const general = [1400, 1520, 1620, 1520, 1520];
   const comment = [1464, 1752, 1824, 1840, 1840];
-  const subtitle = [1368, 1508, 1620, 1690, 1674];
+  const subtitle = [1518, 1658, 1770, 1840, 1674];
   it.each(templateIds)("%s changes only the channel y coordinate", (id) => {
     videoAspectRatios.forEach((ratio, index) => {
       const original = createDefaultTemplateConfig(id);
@@ -29,9 +29,9 @@ describe("new template channel seed matches the creation presets", () => {
       expect({ ...next, channel: { ...next.channel, y: original.channel.y } }).toEqual(original);
     });
   });
-  it("keeps legacy factories and saved custom positions unchanged", () => {
+  it("keeps ordinary defaults and saved custom positions unchanged", () => {
     expect(createDefaultTemplateConfig().channel.y).toBe(1580);
-    expect(createUnifiedSubtitleTemplateConfig("pop").channel.y).toBe(1790);
+    expect(createUnifiedSubtitleTemplateConfig("pop").channel.y).toBe(1840);
     const saved = createDefaultTemplateConfig();
     saved.channel = { ...saved.channel, x: 415, y: 1712 };
     expect(templateConfigSchema.parse(saved).channel).toEqual(saved.channel);

@@ -48,7 +48,7 @@ describe("shared initial render contract", () => {
       config: {
         schemaVersion: 5,
         video: { aspectRatio: "9:16", y: 0, height: 1920 },
-        title: { y: 271 },
+        title: { y: 421 },
         subtitle: { variant: "pop", y: 1500 },
         channel: { y: 1674 },
       },

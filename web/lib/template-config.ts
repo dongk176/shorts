@@ -1,3 +1,4 @@
+import { SUBTITLE_TEMPLATE_DEFAULT_OFFSET_Y } from "./subtitle-template-defaults";
 import { z } from "zod";
 import {
   templateIds,
@@ -507,7 +508,7 @@ export function createUnifiedSubtitleTemplateConfig(
   config.video = {
     aspectRatio: "16:9",
     x: 0,
-    y: 432,
+    y: 432 + SUBTITLE_TEMPLATE_DEFAULT_OFFSET_Y,
     width: TEMPLATE_CANVAS.width,
     height: 608,
     fit: "cover",
@@ -516,7 +517,7 @@ export function createUnifiedSubtitleTemplateConfig(
     ...config.title,
     visible: true,
     x: TEMPLATE_CANVAS.width / 2,
-    y: 295,
+    y: 295 + SUBTITLE_TEMPLATE_DEFAULT_OFFSET_Y,
     maxWidth: 920,
     fontSize: 84,
     primaryColor: "#FFFFFF",
@@ -527,7 +528,7 @@ export function createUnifiedSubtitleTemplateConfig(
   config.subtitle.visible = true;
   config.subtitle.variant = variant;
   config.subtitle.x = TEMPLATE_CANVAS.width / 2;
-  config.subtitle.y = 1158;
+  config.subtitle.y = 1158 + SUBTITLE_TEMPLATE_DEFAULT_OFFSET_Y;
   config.subtitle.maxWidth = 840;
   config.subtitle.fontSize = variant === "pop" ? 92 : 72;
   config.subtitle.color = "#FFFFFF";
@@ -536,7 +537,7 @@ export function createUnifiedSubtitleTemplateConfig(
     ...config.channel,
     visible: true,
     x: TEMPLATE_CANVAS.width / 2,
-    y: 1790,
+    y: Math.min(1840, 1790 + SUBTITLE_TEMPLATE_DEFAULT_OFFSET_Y),
     maxWidth: 800,
     fontSize: 48,
     color: "#FFFFFF",

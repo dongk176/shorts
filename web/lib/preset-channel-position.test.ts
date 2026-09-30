@@ -18,8 +18,8 @@ describe("approved channel-only preset positions", () => {
     expect(presetChannelCenterY("comment-capture", ratio)).toBe(comment);
     expect(presetChannelCenterY("comment-capture", ratio, 3)).toBe(1840);
     for (const id of ["pop", "highlight"] as const) {
-      const previous = builtInSubtitlePresentation({ id, videoAspectRatio: ratio, legacyChannelPosition: true });
-      const next = builtInSubtitlePresentation({ id, videoAspectRatio: ratio });
+      const previous = builtInSubtitlePresentation({ id, videoAspectRatio: ratio, legacyChannelPosition: true, legacyLayout: true });
+      const next = builtInSubtitlePresentation({ id, videoAspectRatio: ratio, legacyLayout: true });
       expect(next.config.channel.y).toBe(subtitle);
       const restored = structuredClone(next);
       restored.config.channel.y = previous.config.channel.y;
