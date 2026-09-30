@@ -9,6 +9,7 @@ from shorts_worker.language_test import verify_language_test_job
 from shorts_worker.media import probe_media, run_command
 from shorts_worker.sns_template import (
     copy_messages,
+    copy_response_format,
     create_overlay,
     draw_text,
     font,
@@ -17,6 +18,7 @@ from shorts_worker.sns_template import (
     sns_layout,
     text_width,
     validate_copy,
+    validate_generated_language,
 )
 
 
@@ -277,3 +279,48 @@ def test_sns_top_safe_area_and_content_spacing(tmp_path, ratio, offset):
     assert layout.card[1] - (282 + offset) == 60
     assert layout.video[1] > 480 + offset + (layout.body_lines - 1) * 90 + 72
     assert layout.card[1] + layout.card[3] <= 1920
+
+
+@pytest.mark.parametrize("ratio", ["16:9", "5:4", "1:1", "4:5", "9:16"])
+@pytest.mark.parametrize("language", ["ko", "en", "ja"])
+def test_provider_receives_exact_line_and_tag_counts(ratio, language, monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    import openai
+
+    layout = sns_layout(ratio)
+    target = {"ko": "Korean", "en": "English", "ja": "Japanese"}[language]
+    payload = {
+        "title": "OK", "body": ["OK"] * layout.body_lines,
+        "hashtags": ["#a", "#b", "#c"] if layout.hashtags else [],
+    }
+    client = MagicMock()
+    client.chat.completions.create.return_value = SimpleNamespace(choices=[
+        SimpleNamespace(message=SimpleNamespace(content=json.dumps(payload))),
+    ])
+    monkeypatch.setattr(openai, "OpenAI", MagicMock(return_value=client))
+    result = generate_copy(
+        Settings(gemini_api_key="test", gemini_paid_data_processing_confirmed=True),
+        title="OK", reason="OK", transcript="OK", ratio=ratio, language=language,
+    )
+    assert result["source"] == "ai"
+    request = client.chat.completions.create.call_args.kwargs
+    assert request["response_format"] == copy_response_format(ratio, language)
+    schema = request["response_format"]["json_schema"]["schema"]["properties"]
+    assert schema["body"]["minItems"] == schema["body"]["maxItems"] == layout.body_lines
+    assert schema["hashtags"]["minItems"] == schema["hashtags"]["maxItems"] == (
+        3 if layout.hashtags else 0
+    )
+    assert target in schema["title"]["description"]
+    client.close.assert_called_once()
+
+
+@pytest.mark.parametrize("language", ["en", "ja"])
+def test_generated_copy_repairs_untranslated_korean(language):
+    with pytest.raises(ValueError, match="not translated"):
+        validate_generated_language(
+            {"title": "유리하다고 안 가다", "body": ["결국 역전당함"]}, language
+        )
+    validate_generated_language({"title": "김 wins", "body": ["What a comeback"]}, "en")
+    validate_generated_language({"title": "逆転", "body": ["まさかの大逆転"]}, "ja")

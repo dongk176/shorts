@@ -200,7 +200,8 @@ def copy_messages(
             "- Write natural, direct, conversational English for English-speaking viewers. "
             "Use compact phrasing, a clear subject, and a strong spoken rhythm. Match the "
             "directness, wit, and emotional emphasis to the genre and the people in the scene.\n"
-            "- Use English regardless of the source language.\n"
+            "- Write the title, every body line and hashtags in English, regardless of the "
+            "source language. Translate the meaning of source quotes instead of copying them.\n"
             "- Return title as a single-line string.\n\n"
             "[Post body]\n"
             f"- Write exactly {layout.body_lines} lines, each containing up to {body_max} "
@@ -231,7 +232,9 @@ def copy_messages(
             "- 日本語圏の視聴者に自然に伝わる、端的で力のある話し言葉を使ってください。"
             "日本語らしい省略、短い語のまとまり、間と余韻を活用し、驚きや共感、"
             "ツッコミの強さをジャンルと登場人物の関係に合わせてください。\n"
-            "- 原文の言語にかかわらず、自然な日本語で書いてください。\n"
+            "- 原文の言語にかかわらず、タイトル・本文・タグを自然な日本語で書いてください。"
+            "同音異義語や省略された表現は、区間の文脈から意味を判断し、"
+            "単語の直訳ではなく場面の意味を伝えてください。\n"
             "- titleに改行のない文字列を返してください。\n\n"
             "[本文]\n"
             f"- 必ず{layout.body_lines}行、各行を空白込みで{body_max}文字以内にしてください。\n"
@@ -267,6 +270,60 @@ def copy_messages(
     ]
 
 
+def validate_generated_language(content: dict[str, Any], language: str) -> None:
+    # Catch an untranslated response, while allowing names and borrowed words.
+    text = content["title"] + " ".join(content["body"])
+    letters = [char for char in text if char.isalpha()]
+    if len(letters) < 4 or language == "ko":
+        return
+    pattern = r"[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]"
+    if language == "en":
+        pattern = r"[\u1100-\u11ff\u3040-\u30ff\u3130-\u318f\u3400-\u9fff\uac00-\ud7af]"
+    if sum(bool(re.fullmatch(pattern, char)) for char in letters) / len(letters) > 0.35:
+        target = {"en": "English", "ja": "Japanese"}[language]
+        raise ValueError(
+            f"The title and body were not translated to {target}. "
+            f"Write the title, every body line and hashtags in {target}, "
+            "preserving the scene meaning."
+        )
+
+
+def copy_response_format(ratio: str, language: str) -> dict[str, Any]:
+    layout = sns_layout(ratio)
+    title_max, body_max, tag_max = copy_budgets(ratio, language)
+    target = {"ko": "Korean", "en": "English", "ja": "Japanese"}[language]
+    tags = 3 if layout.hashtags else 0
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "SnsCopy", "strict": True,
+            "schema": {
+                "type": "object", "additionalProperties": False,
+                "required": ["title", "body", "hashtags"],
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": f"One punchy {target} hook, up to {title_max} "
+                        "characters including spaces; no newline.",
+                    },
+                    "body": {
+                        "type": "array", "minItems": layout.body_lines,
+                        "maxItems": layout.body_lines,
+                        "items": {"type": "string", "description": f"One {target} body line, "
+                                  f"up to {body_max} characters including spaces; no newline."},
+                    },
+                    "hashtags": {
+                        "type": "array", "minItems": tags, "maxItems": tags,
+                        "description": f"Exactly {tags} distinct {target} scene-related tags.",
+                        "items": {"type": "string", "description": "Must begin with #, "
+                                  f"then at most {tag_max} letters, digits or underscores."},
+                    },
+                },
+            },
+        },
+    }
+
+
 def generate_copy(
     settings: Settings, *, title: str, reason: str, transcript: str, ratio: str, language: str
 ) -> dict[str, Any]:
@@ -298,10 +355,13 @@ def generate_copy(
                 raw = ""
                 try:
                     response = client.chat.completions.create(
-                        model=model, messages=messages, response_format={"type": "json_object"}
+                        model=model, messages=messages,
+                        response_format=copy_response_format(ratio, language),
                     )
                     raw = response.choices[0].message.content or ""
-                    return {**validate_copy(json.loads(raw), ratio, language), "source": "ai"}
+                    content = validate_copy(json.loads(raw), ratio, language)
+                    validate_generated_language(content, language)
+                    return {**content, "source": "ai"}
                 except (ValueError, TypeError) as error:
                     print(
                         json.dumps(
