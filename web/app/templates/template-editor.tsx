@@ -820,7 +820,7 @@ export function TemplateEditor({
 
         <main className="min-h-dvh px-4 pb-[calc(80px+env(safe-area-inset-bottom,0px))] pt-[calc(72px+env(safe-area-inset-top,0px))] lg:px-0 lg:pb-10 lg:pl-[584px] lg:pr-6 lg:pt-24">
           <div className="mx-auto flex max-w-[920px] flex-col items-center">
-            <div className="mb-3 flex w-full max-w-[500px] items-center justify-between text-[11px] font-bold text-neutral-500 lg:mb-4 lg:text-xs"><span className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2.5 py-1 text-emerald-300 lg:px-3">미리보기</span><span className="lg:hidden">{ui("끌어 이동 · 두 번 탭해 설정")}</span><span className="hidden lg:inline">9:16 · 1080 × 1920</span></div>
+            <div className="mb-3 flex w-full max-w-[500px] items-center justify-between text-[11px] font-bold text-neutral-500 lg:mb-4 lg:text-xs"><span className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2.5 py-1 text-emerald-300 lg:px-3">{ui("미리보기")}</span><span className="lg:hidden">{ui("끌어 이동 · 두 번 탭해 설정")}</span><span className="hidden lg:inline">9:16 · 1080 × 1920</span></div>
             <div className="flex min-h-[calc(100dvh-180px)] w-full items-center justify-center overflow-auto lg:min-h-[680px]">
               <div style={{ transform: `scale(${zoom})`, transformOrigin: "center" }}>
                 <div ref={canvasRef} data-i18n-content="" aria-label={ui("템플릿 미리보기. 레이아웃을 끌어 이동하고 두 번 탭하면 설정이 열립니다.")} className="relative aspect-[9/16] w-[min(76vw,360px)] touch-none overflow-hidden rounded-[12px] shadow-[0_30px_100px_rgba(0,0,0,.65)]" style={{ ...background, containerType: "inline-size" }} onPointerDown={(event) => beginCanvasTargetTap(event, "background")}>
