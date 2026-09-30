@@ -14,7 +14,7 @@ const phrases: readonly Phrase[] = [
   ["즐겨찾기는 최대 4개까지 등록할 수 있습니다.", "You can add up to 4 favorites.", "お気に入りは4件まで登録できます。"],
   ["즐겨찾기에 추가했습니다.", "Added to favorites.", "お気に入りに追加しました。"],
   ["즐겨찾기에서 해제했습니다.", "Removed from favorites.", "お気に入りから削除しました。"],
-  ["댓글 문구는 예시입니다. 실제 영상의 댓글로 바뀝니다.", "This is sample text. Your video will use its actual comment.", "文言はサンプルです。動画では実際のコメントに置き換わります。"],
+  ["댓글 문구는 예시입니다. 영상 생성 시 AI가 작성합니다.", "This is sample text. AI writes the comment when your video is created.", "文言はサンプルです。動画生成時にAIがコメントを作成します。"],
   ["문구 수정 버튼으로 현재 자막을 고치고, 아래에서 모양을 조정하세요.", "Use Edit text to change this caption, then adjust its style below.", "テキストを編集ボタンで現在の字幕を修正し、下でスタイルを調整できます。"],
   ["자막이 나오는 구간에서 일시정지해 주세요.", "Pause where a caption is visible.", "字幕が表示される位置で一時停止してください。"],
   ["문구 수정", "Edit text", "テキストを編集"],

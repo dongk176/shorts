@@ -1086,7 +1086,7 @@ export function TemplateEditor({
                 <h2 className="text-[17px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">{ui("댓글 레이아웃")}</h2>
 
               </div>
-              <p className="mt-1.5 text-[13px] leading-5 text-[#a8a7b2]">{ui("댓글 문구는 예시입니다. 실제 영상의 댓글로 바뀝니다.")}</p>
+              <p className="mt-1.5 text-[13px] leading-5 text-[#a8a7b2]">{ui("댓글 문구는 예시입니다. 영상 생성 시 AI가 작성합니다.")}</p>
               <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3.5">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-semibold text-neutral-200">{ui("레이어 표시")}</span>
