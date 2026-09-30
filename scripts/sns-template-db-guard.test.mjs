@@ -157,6 +157,29 @@ test('SNS and community immutable releases preserve public admission and owner c
   await edit(publicEdit);
   for(const patch of [{user_id:admin},{base_render_version:2},{release_channel:'stable'},{release_id:ce3}])await assert.rejects(edit({...publicEdit,...patch}),/SNS_EDITOR_BINDING_MISMATCH/);
  }
+ // Color-only revision preserves both public releases and all previous ownership checks.
+ await db.exec(fs.readFileSync(new URL('../supabase/migrations/202610010001_community_heading_contrast.sql',import.meta.url),'utf8'));
+ const cg5='8b0a6b0f-ab5d-43dd-afce-b3a2409b59b9',ce5='ca57c1ae-c841-4f44-835a-f566a3c097c1';
+ await db.query('insert into shorts_mvp.language_test_releases select $1,registry,verified_at,verification from shorts_mvp.language_test_releases where id=$2',[cg5,cg4]);
+ for(const id of [cg5,ce5])await db.query('insert into shorts_mvp.editor_releases select $1,git_sha,worker_image_digest,font_manifest_sha256,status,staging_verified_at,ui_version,document_version,render_spec_version,caption_render_spec_version from shorts_mvp.editor_releases where id=$2',[id,ce4]);
+ await db.query("insert into shorts_mvp.editor_release_checks values($1,'isolated','sns_editor_compatibility','passed',now(),$2)",[ce5,JSON.stringify({...communityProof,generationReleaseIds:[community,cg2,cg3,cg4,cg5]})]);
+ await check(publicCommunity);
+ const contrastJob={...publicCommunity,language_test_release_id:cg5,initial_editor_release_id:cg5};
+ await check(contrastJob);
+ await assert.rejects(check({...contrastJob,user_id:null}),/COMMUNITY_TEMPLATE_ADMIN_ONLY/);
+ await assert.rejects(check({...contrastJob,batch_job_definition:target(false).jobDefinitionArn}),/SNS_TEMPLATE_TARGET_MISMATCH/);
+ for(const id of [community,cg2,cg3])await assert.rejects(check({...contrastJob,language_test_release_id:id,initial_editor_release_id:id}),/COMMUNITY_TEMPLATE_ADMIN_ONLY/);
+ const contrastEdit={...publicEdit,release_id:ce5};
+ for(const id of [community,cg2,cg3,cg4,cg5]){
+  await db.query('update shorts_mvp.video_jobs set language_test_release_id=$1,initial_editor_release_id=$1 where id=$2',[id,jobId]);
+  await edit(contrastEdit);
+  for(const patch of [{user_id:admin},{base_render_version:2},{release_channel:'stable'}])await assert.rejects(edit({...contrastEdit,...patch}),/SNS_EDITOR_BINDING_MISMATCH/);
+ }
+ await assert.rejects(edit(publicEdit),/SNS_EDITOR_BINDING_MISMATCH/); // Old editor was never attested for this generation.
+ await db.query("update shorts_mvp.editor_release_checks set details=jsonb_set(details,'{imageDigest}','\"wrong\"') where release_id=$1",[ce5]);
+ await assert.rejects(edit(contrastEdit),/SNS_EDITOR_BINDING_MISMATCH/);
+ await db.query('update shorts_mvp.video_jobs set language_test_release_id=$1,initial_editor_release_id=$1 where id=$2',[cg4,jobId]);
+ await edit(publicEdit);
  await db.query("update shorts_mvp.editor_release_checks set details=jsonb_set(details,'{imageDigest}','\"wrong\"') where release_id=$1",[ce4]);
  await assert.rejects(edit(publicEdit),/SNS_EDITOR_BINDING_MISMATCH/);
  await db.query('update shorts_mvp.language_test_releases set verified_at=null where id=$1',[cg4]);

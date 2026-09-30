@@ -105,6 +105,8 @@ def main() -> None:
         with ThreadPoolExecutor(max_workers=3) as executor:
             copies = list(executor.map(copy, cases))
         for ratio, language, content in copies:
+            brand_color = ({"ko": "#35E6E3", "en": "#8BFF5A", "ja": "#A78BFA"}[language]
+                           if args.community else "#FF715E")
             case_dir = root / (ratio.replace(":", "x") + "-" + language)
             case_dir.mkdir()
             source, output, frame = (
@@ -158,7 +160,7 @@ def main() -> None:
                         **({"communityTemplateVersion": 1} if args.community else {}),
                         "snsContent": content,
                         "snsLanguage": language,
-                        "brandColor": "#FF715E",
+                        "brandColor": brand_color,
                     },
                 }
                 value["title"]["text"] = content["title"]
@@ -189,14 +191,14 @@ def main() -> None:
                         **({"communityTemplateVersion": 1} if args.community else {}),
                         "snsContent": content,
                         "snsLanguage": language,
-                        "brandColor": "#FF715E",
+                        "brandColor": brand_color,
                     },
                     channel={"ko": "퇴근연구소", "en": "After Work", "ja": "退勤研究所"}[language],
                     avatar=None,
                 )
             if args.community:
                 with Image.open(case_dir / "sns-overlay.png") as overlay:
-                    assert (255, 255, 255, 255) in set(overlay.crop((200, 150, 880, 255)).getdata())
+                    assert (0, 0, 0, 255) in set(overlay.crop((200, 150, 880, 255)).getdata())
             probe = probe_media(output, timeout=20)
             video = next(s for s in probe["streams"] if s["codec_type"] == "video")
             assert (video["width"], video["height"]) == (1080, 1920)
@@ -221,8 +223,11 @@ def main() -> None:
             )
             with Image.open(frame) as picture:
                 if args.community:
-                    assert picture.getpixel((20, 20))[0] > 230
-                    assert 90 < picture.getpixel((20, 20))[1] < 135
+                    expected_brand = tuple(bytes.fromhex(brand_color[1:]))
+                    assert all(abs(a - b) < 20 for a, b in zip(
+                        picture.getpixel((20, 20))[:3], expected_brand, strict=True))
+                    assert any(max(pixel[:3]) < 25
+                               for pixel in picture.crop((200, 150, 880, 255)).getdata())
                     assert min(picture.getpixel((20, 1900))[:3]) > 240
                 else:
                     assert min(picture.getpixel((x, y))[:3]) > 240
@@ -234,6 +239,7 @@ def main() -> None:
                 "videoRect": [x, y, width, height],
                 "sourceSize": [source_width, source_height],
                 "content": content,
+                "brandColor": brand_color,
                 "frameKey": f"{prefix}/{case_dir.name}.png",
             }
             summary["cases"].append(case)

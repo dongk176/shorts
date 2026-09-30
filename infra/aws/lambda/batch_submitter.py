@@ -993,11 +993,13 @@ def _verify_recorded_previous_project_job(
 def _sns_editor_compatible(parent_job: dict[str, Any], release: dict[str, Any]) -> bool:
     community = (parent_job.get("template_snapshot") or {}).get("communityTemplateVersion") == 1
     community_generations = {
+        "8b0a6b0f-ab5d-43dd-afce-b3a2409b59b9",
         "46d7f96b-7e16-4fa6-920f-b3c915cad8e8",
         "1ce342d0-cf2d-41b4-961b-f3abd9f4e336",
         "a7db3266-7fc0-4175-a818-39aaff712ad3", "0641d236-5e76-467e-95f3-bf695e6d6083",
     }
     community_editors = {
+        "ca57c1ae-c841-4f44-835a-f566a3c097c1",
         "d1bb4c9d-f055-4cbe-bdbd-318e51ffdf33",
         "242f96a3-fe3b-4f20-a006-3c6559d98573",
         "601d3d10-62b9-47f2-a34e-78b53ab1ec99", "11a62875-b24a-4874-9794-4aac13b0c305",
@@ -1027,7 +1029,9 @@ def _sns_editor_compatible(parent_job: dict[str, Any], release: dict[str, Any]) 
         f"&release_id=eq.{release['id']}&limit=1"
     )) or []
     if (not users
-        or (((community and release.get("id") != "d1bb4c9d-f055-4cbe-bdbd-318e51ffdf33")
+        or (((community and release.get("id") not in {
+                 "d1bb4c9d-f055-4cbe-bdbd-318e51ffdf33", "ca57c1ae-c841-4f44-835a-f566a3c097c1",
+             })
              or release.get("id") == "406dadcf-f290-4eb8-b82e-a6e8c6b40105")
             and users[0].get("is_admin") is not True)
         or not checks or not checks[0].get("completed_at")):

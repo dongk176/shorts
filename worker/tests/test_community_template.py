@@ -22,7 +22,7 @@ from shorts_worker.sns_template import render_sns
 
 def snapshot():
     return {"presetVersion": 4, "snsTemplateVersion": 1, "communityTemplateVersion": 1,
-            "snsLanguage": "ko", "brandColor": "#FF715E",
+            "snsLanguage": "ko", "brandColor": "#35E6E3",
             "snsContent": {"boardName": "퇴근러 모임", "title": "퇴근 1분 전",
                            "body": ["퇴근 얘기에 살아남"],
                            "hashtags": [], "source": "edited"}}
@@ -34,7 +34,7 @@ def test_fixed_header_exact_ratios_and_brand_color(tmp_path, ratio):
     x, y, w, h = layout.video
     n, d = map(int, ratio.split(":"))
     assert w * d == h * n and y == 690 and y + h <= 1920
-    for color in ("#FF715E", "#303E78", "#FFFFFF"):
+    for color in ("#FF715E", "#303E78", "#FFFFFF", "#35E6E3", "#8BFF5A", "#A78BFA"):
         path = tmp_path / (color[1:] + ".png")
         create_community_overlay(path, ratio=ratio, content=snapshot()["snsContent"],
                                  language="ko", brand_color=color, channel="채널", avatar=None)
@@ -109,8 +109,10 @@ def test_generation_and_editor_render_same_layout_with_audio(tmp_path, ratio):
 
 
 @pytest.mark.parametrize("background,expected", [
-    ("#FF715E", "#FFFFFF"), ("#FF4D4F", "#FFFFFF"), ("#35E6E3", "#FFFFFF"),
+    ("#FF715E", "#FFFFFF"), ("#FF4D4F", "#FFFFFF"), ("#35E6E3", "#000000"),
     ("#3B82F6", "#FFFFFF"), ("#303E78", "#FFFFFF"), ("#FFD84D", "#000000"),
+    ("#8BFF5A", "#000000"), ("#A78BFA", "#000000"),
+    (" #35e6e3 ", "#000000"), ("#8bff5a", "#000000"), ("#a78bfa", "#000000"),
     ("#FFFFFF", "#000000"), ("bad", "#FFFFFF"),
 ])
 def test_community_heading_prefers_white(background, expected):

@@ -9,10 +9,11 @@ from PIL import Image, ImageDraw, ImageOps
 
 from .sns_template import SnsLayout, draw_text, fit_text, font, text_width
 
-COMMUNITY_RELEASE_ID = "46d7f96b-7e16-4fa6-920f-b3c915cad8e8"
-COMMUNITY_EDITOR_RELEASE_ID = "d1bb4c9d-f055-4cbe-bdbd-318e51ffdf33"
+COMMUNITY_RELEASE_ID = "8b0a6b0f-ab5d-43dd-afce-b3a2409b59b9"
+COMMUNITY_EDITOR_RELEASE_ID = "ca57c1ae-c841-4f44-835a-f566a3c097c1"
 COMMUNITY_GENERATION_RELEASE_IDS = {
-    COMMUNITY_RELEASE_ID, "1ce342d0-cf2d-41b4-961b-f3abd9f4e336",
+    COMMUNITY_RELEASE_ID, "46d7f96b-7e16-4fa6-920f-b3c915cad8e8",
+    "1ce342d0-cf2d-41b4-961b-f3abd9f4e336",
     "0641d236-5e76-467e-95f3-bf695e6d6083", "a7db3266-7fc0-4175-a818-39aaff712ad3"}
 FRAMES = {
     "16:9": (60, 690, 960, 540), "5:4": (60, 690, 960, 768),
@@ -22,9 +23,11 @@ FRAMES = {
 
 
 def community_heading_color(background: str) -> str:
-    """Keep headings white except on very light brand colors (same rule as SVG)."""
+    """Match SVG: black on aqua, lime, purple and very light brand colors."""
     if not re.fullmatch(r"#[a-fA-F0-9]{6}", background.strip()):
         return "#FFFFFF"
+    if background.strip().lower() in {"#35e6e3", "#8bff5a", "#a78bfa"}:
+        return "#000000"
     red, green, blue = bytes.fromhex(background.strip()[1:])
     return "#000000" if 299 * red + 587 * green + 114 * blue >= 210000 else "#FFFFFF"
 
