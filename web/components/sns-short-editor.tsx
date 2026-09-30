@@ -7,7 +7,7 @@ import type { GeneratedShort } from "@/lib/contracts";
 import type { EditorReleaseAssignment } from "@/lib/editor-rendering-release";
 import { createEditorDocumentSnapshotV3 } from "@/lib/editor-document-snapshot";
 import { createInitialEditorOverlayLayout } from "@/lib/editor-overlay-preview";
-import { createEditorRenderSpecV4 } from "@/lib/editor-render-spec";
+import { createSnsEditorRenderSpec } from "@/lib/sns-editor-render-spec";
 import { snsCopyLimits, snsEditedSnapshotSchema, type SnsLanguage } from "@/lib/sns-editor-contract";
 import { SnsTemplatePreview } from "./sns-template-preview";
 
@@ -15,7 +15,7 @@ type Timeline = { url: string; timelineStartSeconds: number; timelineEndSeconds:
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, options);
   const value = await response.json();
-  if (!response.ok) throw new Error(value.error?.message || value.error || value.message || "요청을 처리하지 못했습니다.");
+  if (!response.ok) throw new Error(value.detail || value.error?.message || value.error || value.message || "요청을 처리하지 못했습니다.");
   return value;
 }
 export function SnsShortEditor({ item, projectNumber, channelThumbnailUrl, release, canEdit, onChanged }: {
@@ -81,7 +81,7 @@ export function SnsShortEditor({ item, projectNumber, channelThumbnailUrl, relea
         video: { aspectRatio: ratio, timelineStartSeconds: timeline.timelineStartSeconds, timelineEndSeconds: timeline.timelineEndSeconds,
           selectionStartSeconds: start, selectionEndSeconds: end,
           clips: [{ id: "sns-video-1", sourceStartSeconds: start - timeline.timelineStartSeconds, sourceEndSeconds: end - timeline.timelineStartSeconds }] } });
-      document.renderSpec = await createEditorRenderSpecV4(document);
+      document.renderSpec = await createSnsEditorRenderSpec(document);
       requestId.current ||= crypto.randomUUID();
       await request(`/api/shorts/${item.id}/apply-edit`, { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ requestId: requestId.current, timelineVersion: timeline.version, templateSelectionTouched: false,
