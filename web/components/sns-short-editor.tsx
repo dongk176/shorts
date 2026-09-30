@@ -118,7 +118,17 @@ export function SnsShortEditor({ item, projectNumber, channelThumbnailUrl, relea
         <label className="block text-sm">채널 사진<input aria-label="SNS 채널 사진" type="file" accept="image/png,image/jpeg,image/webp" className={inputClass} onChange={async e => {
           const file = e.target.files?.[0]; if (!file) return;
           if (file.size > 2 * 1024 * 1024) { setError("2MB 이하의 이미지를 선택해 주세요."); return; }
-          const reader = new FileReader(); reader.onload = () => { setAvatar(String(reader.result)); setAssetKey(null); changed(); }; reader.readAsDataURL(file);
+          try {
+            const bitmap = await createImageBitmap(file);
+            try {
+              const canvas = document.createElement("canvas"); canvas.width = 256; canvas.height = 256;
+              const context = canvas.getContext("2d");
+              if (!context) throw new Error("이미지를 처리하지 못했습니다.");
+              const size = Math.min(bitmap.width, bitmap.height);
+              context.drawImage(bitmap, (bitmap.width - size) / 2, (bitmap.height - size) / 2, size, size, 0, 0, 256, 256);
+              setAvatar(canvas.toDataURL("image/webp", 0.84)); setAssetKey(null); changed();
+            } finally { bitmap.close(); }
+          } catch { setError("사진을 불러오지 못했습니다. JPG·PNG·WebP 파일을 선택해 주세요."); }
         }} /></label>
         <div className="grid grid-cols-2 gap-3">
           <label className="text-sm">시작(초)<input aria-label="SNS 영상 시작" className={inputClass} type="number" step="0.1" value={start} onChange={e => setStart(Number(e.target.value))} /></label>
