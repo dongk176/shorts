@@ -42,7 +42,7 @@ export function SnsTemplatePicker({ ratio, onRatioChange, brandColor, onBrandCol
         {(ratio === "16:9" || ratio === "5:4") && <text x="60" y="730" fontSize="47" fontWeight="400" fill="#537398">#퇴근본능  #직장인공감  #칼퇴</text>}
         <rect x={x} y={y} width={width} height={height} fill="#ddd" rx={30} />
         <image href={thumbnailUrl} x={x} y={y} width={width} height={height}
-          preserveAspectRatio={tall ? "xMidYMid meet" : "xMidYMid slice"} clipPath={`url(#${clipId})`} />
+          preserveAspectRatio="xMidYMid slice" clipPath={`url(#${clipId})`} />
         <g transform={`translate(${x+width-88} ${y+height-88})`}>
           <circle cx="35" cy="35" r="35" fill="#0009" stroke="#ffffffaa" />
           <path d="M18 29H27L36 21V49L27 41H18Z M44 25Q55 35 44 45" fill="white" stroke="white" strokeWidth="3" />
