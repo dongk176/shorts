@@ -992,11 +992,13 @@ def _verify_recorded_previous_project_job(
 
 def _sns_editor_compatible(parent_job: dict[str, Any], release: dict[str, Any]) -> bool:
     generation_ids = {
+        "b871796a-f83a-4aed-8d56-bf039de1cdbf",
         "8dc98fc0-a5bb-411f-9cc6-0e8dc28648ca",
         "8af2c7e6-5421-4e93-9671-b0e8bb41de8a",
     }
     if (release.get("id") not in {
-        "406dadcf-f290-4eb8-b82e-a6e8c6b40105", "77d3b2de-12a4-4b7d-a134-87170b1d3ecf"
+        "406dadcf-f290-4eb8-b82e-a6e8c6b40105", "77d3b2de-12a4-4b7d-a134-87170b1d3ecf",
+        "4fbfeeaa-e210-4143-aece-c17029d962a0",
     }
         or parent_job.get("language_test_release_id") not in generation_ids
         or (parent_job.get("template_snapshot") or {}).get("snsTemplateVersion") != 1):

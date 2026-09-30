@@ -31,6 +31,7 @@ export function SnsTemplatePreview({ ratio, brandColor, channelName, channelThum
   const portrait = ratio === "4:5" || ratio === "9:16";
   const tall = ratio === "9:16";
   const textX = tall ? 180 : 60;
+  const offsetY = portrait ? 0 : 150;
   return (
       <svg viewBox="0 0 1080 1920" role="img" aria-label={`${ratio} SNS 템플릿 예시`}
         className="aspect-[9/16] w-full overflow-hidden rounded-lg" style={{ fontFamily: snsFontFamily(language, 700) }}>
@@ -39,6 +40,7 @@ export function SnsTemplatePreview({ ratio, brandColor, channelName, channelThum
           <clipPath id={avatarClipId}><circle cx={textX+44} cy="416" r="40" /></clipPath>
         </defs>
         <rect width="1080" height="1920" fill="white" />
+        <g transform={`translate(0 ${offsetY})`}>
         <rect x="60" y="150" width="960" height="132" rx="26" fill={brandColor} />
         <text x="540" y="245" textAnchor="middle" fill={contrastingTitleTextColor(brandColor)} fontSize="80" fontWeight="700" letterSpacing="-3">{content?.title ?? "퇴근 1분 전 내 모습"}</text>
         <rect x={tall ? 60 : 30} y="342" width={tall ? 960 : 1020} height={y+height+30-342} fill="white" stroke="#e2e2e2" strokeWidth="2" />
@@ -66,6 +68,7 @@ export function SnsTemplatePreview({ ratio, brandColor, channelName, channelThum
         <g pointerEvents="none" transform={`translate(${x+width-88} ${y+height-88})`}>
           <circle cx="35" cy="35" r="35" fill="#0009" stroke="#ffffffaa" />
           <path d="M18 29H27L36 21V49L27 41H18Z M44 25Q55 35 44 45" fill="white" stroke="white" strokeWidth="3" />
+        </g>
         </g>
       </svg>
   );

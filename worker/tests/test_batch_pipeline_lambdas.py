@@ -5337,16 +5337,21 @@ def test_sns_editor_compatibility_is_narrow_and_attested(invalid):
 
 
 @pytest.mark.parametrize("known_user", [True, False])
-def test_sns_public_editor_accepts_only_existing_account_with_proof(known_user):
+@pytest.mark.parametrize("generation", [
+    "8dc98fc0-a5bb-411f-9cc6-0e8dc28648ca", "b871796a-f83a-4aed-8d56-bf039de1cdbf",
+])
+@pytest.mark.parametrize("editor", [
+    "77d3b2de-12a4-4b7d-a134-87170b1d3ecf", "4fbfeeaa-e210-4143-aece-c17029d962a0",
+])
+def test_sns_public_editor_accepts_only_existing_account_with_proof(known_user, generation, editor):
     module, _ = _load_lambda("batch_submitter")
-    generation = "8dc98fc0-a5bb-411f-9cc6-0e8dc28648ca"
     parent = {
         "language_test_release_id": generation,
         "user_id": "ordinary",
         "template_snapshot": {"snsTemplateVersion": 1},
     }
     release = {
-        "id": "77d3b2de-12a4-4b7d-a134-87170b1d3ecf",
+        "id": editor,
         "status": "canary_ready",
         "staging_verified_at": "now",
         "git_sha": "a" * 40,

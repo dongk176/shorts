@@ -1,7 +1,8 @@
+import json
 from pathlib import Path
 
 import pytest
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from shorts_worker.config import Settings
 from shorts_worker.language_test import verify_language_test_job
@@ -9,6 +10,7 @@ from shorts_worker.media import probe_media, run_command
 from shorts_worker.sns_template import (
     copy_messages,
     create_overlay,
+    draw_text,
     font,
     generate_copy,
     render_sns,
@@ -46,8 +48,19 @@ def test_copy_constraints_and_fallback(ratio, language):
     prompt = copy_messages(
         title=source, reason=source, transcript=source, ratio=ratio, language=language
     )[0]["content"]
-    assert f"exactly {layout.body_lines} short lines" in prompt
-    assert "ONE complete line" in prompt
+    expected = {
+        "ko": ("대한민국 상위 0.1%", "타격감 있는", f"반드시 {layout.body_lines}행", "반드시 1행"),
+        "en": (
+            "top 0.1%", "strong spoken rhythm",
+            f"exactly {layout.body_lines} lines", "exactly one line",
+        ),
+        "ja": ("再生数上位0.1%", "端的で力のある", f"必ず{layout.body_lines}行", "必ず1行"),
+    }[language]
+    assert all(fragment in prompt for fragment in expected)
+    inputs = json.loads(copy_messages(
+        title=source, reason=source, transcript=source, ratio=ratio, language=language
+    )[1]["content"])
+    assert inputs["outputLanguage"] == {"ko": "한국어", "en": "English", "ja": "日本語"}[language]
 
 
 def test_rejects_overflow_and_wrong_line_counts():
@@ -212,3 +225,55 @@ def test_wide_source_fills_selected_portrait_frame(tmp_path):
         for y in (620, 1220, 1810):
             red, green, blue = picture.getpixel((540, y))[:3]
             assert blue > 180 and red < 60 and green < 60
+
+
+@pytest.mark.parametrize("language,text", [
+    ("ko", "결국 역으로 9대 1 역전당함"),
+    ("en", "Ag 19 py"),
+    ("ja", "逆転 9対1 ゲーム"),
+])
+@pytest.mark.parametrize("size,weight", [(80, 700), (72, 600), (52, 700), (47, 400)])
+def test_mixed_glyphs_share_baseline(language, text, size, weight):
+    face = font(size, language, weight)
+    image = Image.new("L", (2000, 200), 0)
+    spacing = 24
+    draw_text(ImageDraw.Draw(image), (20, 20), text, face, "white", spacing)
+    x = 20.0
+    baselines = []
+    for char in text:
+        advance = face.getlength(char)
+        if char.strip():
+            box = image.crop((int(x) - 2, 0, int(x + advance) + 3, 200)).getbbox()
+            assert box is not None
+            glyph_top = face.getbbox(char, anchor="ls")[1]
+            baselines.append(box[1] - glyph_top)
+        x += advance + spacing
+    assert max(baselines) - min(baselines) <= 1
+    assert abs(image.getbbox()[1] - 20) <= 1
+
+
+def test_draw_empty_text_is_noop():
+    image = Image.new("L", (100, 100), 0)
+    draw_text(ImageDraw.Draw(image), (20, 20), "", font(72, "ko", 600), "white")
+    assert image.getbbox() is None
+
+
+@pytest.mark.parametrize("ratio,offset", [
+    ("16:9", 150), ("5:4", 150), ("1:1", 150), ("4:5", 0), ("9:16", 0),
+])
+def test_sns_top_safe_area_and_content_spacing(tmp_path, ratio, offset):
+    layout = sns_layout(ratio)
+    path = tmp_path / "safe-area.png"
+    create_overlay(path, ratio=ratio, content={
+        "title": "9대 1 역전", "body": ["결국 역전당함"] * layout.body_lines,
+        "hashtags": ["#스타", "#역전", "#테란"] if layout.hashtags else [],
+    }, language="ko", brand_color="#DB2777", channel="도멘TV")
+    with Image.open(path) as image:
+        assert image.getpixel((540, 150 + offset))[:3] == (219, 39, 119)
+        assert image.getpixel((540, 149 + offset))[:3] == (255, 255, 255)
+        assert image.crop((0, 0, 1080, 150 + offset)).convert("RGB").getextrema() == (
+            (255, 255), (255, 255), (255, 255),
+        )
+    assert layout.card[1] - (282 + offset) == 60
+    assert layout.video[1] > 480 + offset + (layout.body_lines - 1) * 90 + 72
+    assert layout.card[1] + layout.card[3] <= 1920

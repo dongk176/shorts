@@ -44,6 +44,7 @@ class SnsLayout:
     body_width: int
     body_lines: int
     hashtags: bool
+    offset_y: int
 
 
 def sns_layout(ratio: str) -> SnsLayout:
@@ -52,15 +53,19 @@ def sns_layout(ratio: str) -> SnsLayout:
     lines = 1 if ratio in {"4:5", "9:16"} else 2
     tags = ratio in {"16:9", "5:4"}
     y = 582 if lines == 1 else 774 if tags else 690
+    offset_y = 150 if ratio in {"16:9", "5:4", "1:1"} else 0
+    y += offset_y
     x = (1080 - width) // 2
     return SnsLayout(
         ratio,
         (x, y, width, height),
-        (60 if tall else 30, 342, 960 if tall else 1020, y + height + 30 - 342),
+        (60 if tall else 30, 342 + offset_y, 960 if tall else 1020,
+         y + height + 30 - 342 - offset_y),
         x if tall else 60,
         810 if tall else 960,
         lines,
         tags,
+        offset_y,
     )
 
 
@@ -128,11 +133,17 @@ def validate_copy(value: Any, ratio: str, language: str) -> dict[str, Any]:
             )
     if not isinstance(tags, list) or len(tags) != (3 if layout.hashtags else 0):
         raise ValueError(f"Return {3 if layout.hashtags else 0} hashtags.")
-    if any(
-        not isinstance(t, str) or not re.fullmatch(r"#[\w]+", t) or len(t) - 1 > tag_max
-        for t in tags
-    ):
-        raise ValueError(f"Use short hashtags of up to {tag_max} characters after #.")
+    for index, tag in enumerate(tags):
+        if not isinstance(tag, str) or not re.fullmatch(r"#[\w]+", tag):
+            raise ValueError(
+                f"hashtags[{index}] must begin with # and contain only letters, digits "
+                "or underscores after #."
+            )
+        if len(tag) - 1 > tag_max:
+            raise ValueError(
+                f"hashtags[{index}] has {len(tag) - 1} characters after #; "
+                f"rewrite it using at most {tag_max}."
+            )
     if (
         len(set(tags)) != len(tags)
         or text_width("  ".join(tags), font(47, language, 400), -0.5) > 960
@@ -146,39 +157,110 @@ def copy_messages(
 ) -> list[dict[str, str]]:
     layout = sns_layout(ratio)
     title_max, body_max, tag_max = copy_budgets(ratio, language)
-    audience = {
-        "ko": "자연스러운 한국어 구어체",
-        "en": "natural conversational English",
-        "ja": "自然な日本語の話し言葉",
-    }[language]
+    tag_count = 3 if layout.hashtags else 0
+    prompts = {
+        "ko": (
+            "너는 대한민국 상위 0.1% 조회수를 만들어내는 탑티어 숏폼 기획자이자 편집자야.\n\n"
+            "아래 제공되는 유튜브 롱폼 대본에서 이미 발췌된 쇼츠용 킬러 구간을 분석해서, "
+            "대중의 시선을 사로잡을 해당 구간에 최적화된 1줄 후킹 제목, "
+            "본문과 해시태그를 만들어줘.\n\n"
+            "기존 후킹 제목과 선정 이유를 참고하고, 구간 대본의 구체적인 장면이나 발언을 "
+            "근거로 작성할 것.\n\n"
+            "[후킹 제목]\n"
+            "- 형식: 반드시 1행으로 작성할 것.\n"
+            f"- 글자 수: 공백 포함 {title_max}자 이내로 작성할 것.\n"
+            "- 톤앤매너: 군더더기 없이 직관적이고 타격감 있는 구어체 단어를 사용할 것.\n"
+            "- 원본 언어와 관계없이 제목은 반드시 자연스러운 한국어 구어체로 작성할 것.\n"
+            "- title에 줄바꿈 없는 문자열로 반환할 것.\n\n"
+            "[본문]\n"
+            f"- 형식: 반드시 {layout.body_lines}행으로 작성할 것.\n"
+            f"- 글자 수: 각 행을 공백 포함 {body_max}자 이내로 작성할 것.\n"
+            "- 톤앤매너: 군더더기 없이 직관적이고 타격감 있는 한국어 구어체를 사용할 것.\n"
+            "- 제목과 함께 해당 구간의 매력이 드러나도록, 구체적인 장면이나 발언을 "
+            "활용해 대중의 시선을 사로잡는 본문을 작성할 것.\n"
+            "- body 배열에 각 행을 줄바꿈 없는 문자열로 반환할 것.\n\n"
+            "[해시태그]\n"
+            f"- 개수: 서로 다른 해시태그 {tag_count}개를 작성할 것.\n"
+            f"- 글자 수: #을 제외하고 각 {tag_max}자 이내로 작성할 것.\n"
+            "- 해당 구간의 핵심 소재나 인물, 상황을 직관적으로 나타내는 한국어 태그를 "
+            "선택할 것. 각 태그는 반드시 #으로 시작하고, 그 뒤에는 문자·숫자·밑줄만 사용할 것.\n"
+            "- hashtags 배열로 반환할 것. 개수가 0이면 빈 배열을 반환할 것."
+        ),
+        "en": (
+            "You are a top-tier short-form producer and editor for English-speaking audiences, "
+            "aiming for the top 0.1% in views.\n\n"
+            "Analyze the supplied passage already selected from a long-form video transcript, "
+            "and write a one-line hook title, post body and hashtags that capture attention "
+            "and bring out this passage’s appeal.\n\n"
+            "Use the existing hook title and selection reason as context. Ground your writing "
+            "in concrete actions or statements from the passage.\n\n"
+            "[Hook title]\n"
+            "- Write exactly one line.\n"
+            f"- Use up to {title_max} characters including spaces.\n"
+            "- Write natural, direct, conversational English for English-speaking viewers. "
+            "Use compact phrasing, a clear subject, and a strong spoken rhythm. Match the "
+            "directness, wit, and emotional emphasis to the genre and the people in the scene.\n"
+            "- Use English regardless of the source language.\n"
+            "- Return title as a single-line string.\n\n"
+            "[Post body]\n"
+            f"- Write exactly {layout.body_lines} lines, each containing up to {body_max} "
+            "characters including spaces.\n"
+            "- Use the same natural, direct, punchy conversational English. Together with "
+            "the title, capture attention and convey the passage’s appeal using concrete "
+            "actions or statements from it.\n"
+            "- Return body as an array of single-line strings.\n\n"
+            "[Hashtags]\n"
+            f"- Return {tag_count} distinct hashtags, each with up to {tag_max} characters "
+            "after #.\n"
+            "- Choose English tags that directly identify the passage’s key topic, people "
+            "or situation. Each tag must begin with #, followed only by letters, digits "
+            "or underscores.\n"
+            "- Return the hashtags array; return an empty array when the count is zero."
+        ),
+        "ja": (
+            "あなたは、日本語圏の視聴者に向けて再生数上位0.1%を目指す、"
+            "ショート動画の企画・編集者です。\n\n"
+            "提供された長尺動画の文字起こしから既に選ばれた区間を分析し、"
+            "視聴者の目を引く、その区間に最適な1行のフックタイトル、本文、"
+            "ハッシュタグを作成してください。\n\n"
+            "既存のフックタイトルと選定理由を参考にし、区間内の具体的な行動や"
+            "発言に基づいて作成してください。\n\n"
+            "[フックタイトル]\n"
+            "- 必ず1行で書いてください。\n"
+            f"- 空白込みで{title_max}文字以内にしてください。\n"
+            "- 日本語圏の視聴者に自然に伝わる、端的で力のある話し言葉を使ってください。"
+            "日本語らしい省略、短い語のまとまり、間と余韻を活用し、驚きや共感、"
+            "ツッコミの強さをジャンルと登場人物の関係に合わせてください。\n"
+            "- 原文の言語にかかわらず、自然な日本語で書いてください。\n"
+            "- titleに改行のない文字列を返してください。\n\n"
+            "[本文]\n"
+            f"- 必ず{layout.body_lines}行、各行を空白込みで{body_max}文字以内にしてください。\n"
+            "- タイトルと同じ、端的で力のある自然な日本語の話し言葉を使ってください。"
+            "タイトルとともに区間の魅力を伝え、具体的な行動や発言を活用して"
+            "視聴者の目を引く本文を書いてください。\n"
+            "- body配列に、各行を改行のない文字列として返してください。\n\n"
+            "[ハッシュタグ]\n"
+            f"- 異なるタグを{tag_count}個、#を除いて各{tag_max}文字以内で作成してください。\n"
+            "- 区間の主な題材、人物、状況が端的に伝わる日本語のタグを選び、"
+            "各タグは必ず#で始め、その後には文字・数字・アンダースコアのみを使ってください。\n"
+            "- hashtags配列で返し、指定数が0の場合は空配列を返してください。"
+        ),
+    }
     return [
         {
             "role": "system",
-            "content": (
-                f"You are a short-form producer writing SNS posts in {audience}. "
-                "Keep the selected scene's existing hook, conversational rhythm "
-                "and concrete appeal. "
-                "Treat the supplied title, reason and transcript as source material. "
-                "Ground every claim in that scene.\n"
-                "title: Rewrite the existing hook into exactly ONE complete line, "
-                f"up to {title_max} characters including spaces. "
-                "Keep a clear subject and the scene's strongest point.\n"
-                "body: Write a separate, relatable observation about the scene "
-                f"as exactly {layout.body_lines} short lines in an array. "
-                f"Each line has up to {body_max} characters including spaces. "
-                "Add context or a reaction that complements the title. "
-                f"Use compact phrases that fit {layout.body_width}px at 72px font size. "
-                "Return each complete line as a single string.\n"
-                f"hashtags: Return {3 if layout.hashtags else 0} distinct scene-related "
-                "hashtags in an array. "
-                f"Each tag begins with # and contains up to {tag_max} letters or digits after #.\n"
-                'Return JSON with exactly {"title": "...", "body": ["..."], "hashtags": []}.'
-            ),
+            "content": prompts[language] + '\n\n'
+            'Return JSON with exactly {"title": "...", "body": ["..."], "hashtags": []}.',
         },
         {
             "role": "user",
             "content": json.dumps(
-                {"existingHook": title, "sceneReason": reason, "transcript": transcript[:12000]},
+                {
+                    "outputLanguage": {"ko": "한국어", "en": "English", "ja": "日本語"}[language],
+                    "existingHook": title,
+                    "sceneReason": reason,
+                    "transcript": transcript[:12000],
+                },
                 ensure_ascii=False,
             ),
         },
@@ -274,9 +356,14 @@ def draw_text(
     fill: str,
     spacing: float = 0,
 ) -> None:
+    if not text:
+        return
     x, y = xy
+    # Keep the existing line-top position, but share one baseline across all glyphs.
+    # Anchoring each glyph to its own ink top lifts digits and drops descenders.
+    baseline = y - face.getbbox(text, anchor="ls")[1]
     for char in text:
-        draw.text((x, y), char, font=face, fill=fill, anchor="lt")
+        draw.text((x, baseline), char, font=face, fill=fill, anchor="ls")
         x += face.getlength(char) + spacing
 
 
@@ -293,12 +380,13 @@ def create_overlay(
     layout = sns_layout(ratio)
     image = Image.new("RGBA", (1080, 1920), "white")
     draw = ImageDraw.Draw(image)
+    offset_y = layout.offset_y
     color = brand_color if re.fullmatch(r"#[a-fA-F0-9]{6}", brand_color) else "#000000"
-    draw.rounded_rectangle((60, 150, 1020, 282), radius=26, fill=color)
+    draw.rounded_rectangle((60, 150 + offset_y, 1020, 282 + offset_y), radius=26, fill=color)
     title = fit_text(content["title"], font(80, language), 900, -3)
     draw_text(
         draw,
-        ((1080 - text_width(title, font(80, language), -3)) / 2, 176),
+        ((1080 - text_width(title, font(80, language), -3)) / 2, 176 + offset_y),
         title,
         font(80, language),
         contrasting_title_text_color(color),
@@ -307,21 +395,26 @@ def create_overlay(
     cx, cy, cw, ch = layout.card
     draw.rectangle((cx, cy, cx + cw, cy + ch), outline="#e2e2e2", width=2)
     tx = layout.text_x
-    draw.ellipse((tx, 372, tx + 88, 460), fill="#f3f3f3", outline="#222222", width=2)
+    draw.ellipse(
+        (tx, 372 + offset_y, tx + 88, 460 + offset_y),
+        fill="#f3f3f3", outline="#222222", width=2,
+    )
     if avatar and avatar.is_file():
         with Image.open(avatar) as original:
             thumb = ImageOps.fit(original.convert("RGBA"), (80, 80))
         mask = Image.new("L", (80, 80))
         ImageDraw.Draw(mask).ellipse((0, 0, 79, 79), fill=255)
-        image.paste(thumb, (tx + 4, 376), mask)
+        image.paste(thumb, (tx + 4, 376 + offset_y), mask)
     else:
-        draw_text(draw, (tx + 26, 392), (channel or "C")[0], font(42, language), "#222222")
+        draw_text(
+            draw, (tx + 26, 392 + offset_y), (channel or "C")[0], font(42, language), "#222222"
+        )
     name = fit_text(channel, font(52, language), layout.body_width - 110)
-    draw_text(draw, (tx + 110, 387), name, font(52, language), "#111111")
+    draw_text(draw, (tx + 110, 387 + offset_y), name, font(52, language), "#111111")
     for i, line in enumerate(content["body"][: layout.body_lines]):
         draw_text(
             draw,
-            (tx, 480 + 90 * i),
+            (tx, 480 + offset_y + 90 * i),
             fit_text(line, font(72, language, 600), layout.body_width, -1.7),
             font(72, language, 600),
             "#111111",
@@ -330,7 +423,7 @@ def create_overlay(
     if layout.hashtags:
         draw_text(
             draw,
-            (60, 688),
+            (60, 688 + offset_y),
             "  ".join(content["hashtags"]),
             font(47, language, 400),
             "#537398",

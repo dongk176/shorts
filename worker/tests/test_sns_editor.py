@@ -153,11 +153,12 @@ def test_actual_editor_render_keeps_sns_content_ratio_audio(tmp_path, ratio):
     streams = probe_media(output, timeout=20)["streams"]
     assert any(s["codec_type"] == "audio" for s in streams)
     assert any(s.get("width") == 1080 and s.get("height") == 1920 for s in streams)
+    offset = sns_layout(ratio).offset_y
     with Image.open(tmp_path / "sns-overlay.png") as overlay:
-        assert overlay.getpixel((80, 210))[:3] == (227, 38, 38)
+        assert overlay.getpixel((80, 210 + offset))[:3] == (227, 38, 38)
         x, y, width, height = sns_layout(ratio).video
         assert overlay.getpixel((x + width // 2, y + height // 2))[3] == 0
         assert overlay.getpixel((x + width - 53, y + height - 53))[3] > 0
         # Text changed from the generated content and is painted in the body region.
-        pixels = overlay.crop((x, 495, x + width, 560)).convert("RGB")
+        pixels = overlay.crop((x, 495 + offset, x + width, 560 + offset)).convert("RGB")
         assert min(sum(p) for p in pixels.getdata()) < 150

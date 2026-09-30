@@ -3,7 +3,7 @@ import { HttpError } from "./http";
 import { languageTestRegistrySchema } from "./language-test";
 
 // A separate immutable release: never repoint the public language settings.
-export const SNS_TEMPLATE_RELEASE_ID = "8dc98fc0-a5bb-411f-9cc6-0e8dc28648ca";
+export const SNS_TEMPLATE_RELEASE_ID = "b871796a-f83a-4aed-8d56-bf039de1cdbf";
 export const SNS_TEMPLATE_UNAVAILABLE = "SNS 템플릿을 준비 중입니다. 잠시 후 다시 시도해 주세요.";
 
 export async function snsTemplateRelease(db: Sql | TransactionSql) {

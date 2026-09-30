@@ -10,8 +10,9 @@ from .release_identity import verify_initial_render_v4_runtime
 from .schemas import EditorDocument
 from .sns_template import validate_copy
 
-SNS_EDITOR_RELEASE_ID = "77d3b2de-12a4-4b7d-a134-87170b1d3ecf"
+SNS_EDITOR_RELEASE_ID = "4fbfeeaa-e210-4143-aece-c17029d962a0"
 SNS_GENERATION_RELEASE_IDS = {
+    "b871796a-f83a-4aed-8d56-bf039de1cdbf",
     "8dc98fc0-a5bb-411f-9cc6-0e8dc28648ca",
     "8af2c7e6-5421-4e93-9671-b0e8bb41de8a",
 }
