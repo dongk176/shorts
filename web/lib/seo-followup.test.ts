@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { comparisonPricing } from "./comparison-pricing";
 import { createUiText } from "./i18n/ui-text";
 import { updatesMetadata } from "../app/updates/metadata";
@@ -12,6 +13,14 @@ describe("public multilingual pricing", () => {
     expect(comparisonPricing("en", true)[1].priceLines[0]).toContain("$44.97 for 3 months");
     expect(JSON.stringify(comparisonPricing("ja", true).map(p => p.priceLines))).not.toContain("원");
     expect(comparisonPricing("en", false)).toEqual([]);
+  });
+  it("translates all literal comparison-page copy", () => {
+    const source = readFileSync(new URL("../app/compare/ai-shorts-tools/page.tsx", import.meta.url), "utf8");
+    const phrases = [...source.matchAll(/ui\("([^"\n]+)"\)/g)].map(match => match[1]);
+    for (const locale of ["en", "ja"] as const) {
+      const ui = createUiText(locale);
+      for (const phrase of phrases) expect(ui(phrase), phrase).not.toMatch(/[가-힣]/);
+    }
   });
   it("translates new public comparison and template copy", () => {
     for (const locale of ["en", "ja"] as const) {

@@ -97,7 +97,7 @@ const selectionGuides = [
   },
   {
     title: "크레딧으로 관리하고 싶다면",
-    description: "매달 필요한 결과 수가 명확하다면 영상 길이·기능별 크레딧를 기준으로 플랜을 안내하는 피카클립이 직관적일 수 있습니다.",
+    description: "피카클립은 원본 영상 길이와 사용 기능에 따라 크레딧을 차감합니다. 결과 영상 개수와 크레딧 사용량을 구분해서 확인하세요.",
   },
   {
     title: "여러 작업을 동시에 돌린다면",
@@ -143,7 +143,7 @@ export default async function AiShortsToolsComparisonPage() {
             </article>
             <article id="fikaclip" className="scroll-mt-28 rounded-2xl border border-white/10 bg-black/15 p-6">
               <h3 className="text-lg font-black text-white">{ui("피카클립(FikaClip)")}</h3>
-              <p className="mt-3 text-sm leading-7 text-neutral-400">{ui("원본 분량보다 월 영상 길이·기능별 크레딧 중심으로 플랜을 비교하고, 영상 업로드 정보까지 함께 확인하려는 경우 잘 맞습니다.")}</p>
+              <p className="mt-3 text-sm leading-7 text-neutral-400">{ui("영상 길이와 편집 기능별 크레딧 사용량을 확인하며 제작하려는 경우 살펴볼 수 있습니다.")}</p>
             </article>
           </div>
         </section>
