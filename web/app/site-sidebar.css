@@ -487,3 +487,9 @@
 .grouped-site-sidebar .sidebar-nav-link{min-height:38px;padding-top:7px;padding-bottom:7px;margin:1px 0}
 .grouped-site-sidebar .sidebar-account{margin-top:12px;padding-top:10px}
 }
+
+/* Keep new-release indicators visible without abrupt flashing. */
+.nav-new-update-badge{display:inline-flex;align-items:center;justify-content:center;flex:none;width:18px;height:18px;border-radius:50%;background:#dc2626;color:#fff;font-size:11px;font-weight:800;line-height:1;letter-spacing:0;animation:nav-new-update-fade 3.2s ease-in-out infinite}
+@keyframes nav-new-update-fade{0%,100%{opacity:1}50%{opacity:.4}}
+.grouped-site-sidebar.is-collapsed .sidebar-nav-link .nav-new-update-badge{position:absolute;top:2px;right:1px;width:15px;height:15px;font-size:9px}
+@media(prefers-reduced-motion:reduce){.nav-new-update-badge{animation:none}}

@@ -18,6 +18,8 @@ import { I18nProvider } from "@/lib/i18n/provider";
 import { getRequestMessages } from "@/lib/i18n/server";
 import { DEFAULT_DESCRIPTION, OG_IMAGE_PATH, SITE_NAME, SITE_URL } from "@/lib/seo";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
+import { RecentUpdatesProvider } from "@/components/recent-updates-provider";
+import updatePosts from "./updates/posts.json";
 import "./globals.css";
 import "./site-sidebar.css";
 import "./editor-v2.css";
@@ -139,7 +141,9 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
             initialState={initialUsageState}
           >
             <WelcomeOverlayQueueProvider>
-              {children}
+              <RecentUpdatesProvider publishedAt={[...new Set(updatePosts.map(post => Date.parse(`${post.date}T00:00:00+09:00`)))]}>
+                {children}
+              </RecentUpdatesProvider>
               <ApplicationOverlays>
                 <YoutubeLaunchAnnouncement />
                 <UserOnboardingOverlay />

@@ -7,6 +7,7 @@ import type { ReactNode } from "react";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { HeaderUsageIndicator } from "@/components/header-usage-indicator";
 import { useUsageState } from "@/components/usage-provider";
+import { NewUpdateBadge, useRecentUpdates } from "@/components/recent-updates-provider";
 import { useI18n } from "@/lib/i18n/provider";
 
 const navigation = [
@@ -118,6 +119,7 @@ function NavigationLinks({ pathname, onNavigate, mobile = false, isEnterprise }:
   isEnterprise: boolean;
 }) {
   const { t } = useI18n();
+  const hasRecentUpdate = useRecentUpdates();
   let decodedPathname = pathname;
   try {
     decodedPathname = decodeURIComponent(pathname);
@@ -139,6 +141,7 @@ function NavigationLinks({ pathname, onNavigate, mobile = false, isEnterprise }:
           >
             <NavigationIcon path={item.path} />
             {t(item.labelKey)}
+            {item.path === "/updates" && hasRecentUpdate ? <NewUpdateBadge /> : null}
           </Link>
         );
       })}
@@ -233,7 +236,6 @@ function LegacySiteHeader({
 
 const sidebarGroups = [
   { id: "creation", labelKey: "nav.group.creation", items: [
-    { href: "/", labelKey: "nav.create" },
     { href: "/projects", labelKey: "nav.projects" },
     { href: "/templates", labelKey: "nav.templates" },
   ] },
@@ -267,6 +269,7 @@ function GroupedNavigation({ collapsed, groupsOpen, onToggle, onNavigate, isEnte
   pathname: string;
 }) {
   const { t } = useI18n();
+  const hasRecentUpdate = useRecentUpdates();
   const id = useId();
   return <nav className="sidebar-group-navigation" aria-label={t("nav.primary")}>
     {sidebarGroups.map(group => {
@@ -276,15 +279,17 @@ function GroupedNavigation({ collapsed, groupsOpen, onToggle, onNavigate, isEnte
         <h2 className="sidebar-group-heading">
           <button type="button" className="sidebar-group-toggle" aria-expanded={open} aria-controls={`${id}-${group.id}`} onClick={() => onToggle(group.id)} title={t(group.labelKey)}>
             <span className="sidebar-group-label">{t(group.labelKey)}</span>
+            {group.id === "help" && hasRecentUpdate ? <NewUpdateBadge /> : null}
             <SidebarChevron />
           </button>
         </h2>
         <div id={`${id}-${group.id}`} className="sidebar-group-items" hidden={!open}>
           {items.map(item => {
             const label = item.labelKey ? t(item.labelKey) : "EASYCUT PRIVATE";
-            const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(`${item.href}/`));
+            const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
             return <Link key={item.href} href={item.href} className="sidebar-nav-link" aria-label={label} aria-current={active ? "page" : undefined} title={collapsed ? label : undefined} onClick={onNavigate}>
               <NavigationIcon path={item.href} /><span className="sidebar-link-label">{label}</span>
+              {item.href === "/updates" && hasRecentUpdate ? <NewUpdateBadge /> : null}
             </Link>;
           })}
         </div>
@@ -299,7 +304,7 @@ function GroupedSiteSidebar({ children, showUsageIndicator }: { children: ReactN
   const { isEnterprise } = useUsageState();
   const [collapsed, setCollapsed] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [groupsOpen, setGroupsOpen] = useState<Record<SidebarGroup, boolean>>({ creation: true, discovery: true, help: true });
+  const [groupsOpen, setGroupsOpen] = useState<Record<SidebarGroup, boolean>>({ creation: true, discovery: true, help: false });
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [isMobile, setIsMobile] = useState(false);
 
