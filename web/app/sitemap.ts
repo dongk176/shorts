@@ -3,6 +3,7 @@ import { siteLocales } from "@/lib/i18n/config";
 import { localizedHref } from "@/lib/i18n/routing";
 import { absoluteUrl } from "@/lib/seo";
 import { TEAM_PAGE_VISIBLE } from "@/lib/site-visibility";
+import { updates } from "./updates/data";
 import { publishedBlogPosts } from "@/lib/blog";
 
 export const dynamic = "force-dynamic";
@@ -38,7 +39,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency,
       priority,
     })));
-  return [...pages, ...publishedBlogPosts().map((post) => ({
+  return [...pages, { url: absoluteUrl("/updates"), changeFrequency: "weekly" as const, priority: 0.7 }, ...updates.map((post) => ({ url: absoluteUrl(`/updates/${post.slug}`), changeFrequency: "monthly" as const, priority: 0.6 })), ...publishedBlogPosts().map((post) => ({
     url: absoluteUrl(`/blog/${post.slug}`),
     lastModified: post.updatedAt,
     changeFrequency: "monthly" as const,

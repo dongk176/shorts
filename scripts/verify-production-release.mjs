@@ -42,6 +42,9 @@ export const PROTECTED_APP_ROUTES = [
 // These routes are the only intentional additions relative to the currently
 // promoted production manifest. Everything else must still fail closed.
 export const ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE = [
+  // User-approved updates archive release (2026-09-30).
+  "/updates/page",
+  "/updates/[slug]/page",
   // Requested account-owned saved videos; DB promotion approval is tracked separately.
   "/saved-videos/page",
   "/en/saved-videos/page",

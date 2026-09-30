@@ -17,6 +17,7 @@ const navigation = [
   { href: "/saved-videos", labelKey: "nav.savedVideos", path: "/saved-videos" },
   { href: "/publish/channels", labelKey: "nav.channels", path: "/publish/channels" },
   { href: "/shorts-monetization", labelKey: "nav.shortsGuide", path: "/shorts-monetization" },
+  { href: "/updates", labelKey: "nav.updates", path: "/updates" },
 ] as const;
 
 function NavigationIcon({ path }: { path: string }) {
@@ -31,6 +32,9 @@ function NavigationIcon({ path }: { path: string }) {
     strokeLinejoin: "round" as const,
   };
 
+  if (path === "/updates") {
+    return <span className="site-nav-icon-frame" aria-hidden="true"><svg {...sharedProps}><rect x="4" y="3" width="16" height="18" rx="2.5"/><path d="M8 7h8M8 11h8M8 15h5M8 18h3"/></svg></span>;
+  }
   if (path === "/publish/channels") {
     return <span className="site-nav-icon-frame" aria-hidden="true"><svg {...sharedProps}><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 10.5 6.8-4M8.6 13.5l6.8 4"/></svg></span>;
   }
@@ -241,6 +245,7 @@ const sidebarGroups = [
   { id: "help", labelKey: "nav.group.help", items: [
     { href: "/pricing", labelKey: "nav.pricing" },
     { href: "/shorts-monetization", labelKey: "nav.shortsGuide" },
+    { href: "/updates", labelKey: "nav.updates" },
     { href: "/easycut-private", labelKey: null },
   ] },
 ] as const;

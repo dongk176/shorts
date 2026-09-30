@@ -1,6 +1,7 @@
 import type { SiteLocale } from "./config";
 
 export const koMessages = {
+  "nav.updates": "업데이트",
   "plan.ends": "{date} 이용 종료 예정",
   "plan.benefitsUntil": "{date}까지 현재 혜택",
   "plan.renews": "{date} 다음 갱신",
@@ -467,6 +468,7 @@ const enMessages: Messages = {
   "nav.popular": "Trending now",
   "nav.savedVideos": "Saved videos",
   "nav.shortsGuide": "Shorts Guide",
+  "nav.updates": "Updates",
   "auth.login": "Log in",
   "auth.logout": "Log out",
   "auth.myAccount": "My account",
@@ -804,6 +806,7 @@ const jaMessages: Messages = {
   "nav.popular": "リアルタイム急上昇",
   "nav.savedVideos": "保存した動画",
   "nav.shortsGuide": "ショート動画ガイド",
+  "nav.updates": "アップデート",
   "auth.login": "ログイン",
   "auth.logout": "ログアウト",
   "auth.myAccount": "マイアカウント",

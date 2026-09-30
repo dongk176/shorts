@@ -1,0 +1,522 @@
+2026-09-30 72203bc7 Lower default pop and highlight subtitle compositions into safe area
+2026-09-30 f1049c67 fix: strengthen localized SNS hooks and align safe-area typography
+2026-09-30 8943d169 feat: open SNS template beta to signed-in users with isolated editor release
+2026-09-30 8e58c082 Attest SNS editor DB requests and omit unsupported caption controls
+2026-09-30 5da7565c Normalize SNS channel uploads to reusable editor assets
+2026-09-30 0042c582 Enable isolated SNS editing and equal template preview sizes
+2026-09-30 1cc194f9 fix: show SNS channel avatar and beta label with independent ratio controls
+2026-09-30 5f1baae6 feat: show admin SNS template in the shared preview rail
+2026-09-30 940bdb81 fix: fill SNS portrait preview to match rendered video
+2026-09-30 6a576e94 Fill SNS portrait frames and preserve prior test release identities
+2026-09-30 abb6b75e Add generation-only SNS template for isolated administrator testing
+2026-09-30 de6a5c74 Add channel connections page under Discover navigation
+2026-09-30 4dacec5a Add YouTube launch guide and custom upload selects
+2026-09-30 da243e35 Release YouTube uploads with progress, source credits and mobile sheet
+2026-09-30 f549d4da Enable approved YouTube public uploads for existing review access
+2026-09-29 a21bab4a Hide mobile menu scrollbars and clarify comment template label
+2026-09-29 83b543dc Slow home headline rotation and soften the fade transition
+2026-09-29 30eaa179 Keep Japanese loanwords intact across mobile line wraps
+2026-09-29 59b2d1f4 Use onboarding app identity for immediate headline refresh
+2026-09-29 c95190eb Personalize rotating home headlines and preserve natural word wrapping
+2026-09-29 3c92f126 Clarify home workflow and localize Japanese UI copy
+2026-09-29 a2f9b90b Open project scripts by default
+2026-09-29 5048c178 Improve editor save clarity and mobile project browsing
+2026-09-29 bfc11062 fix: align new template channel anchors with preset previews
+2026-09-28 1ffb7025 fix: preserve saved channel position in subtitle editor preview
+2026-09-28 69aee14e fix: update channel position on the upload worker runtime
+2026-09-28 c2ee2c14 fix: update channel position on the stable worker runtime
+2026-09-28 c9f047a3 fix: version default channel positions across preview and rendering
+2026-09-28 61dd66db fix: surface file upload selection errors immediately
+2026-09-28 8a54aeea fix: preserve brand gradient for selected sidebar links
+2026-09-28 3c47ea0c feat: group sidebar navigation with responsive collapse controls
+2026-09-28 1ab8bba5 feat: unify popular language filter and custom mobile sheets
+2026-09-28 06757edf fix: exclude Korean signals from English popular filter
+2026-09-28 ddc02049 revert: retain permissive English language tags per user feedback
+2026-09-28 1dcfc22d fix: require unambiguous English audio for popular filter
+2026-09-28 7e23eaa4 feat: add English-only popular filter and reorder desktop controls
+2026-09-27 d2bc4e49 Keep search regression fixtures independent of saved-state requests
+2026-09-27 c40114d4 Fix editor save boundaries, hidden styles and preview parity
+2026-09-27 03c030e6 Use thumbnail bookmark icons and centered save feedback
+2026-09-27 ae6b2521 Add account-owned saved trending videos and localized navigation
+2026-09-27 e73249b0 Expand personalized Shorts results into detailed execution plans
+2026-09-27 d0c390fc Simplify Shorts guide share cards to centered typography
+2026-09-27 22cb3bfd Add localized Shorts guide social preview cards
+2026-09-27 90481f61 Bind analytics payload as text before PostgreSQL JSON parsing
+2026-09-27 994605b3 Add localized Shorts guide, paid workbooks and anonymous quiz analytics
+2026-09-27 b5a8c244 Use verified Paddle Billing transaction detail route
+2026-09-27 1c3b4ee7 Render Paddle admin summary once in shared overview
+2026-09-27 39bbc00b Show live Paddle payments and native currency totals in admin
+2026-09-27 582189fb Handle original preview category swipes with native touch events
+2026-09-27 add473be Show a persistent first-swipe hint on showcase videos
+2026-09-27 b66d42ee Switch showroom categories with source video swipes
+2026-09-27 d546a62a Preserve touch swipes across implicit pointer capture transfer
+2026-09-27 359a5a89 Support horizontal showroom swipes while preserving vertical scrolling
+2026-09-27 d59f0ec7 Restore mobile floating language selector and source autoplay
+2026-09-27 68a05611 Show category showcase before example projects for guests
+2026-09-27 8e4e46bb Reduce showcase bandwidth and serve optimized previews from existing CloudFront
+2026-09-27 bafbaf55 Simplify showcase header and diversify localized example galleries
+2026-09-27 737b4f35 Publish multilingual category showcase with native template videos
+2026-09-27 6eb6e7c7 Choose home entry locale from saved preference and country
+2026-09-27 4db28256 Choose home entry locale from saved preference and country
+2026-09-26 f9750acf Polish localized pricing and allow canceling scheduled plan changes
+2026-09-26 9748986f Align overseas pricing layout with Korean pricing UI
+2026-09-26 fdf86334 Add safe Paddle plan changes and subscriber pricing navigation
+2026-09-26 84fa90bc Add localized recurring Paddle packages with monthly allowances
+2026-09-26 a1dccbf4 Replace unpaid Paddle checkout when selecting another plan
+2026-09-26 4ca9da04 Lower overseas Paddle monthly prices
+2026-09-26 d8eca7db Verify full Paddle checkout lifecycle and refresh usage after payment
+2026-09-26 62fef9ba fix: preserve checkout through onboarding and verify local Paddle flow
+2026-09-26 083186cf test: verify Paddle sandbox checkout and subscription lifecycle
+2026-09-26 852d7273 Validate Paddle migration against production billing constraints
+2026-09-26 13776b20 Add localized Paddle monthly billing with verified usage ledger
+2026-09-26 3a60f90a Use existing custom selector for popular collection period
+2026-09-26 140a6037 Restore desktop popular collection period dropdown
+2026-09-26 db3c2f04 Bind metadata JSON as text before PostgreSQL decoding
+2026-09-26 26cf16a4 Fix YouTube audit disclosures branding and metadata retention
+2026-09-25 c7d3d314 fix: keep popular search and toolbar stable while loading
+2026-09-25 6da11e5a fix: show sliding on-off switches for each desktop filter
+2026-09-25 4b80a427 fix: enlarge filter pills and use neutral inactive colors
+2026-09-25 0199f772 fix: preserve ranking labels in narrow desktop windows
+2026-09-25 0b23ebd9 fix: compact desktop filters beside ranking tabs with distinct colors
+2026-09-25 d627dc3c fix: keep desktop popular filters visible as four pill toggles
+2026-09-24 add854f5 feat: enable private YouTube publishing for administrator-owned videos
+2026-09-24 a552a08a fix: allow a separate owner fixture for YouTube review demos
+2026-09-23 b4e79b96 ui: match popular page flame to the navigation icon
+2026-09-23 f0dfa82c fix: keep compact popular toolbar free of global panel styling
+2026-09-23 524f4ba1 ui: simplify popular discovery controls across desktop and mobile
+2026-09-23 43622d29 fix: keep two-character search aliases exact and verify request cancellation
+2026-09-23 4a8f7c22 feat: add entitlement-gated trigram search to popular videos
+2026-09-22 817a2fb0 fix: put YouTube first in the shared publishing dialog
+2026-09-22 68a7cdc4 feat: prepare scoped YouTube reviewer publishing from production baseline
+2026-09-21 9bac0482 feat: prepare restricted single-video Meta reviewer access
+2026-09-21 e469dc2a fix: remove popular collection schedule helper text
+2026-09-21 a88ea38d fix: clarify CC BY view counter with desktop tooltip
+2026-09-21 77b28a2e fix: bind caption comparison as JSON to avoid false edit conflicts
+2026-09-21 cf01373a fix: repair translated 5:4 caption padding before editor rendering
+2026-09-21 05fb4425 fix: return verifiable Meta data deletion receipts
+2026-09-21 4ce8dd98 Fix Instagram OAuth permission array parsing
+2026-09-21 d18c2984 Add redacted diagnostics for Meta OAuth failures
+2026-09-21 d73b113d feat: prepare admin-only Instagram and Threads publishing
+2026-09-21 f168399e chore: add TikTok production domain verification
+2026-09-21 f032fbe8 feat: enable administrator-only TikTok publishing review
+2026-09-20 01b25158 Show publishing progress and results in a modal overlay
+2026-09-20 72f654ce Allow TikTok retry after public account rejection
+2026-09-20 0ea438ed Add guarded local TikTok connection and publishing flow
+2026-09-20 bf137f86 fix: preserve full localized showcase frames
+2026-09-20 c850c557 Keep example refreshes in the current page language
+2026-09-20 cab0f357 Localize English and Japanese showcase media and examples
+2026-09-20 f4b90198 Prepare social publishing review pack and offline validation contracts
+2026-09-20 81ff31b9 Fix background image runtime packaging and isolate library reads
+2026-09-20 17729ae2 Localize live Toss pricing before the first render
+2026-09-20 a822c090 Align existing regression checks with localized copy and current policy
+2026-09-20 c58269cc fix(i18n): render localized UI before hydration
+2026-09-20 ac40cb76 fix(i18n): fill product translation gaps and correct dynamic copy
+2026-09-19 dffdadfc Preserve site language through login and protected page redirects
+2026-09-19 78e0248b Add shared Korean English and Japanese site routes
+2026-09-20 8dad9ea9 Integrate local YouTube publishing with localized routes
+2026-09-20 ae14f20b Prepare multilingual YouTube test privacy disclosures
+2026-09-20 be029e98 fix(i18n): render localized UI before hydration
+2026-09-20 e8f739fc fix(i18n): fill product translation gaps and correct dynamic copy
+2026-09-19 3e88ef97 Preserve site language through login and protected page redirects
+2026-09-19 e51aa64c Add shared Korean English and Japanese site routes
+2026-09-19 47a03767 Fix announcement auth and bound project reads and catalog refresh
+2026-09-18 98eee661 Fix caption punctuation, preview reflow and completed comment retries
+2026-09-18 5a4a6fb0 fix(web): sequence creation guides and preserve preview content
+2026-09-18 3f8d6f7c fix(web): preserve template choices and localize editor dialogs
+2026-09-17 f149fdca Add manual admin expense ledger and private receipts
+2026-09-18 a929d5c8 fix: preserve scripts and editing through caption failures
+2026-09-17 187c9446 Only render translated captions when selected by the template
+2026-09-17 1562cd38 Preserve built-in comment layout across languages
+2026-09-18 1fa3b717 fix: preserve scripts and editing through caption failures
+2026-09-17 eed88a94 Add manual admin expense ledger and private receipts
+2026-09-17 1222a195 Only render translated captions when selected by the template
+2026-09-17 ce9f7a63 Preserve built-in comment layout across languages
+2026-09-17 c4cee419 Clarify source detail grounding and finish pricing locale copy
+2026-09-17 05f1b614 Scope translated review styling to the review component
+2026-09-17 c9d5b434 Localize language switch UI, template samples and guidance
+2026-09-17 a531dbda Simplify language comments and remove currency conversion
+2026-09-17 9cfaa9e5 Simplify language generation and preserve partial subtitles
+2026-09-17 0da836b4 Simplify language comments and remove currency conversion
+2026-09-17 402b1a80 Simplify language generation and preserve partial subtitles
+2026-09-17 3089bed0 fix(validation): repair small timing drift and preserve clips on metadata issues
+2026-09-17 da47b0bf fix(editor): tolerate small timeline metadata drift without shifting edits
+2026-09-16 6254ccc4 Show gross and net sales in independent admin dropdowns
+2026-09-16 63f9bfc3 fix: align comment wrapping and preserve editor text labels
+2026-09-16 a92eb319 fix: preserve authored preview content across site languages
+2026-09-16 8bb3038f Keep caption comment previews working without Intl Segmenter
+2026-09-16 82560511 Match caption previews and template comment spacing to rendered output
+2026-09-16 0971c162 Fix translated caption title and comment composition bounds
+2026-09-16 aedb78b1 fix: align comment wrapping and preserve editor text labels
+2026-09-16 4c1e4e44 fix: preserve authored preview content across site languages
+2026-09-16 01567a7d Keep caption comment previews working without Intl Segmenter
+2026-09-16 5895c4ec Match caption previews and template comment spacing to rendered output
+2026-09-16 a2c23b10 Fix translated caption title and comment composition bounds
+2026-09-16 d3c56a33 Fix caption-only editor saves and preserve preset comment placement
+2026-09-16 279bf725 Preserve guide completion when the range tutorial is skipped
+2026-09-16 ad76c3fe Show language guide until explicit account opt-out
+2026-09-16 ffa3da9b Fix language guide account identity check
+2026-09-16 60f9508b Track restored analysis in locale refresh effect
+2026-09-16 f9fc4bc2 Preserve active creation choices across site locale refresh
+2026-09-15 9feb9e7d Remove remaining test labels from creation and editing
+2026-09-15 773c276d Complete language UI and account guide behind admin public switch
+2026-09-15 768f223f Add account-based opt-in rollout for language creation
+2026-09-14 a75fa0ef Simplify administrator Japanese and English generation prompts
+2026-09-14 b11de2be Add 99 scheduled creator articles to official blog
+2026-09-14 15879029 Relax admin language title and comment validation
+2026-09-14 0ae7d941 Localize administrator language-test selection instructions
+2026-09-13 2dae7eb1 feat: publish official EasyCut blog with 32 sourced creator guides
+2026-09-13 2075acfc fix: cap referral installments at original contract and reconcile refunds
+2026-09-13 2e1e5e68 feat: pin cultural Flash comments to a new admin language release
+2026-09-13 72b8a384 fix: use one polling loop for home job progress
+2026-09-13 c14431e1 fix: improve public SEO discovery and correct page metadata
+2026-09-12 e3a97ec6 feat: group admin navigation while preserving all production controls
+2026-09-12 281fb6fd fix: refresh open home counters and align animation with collection cadence
+2026-09-12 3a0f1ad8 fix: preserve cumulative view counter animation after catalog refresh
+2026-09-12 b7480305 Preserve exact language worker registry keys on database reads
+2026-09-12 37e6b5cb Attest language test rendering independently of public rollout
+2026-09-12 80c7d214 Add isolated admin language creation with pinned worker releases
+2026-09-12 3ee360a0 fix: bound administrator discovery status reads
+2026-09-12 188a0b2b Recover abandoned Japan runs without repeating daily batches
+2026-09-12 0d91cd45 Add bounded Japan discovery with independent collection windows and live controls
+2026-09-12 6035d752 Roll popular collection periods over at 17:20 after successful searches
+2026-09-12 a5a9a1fe Polish creator consent flow, phone entry and native YouTube links
+2026-09-12 4c58ce0b Keep creator actions pinned during keyboard input and link platform icons
+2026-09-12 89ea0c1b Fix creator application keyboard layout and add dedicated share image
+2026-09-12 963a9c48 Launch reviewed partner applications with admin selection and 100-minute support
+2026-09-11 195d24f5 Add gated Japanese discovery and language filtering
+2026-09-11 68d213b8 Prepare combined download and creator release from current production
+2026-09-11 fa484932 Add creator support enrollment and scheduled usage grants
+2026-09-11 ce7bf7e1 Fix project bulk downloads with a single streaming ZIP
+2026-09-11 d777d407 Fix project bulk downloads with a single streaming ZIP
+2026-09-11 f9dffc44 Add creator support enrollment and scheduled usage grants
+2026-09-11 3e33adac Restore cumulative popular lists with collected-period filters
+2026-09-11 54b4e34d Polish discovery calendar and use mobile bottom sheet
+2026-09-11 9bbf7f3f Keep language selector clear of the trending calendar
+2026-09-11 e6630455 Handle day-long video metadata and first-day calendar gaps
+2026-09-11 79a01a52 Preserve incomplete public metadata as retryable catalog history
+2026-09-11 92b74e89 Preserve discovery history and reconcile quota before activation
+2026-09-10 f17aa769 Preserve lab shorts when subtitle translation is incomplete
+2026-09-10 b6afcbe8 feat: settle referral earnings by month on the following 10th
+2026-09-10 ab889ddd fix: preserve release attestation locks in bounded read transactions
+2026-09-10 810d2bba fix: bound state reads and recover isolated database connections
+2026-09-10 1e147cf0 fix: activate ThePayOne upgrades while deferring failed refunds
+2026-09-10 ca220896 Preserve caption-only text and style edits in editor saves
+2026-09-10 ef43ad69 Keep saved selection bounds in sync after deleting a video clip
+2026-09-10 1065a600 fix(lab): label translated captions as plain in editor
+2026-09-10 925effef feat(lab): translate subtitles with persistent plain caption rendering
+2026-09-10 2cde7a8b Use custom content language dropdowns and isolate lab browser logins
+2026-09-09 6923a1e8 ui(lab): align language cards in desktop columns
+2026-09-09 8f724fe2 fix: preserve selected subtitle video ratio through creation and editing
+2026-09-09 890c304d test: assert shared V4 title presentation in creation cards
+2026-09-09 f0d49fdd fix: preserve selected subtitle video ratio and placement in lab
+2026-09-09 54b3ebdf Reject omitted monetary units in localized output without changing legacy requests
+2026-09-09 0789ce96 Keep factual qualifiers when shortening localized text
+2026-09-09 a5531835 Detect unlabeled vague monetary amounts and preserve claim relationships
+2026-09-09 0773bb6f fix: preserve legacy free-video history during catalog rollout
+2026-09-09 2bb87519 Handle Japanese range validation and omit uncertain amounts during repair
+2026-09-09 51d911f1 fix: keep tablet editor preview within its layout
+2026-09-09 ceda65a9 Fix lab localized candidate recovery, money grounding and comment emoji
+2026-09-09 63e180d9 fix: harden discovery retention and responsive filter states
+2026-09-09 295dc113 fix: gate legacy YouTube snapshot cleanup behind preservation checks
+2026-09-09 d5648bfc feat: retain YouTube discoveries and add trending calendar
+2026-09-09 9a27c09b Allow bounded Gemini output for lab language verification
+2026-09-09 16e4d1f1 Use saved lab project language for comment action labels
+2026-09-09 b3d29afd Separate lab source language and validate localized titles and comments
+2026-09-09 6fef1879 Refine lab comment instruction languages from controlled comparison
+2026-09-08 90e5bfc1 fix: stop restarting completed Toss checkout
+2026-09-08 9d2adff6 fix: show product feedback only after viewing a result
+2026-09-08 9263fa2a Separate Japanese font support from subtitle template access
+2026-09-08 aead0671 Fix Japanese glyph rendering for isolated lab projects
+2026-09-08 1195a6f6 Add project title and comment language selection in lab
+2026-09-07 a25f5b36 Run isolated lab controls within existing Lambda concurrency
+2026-09-07 6e782220 Sync lab with the promoted production billing fix
+2026-09-07 ad78c195 fix(billing): preserve access during early ThePayOne renewals
+2026-09-07 79115805 Replace lab upload ALB with on-demand direct HTTPS and pinned task admission
+2026-09-07 c3a43e03 Validate complete lab runtime admission, evidence registration, and isolated upload wiring
+2026-09-07 a499c0b6 Prepare isolated lab editor, media, upload, and admission runtime
+2026-09-07 0ddbcfc5 Preserve lab diagnostic boundary and record OFF connection deployment
+2026-09-07 1d3a9649 Prepare isolated web identity and read-only lab connection preflight
+2026-09-06 83ff635f Prepare isolated lab worker execution contracts and safety checks
+2026-09-06 8ae590a5 Harden lab isolation and prepare guarded web release packages
+2026-09-06 4913c5da Add local test lab using isolated schema in existing Supabase project
+2026-09-05 d8f0cb42 feat(admin): add cached daily trend periods and responsive chart axes
+2026-09-05 31267cd4 fix(web): separate mobile template dragging from controls
+2026-09-05 6ee9c3a8 fix(web): refine mobile template controls
+2026-09-05 1cae7490 feat(web): enable mobile template editing
+2026-09-04 d7918a60 feat(web): align template editor sidebars
+2026-09-04 68a9cdef fix(web): stabilize subtitle template dragging
+2026-09-04 7293a0dd fix(web): align custom template video preview
+2026-09-03 54f41c6e fix(web): simplify mobile usage indicator
+2026-09-03 6facabd1 fix(web): isolate mobile header styles
+2026-09-03 01f95888 feat(web): rotate home metrics and show mobile usage
+2026-09-03 f11cf1e4 remove home metric help
+2026-09-03 d3386e0c refine home metric help
+2026-09-03 a0856d9a feat(web): explain home metrics
+2026-09-03 895cd76b feat(web): toggle home metrics on click
+2026-09-03 fcf4b607 fix: animate reusable view counter updates
+2026-09-03 9104c9ef feat: add reusable video view counter
+2026-09-03 36847628 fix(web): keep legacy editor title geometry stable
+2026-09-03 986287c4 fix(web): preserve subtitle template title layout in editor
+2026-09-03 568b7bba perf: paginate admin and project reads
+2026-09-02 15035087 fix: harden editor and ingestion capacity
+2026-09-01 35510b84 fix: prevent stalled concurrent administrator reads
+2026-09-01 a32b56e9 chore: add temporary admin response phase diagnostics
+2026-08-31 3c0589ed chore: prepare verified design web release and align admin checks
+2026-08-31 872901a6 chore: prepare verified design web release and align admin checks
+2026-08-31 ef1024e1 fix: safely retain upload tasks and enable stopped-upload admin design tests
+2026-08-31 a04f7779 Add reusable backgrounds and template text with guarded rollout
+2026-08-31 845738f3 Show file upload entry before login with authentication overlay
+2026-08-31 a41d8471 Fix editor apply title consistency and failure visibility
+2026-08-30 f5d413a3 feat: allow completed live replay URLs
+2026-08-30 149604c1 fix: pin public uploads to verified release
+2026-08-30 b5fe23d1 fix: show verified custom templates for uploads
+2026-08-30 5ef54b68 feat: add desktop upload companion action
+2026-08-30 f3d9c92e fix: gate file uploads with beta notice
+2026-08-30 41e55406 fix: harden file upload capacity admission
+2026-08-29 e231507f fix: synchronize editor timeline before apply
+2026-08-29 a1e5b17b fix: bind built-in v5 subtitles to unified target
+2026-08-29 f1a4e954 fix: preserve trusted v5 subtitle identity
+2026-08-29 a66bdf58 feat: serialize file upload capacity admission
+2026-08-29 ad8be7dc fix: align file upload UX and render contract
+2026-08-28 843da8c4 fix: isolate upload candidate release binding
+2026-08-28 164ecb43 feat: safely prepare file upload release
+2026-08-28 a5411d51 fix: isolate upload candidate release binding
+2026-08-28 dbd0c102 feat: safely prepare file upload release
+2026-08-28 1fcb9b3f fix: require v4 capability on every project lane
+2026-08-28 43893155 fix: preserve subframe caption words
+2026-08-28 e08885fb fix: recover YouTube project thumbnails
+2026-08-28 e427585b fix: align subtitle template access checks
+2026-08-28 73624aa5 fix: avoid empty project session UUIDs
+2026-08-28 4a9ad280 fix: harden job admission and long source readiness
+2026-08-28 e106d24f fix: harden job admission and long source rendering
+2026-08-27 094dc4ad fix: make title line boxes platform deterministic
+2026-08-27 8620e36a fix: stabilize cross-platform editor font parity
+2026-08-27 3d3ec5c5 fix: fail closed on legacy caption edits
+2026-08-27 0ba1e6fb feat: add exact render v4 release control
+2026-08-27 0a2eaf78 fix: make title line boxes platform deterministic
+2026-08-27 752da57b fix: stabilize cross-platform editor font parity
+2026-08-27 7df12b7b chore: align render candidate with current production
+2026-08-27 a1e4ce42 fix: fail closed on legacy caption edits
+2026-08-27 e5b655d2 fix: show managed account limit range
+2026-08-27 8623caa2 feat: allow 30 concurrent managed-account jobs
+2026-08-27 4cbebfc0 feat: add exact render v4 release control
+2026-08-26 bb01bcee feat: formalize production batch target control plane
+2026-08-26 88e47bbc fix: grant Toss subscribers paid feature access
+2026-08-26 79fdbb89 fix: keep template login on the selected flow
+2026-08-26 aa24a4ee fix: authorize verified subtitle worker release
+2026-08-26 a4e2065e fix: align pop subtitle spacing across editor and renders
+2026-08-26 3c28eede fix: use public subtitle editor fallback
+2026-08-26 e9b17654 fix: align template access and editor rendering
+2026-08-26 fe192685 fix: restore subtitle templates for all users
+2026-08-26 59fca6f9 feat: configure issued account job limits
+2026-08-26 10bc4c2f feat: publish unified subtitle templates safely
+2026-08-26 cdc122d6 feat(managed): enable paid features for issued accounts
+2026-08-26 b3f133bf feat(enterprise): show contract products in plan management
+2026-08-26 4f86e518 feat(enterprise): tailor navigation and account history
+2026-08-26 ec8b9868 style(enterprise): flatten payment overlays
+2026-08-26 952f2188 feat(enterprise): add sequential billing contracts
+2026-08-25 66872785 chore(db): bound enterprise payment migration locks
+2026-08-25 be04308b feat(admin): add enterprise payment requests
+2026-08-25 c3848c62 feat(admin): classify issued accounts
+2026-08-25 8ca73a21 fix(pricing): enlarge Toss checkout overlay controls
+2026-08-25 361ca08a fix(pricing): label Toss billing cycles clearly
+2026-08-25 282f893e feat(pricing): sell Toss packages on 3 6 12 month terms
+2026-08-25 d34a8e18 fix(pricing): align maximum discount badge size
+2026-08-25 55852433 fix(templates): lock brand colors for custom templates
+2026-08-25 24d1b394 fix(pricing): balance plan amount sizing
+2026-08-25 9242f8db chore: snapshot current production before worker canary fix
+2026-08-24 42f86804 Refine pricing modal controls
+2026-08-24 4fce2c39 Refine Toss checkout confirmation and terms
+2026-08-24 4bfad9e9 Enable Toss for unpaid customers with Hana safety gate
+2026-08-24 f28e1fe8 fix(web): isolate canary subtitle reads
+2026-08-24 f586c367 Implement admin-canary unified template subtitles
+2026-08-24 f72c0ea1 Log popular API failure kinds
+2026-08-24 01f005fb Fix complimentary PRO popular filters
+2026-08-24 0c05d0ae Fix ThePayOne recurring webhook handling
+2026-08-24 3b8d5819 Match admin upload UI to local design
+2026-08-24 25e601a5 Use source-neutral project reveal copy
+2026-08-23 dbfdea0c Add isolated admin file upload canary
+2026-08-21 01fec6bc Route unpaid customers back to ThePayOne
+2026-08-21 a5a1f587 fix: show Toss pricing to signed-out users
+2026-08-21 7ea3699a fix: restore legacy pricing card layout
+2026-08-21 ec468ea1 fix: simplify Toss card failure guidance
+2026-08-21 e576f55b fix: harden Toss billing rollout
+2026-08-21 f7e3bcdd fix: clarify subscription plan transitions
+2026-08-20 bb205b85 fix: equalize pricing card layout
+2026-08-20 2ce22ccd fix: match Toss pricing to local design
+2026-08-20 6dc88c5b fix: align Toss billing checkout UI
+2026-08-20 1b30b2da fix: harden first Toss subscription checkout
+2026-08-20 3d7f65a5 feat: finalize Toss billing pricing experience
+2026-08-20 57bb5b2e fix: protect active legacy billing customers
+2026-08-20 602a2b81 feat: add production-safe Toss billing rollout
+2026-08-19 7441f8c2 feat: amortize referral commissions monthly
+2026-08-19 72b26271 feat: amortize referral commissions monthly
+2026-08-18 16441e08 fix(web): localize dynamic project and activity labels
+2026-08-18 0d3310b4 fix(web): finish locale coverage on account and editor UI
+2026-08-18 43797a40 fix(web): complete locale coverage for legacy controls
+2026-08-18 32be91a3 fix(web): localize customer-facing UI controls
+2026-08-18 dc61a1bc chore: stabilize production billing and worker release
+2026-08-18 f99bc969 fix: extend conversion maintenance window
+2026-08-18 a61a1ab3 feat: show timed conversion maintenance notice
+2026-08-17 9a4e2644 feat: add partner application social preview
+2026-08-17 7e3d27f1 fix: relax partner application input on mobile
+2026-08-17 d58fb303 fix: make partner applications submit on mobile
+2026-08-17 3bf5fe34 feat: launch partner applications and fix package replacement
+2026-08-16 b96b4fa9 fix: collect feedback from free trial users
+2026-08-15 126339a1 feat: animate home counter from one
+2026-08-15 7c1b8983 fix: disable admin payment refunds
+2026-08-15 1dd5ee54 chore: snapshot local work before production sync
+2026-08-14 51f3245c feat: add creator project outreach shares
+2026-08-14 e57604b6 chore: update public support email
+2026-08-14 9bbf2d1b feat: separate marketing consent from completion emails
+2026-08-13 b84ae58f fix: keep source-range jobs on fixed worker
+2026-08-13 1035d961 fix: refine viral score badge layout
+2026-08-13 0be94f74 feat: rank highlights by AI viral score
+2026-08-13 27281d4c Raise highlight maximum to 120 seconds
+2026-08-12 3cea1a51 fix: prevent mobile pricing overflow
+2026-08-12 6430d834 fix: enable analytics cookies without ad tracking
+2026-08-12 08015e84 fix: restore production mobile and session behavior
+2026-08-12 5346ff53 chore: recover promoted production baseline
+2026-08-12 08bdd6e9 feat: add project auth and private channel
+2026-08-12 bf42a98c fix: shorten ThePayOne track IDs
+2026-08-12 19764a53 feat: guide first-time subtitle template users
+2026-08-12 92156e00 feat: remediate legacy recurring cards
+2026-08-12 5c340584 fix: enable all editor fonts in stable
+2026-08-12 9ac4202c feat: enable mobile editor controls
+2026-08-12 dc153008 fix: preserve edited captions after video trims
+2026-08-12 a65c4f12 fix: isolate local payment tests from production
+2026-08-11 ad0ce1c8 fix: fail closed on public transcription approval
+2026-08-11 aeb2cf73 test: cover public subtitle capability gates
+2026-08-11 d9ab8c95 feat: gate public subtitle suite rollout
+2026-08-11 0bbc799d fix: keep caption edits and history aligned
+2026-08-11 e8b4fe41 chore: remove local payment test surfaces from release
+2026-08-11 0fbc430b fix: apply Vercel ignores from repository root
+2026-08-11 639a931a chore: exclude local payment test routes from Vercel
+2026-08-11 b98e8500 feat: add admin editor subtitle canary
+2026-08-11 38001973 chore: bundle approved web font assets
+2026-08-11 0fb68412 feat: toggle admin editor subtitles
+2026-08-11 5b0fad6d fix: keep editor hook title above video
+2026-08-11 befffc86 feat: refine admin subtitle template titles
+2026-08-11 6a9cbf85 fix: keep hook title above editor video
+2026-08-11 2e707d90 fix: smooth editor split preview playback
+2026-08-10 f40956f0 fix: match admin caption preview to renderer
+2026-08-10 94115307 feat: retain and reflow editable captions
+2026-08-10 54e37aa3 feat: edit admin caption styling and copy
+2026-08-10 50de69b1 fix: advance and align caption templates
+2026-08-10 009b803b fix: match caption editor preview to render
+2026-08-10 4f2fd273 fix: edit actual caption template layout
+2026-08-10 64c22cab feat: add admin subtitle layout controls
+2026-08-10 8d9d6c27 feat: add isolated local admin preview
+2026-08-10 1efb1995 fix: persist rights confirmation cue
+2026-08-10 9ac6b252 fix: simplify admin shorts creation flow
+2026-08-10 94df31bf fix: streamline admin template layout
+2026-08-10 d7c28a26 fix: restore admin template settings layout
+2026-08-10 d9031292 feat: simplify admin first-project settings
+2026-08-10 2c42e6b3 Add subtitle position picker and guide
+2026-08-10 9d00b626 Fix branded templates and download filenames
+2026-08-10 c0f11761 Add admin brand color controls
+2026-08-09 9aee500c Unify subtitle templates in scrolling rail
+2026-08-09 fdcc34b0 Add centered caption template variants
+2026-08-09 f523fff4 fix: separate portrait caption layout
+2026-08-09 fd398b36 fix: polish caption punctuation and layout
+2026-08-09 a30a2244 fix: align caption spacing and preview
+2026-08-09 c73eb04e fix: harden caption template generation
+2026-08-09 8aebc462 fix: refine caption template layout
+2026-08-09 bd9a8213 fix: align caption templates with render layout
+2026-08-08 05962cd6 feat: add admin subtitle template canary
+2026-08-06 bf0c69b0 feat: add isolated ElevenLabs transcription canary
+2026-08-07 464ad165 grant managed accounts full product access
+2026-08-06 33947ef7 allow managed accounts to edit and download
+2026-08-06 2fc575c7 fix source range guide timing and add preview player
+2026-08-06 d541dca1 fix(web): reshow corrected source range guide
+2026-08-06 ed0f0353 fix(web): guide source range handles
+2026-08-06 505aedf3 feat(web): guide source range selection
+2026-08-05 8e46f0a7 feat: process selected ranges from full source downloads
+2026-08-05 5763bd5c feat: add guarded source range selection
+2026-08-05 38b35734 feat(editor): add admin-only render fidelity v3 canary
+2026-08-05 02625fb2 feat: select and bill source video ranges
+2026-08-05 af28742d fix: align home results and reusable video history
+2026-08-04 a20884cd fix: preserve payment release while saving email preferences
+2026-08-04 39d60223 fix: save completion email preferences
+2026-08-04 97620521 fix: treat card issuer as payment guidance
+2026-08-04 33497247 fix: activate packages after Pro conversion
+2026-08-04 8b151678 fix: register Easycut Pro at 9,900 won
+2026-08-04 d7029aa4 feat: replace Easycut Pro with packages immediately
+2026-08-04 0d5fc603 fix: show feedback after completed project exit
+2026-08-04 977ee855 fix(ui): remove refund inquiries and label payment failures
+2026-08-04 b89470f0 fix(admin): recover stalled database pools
+2026-08-04 c1869cb6 fix(admin): discard router prefetches before rendering
+2026-08-04 a463a3b6 fix: stop admin prefetch storms
+2026-08-04 cdc6ae00 fix(admin): bound dashboard queries and prevent release regressions
+2026-08-03 87aa4403 fix: allow deleting edited subtitle cues
+2026-08-03 cdf1502a feat: release admin onboarding and usage tools
+2026-08-03 71b6b0ac style: improve refund policy notice contrast
+2026-08-03 8bdbb810 feat: publish refund policy v4
+2026-08-03 08889155 fix: protect legal document text
+2026-08-03 dc9f14ee fix: paginate admin billing orders
+2026-08-03 6dc86566 fix: bound complete Supabase auth operations
+2026-08-02 a2d31d84 fix: restore public guidebook route
+2026-08-02 ccbce24c fix: complete payment input auto advance
+2026-08-02 5136f3c6 fix: stabilize admin auth and payment sheets
+2026-08-02 594cae43 fix: open title tools from preview
+2026-08-02 c5b26f8a fix: preserve hook title row styles
+2026-08-02 cb03bc9c fix: keep hook title sizing in sidebar
+2026-08-02 a5211204 fix: unify hook title size controls
+2026-08-02 056a6540 fix: match hook title preview and render geometry
+2026-08-02 c9c514ee fix: recenter scaled overlays at horizontal bounds
+2026-08-02 b1e09d08 fix: clamp scaled editor overlay positions
+2026-08-02 c451ea3d fix: restore latest admin console UI
+2026-08-02 29686814 fix: preserve editor title styles and channel layer
+2026-08-02 6105b2fc feat: add editor channel visibility and font apply dialog
+2026-08-02 63314c7a fix: harden editor candidate rendering
+2026-08-02 9e1a7182 fix: retain AI comment usage audit
+2026-08-02 d785bac5 fix: restore unified latest production release
+2026-08-01 04f187ba fix: refresh saved editor drafts across tabs
+2026-08-01 d5ba4c2f fix: restrict editor canary to administrators
+2026-08-01 66190ada feat: isolate editor v2 render canary
+2026-08-01 ab5b134c feat: harden editor v2 local editing workflow
+2026-07-31 a86748e9 fix: reject degenerate transcript repetitions
+2026-07-31 6956ccdf feat: add text tool to editor v2
+2026-07-31 50825715 feat: show package installment limit before checkout
+2026-07-31 10891202 fix: cap manual installments at six months
+2026-07-31 74c1b5e0 fix: guide stale package checkouts to refresh
+2026-07-31 ec51193d fix: integrate manual billing with current product UI
+2026-07-31 c5026377 Snapshot latest manual package billing and installments
+2026-07-31 27bdf248 fix: make onboarding migration replay safe
+2026-07-31 478d85f9 feat: restore product UI behind legacy editor guard
+2026-07-31 8d2543e7 feat: add isolated editor release promotion system
+2026-07-31 bf1f077a Preserve rerender progress across project visits
+2026-07-31 5aa97cd9 Restore direct comment and subtitle editing
+2026-07-31 62c85845 Preserve editor content across template changes
+2026-07-31 a8f8c205 Fix editor history controls on desktop
+2026-07-31 38424fe0 Switch from text settings to sidebar tools
+2026-07-31 3d8adf86 Focus sidebar on selected text overlays
+2026-07-31 475eb4b3 Open text settings when selecting overlays
+2026-07-31 9f3d7ae7 Ship editor document v2 rendering pipeline
+2026-07-31 490d9993 Ship editor document v2 rendering pipeline
+2026-07-29 60d26181 Restore the site footer
+2026-07-29 a6e85e56 Require project feedback submission
+2026-07-29 730967db Deploy billing, download, and product UX updates
+2026-07-29 3fa0fd6d Ship current product and processing updates
+2026-07-29 ad1d752f Keep comment template channels visible during gaps
+2026-07-29 449d195f Fix editor apply flow and usage funding order
+2026-07-29 6608bb57 Deploy onboarding and paid access updates
+2026-07-28 73fb8c41 Deploy current product and playback updates
+2026-07-28 a6cb5820 Type editor template snapshots as JSON
+2026-07-28 f00ae8e2 Keep editor template previews aligned with renders
+2026-07-28 8e2e02b4 Grant paid members editor launch bonus
+2026-07-28 1d2a5cde Deploy editor, refund, and referral operations
+2026-07-28 df220cdd Support complimentary service access
+2026-07-27 7e24353f Remove obsolete analytics consent banner
+2026-07-27 f0935f82 Merge remote-tracking branch 'origin/main' into codex/youtube-ingestion-foundation
+2026-07-27 87eb5d07 Publish current production state and fix mobile editor
+2026-07-27 ce1f6ead Fix reliable iOS video downloads
+2026-07-27 d82d2c74 Add edit timeline capture foundation (#8)
+2026-07-27 e8e36810 Add edit timeline capture foundation
+2026-07-27 6849e07f Add edit timeline capture foundation
+2026-07-26 290a93d1 Strengthen international transfer and AI disclosures
+2026-07-26 710d5a80 Strengthen international transfer and AI disclosures
+2026-07-26 a1fff2d3 Open sign-in modal from popular page gates [skip ci]
+2026-07-26 7368c62c Deploy product updates and fixed template layouts
+2026-07-25 0ede2219 Make last used card the account default
+2026-07-25 ee04cc93 Resolve stored card issuer names
