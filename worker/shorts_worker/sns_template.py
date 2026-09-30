@@ -153,7 +153,8 @@ def validate_copy(value: Any, ratio: str, language: str) -> dict[str, Any]:
 
 
 def copy_messages(
-    *, title: str, reason: str, transcript: str, ratio: str, language: str
+    *, title: str, reason: str, transcript: str, ratio: str, language: str,
+    community: bool = False,
 ) -> list[dict[str, str]]:
     layout = sns_layout(ratio)
     title_max, body_max, tag_max = copy_budgets(ratio, language)
@@ -249,7 +250,7 @@ def copy_messages(
             "- hashtags配列で返し、指定数が0の場合は空配列を返してください。"
         ),
     }
-    return [
+    messages = [
         {
             "role": "system",
             "content": prompts[language] + '\n\n'
@@ -268,6 +269,14 @@ def copy_messages(
             ),
         },
     ]
+
+    if community:
+        from .community_copy import board_prompt
+        messages[0]["content"] = messages[0]["content"].replace(
+            'Return JSON with exactly {"title": "...", "body": ["..."], "hashtags": []}.',
+            board_prompt(language),
+        )
+    return messages
 
 
 def validate_generated_language(content: dict[str, Any], language: str) -> None:
@@ -288,12 +297,12 @@ def validate_generated_language(content: dict[str, Any], language: str) -> None:
         )
 
 
-def copy_response_format(ratio: str, language: str) -> dict[str, Any]:
+def copy_response_format(ratio: str, language: str, community: bool = False) -> dict[str, Any]:
     layout = sns_layout(ratio)
     title_max, body_max, tag_max = copy_budgets(ratio, language)
     target = {"ko": "Korean", "en": "English", "ja": "Japanese"}[language]
     tags = 3 if layout.hashtags else 0
-    return {
+    response = {
         "type": "json_schema",
         "json_schema": {
             "name": "SnsCopy", "strict": True,
@@ -323,13 +332,27 @@ def copy_response_format(ratio: str, language: str) -> dict[str, Any]:
         },
     }
 
+    if community:
+        from .community_copy import BOARD_LIMITS
+        low, high = BOARD_LIMITS[language]
+        schema = response["json_schema"]["schema"]
+        schema["required"].append("boardName")
+        schema["properties"]["boardName"] = {
+            "type": "string",
+            "description": f"Natural {target} board name, {low}–{high} characters "
+                           "including spaces; distinct from the hook title.",
+        }
+    return response
+
 
 def generate_copy(
-    settings: Settings, *, title: str, reason: str, transcript: str, ratio: str, language: str
+    settings: Settings, *, title: str, reason: str, transcript: str, ratio: str, language: str,
+    community: bool = False,
 ) -> dict[str, Any]:
     layout = sns_layout(ratio)
     messages = copy_messages(
-        title=title, reason=reason, transcript=transcript, ratio=ratio, language=language
+        title=title, reason=reason, transcript=transcript, ratio=ratio, language=language,
+        community=community,
     )
     from openai import OpenAI
 
@@ -356,10 +379,22 @@ def generate_copy(
                 try:
                     response = client.chat.completions.create(
                         model=model, messages=messages,
-                        response_format=copy_response_format(ratio, language),
+                        response_format=copy_response_format(ratio, language, community),
                     )
                     raw = response.choices[0].message.content or ""
-                    content = validate_copy(json.loads(raw), ratio, language)
+                    value = json.loads(raw)
+                    board_name = None
+                    if community:
+                        from .community_copy import validate_board_name
+                        if not isinstance(value, dict):
+                            raise ValueError("Return a JSON object including boardName.")
+                        board_name = validate_board_name(value.pop("boardName", None), language)
+                        hook_key = str(value.get("title", "")).replace(" ", "")
+                        if board_name.replace(" ", "") == hook_key:
+                            raise ValueError("boardName must name the space, not repeat title.")
+                    content = validate_copy(value, ratio, language)
+                    if board_name is not None:
+                        content["boardName"] = board_name
                     validate_generated_language(content, language)
                     return {**content, "source": "ai"}
                 except (ValueError, TypeError) as error:
@@ -400,7 +435,9 @@ def generate_copy(
         "en": ["#Highlights", "#Video", "#Moment"],
         "ja": ["#ハイライト", "#動画", "#ワンシーン"],
     }
+    from .community_copy import BOARD_FALLBACK
     return {
+        **({"boardName": BOARD_FALLBACK[language]} if community else {}),
         "title": title,
         "body": lines,
         "hashtags": tags[language] if layout.hashtags else [],

@@ -9,9 +9,11 @@ from PIL import Image, ImageDraw, ImageOps
 
 from .sns_template import SnsLayout, draw_text, fit_text, font, text_width
 
-COMMUNITY_RELEASE_ID = "0641d236-5e76-467e-95f3-bf695e6d6083"
-COMMUNITY_EDITOR_RELEASE_ID = "11a62875-b24a-4874-9794-4aac13b0c305"
-COMMUNITY_GENERATION_RELEASE_IDS = {COMMUNITY_RELEASE_ID, "a7db3266-7fc0-4175-a818-39aaff712ad3"}
+COMMUNITY_RELEASE_ID = "1ce342d0-cf2d-41b4-961b-f3abd9f4e336"
+COMMUNITY_EDITOR_RELEASE_ID = "242f96a3-fe3b-4f20-a006-3c6559d98573"
+COMMUNITY_GENERATION_RELEASE_IDS = {
+    COMMUNITY_RELEASE_ID,
+    "0641d236-5e76-467e-95f3-bf695e6d6083", "a7db3266-7fc0-4175-a818-39aaff712ad3"}
 FRAMES = {
     "16:9": (60, 690, 960, 540), "5:4": (60, 690, 960, 768),
     "1:1": (60, 690, 960, 960), "4:5": (80, 690, 920, 1150),
@@ -41,7 +43,9 @@ def create_community_overlay(
     color = brand_color if re.fullmatch(r"#[a-fA-F0-9]{6}", brand_color) else "#303e78"
     # Full bleed at the top. All text positions stay fixed across video ratios.
     draw.rectangle((0, 0, 1079, 269), fill=color)
-    heading = {"ko": "커뮤니티", "en": "Community", "ja": "コミュニティ"}[language]
+    from .community_copy import LEGACY_HEADING, validate_board_name
+    heading = (validate_board_name(content["boardName"], language)
+               if "boardName" in content else LEGACY_HEADING[language])
     face = font(96, language)
     draw_text(draw, ((1080 - text_width(heading, face, -3)) / 2, 156),
               heading, face, community_heading_color(color), -3)

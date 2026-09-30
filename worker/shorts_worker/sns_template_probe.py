@@ -75,8 +75,11 @@ def main() -> None:
                     reason=reason,
                     transcript=transcript,
                     ratio="4:5" if args.community else ratio,
-                    language=language,
+                    language=language, community=args.community,
                 )
+                if args.community:
+                    from .community_copy import validate_board_name
+                    validate_board_name(content["boardName"], language)
                 assert content["source"] == "ai", (ratio, language, "AI fallback")
                 validate_copy(
                     {k: content[k] for k in ("title", "body", "hashtags")}, 
@@ -93,6 +96,8 @@ def main() -> None:
                     "title": title,
                     "body": [lines[language]] * layout_for(ratio).body_lines,
                     "hashtags": tags[language] if layout_for(ratio).hashtags else [],
+                    **({"boardName": {"ko": "퇴근러 모임", "en": "After Work",
+                                      "ja": "退勤のひととき"}[language]} if args.community else {}),
                     "source": "fixture",
                 }
             return ratio, language, content

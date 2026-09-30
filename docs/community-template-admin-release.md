@@ -44,3 +44,23 @@ heading now prefers white; only very light backgrounds (weighted sRGB brightness
 Generation `0641d236-5e76-467e-95f3-bf695e6d6083`; editor `11a62875-b24a-4874-9794-4aac13b0c305`. Previous generation/editor releases remain
 registered. The new editor attests both community generation releases; old editor
 requests retain their exact worker. No public settings or release pointers change.
+
+## AI board name revision
+
+Baseline: promoted production `846ce46bdeb99d77f19d09bb8e715ff8d08e9c90`
+(`dpl_25JN6aGJ2xHSVhcrADGDTTotWJZg`). Same production accounts and schema.
+Generation `1ce342d0-cf2d-41b4-961b-f3abd9f4e336`; editor
+`242f96a3-fe3b-4f20-a006-3c6559d98573`. New editor supports all three
+community generation releases; old editor requests retain exact targets.
+
+Community adds `boardName` to the same SNS JSON call: Korean 4–8 characters,
+English 4–18, Japanese 3–10, including spaces, with measured heading width.
+One bounded repair precedes deterministic fallback. The persisted name drives
+preview, generated video and editable heading. Legacy snapshots remain valid
+and keep their localized Community heading. Ordinary SNS schema and prompts
+are unchanged; admin gates and public pointers remain intact.
+
+Validation: local full verification including synthetic FFmpeg/ffprobe and DB
+guards; exact-image cloud probes (5 ratios × 3 languages, generation/editor),
+then one real-source administrator project. Estimate below USD 10 for bounded
+AI/build/render checks and temporary existing storage; no new recurring resources.

@@ -1,3 +1,4 @@
+import { communityBoardLimits } from "./community-template-contract";
 import { z } from "zod";
 import type { VideoAspectRatio } from "./contracts";
 
@@ -15,6 +16,7 @@ export function snsCopyLimits(ratio: VideoAspectRatio, language: SnsLanguage) {
     tags: ratio === "16:9" || ratio === "5:4" ? 3 : 0 };
 }
 export function snsEditedSnapshotSchema(ratio: VideoAspectRatio, language: SnsLanguage, community = false) {
+  const [boardMin, boardMax] = communityBoardLimits[language];
   const limits = snsCopyLimits(community ? "4:5" : ratio, language);
   const line = (max: number) => z.string().trim().min(1).refine(value => !/[\r\n]/u.test(value) && [...value].length <= max,
     `한 줄에 ${max}자 이내로 입력해 주세요.`);
@@ -22,7 +24,9 @@ export function snsEditedSnapshotSchema(ratio: VideoAspectRatio, language: SnsLa
     presetVersion: z.literal(4), snsTemplateVersion: z.literal(1),
     communityTemplateVersion: community ? z.literal(1) : z.never().optional(),
     snsLanguage: z.literal(language), brandColor: z.string().regex(/^#[0-9a-f]{6}$/i),
-    snsContent: z.object({ title: line(limits.title), body: z.array(line(limits.body)).length(limits.lines),
+    snsContent: z.object({ boardName: community
+      ? line(boardMax).refine(v => [...v].length >= boardMin && /^[\p{L}\p{N} ]+$/u.test(v), `게시판 이름은 ${boardMin}~${boardMax}자로 입력해 주세요.`).optional()
+      : z.never().optional(), title: line(limits.title), body: z.array(line(limits.body)).length(limits.lines),
       hashtags: z.array(z.string().regex(/^#[\p{L}\p{N}_]+$/u).refine(t => [...t].length <= limits.tag + 1)).length(limits.tags)
         .refine(tags => new Set(tags).size === tags.length), source: z.literal("edited") }).strict(),
   }).strict();

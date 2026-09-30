@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { communityBoardLimits, communityLegacyHeading } from "@/lib/community-template-contract";
 import { validateSnsTextWidths } from "@/lib/sns-editor-fonts";
 import { useEffect, useRef, useState } from "react";
 import type { GeneratedShort } from "@/lib/contracts";
@@ -28,7 +29,8 @@ export function SnsShortEditor({ item, projectNumber, channelThumbnailUrl, relea
   const language = (original.snsLanguage || "ko") as SnsLanguage;
   const ratio = item.videoAspectRatio;
   const limits = snsCopyLimits(community ? "4:5" : ratio, language);
-  const content = original.snsContent as { title: string; body: string[]; hashtags: string[] };
+  const content = original.snsContent as { boardName?: string; title: string; body: string[]; hashtags: string[] };
+  const [boardName, setBoardName] = useState(content.boardName ?? communityLegacyHeading[language]);
   const [title, setTitle] = useState(content.title);
   const [body, setBody] = useState(content.body);
   const [tags, setTags] = useState(content.hashtags);
@@ -69,7 +71,7 @@ export function SnsShortEditor({ item, projectNumber, channelThumbnailUrl, relea
     setError(""); setSaving(true);
     try {
       const snapshot = snsEditedSnapshotSchema(ratio, language, community).parse({ presetVersion: 4, snsTemplateVersion: 1,
-        snsLanguage: language, brandColor, ...(community ? { communityTemplateVersion: 1 } : {}), snsContent: { title, body, hashtags: tags, source: "edited" } });
+        snsLanguage: language, brandColor, ...(community ? { communityTemplateVersion: 1 } : {}), snsContent: { ...(community ? { boardName } : {}), title, body, hashtags: tags, source: "edited" } });
       await validateSnsTextWidths(snapshot.snsContent, community ? "4:5" : ratio, language);
       const { communityTemplateVersion, ...baseSnapshot } = snapshot;
       if (!channel.trim()) throw new Error("채널명을 입력해 주세요.");
@@ -93,7 +95,7 @@ export function SnsShortEditor({ item, projectNumber, channelThumbnailUrl, relea
       setDirty(false); setApplied(true);
       await onChanged();
     } catch (cause) {
-      setError(cause instanceof Error ? (cause.name === "ZodError" ? "제목·본문의 글자 수와 해시태그 형식을 확인해 주세요." : cause.message) : "수정 반영에 실패했습니다.");
+      setError(cause instanceof Error ? (cause.name === "ZodError" ? "게시판 이름·제목·본문의 글자 수와 해시태그 형식을 확인해 주세요." : cause.message) : "수정 반영에 실패했습니다.");
     } finally { setSaving(false); }
   }
   const inputClass = "mt-2 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white focus:border-cyan-300 focus:outline-none";
@@ -107,11 +109,13 @@ export function SnsShortEditor({ item, projectNumber, channelThumbnailUrl, relea
     <div className="mx-auto grid max-w-6xl gap-8 md:grid-cols-[minmax(260px,420px)_1fr]">
       <div className="mx-auto w-full max-w-[360px]">
         <SnsTemplatePreview community={community} language={language} ratio={ratio} brandColor={brandColor} channelName={channel} channelThumbnailUrl={avatar}
-          thumbnailUrl="" content={{ title, body, hashtags: tags }} videoUrl={timeline?.url}
+          thumbnailUrl="" content={{ ...(community ? { boardName } : {}), title, body, hashtags: tags }} videoUrl={timeline?.url}
           videoStart={timeline ? start - timeline.timelineStartSeconds : 0} videoEnd={timeline ? end - timeline.timelineStartSeconds : undefined} />
         <p className="mt-3 text-center text-xs text-neutral-400">영상 {ratio} · 출력 1080 × 1920</p>
       </div>
       <fieldset disabled={busy} className="space-y-5 disabled:opacity-60" onChange={changed}>
+        {community && <label className="block text-sm">게시판 이름 · {communityBoardLimits[language][0]}~{communityBoardLimits[language][1]}자
+          <input aria-label="커뮤니티 게시판 이름" className={inputClass} value={boardName} onChange={e => setBoardName(e.target.value)} /></label>}
         <label className="block text-sm">제목 · 한 줄, {limits.title}자 이내<input aria-label="SNS 제목" className={inputClass} value={title} onChange={e => setTitle(e.target.value)} /></label>
         {body.map((line, index) => <label key={index} className="block text-sm">본문 {index + 1} · {limits.body}자 이내
           <input aria-label={`SNS 본문 ${index + 1}`} className={inputClass} value={line} onChange={e => setBody(body.map((v, i) => i === index ? e.target.value : v))} /></label>)}

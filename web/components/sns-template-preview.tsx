@@ -20,7 +20,7 @@ export function SnsTemplatePreview({ community = false, ratio, brandColor, chann
   channelName: string;
   channelThumbnailUrl: string | null;
   thumbnailUrl: string;
-  content?: { title: string; body: string[]; hashtags: string[] };
+  content?: { boardName?: string; title: string; body: string[]; hashtags: string[] };
   videoUrl?: string;
   videoStart?: number;
   videoEnd?: number;

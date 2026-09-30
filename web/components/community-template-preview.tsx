@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
-import { communityVideoFrames, communityHeadingColor } from "@/lib/community-template-contract";
+import { communityVideoFrames, communityHeadingColor, communityLegacyHeading } from "@/lib/community-template-contract";
 import { snsFontFamily } from "@/lib/sns-editor-fonts";
 import type { ComponentProps } from "react";
 import type { SnsTemplatePreview } from "./sns-template-preview";
@@ -18,7 +18,7 @@ export function CommunityTemplatePreview({ ratio, brandColor, channelName, chann
     <rect width="1080" height="1920" fill="white" />
     <rect width="1080" height="270" fill={brandColor} />
     <text x="540" y="239" textAnchor="middle" fontSize="96" fontWeight="700" letterSpacing="-3" fill={communityHeadingColor(brandColor)}>
-      {{ ko: "커뮤니티", en: "Community", ja: "コミュニティ" }[language]}</text>
+      {content?.boardName ?? (content ? communityLegacyHeading[language] : { ko: "집사들 모여", en: "Cat People", ja: "猫好きの集い" }[language])}</text>
     <text x="60" y="342" fontSize="42" fontWeight="700" fill="#303e78">{{ ko: "실시간 베스트", en: "Trending now", ja: "話題の投稿" }[language]}</text>
     <path d="M0 375H1080" stroke="#303e78" strokeWidth="3" />
     <text x="60" y="462" fontSize="58" fontWeight="700" letterSpacing="-1.5" fill="#111">{content?.title ?? "박스 크기 안 보고 주문함"}</text>

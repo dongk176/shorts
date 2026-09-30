@@ -35,6 +35,11 @@ def validate_sns_editor_document(document: EditorDocument) -> None:
         or content.get("title") != document.title.text
     ):
         raise RenderError("SNS 편집 문서가 올바르지 않습니다.")
+    if "boardName" in content:
+        from .community_copy import validate_board_name
+        if snapshot.get("communityTemplateVersion") != 1:
+            raise RenderError("게시판 이름은 커뮤니티 템플릿에서만 사용할 수 있습니다.")
+        validate_board_name(content["boardName"], snapshot["snsLanguage"])
     validate_copy(
         {key: content.get(key) for key in ("title", "body", "hashtags")},
         "4:5" if snapshot.get("communityTemplateVersion") == 1 else document.video.aspect_ratio,

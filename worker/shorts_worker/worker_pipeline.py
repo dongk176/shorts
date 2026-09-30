@@ -2157,7 +2157,8 @@ class BatchWorker:
                 transcript=" ".join(segment.text for segment in subtitles),
                 ratio=("4:5" if snapshot.get("communityTemplateVersion") == 1
                        else str(job.get("video_aspect_ratio") or "1:1")),
-                language=str(job.get("output_language") or "ko"))
+                language=str(job.get("output_language") or "ko"),
+                community=snapshot.get("communityTemplateVersion") == 1)
             clip = clip.model_copy(update={"hook_title": content["title"]})
             job = {**job, "template_snapshot": {**snapshot, "snsContent": content,
                    "snsLanguage": str(job.get("output_language") or "ko")}}

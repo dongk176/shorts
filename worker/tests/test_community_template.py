@@ -23,7 +23,8 @@ from shorts_worker.sns_template import render_sns
 def snapshot():
     return {"presetVersion": 4, "snsTemplateVersion": 1, "communityTemplateVersion": 1,
             "snsLanguage": "ko", "brandColor": "#FF715E",
-            "snsContent": {"title": "퇴근 1분 전", "body": ["퇴근 얘기에 살아남"],
+            "snsContent": {"boardName": "퇴근러 모임", "title": "퇴근 1분 전",
+                           "body": ["퇴근 얘기에 살아남"],
                            "hashtags": [], "source": "edited"}}
 
 
@@ -114,3 +115,49 @@ def test_generation_and_editor_render_same_layout_with_audio(tmp_path, ratio):
 ])
 def test_community_heading_prefers_white(background, expected):
     assert community_heading_color(background) == expected
+
+
+@pytest.mark.parametrize("language", ["ko", "en", "ja"])
+def test_community_copy_fallback_and_legacy_heading(language, tmp_path):
+    from shorts_worker.community_copy import BOARD_FALLBACK, validate_board_name
+    from shorts_worker.sns_template import generate_copy
+    result = generate_copy(Settings(openai_api_key=None, gemini_api_key=None),
+        title="", reason="", transcript="", ratio="4:5", language=language, community=True)
+    assert result["source"] == "fallback"
+    assert result["boardName"] == validate_board_name(BOARD_FALLBACK[language], language)
+    legacy = snapshot()["snsContent"].copy()
+    legacy.pop("boardName")
+    create_community_overlay(tmp_path / "legacy.png", ratio="1:1", content=legacy,
+        language=language, brand_color="#303e78", channel="Channel", avatar=None)
+
+
+def test_community_copy_repairs_board_and_keeps_sns_contract(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    import openai
+
+    from shorts_worker.sns_template import copy_response_format, generate_copy
+    payload = {"boardName": "너무너무긴게시판이름", "title": "퇴근 1분 전",
+               "body": ["퇴근 얘기에 살아남"], "hashtags": []}
+    client = MagicMock()
+    client.chat.completions.create.side_effect = [SimpleNamespace(choices=[
+        SimpleNamespace(message=SimpleNamespace(content=json.dumps(p)))])
+        for p in (payload, {**payload, "boardName": "퇴근러 모임"})]
+    monkeypatch.setattr(openai, "OpenAI", lambda **kw: client)
+    result = generate_copy(Settings(openai_api_key="test", gemini_api_key=None),
+        title="퇴근", reason="퇴근", transcript="퇴근", ratio="4:5", language="ko", community=True)
+    assert result["source"] == "ai" and result["boardName"] == "퇴근러 모임"
+    assert client.chat.completions.create.call_count == 2
+    ordinary = copy_response_format("4:5", "ko")["json_schema"]["schema"]
+    assert "boardName" not in ordinary["properties"]
+    schema = copy_response_format("4:5", "ko", True)["json_schema"]["schema"]
+    assert "boardName" in schema["required"]
+
+
+@pytest.mark.parametrize("value", [
+    "", "가나", "가나다라마바사아자", "  집사들", "집사들\n모여", "집사들🐱", "    "])
+def test_invalid_board_names_rejected(value):
+    from shorts_worker.community_copy import validate_board_name
+    with pytest.raises(ValueError):
+        validate_board_name(value, "ko")
