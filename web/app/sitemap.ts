@@ -1,3 +1,4 @@
+import { UPDATES_REVISED_AT } from "./updates/metadata";
 import type { MetadataRoute } from "next";
 import { searchLocalesForPath } from "@/lib/seo-localization";
 import { localizedHref } from "@/lib/i18n/routing";
@@ -39,10 +40,11 @@ export default function sitemap(): MetadataRoute.Sitemap {
         ...Object.fromEntries(searchLocalesForPath(path).map((language) => [language, absoluteUrl(localizedHref(path, language))])),
         "x-default": absoluteUrl(localizedHref(path, "ko")),
       } } } : {}),
+      ...(["/", "/ai-shorts-maker", "/compare/ai-shorts-tools", "/popular"].includes(path) ? { lastModified: "2026-10-01" } : {}),
       changeFrequency,
       priority,
     })));
-  return [...pages, { url: absoluteUrl("/updates"), changeFrequency: "weekly" as const, priority: 0.7 }, ...updates.map((post) => ({ url: absoluteUrl(`/updates/${post.slug}`), changeFrequency: "monthly" as const, priority: 0.6 })), ...publishedBlogPosts().map((post) => ({
+  return [...pages, { url: absoluteUrl("/updates"), lastModified: UPDATES_REVISED_AT, changeFrequency: "weekly" as const, priority: 0.7 }, ...updates.map((post) => ({ url: absoluteUrl(`/updates/${post.slug}`), lastModified: UPDATES_REVISED_AT, changeFrequency: "monthly" as const, priority: 0.6 })), ...publishedBlogPosts().map((post) => ({
     url: absoluteUrl(`/blog/${post.slug}`),
     lastModified: post.updatedAt,
     changeFrequency: "monthly" as const,

@@ -670,7 +670,9 @@ export function PopularVideosExplorer({
   isAuthenticated,
   accountKey,
   onRequireLogin,
+  initialResponse = null,
 }: {
+  initialResponse?: PopularVideoResponse | null;
   canUseFilters: boolean;
   searchEnabled: boolean;
   isAuthenticated: boolean;
@@ -698,16 +700,17 @@ export function PopularVideosExplorer({
   const koreanOnly = language === "ko";
   const [longFormOnly, setLongFormOnly] = useState(false);
   const [reusableOnly, setReusableOnly] = useState(false);
-  const [catalogEnabled, setCatalogEnabled] = useState(false);
-  const [japaneseEnabled, setJapaneseEnabled] = useState(false);
+  const [catalogEnabled, setCatalogEnabled] = useState(Boolean(initialResponse?.catalogEnabled));
+  const [japaneseEnabled, setJapaneseEnabled] = useState(Boolean(initialResponse?.japaneseEnabled));
   const [hasNewList, setHasNewList] = useState(false);
   const [cursorNotice, setCursorNotice] = useState(false);
   const [discoveryPeriod, setDiscoveryPeriod] = useState<PopularDiscoveryPeriod>("all");
   const [category, setCategory] = useState<PopularVideoCategory>("all");
-  const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
-  const [response, setResponse] = useState<PopularVideoResponse | null>(null);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(initialResponse?.updatedAt ?? null);
+  const [response, setResponse] = useState<PopularVideoResponse | null>(initialResponse);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialResponse);
+  const initialSnapshotPending = useRef(Boolean(initialResponse));
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
@@ -739,6 +742,10 @@ export function PopularVideosExplorer({
 
   useEffect(() => {
     if (!languageReady) return;
+    if (initialSnapshotPending.current) {
+      initialSnapshotPending.current = false;
+      if (!searching && dataType === "trending" && category === "all" && discoveryPeriod === "all" && !koreanOnly && !japaneseOnly && !englishOnly && !longFormOnly && !reusableOnly && retryCount === 0) return;
+    }
     const controller = new AbortController();
     loadMoreController.current?.abort();
     setLoading(true);

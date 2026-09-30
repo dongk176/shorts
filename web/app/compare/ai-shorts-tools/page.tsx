@@ -6,14 +6,9 @@ import { AuthControls } from "@/components/auth-controls";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { StructuredData } from "@/components/structured-data";
-import {
-  getPricingV2Package,
-  getPricingV2Plan,
-  pricingV2EarlyBirdProducts,
-  pricingV2PackageMonths,
-  type PricingV2PackageTier,
-  type PricingV2PlanCode,
-} from "@/lib/pricing-v2";
+import { comparisonPricing } from "@/lib/comparison-pricing";
+import { paddleConfigured, paddleEnabled } from "@/lib/paddle/config";
+import { publicMonthlyOffer } from "@/lib/seo-structured-data";
 import { authProfile } from "@/lib/session";
 import { seoCopyForPath } from "@/lib/seo-localization";
 import { localizedArticle, localizedBreadcrumb } from "@/lib/seo-structured-data";
@@ -21,8 +16,7 @@ import { getAuthenticatedUser } from "@/lib/supabase/server";
 
 const PAGE_PATH = "/compare/ai-shorts-tools";
 const PUBLISHED_DATE = "2026-07-19";
-const REVIEWED_DATE = "2026-07-26";
-const priceFormatter = new Intl.NumberFormat("ko-KR");
+const REVIEWED_DATE = "2026-10-01";
 
 export async function generateMetadata() {
   return createLocalizedPageMetadata({
@@ -33,49 +27,10 @@ export async function generateMetadata() {
   });
 }
 
-function requirePricingPlan(code: PricingV2PlanCode) {
-  const plan = getPricingV2Plan(code);
-  if (!plan) throw new Error(`Missing pricing plan: ${code}`);
-  return plan;
-}
-
-function packagePriceLines(tier: PricingV2PackageTier) {
-  return pricingV2PackageMonths.map((months) => {
-    const plan = getPricingV2Package(tier, months);
-    if (!plan) throw new Error(`Missing pricing package: ${tier}_${months}m`);
-    return `${months}개월 총 ${priceFormatter.format(plan.totalPriceKrw)}원 (월 환산 ${priceFormatter.format(plan.monthlyPriceKrw)}원)`;
-  });
-}
-
-const easyCutProPlan = requirePricingPlan("easycut_pro_v2");
-const easyCutEarlyBirdSummary = pricingV2EarlyBirdProducts
-  .map((product) => `${priceFormatter.format(product.minutes)}분 ${priceFormatter.format(product.priceKrw)}원`)
-  .join(" · ");
-const easyCutPriceCards = [
-  {
-    title: easyCutProPlan.displayName,
-    allowance: `월 ${priceFormatter.format(easyCutProPlan.monthlyMinutes)}분`,
-    priceLines: [`월 ${priceFormatter.format(easyCutProPlan.monthlyPriceKrw)}원 · 매월 자동결제`],
-    description: "필요한 기간만 월 단위로 시작할 수 있는 구독 상품입니다.",
-  },
-  {
-    title: "스타터 패키지",
-    allowance: "매월 200분",
-    priceLines: packagePriceLines("starter"),
-    description: "꾸준히 쇼츠를 제작하는 크리에이터를 위한 기간 패키지입니다.",
-  },
-  {
-    title: "전문가 패키지",
-    allowance: "매월 600분",
-    priceLines: packagePriceLines("expert"),
-    description: "제작량이 많은 크리에이터와 운영팀을 위한 기간 패키지입니다.",
-  },
-] as const;
-
 const comparisonRows = [
   {
     label: "대표 입력 방식",
-    easyCut: "공개 YouTube URL",
+    easyCut: "YouTube 링크·파일 업로드",
     alphaCut: "YouTube 링크·파일 업로드",
     fikaClip: "기존 영상 기반",
   },
@@ -83,19 +38,19 @@ const comparisonRows = [
     label: "이용량 기준",
     easyCut: "원본 영상 처리시간",
     alphaCut: "원본 영상 처리시간",
-    fikaClip: "숏폼 제작 횟수",
+    fikaClip: "영상 길이·기능별 크레딧",
   },
   {
     label: "공개 플랜 제공량",
     easyCut: "월 60·200·600분",
-    alphaCut: "월 50·150·450분",
-    fikaClip: "월 5·15·50회",
+    alphaCut: "공식 페이지에서 최신 정보 확인",
+    fikaClip: "월 500·1,500·5,000 크레딧",
   },
   {
     label: "유료 플랜 월간 결제",
     easyCut: "월 9,900원 또는 기간 패키지",
-    alphaCut: "월 6,900·19,800·57,900원",
-    fikaClip: "월 6,900·12,900·34,900원",
+    alphaCut: "공식 페이지에서 최신 정보 확인",
+    fikaClip: "공식 요금표에서 통화·할인 조건 확인",
   },
   {
     label: "하이라이트 자동 추출",
@@ -117,7 +72,7 @@ const comparisonRows = [
   },
   {
     label: "템플릿",
-    easyCut: "4종",
+    easyCut: "다양한 템플릿·자막 스타일",
     alphaCut: "커스텀 템플릿",
     fikaClip: "비디오·채널 스타일 템플릿",
   },
@@ -141,8 +96,8 @@ const selectionGuides = [
     description: "영상 분량을 기준으로 월 작업량을 계산한다면 원본 처리시간을 제공량으로 표시하는 이지컷과 알파컷을 함께 살펴볼 수 있습니다.",
   },
   {
-    title: "제작 횟수로 관리하고 싶다면",
-    description: "매달 필요한 결과 수가 명확하다면 숏폼 제작 횟수를 기준으로 플랜을 안내하는 피카클립이 직관적일 수 있습니다.",
+    title: "크레딧으로 관리하고 싶다면",
+    description: "매달 필요한 결과 수가 명확하다면 영상 길이·기능별 크레딧를 기준으로 플랜을 안내하는 피카클립이 직관적일 수 있습니다.",
   },
   {
     title: "여러 작업을 동시에 돌린다면",
@@ -153,6 +108,11 @@ const selectionGuides = [
 export default async function AiShortsToolsComparisonPage() {
   const locale = await getRequestLocale();
   const ui = createUiText(locale);
+  const internationalPricing = paddleConfigured() && paddleEnabled();
+  const easyCutPriceCards = comparisonPricing(locale, internationalPricing);
+  const offer = publicMonthlyOffer(locale, internationalPricing);
+  const monthlyPrice = offer ? new Intl.NumberFormat(locale === "ja" ? "ja-JP" : locale === "en" ? "en-US" : "ko-KR", { style: "currency", currency: offer.priceCurrency }).format(Number(offer.price)) : null;
+  const priceSummary = monthlyPrice ? locale === "ja" ? `月額 ${monthlyPrice} または期間パッケージ` : locale === "en" ? `${monthlyPrice}/month or a term package` : `월 ${monthlyPrice} 또는 기간 패키지` : ui("공식 페이지에서 최신 정보 확인");
   const user = await getAuthenticatedUser();
   const searchCopy = seoCopyForPath(PAGE_PATH, locale) ?? { title: "AI 쇼츠 제작 툴 비교: 이지컷·알파컷·피카클립", description: "이지컷, 알파컷, 피카클립의 공개 기능과 요금 기준을 비교한 가이드" };
   const articleData = localizedArticle(locale, PAGE_PATH, searchCopy.title, searchCopy.description, PUBLISHED_DATE, REVIEWED_DATE);
@@ -167,7 +127,7 @@ export default async function AiShortsToolsComparisonPage() {
           <p className="text-xs font-black uppercase tracking-[.2em] text-[#ff9b8d]">2026 AI Shorts Tools</p>
           <h1 className="mt-5 text-[28px] font-black leading-tight tracking-[-.05em] text-white sm:text-[42px]">{ui("이지컷·알파컷·피카클립")}<br /><span className="bg-gradient-to-r from-[#ff8c7c] to-violet-400 bg-clip-text text-transparent">{ui("AI 쇼츠 제작 툴 비교")}</span></h1>
           <p className="mx-auto mt-6 max-w-3xl text-sm leading-7 text-neutral-400 sm:text-base">{ui("롱폼 영상을 짧은 쇼츠로 바꾸는 서비스마다 잘 맞는 제작 방식이 다릅니다. 이 페이지는 우열을 정하기보다 각 서비스의 공식 공개정보와 선택 기준을 같은 항목으로 정리합니다.")}</p>
-          <p className="mt-4 text-xs text-neutral-500">{ui("공개정보 최종 확인일: 2026년 7월 26일")}</p>
+          <p className="mt-4 text-xs text-neutral-500">{ui("요금·이용량 정보 재확인: 2026년 10월 1일. 확인되지 않은 가격은 공식 페이지로 안내합니다.")}</p>
         </header>
 
         <section aria-labelledby="quick-answer-title">
@@ -183,7 +143,7 @@ export default async function AiShortsToolsComparisonPage() {
             </article>
             <article id="fikaclip" className="scroll-mt-28 rounded-2xl border border-white/10 bg-black/15 p-6">
               <h3 className="text-lg font-black text-white">{ui("피카클립(FikaClip)")}</h3>
-              <p className="mt-3 text-sm leading-7 text-neutral-400">{ui("원본 분량보다 월 숏폼 제작 횟수 중심으로 플랜을 비교하고, 영상 업로드 정보까지 함께 확인하려는 경우 잘 맞습니다.")}</p>
+              <p className="mt-3 text-sm leading-7 text-neutral-400">{ui("원본 분량보다 월 영상 길이·기능별 크레딧 중심으로 플랜을 비교하고, 영상 업로드 정보까지 함께 확인하려는 경우 잘 맞습니다.")}</p>
             </article>
           </div>
         </section>
@@ -207,12 +167,12 @@ export default async function AiShortsToolsComparisonPage() {
                 <ul className="mt-5 grid gap-2 text-sm leading-6 text-neutral-200">
                   {card.priceLines.map((line) => <li key={ui(line)}>{ui(line)}</li>)}
                 </ul>
-                <p className="mt-4 text-xs leading-6 text-neutral-500">{ui(card.description)}</p>
+
               </article>
             ))}
           </div>
           <p className="mt-4 text-xs leading-6 text-neutral-500">{ui("패키지는 선택한 기간의 총액을 결제하며, 표시된 월 금액은 비교를 위한 월 환산액입니다.")}</p>
-          <p className="mt-2 text-xs leading-6 text-neutral-500">{ui("활성 이용권 보유자는 얼리버드 추가시간도 선택할 수 있습니다: ")}{ui(easyCutEarlyBirdSummary)}{ui(". 각 상품은 계정당 한 번 구매할 수 있고 구매일로부터 90일간 유효합니다.")}</p>
+          <p className="mt-2 text-xs leading-6 text-neutral-500">{ui("추가시간과 계정별 적용 상품은 요금제 페이지에서 확인하세요.")}</p>
         </section>
 
         <section aria-labelledby="comparison-table-title" className="mt-10">
@@ -237,7 +197,7 @@ export default async function AiShortsToolsComparisonPage() {
                 {comparisonRows.map((row) => (
                   <tr key={row.label} className="border-t border-white/[.07] align-top">
                     <th className="px-5 py-4 font-bold text-white">{ui(row.label)}</th>
-                    <td className="bg-[#ff8c7c]/[.035] px-5 py-4 text-neutral-200">{ui(row.easyCut)}</td>
+                    <td className="bg-[#ff8c7c]/[.035] px-5 py-4 text-neutral-200">{row.label === "유료 플랜 월간 결제" ? priceSummary : ui(row.easyCut)}</td>
                     <td className="px-5 py-4 text-neutral-400">{ui(row.alphaCut)}</td>
                     <td className="px-5 py-4 text-neutral-400">{ui(row.fikaClip)}</td>
                   </tr>

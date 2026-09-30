@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "@/lib/i18n/navigation";
+import NextLink from "next/link";
 import { useI18n } from "@/lib/i18n/provider";
 import {
   SITE_FOOTER_VISIBLE,
@@ -8,7 +9,7 @@ import {
 } from "@/lib/site-visibility";
 
 export function SiteFooter() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
 
   if (!SITE_FOOTER_VISIBLE) {
     return null;
@@ -30,6 +31,7 @@ export function SiteFooter() {
         </ul>
         <nav className="site-footer-links" aria-label={t("footer.links")}>
           <Link href="/ai-shorts-maker">{t("footer.shortsGuide")}</Link>
+          <NextLink href="/blog" hrefLang="ko">{locale === "ko" ? "블로그" : locale === "ja" ? "ブログ（韓国語）" : "Blog (Korean)"}</NextLink>
           <Link href="/guidebook">{t("footer.guidebook")}</Link>
           <Link href="/compare/ai-shorts-tools">{t("footer.toolsComparison")}</Link>
           <Link href="/pricing">{t("nav.pricing")}</Link>

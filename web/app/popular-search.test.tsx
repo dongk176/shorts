@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
+import { renderToString } from "react-dom/server";
+import type { PopularVideoResponse } from "@/lib/youtube-popular";
 import { createRoot, type Root } from "react-dom/client";
 import { parseHTML } from "linkedom";
 import { PopularVideosExplorer } from "./실시간인기/popular-videos-explorer";
@@ -17,8 +19,8 @@ function props(element: Element | null) {
   const key=Object.keys(element!).find(key=>key.startsWith("__reactProps$"))!;
   return (element as unknown as Record<string, Record<string, (...args: unknown[])=>void>>)[key];
 }
-async function setup(access=true, locale="ko", { deferInitial=false, searchEnabled=true, storage=new Map<string,string>(), storageUnavailable=false, accountKey }: {
-  deferInitial?:boolean; searchEnabled?:boolean; storage?:Map<string,string>; storageUnavailable?:boolean; accountKey?:string;
+async function setup(access=true, locale="ko", { deferInitial=false, searchEnabled=true, storage=new Map<string,string>(), storageUnavailable=false, accountKey, initialResponse }: {
+  deferInitial?:boolean; searchEnabled?:boolean; storage?:Map<string,string>; storageUnavailable?:boolean; accountKey?:string; initialResponse?: PopularVideoResponse;
 } = {}) {
   language.locale=locale;
   const {window,document}=parseHTML("<html><body><div id='app'></div></body></html>");
@@ -38,9 +40,9 @@ async function setup(access=true, locale="ko", { deferInitial=false, searchEnabl
   }));
   const container=document.getElementById("app")!;
   root=createRoot(container as unknown as Element);
-  await act(async()=>{root!.render(<PopularVideosExplorer searchEnabled={searchEnabled} canUseFilters={access} isAuthenticated={access} accountKey={accountKey} onRequireLogin={()=>{}}/>);});
+  await act(async()=>{root!.render(<PopularVideosExplorer initialResponse={initialResponse} searchEnabled={searchEnabled} canUseFilters={access} isAuthenticated={access} accountKey={accountKey} onRequireLogin={()=>{}}/>);});
   const respond=async(index:number,body:Record<string,unknown>={},status=200)=>act(async()=>requests[index].resolve(Response.json({items:[],updatedAt:new Date().toISOString(),searchEnabled:true,japaneseEnabled:true,...body},{status})));
-  if (!deferInitial) await respond(0);
+  if (!deferInitial && !initialResponse) await respond(0);
   const input=()=>container.querySelector("#popular-search")!;
   const type=async(value:string)=>act(async()=>props(input()).onChange({target:{value}}));
   const submit=async()=>act(async()=>props(container.querySelector('form[role="search"]')).onSubmit({preventDefault(){}}));
@@ -292,5 +294,32 @@ describe("language dropdown and custom mobile sheets", () => {
     await page.respond(0,{code:"JAPANESE_DISCOVERY_DISABLED"},503);
     expect(page.requests[1].url.searchParams.get("japanese")).toBe("false");
     expect(page.storage.size).toBe(0);
+  });
+});
+
+const publicSnapshot: PopularVideoResponse = {
+  items: [{ videoId: "abcdefghijk", title: "Public example title", channelName: "Example channel", thumbnailUrl: "https://i.ytimg.com/vi/abcdefghijk/hqdefault.jpg", category: "entertainment", durationSeconds: 300, viewCount: 1234, publishedAt: "2026-09-30T00:00:00Z", license: "youtube" }],
+  updatedAt: "2026-10-01T00:00:00Z", nextCursor: "public-cursor",
+};
+describe("public popular snapshot", () => {
+  it("renders video titles in server HTML without fetching or granting paid filters", () => {
+    language.locale = "en";
+    const html = renderToString(<PopularVideosExplorer initialResponse={publicSnapshot} canUseFilters={false} isAuthenticated={false} searchEnabled={false} onRequireLogin={() => {}} />);
+    expect(html).toContain("Public example title");
+    expect(html).toContain("Example channel");
+    expect(html).not.toContain('aria-busy="true"');
+  });
+  it("keeps the initial public list through hydration and gates paid interactions", async () => {
+    const page = await setup(false, "en", { initialResponse: publicSnapshot });
+    expect(page.container.textContent).toContain("Public example title");
+    expect(page.requests).toHaveLength(0);
+    await page.type("soccer");
+    await page.submit();
+    expect(page.requests).toHaveLength(0);
+  });
+  it("does not reuse the public snapshot for an entitled user's language filter", async () => {
+    const page = await setup(true, "ja", { initialResponse: publicSnapshot, deferInitial: true });
+    expect(page.requests[0].url.searchParams.get("japanese")).toBe("true");
+    await page.respond(0);
   });
 });

@@ -5,6 +5,19 @@ type Phrase = readonly [ko: string, en: string, ja: string];
 // Legacy page copy is kept here while the product moves to semantic message keys.
 // User-provided and generated content is intentionally excluded from this table.
 const phrases: readonly Phrase[] = [
+  ["다양한 쇼츠 템플릿", "Customizable Shorts templates", "カスタマイズできるショート動画テンプレート"],
+  ["다크·화이트·페이퍼·댓글 스타일과 다양한 자막 디자인을 제공합니다.", "Choose dark, white, paper and comment layouts with a range of caption styles.", "ダーク・ホワイト・ペーパー・コメント型のレイアウトと多彩な字幕スタイルを選べます。"],
+  ["다양한 템플릿·자막 스타일", "Multiple template and caption styles", "多彩なテンプレート・字幕スタイル"],
+  ["영상 길이·기능별 크레딧", "Credits by source length and feature", "元動画の長さ・機能ごとのクレジット"],
+  ["월 500·1,500·5,000 크레딧", "500, 1,500 or 5,000 credits/month", "毎月500・1,500・5,000クレジット"],
+  ["공식 요금표에서 통화·할인 조건 확인", "Check currency and discounts on the official pricing page", "通貨・割引条件は公式料金表で確認"],
+  ["크레딧으로 관리하고 싶다면", "Planning with credits", "クレジットで管理したい場合"],
+  ["피카클립은 원본 영상 길이와 사용 기능에 따라 크레딧을 차감합니다. 결과 영상 개수와 크레딧 사용량을 구분해서 확인하세요.", "FikaClip charges credits based on source length and the features used. Check credit consumption separately from the number of output clips.", "FikaClipは元動画の長さと利用機能に応じてクレジットを消費します。出力動画数と消費クレジット数を分けて確認しましょう。"],
+  ["영상 길이와 편집 기능별 크레딧 사용량을 확인하며 제작하려는 경우 살펴볼 수 있습니다.", "Consider it if you prefer to plan production around credits for video length and editing features.", "動画の長さや編集機能ごとの消費クレジットを確認しながら制作したい場合に検討できます。"],
+  ["요금·이용량 정보 재확인: 2026년 10월 1일. 확인되지 않은 가격은 공식 페이지로 안내합니다.", "Pricing and allowances reviewed: October 1, 2026. For unverified prices, refer to the official site.", "料金・利用量の再確認：2026年10月1日。未確認の価格は公式サイトをご確認ください。"],
+  ["추가시간과 계정별 적용 상품은 요금제 페이지에서 확인하세요.", "See the pricing page for extra minutes and plans available to your account.", "追加時間とアカウントに適用されるプランは料金ページをご確認ください。"],
+  ["매월 60분", "60 minutes/month", "毎月60分"],
+
   ["예시 보기", "View examples", "サンプルを見る"],
   ["예시 접기", "Hide examples", "サンプルを閉じる"],
   ["즐겨찾기", "Favorite", "お気に入り"],

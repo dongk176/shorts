@@ -1,5 +1,6 @@
 "use client";
 
+import type { PopularVideoResponse } from "@/lib/youtube-popular";
 import { useState } from "react";
 import { AuthControls } from "@/components/auth-controls";
 import { SiteFooter } from "@/components/site-footer";
@@ -11,10 +12,12 @@ export function PopularPageShell({
   user,
   canUseFilters,
   searchEnabled,
+  initialResponse,
 }: {
   user: AuthProfile | null;
   canUseFilters: boolean;
   searchEnabled: boolean;
+  initialResponse?: PopularVideoResponse | null;
 }) {
   const [loginOpen, setLoginOpen] = useState(false);
 
@@ -29,6 +32,7 @@ export function PopularPageShell({
         />
       </SiteHeader>
       <PopularVideosExplorer
+        initialResponse={initialResponse}
         canUseFilters={canUseFilters}
         searchEnabled={searchEnabled}
         isAuthenticated={Boolean(user)}

@@ -20,7 +20,7 @@ export function LanguageSelector({ placement = "floating" }: { placement?: "floa
   const menuId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const optionRefs = useRef<Array<HTMLAnchorElement | null>>([]);
   const [open, setOpen] = useState(false);
   const [pendingLocale, setPendingLocale] = useState<SiteLocale | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -88,18 +88,23 @@ export function LanguageSelector({ placement = "floating" }: { placement?: "floa
         });
       }}
     >
-      {open && (
-        <div id={menuId} className="language-selector-menu" role="listbox" aria-label={t("common.language")}>
+      {(
+        <div id={menuId} style={{ display: open ? undefined : "none" }} className="language-selector-menu" role="listbox" aria-label={t("common.language")}>
           <span className="language-selector-menu-title">{t("common.language")}</span>
           {siteLocales.map((option, index) => (
-            <button
+            <a
               key={option}
               ref={(element) => { optionRefs.current[index] = element; }}
-              type="button"
+              href={localizedHref(pathname, option)}
+              hrefLang={option}
               role="option"
               aria-selected={option === selectedLocale}
               className="language-selector-option"
-              onClick={() => selectLocale(option)}
+              onClick={(event) => {
+                if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+                event.preventDefault();
+                selectLocale(option);
+              }}
               onKeyDown={(event) => {
                 if (event.key === "ArrowDown") {
                   event.preventDefault();
@@ -127,7 +132,7 @@ export function LanguageSelector({ placement = "floating" }: { placement?: "floa
               <svg className="language-selector-check" aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="m5 10 3 3 7-7" />
               </svg>
-            </button>
+            </a>
           ))}
         </div>
       )}

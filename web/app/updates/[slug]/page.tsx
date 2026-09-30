@@ -1,3 +1,4 @@
+import { updatesMetadata } from "../metadata";
 import { YoutubeLaunchGuideReplay } from "@/components/youtube-launch-guide";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -11,7 +12,10 @@ type Props = {
         slug: string;
     }>;
 };
-export async function generateMetadata({ params }: Props): Promise<Metadata> { const post = findUpdate((await params).slug); return { title: post ? `${post.title} | 업데이트` : "업데이트를 찾을 수 없습니다", description: post?.summary, alternates: post ? { canonical: `https://www.easycut.co.kr/updates/${post.slug}` } : undefined, robots: { index: !!post, follow: true } }; }
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const post = findUpdate((await params).slug);
+  return post ? updatesMetadata(post) : { title: "업데이트를 찾을 수 없습니다", robots: { index: false, follow: true } };
+}
 export default async function UpdateArticle({ params }: Props) {
     const post = findUpdate((await params).slug);
     if (!post)

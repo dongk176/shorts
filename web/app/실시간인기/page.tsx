@@ -1,3 +1,4 @@
+import { publicPopularVideos } from "@/lib/public-popular-videos";
 import { createLocalizedPageMetadata } from "@/lib/i18n/metadata";
 import { catalogReadsEnabled } from "@/lib/youtube-quota";
 import { getBillingSummary } from "@/lib/billing";
@@ -55,8 +56,10 @@ export default async function PopularVideosPage() {
       });
     }
   }
+  const initialResponse = canUseFilters ? null : await publicPopularVideos();
   return (
     <PopularPageShell
+      initialResponse={initialResponse}
       user={user ? authProfile(user) : null}
       canUseFilters={canUseFilters}
       searchEnabled={catalogReadsEnabled() && process.env.YOUTUBE_POPULAR_SEARCH_ENABLED === "true"}

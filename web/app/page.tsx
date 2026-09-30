@@ -46,7 +46,7 @@ export default async function Home() {
       localizedValue(locale, { ko: "30~60초 쇼츠 자동 제작", en: "Automatic 30–60 second Shorts creation", ja: "30〜60秒のショート動画を自動作成" }),
       localizedValue(locale, { ko: "자동 자막과 후킹 제목", en: "Automatic captions and attention-grabbing titles", ja: "字幕と目を引くタイトルを自動生成" }),
       localizedValue(locale, { ko: "5가지 영상 비율", en: "Five video aspect ratios", ja: "5種類の動画比率" }),
-      localizedValue(locale, { ko: "4가지 쇼츠 템플릿", en: "Four Shorts templates", ja: "4種類のショート動画テンプレート" }),
+      localizedValue(locale, { ko: "다양한 쇼츠 템플릿", en: "Customizable Shorts templates", ja: "カスタマイズできるショート動画テンプレート" }),
       localizedValue(locale, { ko: "제목과 자막 편집", en: "Title and caption editing", ja: "タイトルと字幕の編集" }),
     ],
     ...(monthlyOffer ? { offers: [monthlyOffer] } : {}),
