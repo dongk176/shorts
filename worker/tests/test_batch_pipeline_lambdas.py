@@ -5354,7 +5354,8 @@ def test_sns_public_editor_accepts_only_existing_account_with_proof(known_user):
         "font_manifest_sha256": "c" * 64,
         "render_spec_version": 4,
         "caption_render_spec_version": 4,
-        "production_job_definition_arn": ("arn:aws:batch:ap-northeast-2:181651591905:job-definition/"
+        "production_job_definition_arn": (
+            "arn:aws:batch:ap-northeast-2:181651591905:job-definition/"
             "shorts-mvp-editor-release-language-test-sns-edit-aaaaaaaaaaaa:1"),
     }
     proof = {
