@@ -1,4 +1,4 @@
-import { COMMUNITY_EDITOR_RELEASE_ID, COMMUNITY_TEMPLATE_RELEASE_ID } from "./community-template-contract";
+import { COMMUNITY_EDITOR_RELEASE_ID, COMMUNITY_GENERATION_RELEASE_IDS } from "./community-template-contract";
 import type { Sql, TransactionSql } from "postgres";
 import type { EditorReleaseAssignment } from "./editor-rendering-release";
 import { HttpError } from "./http";
@@ -31,7 +31,7 @@ export async function snsEditorRelease(db: Sql | TransactionSql, userId: string 
       and check_row.details->>'fontManifestSha256'=e.font_manifest_sha256
     for share of e,check_row,u
   `;
-  if (!r || !(community ? [COMMUNITY_TEMPLATE_RELEASE_ID] : [...SNS_GENERATION_RELEASE_IDS]).some(id => id === r.languageTestReleaseId)
+  if (!r || !(community ? [...COMMUNITY_GENERATION_RELEASE_IDS] : [...SNS_GENERATION_RELEASE_IDS]).some(id => id === r.languageTestReleaseId)
     || !Array.isArray(r.details?.generationReleaseIds) || !r.details.generationReleaseIds.includes(r.languageTestReleaseId)) {
     throw new HttpError(409, "SNS 편집기를 준비 중입니다. 잠시 후 다시 열어 주세요.", "SNS_EDITOR_UNAVAILABLE");
   }

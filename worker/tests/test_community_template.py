@@ -4,7 +4,12 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from shorts_worker.community_template import FRAMES, community_layout, create_community_overlay
+from shorts_worker.community_template import (
+    FRAMES,
+    community_heading_color,
+    community_layout,
+    create_community_overlay,
+)
 from shorts_worker.config import Settings
 from shorts_worker.editor_renderer import EditorDocumentRenderer
 from shorts_worker.errors import RenderError
@@ -36,6 +41,8 @@ def test_fixed_header_exact_ratios_and_brand_color(tmp_path, ratio):
             assert image.size == (1080, 1920)
             assert image.getpixel((0, 0)) == tuple(bytes.fromhex(color[1:])) + (255,)
             assert image.getpixel((1079, 269)) == image.getpixel((0, 0))
+            heading_ink = tuple(bytes.fromhex(community_heading_color(color)[1:])) + (255,)
+            assert heading_ink in set(image.crop((200, 150, 880, 255)).getdata())
             assert image.getpixel((x, y))[3] == 0  # rectangular video window
             assert image.getpixel((540, 1900)) == (255, 255, 255, 255)
             header = image.crop((0, 0, 1080, 690)).tobytes()
@@ -98,3 +105,12 @@ def test_generation_and_editor_render_same_layout_with_audio(tmp_path, ratio):
         with Image.open(work / "sns-overlay.png") as image:
             overlays.append(image.tobytes())
     assert overlays[0] == overlays[1]
+
+
+@pytest.mark.parametrize("background,expected", [
+    ("#FF715E", "#FFFFFF"), ("#FF4D4F", "#FFFFFF"), ("#35E6E3", "#FFFFFF"),
+    ("#3B82F6", "#FFFFFF"), ("#303E78", "#FFFFFF"), ("#FFD84D", "#000000"),
+    ("#FFFFFF", "#000000"), ("bad", "#FFFFFF"),
+])
+def test_community_heading_prefers_white(background, expected):
+    assert community_heading_color(background) == expected

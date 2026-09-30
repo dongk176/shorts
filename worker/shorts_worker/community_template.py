@@ -7,16 +7,24 @@ from typing import Any
 
 from PIL import Image, ImageDraw, ImageOps
 
-from .overlays import contrasting_title_text_color
 from .sns_template import SnsLayout, draw_text, fit_text, font, text_width
 
-COMMUNITY_RELEASE_ID = "a7db3266-7fc0-4175-a818-39aaff712ad3"
-COMMUNITY_EDITOR_RELEASE_ID = "601d3d10-62b9-47f2-a34e-78b53ab1ec99"
+COMMUNITY_RELEASE_ID = "0641d236-5e76-467e-95f3-bf695e6d6083"
+COMMUNITY_EDITOR_RELEASE_ID = "11a62875-b24a-4874-9794-4aac13b0c305"
+COMMUNITY_GENERATION_RELEASE_IDS = {COMMUNITY_RELEASE_ID, "a7db3266-7fc0-4175-a818-39aaff712ad3"}
 FRAMES = {
     "16:9": (60, 690, 960, 540), "5:4": (60, 690, 960, 768),
     "1:1": (60, 690, 960, 960), "4:5": (80, 690, 920, 1150),
     "9:16": (216, 690, 648, 1152),
 }
+
+
+def community_heading_color(background: str) -> str:
+    """Keep headings white except on very light brand colors (same rule as SVG)."""
+    if not re.fullmatch(r"#[a-fA-F0-9]{6}", background.strip()):
+        return "#FFFFFF"
+    red, green, blue = bytes.fromhex(background.strip()[1:])
+    return "#000000" if 299 * red + 587 * green + 114 * blue >= 210000 else "#FFFFFF"
 
 
 def community_layout(ratio: str) -> SnsLayout:
@@ -36,7 +44,7 @@ def create_community_overlay(
     heading = {"ko": "커뮤니티", "en": "Community", "ja": "コミュニティ"}[language]
     face = font(96, language)
     draw_text(draw, ((1080 - text_width(heading, face, -3)) / 2, 156),
-              heading, face, contrasting_title_text_color(color), -3)
+              heading, face, community_heading_color(color), -3)
     label = {"ko": "실시간 베스트", "en": "Trending now", "ja": "話題の投稿"}[language]
     draw_text(draw, (60, 305), label, font(42, language), "#303e78")
     draw.line((0, 375, 1079, 375), fill="#303e78", width=3)

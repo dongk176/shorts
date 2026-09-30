@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from .community_template import COMMUNITY_EDITOR_RELEASE_ID, COMMUNITY_RELEASE_ID
+from .community_template import COMMUNITY_EDITOR_RELEASE_ID, COMMUNITY_GENERATION_RELEASE_IDS
 from .errors import RenderError
 from .release_identity import verify_initial_render_v4_runtime
 from .schemas import EditorDocument
@@ -45,7 +45,7 @@ def validate_sns_editor_document(document: EditorDocument) -> None:
 def verify_sns_editor_binding(item: dict[str, Any], binding: dict[str, Any] | None) -> None:
     community = (item.get("template_snapshot") or {}).get("communityTemplateVersion") == 1
     editor_id = COMMUNITY_EDITOR_RELEASE_ID if community else SNS_EDITOR_RELEASE_ID
-    generation_ids = {COMMUNITY_RELEASE_ID} if community else SNS_GENERATION_RELEASE_IDS
+    generation_ids = COMMUNITY_GENERATION_RELEASE_IDS if community else SNS_GENERATION_RELEASE_IDS
     generation_id = item.get("language_test_release_id")
     details = (binding or {}).get("details") or {}
     if (

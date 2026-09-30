@@ -108,6 +108,23 @@ test('SNS DB admission is admin-only and leaves public admission intact',async()
  await db.query('update shorts_mvp.app_users set is_admin=false where id=$1',[admin]);
  await assert.rejects(edit(cr),/SNS_EDITOR_BINDING_MISMATCH/);
  await db.query('update shorts_mvp.app_users set is_admin=true where id=$1',[admin]);
+ // Heading revision preserves old projects and old in-flight editor requests.
+ await db.exec(fs.readFileSync(new URL('../supabase/migrations/202609300007_community_white_heading.sql',import.meta.url),'utf8'));
+ const cg2='0641d236-5e76-467e-95f3-bf695e6d6083',ce2='11a62875-b24a-4874-9794-4aac13b0c305';
+ await db.query('insert into shorts_mvp.language_test_releases select $1,registry,verified_at,verification from shorts_mvp.language_test_releases where id=$2',[cg2,community]);
+ for(const id of [cg2,ce2])await db.query('insert into shorts_mvp.editor_releases select $1,git_sha,worker_image_digest,font_manifest_sha256,status,staging_verified_at,ui_version,document_version,render_spec_version,caption_render_spec_version from shorts_mvp.editor_releases where id=$2',[id,communityEditor]);
+ await db.query("insert into shorts_mvp.editor_release_checks values($1,'isolated','sns_editor_compatibility','passed',now(),$2)",[ce2,JSON.stringify({...communityProof,generationReleaseIds:[community,cg2]})]);
+ await check(cj);await check({...cj,language_test_release_id:cg2,initial_editor_release_id:cg2});
+ await check(nextJob);await check(betaJob);await check(job(publicId));
+ await edit(cr);await edit({...cr,release_id:ce2});
+ await db.query('update shorts_mvp.video_jobs set language_test_release_id=$1,initial_editor_release_id=$1 where id=$2',[cg2,jobId]);
+ await edit({...cr,release_id:ce2});
+ await assert.rejects(edit(cr),/SNS_EDITOR_BINDING_MISMATCH/); // Old image was never attested for new generation.
+ await assert.rejects(check({...cj,user_id:user,language_test_release_id:cg2,initial_editor_release_id:cg2}),/COMMUNITY_TEMPLATE_ADMIN_ONLY/);
+ await assert.rejects(check({...cj,language_test_release_id:null}),/COMMUNITY_TEMPLATE_CONTEXT_MISMATCH/);
+ await db.query('update shorts_mvp.app_users set is_admin=false where id=$1',[admin]);
+ await assert.rejects(edit({...cr,release_id:ce2}),/SNS_EDITOR_BINDING_MISMATCH/);
+ await db.query('update shorts_mvp.app_users set is_admin=true where id=$1',[admin]);
  await db.query('update shorts_mvp.language_test_releases set verified_at=null where id=$1',[sns]);
  await assert.rejects(check(job(sns)),/SNS_TEMPLATE_UNAVAILABLE/); await check(job(publicId));
  }finally{await db.close();}

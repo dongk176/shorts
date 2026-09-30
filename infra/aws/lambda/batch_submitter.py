@@ -992,16 +992,20 @@ def _verify_recorded_previous_project_job(
 
 def _sns_editor_compatible(parent_job: dict[str, Any], release: dict[str, Any]) -> bool:
     community = (parent_job.get("template_snapshot") or {}).get("communityTemplateVersion") == 1
-    community_generation = "a7db3266-7fc0-4175-a818-39aaff712ad3"
-    community_editor = "601d3d10-62b9-47f2-a34e-78b53ab1ec99"
+    community_generations = {
+        "a7db3266-7fc0-4175-a818-39aaff712ad3", "0641d236-5e76-467e-95f3-bf695e6d6083",
+    }
+    community_editors = {
+        "601d3d10-62b9-47f2-a34e-78b53ab1ec99", "11a62875-b24a-4874-9794-4aac13b0c305",
+    }
     generation_ids = {
         "b871796a-f83a-4aed-8d56-bf039de1cdbf",
         "8dc98fc0-a5bb-411f-9cc6-0e8dc28648ca",
         "8af2c7e6-5421-4e93-9671-b0e8bb41de8a",
     }
     if community:
-        generation_ids = {community_generation}
-    if (release.get("id") not in ({community_editor} if community else {
+        generation_ids = community_generations
+    if (release.get("id") not in (community_editors if community else {
         "406dadcf-f290-4eb8-b82e-a6e8c6b40105", "77d3b2de-12a4-4b7d-a134-87170b1d3ecf",
         "4fbfeeaa-e210-4143-aece-c17029d962a0",
     })

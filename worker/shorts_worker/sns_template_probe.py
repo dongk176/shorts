@@ -189,6 +189,9 @@ def main() -> None:
                     channel={"ko": "퇴근연구소", "en": "After Work", "ja": "退勤研究所"}[language],
                     avatar=None,
                 )
+            if args.community:
+                with Image.open(case_dir / "sns-overlay.png") as overlay:
+                    assert (255, 255, 255, 255) in set(overlay.crop((200, 150, 880, 255)).getdata())
             probe = probe_media(output, timeout=20)
             video = next(s for s in probe["streams"] if s["codec_type"] == "video")
             assert (video["width"], video["height"]) == (1080, 1920)

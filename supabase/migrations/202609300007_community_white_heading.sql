@@ -1,0 +1,28 @@
+begin;
+set local lock_timeout='3s';
+do $$ declare body text; old text; replacement text; begin
+  body:=pg_get_functiondef('shorts_mvp.assert_community_template_job(shorts_mvp.video_jobs)'::regprocedure);
+  old:=$old$p_job.language_test_release_id is distinct from 'a7db3266-7fc0-4175-a818-39aaff712ad3'::uuid$old$;
+  replacement:=$new$(p_job.language_test_release_id is null or p_job.language_test_release_id not in ('a7db3266-7fc0-4175-a818-39aaff712ad3'::uuid,'0641d236-5e76-467e-95f3-bf695e6d6083'::uuid))$new$;
+  if position(old in body)=0 then raise exception 'COMMUNITY_HEADING_GENERATION_BASELINE_CHANGED'; end if;
+  execute replace(body,old,replacement);
+  body:=pg_get_functiondef('shorts_mvp.assert_community_editor_request(shorts_mvp.editor_render_requests)'::regprocedure);
+  old:=$old$p_request.release_id is distinct from '601d3d10-62b9-47f2-a34e-78b53ab1ec99'::uuid$old$;
+  if position(old in body)=0 then raise exception 'COMMUNITY_HEADING_EDITOR_BASELINE_CHANGED'; end if;
+  body:=replace(body,old,$new$(p_request.release_id is null or p_request.release_id not in ('601d3d10-62b9-47f2-a34e-78b53ab1ec99'::uuid,'11a62875-b24a-4874-9794-4aac13b0c305'::uuid))$new$);
+  body:=replace(body,$old$j.language_test_release_id='a7db3266-7fc0-4175-a818-39aaff712ad3'::uuid$old$,$new$j.language_test_release_id in ('a7db3266-7fc0-4175-a818-39aaff712ad3'::uuid,'0641d236-5e76-467e-95f3-bf695e6d6083'::uuid)$new$);
+  execute body;
+  body:=pg_get_functiondef('shorts_mvp.assert_sns_template_job(shorts_mvp.video_jobs)'::regprocedure);
+  old:=$old$p_job.language_test_release_id='a7db3266-7fc0-4175-a818-39aaff712ad3'::uuid$old$;
+  if position(old in body)=0 then raise exception 'COMMUNITY_HEADING_SNS_BASELINE_CHANGED'; end if;
+  execute replace(body,old,$new$p_job.language_test_release_id in ('a7db3266-7fc0-4175-a818-39aaff712ad3'::uuid,'0641d236-5e76-467e-95f3-bf695e6d6083'::uuid)$new$);
+  body:=pg_get_functiondef('shorts_mvp.assert_sns_editor_request(shorts_mvp.editor_render_requests)'::regprocedure);
+  old:=$old$p_request.release_id='601d3d10-62b9-47f2-a34e-78b53ab1ec99'::uuid$old$;
+  if position(old in body)=0 then raise exception 'COMMUNITY_HEADING_REQUEST_BASELINE_CHANGED'; end if;
+  execute replace(body,old,$new$p_request.release_id in ('601d3d10-62b9-47f2-a34e-78b53ab1ec99'::uuid,'11a62875-b24a-4874-9794-4aac13b0c305'::uuid)$new$);
+  body:=pg_get_functiondef('shorts_mvp.enforce_language_test_editor_binding()'::regprocedure);
+  old:=$old$new.release_id='601d3d10-62b9-47f2-a34e-78b53ab1ec99'::uuid$old$;
+  if position(old in body)=0 then raise exception 'COMMUNITY_HEADING_BINDING_BASELINE_CHANGED'; end if;
+  execute replace(body,old,$new$new.release_id in ('601d3d10-62b9-47f2-a34e-78b53ab1ec99'::uuid,'11a62875-b24a-4874-9794-4aac13b0c305'::uuid)$new$);
+end $$;
+commit;

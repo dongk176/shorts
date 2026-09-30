@@ -35,3 +35,12 @@ ordinary metered testing is authorized. No new recurring infrastructure.
 Deployment must retain current production route parity and ordinary admission
 fingerprints, test an unaliased candidate, and promote that exact deployment.
 Local rendering alone does not establish production worker compatibility.
+
+## White heading revision
+
+Baseline: `48797db8b2a99679f477733bec9a8c88b9ed05a2`. The large top
+heading now prefers white; only very light backgrounds (weighted sRGB brightness
+>= 210/255, including yellow and white) use black. SNS title contrast is unchanged.
+Generation `0641d236-5e76-467e-95f3-bf695e6d6083`; editor `11a62875-b24a-4874-9794-4aac13b0c305`. Previous generation/editor releases remain
+registered. The new editor attests both community generation releases; old editor
+requests retain their exact worker. No public settings or release pointers change.
