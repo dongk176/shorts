@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { VideoAspectRatio } from "./contracts";
 
-export const SNS_EDITOR_RELEASE_ID = "406dadcf-f290-4eb8-b82e-a6e8c6b40105";
+export const SNS_EDITOR_RELEASE_ID = "77d3b2de-12a4-4b7d-a134-87170b1d3ecf";
 export const SNS_GENERATION_RELEASE_IDS = [
   "8dc98fc0-a5bb-411f-9cc6-0e8dc28648ca",
   "8af2c7e6-5421-4e93-9671-b0e8bb41de8a",

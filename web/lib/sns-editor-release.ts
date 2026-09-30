@@ -9,7 +9,7 @@ export async function snsEditorRelease(db: Sql | TransactionSql, userId: string 
     select e.id,e.ui_version,e.document_version,e.font_manifest_sha256,
       j.language_test_release_id,check_row.details
     from shorts_mvp.generated_shorts s join shorts_mvp.video_jobs j on j.id=s.job_id
-    join shorts_mvp.app_users u on u.id=j.user_id and u.is_admin
+    join shorts_mvp.app_users u on u.id=j.user_id
     join shorts_mvp.editor_releases e on e.id=${SNS_EDITOR_RELEASE_ID}
     join shorts_mvp.editor_release_checks check_row on check_row.release_id=e.id
       and check_row.environment='isolated' and check_row.check_name='sns_editor_compatibility'

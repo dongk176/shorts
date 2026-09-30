@@ -802,7 +802,7 @@ class WorkerRepository:
                   j.language_test_release_id,j.initial_editor_release_id
                 from shorts_mvp.generated_shorts s
                 join shorts_mvp.video_jobs j on j.id=s.job_id
-                join shorts_mvp.app_users u on u.id=j.user_id and u.is_admin
+                join shorts_mvp.app_users u on u.id=j.user_id
                 join shorts_mvp.editor_render_requests r on r.id=s.pending_edit_request_id
                   and r.short_id=s.id and r.user_id=s.user_id
                   and r.base_render_version=s.render_version and r.status in ('queued','rendering')

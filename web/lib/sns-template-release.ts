@@ -4,7 +4,7 @@ import { languageTestRegistrySchema } from "./language-test";
 
 // A separate immutable release: never repoint the public language settings.
 export const SNS_TEMPLATE_RELEASE_ID = "8dc98fc0-a5bb-411f-9cc6-0e8dc28648ca";
-export const SNS_TEMPLATE_UNAVAILABLE = "SNS 템플릿 테스트를 준비 중입니다. 잠시 후 다시 시도해 주세요.";
+export const SNS_TEMPLATE_UNAVAILABLE = "SNS 템플릿을 준비 중입니다. 잠시 후 다시 시도해 주세요.";
 
 export async function snsTemplateRelease(db: Sql | TransactionSql) {
   const [row] = await db`
@@ -31,7 +31,7 @@ export async function snsTemplateRelease(db: Sql | TransactionSql) {
 }
 
 export async function lockSnsTemplateAdmission(db: TransactionSql, userId: string | null) {
-  const [user] = await db`select is_admin from shorts_mvp.app_users where id=${userId} for share`;
-  if (user?.isAdmin !== true) throw new HttpError(403, "관리자만 SNS 템플릿을 테스트할 수 있습니다.", "SNS_TEMPLATE_ADMIN_ONLY");
+  const [user] = await db`select id from shorts_mvp.app_users where id=${userId} for share`;
+  if (!user?.id) throw new HttpError(401, "로그인 후 SNS 템플릿을 이용해 주세요.", "AUTH_REQUIRED");
   return snsTemplateRelease(db);
 }

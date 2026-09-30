@@ -16,19 +16,19 @@ const ready = { id: SNS_TEMPLATE_RELEASE_ID, registryJson: JSON.stringify({ vers
   verifiedAt: new Date(), stagingVerifiedAt: new Date(), gitSha: sha, workerImageDigest: digest,
   fontManifestSha256: font, status: "canary_ready", uiVersion: 3, documentVersion: 3, renderSpecVersion: 4, captionRenderSpecVersion: 4 };
 
-describe("SNS admin release isolation", () => {
-  it.each([false, undefined])("rejects non-admin=%s before looking up any release", async isAdmin => {
-    const db = vi.fn(async () => [{ isAdmin }]);
-    await expect(lockSnsTemplateAdmission(db as unknown as TransactionSql, "user"))
-      .rejects.toMatchObject({ status: 403, code: "SNS_TEMPLATE_ADMIN_ONLY" });
+describe("SNS public beta release isolation", () => {
+  it("rejects an unknown account before looking up the release", async () => {
+    const db = vi.fn(async () => []);
+    await expect(lockSnsTemplateAdmission(db as unknown as TransactionSql, null))
+      .rejects.toMatchObject({ status: 401, code: "AUTH_REQUIRED" });
     expect(db).toHaveBeenCalledTimes(1);
   });
-  it("pins the admin to a verified SNS release without reading or writing the public gate", async () => {
+  it("pins an ordinary account to a verified SNS release without reading or writing the public gate", async () => {
     const db = vi.fn(async (parts: TemplateStringsArray) => {
       const sql = parts.join("?");
       expect(sql).not.toContain("language_test_settings");
       expect(sql).not.toMatch(/update |insert /i);
-      return sql.includes("app_users") ? [{ isAdmin: true }] : [ready];
+      return sql.includes("app_users") ? [{ id: "user" }] : [ready];
     });
     expect(await lockSnsTemplateAdmission(db as unknown as TransactionSql, "admin"))
       .toMatchObject({ releaseId: SNS_TEMPLATE_RELEASE_ID });

@@ -38,6 +38,16 @@ test('SNS DB admission is admin-only and leaves public admission intact',async()
  await db.exec('update shorts_mvp.language_test_settings set public_rollout_percent=0');
  await check(job(sns)); await check(job(publicId));
  await assert.rejects(check(job(publicId,user)),/LANGUAGE_PUBLIC_DISABLED/);
+ const beta='8dc98fc0-a5bb-411f-9cc6-0e8dc28648ca';
+ const publicMigration=fs.readFileSync(new URL('../supabase/migrations/202609300004_sns_public_beta.sql',import.meta.url),'utf8');
+ await db.exec(publicMigration.match(/create or replace function shorts_mvp.assert_sns_template_job[\s\S]*?end; \$\$;/)[0]);
+ await db.query('insert into shorts_mvp.language_test_releases select $1,registry,verified_at,verification from shorts_mvp.language_test_releases where id=$2',[beta,sns]);
+ await db.query('insert into shorts_mvp.editor_releases select $1,git_sha,worker_image_digest,font_manifest_sha256,status,staging_verified_at,ui_version,document_version,render_spec_version,caption_render_spec_version from shorts_mvp.editor_releases where id=$2',[beta,sns]);
+ const betaJob={...job(sns,user),language_test_release_id:beta,initial_editor_release_id:beta};
+ await check(betaJob);
+ await assert.rejects(check({...betaJob,user_id:null}),/SNS_TEMPLATE_ADMIN_ONLY/);
+ await assert.rejects(check({...betaJob,batch_job_definition:target(false).jobDefinitionArn}),/SNS_TEMPLATE_TARGET_MISMATCH/);
+ await assert.rejects(check(job(sns,user)),/SNS_TEMPLATE_ADMIN_ONLY/);
  await db.query('update shorts_mvp.language_test_releases set verified_at=null where id=$1',[sns]);
  await assert.rejects(check(job(sns)),/SNS_TEMPLATE_UNAVAILABLE/); await check(job(publicId));
  }finally{await db.close();}

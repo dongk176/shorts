@@ -109,9 +109,6 @@ export async function POST(request: Request) {
     }
     const rightsConfirmed = input.rightsConfirmed === true;
     const session = await requireAuthenticatedMvpSession();
-    if (input.snsTemplate && session.isAdmin !== true) {
-      throw new HttpError(403, "관리자만 SNS 템플릿을 테스트할 수 있습니다.", "SNS_TEMPLATE_ADMIN_ONLY");
-    }
     const db = getDb();
     const enterpriseAccess = await assertEnterpriseSessionServiceAccess(db, session);
     const enterpriseUsage = enterpriseAccess.accountType === "enterprise";

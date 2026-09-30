@@ -138,7 +138,7 @@ async function readMvpState(
     paymentMethodAction,
     usage,
     capabilities: {
-      snsTemplate: session.isAdmin === true
+      snsTemplate: session.userId !== null
         ? await snsTemplateRelease(db).then(() => true).catch(() => false) : false,
       languageTest: session.userId !== null
         ? await stage("language_access", () => languageTestStatus(db)
