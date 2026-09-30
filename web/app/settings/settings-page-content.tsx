@@ -42,7 +42,7 @@ function SettingLink({ href, icon, title, description }: {
       </span>
       <span className="min-w-0 flex-1">
         <strong className="block text-sm font-extrabold text-neutral-100">{ui(title)}</strong>
-        <span className="mt-1 block text-xs leading-5 text-neutral-500">{ui(description)}</span>
+        <span className="mt-1 block text-[13px] leading-5 text-neutral-400">{ui(description)}</span>
       </span>
       <span className="text-neutral-600 transition group-hover:translate-x-0.5 group-hover:text-neutral-300">
         <ArrowIcon />
@@ -137,10 +137,10 @@ function WithdrawalDialog({ onClose }: { onClose: () => void }) {
           <p id="withdraw-dialog-description" className="mt-3 text-sm leading-7 text-neutral-400">
             {t("settings.withdrawDialogDescription")}
           </p>
-          <p className="mt-4 rounded-xl border border-amber-300/15 bg-amber-300/[.055] px-4 py-3 text-xs leading-5 text-amber-100/80">
+          <p className="mt-4 rounded-xl border border-amber-300/15 bg-amber-300/[.055] px-4 py-3 text-[13px] leading-5 text-amber-100/80">
             {t("settings.withdrawSubscriptionWarning")}
           </p>
-          <label htmlFor="withdraw-confirmation" className="mt-6 block text-xs font-bold text-neutral-300">
+          <label htmlFor="withdraw-confirmation" className="mt-6 block text-[13px] font-bold text-neutral-300">
             {t("settings.withdrawConfirmPrompt")}
           </label>
           <input
@@ -154,7 +154,7 @@ function WithdrawalDialog({ onClose }: { onClose: () => void }) {
             className="mt-2 h-12 w-full rounded-xl border border-white/10 bg-black/25 px-4 text-sm font-bold text-white outline-none transition placeholder:text-neutral-600 focus:border-red-300/50 focus:ring-4 focus:ring-red-400/10 disabled:opacity-60"
           />
           {error ? (
-            <p role="alert" className="mt-3 rounded-xl border border-red-300/15 bg-red-400/[.07] px-4 py-3 text-xs leading-5 text-red-200">
+            <p role="alert" className="mt-3 rounded-xl border border-red-300/15 bg-red-400/[.07] px-4 py-3 text-[13px] leading-5 text-red-200">
               {ui(error)}
             </p>
           ) : null}
@@ -306,9 +306,7 @@ export function SettingsPageContent({ user }: { user: AuthProfile | null }) {
       <SiteHeader desktopSidebar><AuthControls user={user} next="/settings" /></SiteHeader>
       <main className="mx-auto w-full max-w-4xl flex-1 px-5 py-12 sm:px-8 sm:py-16">
         <header>
-          <p className="text-xs font-black tracking-[.2em] text-[#ff8c7c]">{t("settings.eyebrow")}</p>
-          <h1 className="mt-3 text-3xl font-black tracking-tight text-white sm:text-4xl">{t("settings.title")}</h1>
-          <p className="mt-3 max-w-2xl text-sm leading-7 text-neutral-400">{t("settings.description")}</p>
+          <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl">{t("settings.title")}</h1>
         </header>
 
         <div className="mt-10 grid gap-6">
@@ -319,10 +317,10 @@ export function SettingsPageContent({ user }: { user: AuthProfile | null }) {
                 {accountInitial}
               </span>
               <span className="min-w-0">
-                <span className="block text-xs font-semibold text-neutral-500">{t("settings.signedInAs")}</span>
+                <span className="block text-[13px] font-semibold text-neutral-400">{t("settings.signedInAs")}</span>
                 <strong className="mt-1 block truncate text-sm font-extrabold text-neutral-100">{accountLabel}</strong>
                 {user?.displayName && (user.loginId || user.email) ? (
-                  <span className="mt-1 block truncate text-xs text-neutral-500">
+                  <span className="mt-1 block truncate text-[13px] text-neutral-400">
                     {ui(user.loginId ? `아이디 ${user.loginId}` : user.email)}
                   </span>
                 ) : null}
@@ -347,29 +345,29 @@ export function SettingsPageContent({ user }: { user: AuthProfile | null }) {
           {activeMonthlySubscription ? (
             <section className="rounded-[22px] border border-white/[.09] bg-[#191c1e]/80 p-5 shadow-[0_18px_60px_rgba(0,0,0,.16)] sm:p-6">
               <h2 className="text-lg font-black text-white">{t("settings.subscription")}</h2>
-              <p className="mt-2 text-sm leading-6 text-neutral-500">{t("settings.subscriptionDescription")}</p>
+              <p className="mt-2 text-sm leading-6 text-neutral-400">{t("settings.subscriptionDescription")}</p>
               <div className="mt-5 flex flex-col gap-4 rounded-2xl border border-white/[.08] bg-black/15 p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <strong className="text-sm font-extrabold text-neutral-100">{activeMonthlySubscription.displayName}</strong>
-                  <p className="mt-1 text-xs leading-5 text-neutral-500">
+                  <p className="mt-1 text-[13px] leading-5 text-neutral-400">
                     {activeMonthlySubscription.cancelAtPeriodEnd
                       ? t("settings.subscriptionCancelScheduled")
                       : t("settings.subscriptionActive")}
                   </p>
                 </div>
                 {!activeMonthlySubscription.cancelAtPeriodEnd ? (
-                  <button type="button" onClick={() => setCancelSubscriptionOpen(true)} className="min-h-10 rounded-xl border border-white/10 px-4 text-xs font-extrabold text-neutral-400 transition hover:border-red-300/30 hover:bg-red-400/[.06] hover:text-red-200">
+                  <button type="button" onClick={() => setCancelSubscriptionOpen(true)} className="min-h-10 rounded-xl border border-white/10 px-4 text-[13px] font-extrabold text-neutral-400 transition hover:border-red-300/30 hover:bg-red-400/[.06] hover:text-red-200">
                     {t("settings.cancelSubscription")}
                   </button>
                 ) : null}
               </div>
-              {subscriptionMessage ? <p role="status" className="mt-3 text-xs leading-5 text-emerald-300">{subscriptionMessage}</p> : null}
+              {subscriptionMessage ? <p role="status" className="mt-3 text-[13px] leading-5 text-emerald-300">{subscriptionMessage}</p> : null}
             </section>
           ) : null}
 
           <section className="rounded-[22px] border border-white/[.09] bg-[#191c1e]/80 p-5 shadow-[0_18px_60px_rgba(0,0,0,.16)] sm:p-6">
             <h2 className="text-lg font-black text-white">{t("settings.legal")}</h2>
-            <p className="mt-2 text-sm leading-6 text-neutral-500">{t("settings.legalDescription")}</p>
+            <p className="mt-2 text-sm leading-6 text-neutral-400">{t("settings.legalDescription")}</p>
             <nav className="mt-4 grid gap-1 sm:grid-cols-2" aria-label={t("settings.legal")}>
               <PolicyLink href="/terms">{t("settings.terms")}</PolicyLink>
               <PolicyLink href="/purchase-terms">{t("settings.purchaseTerms")}</PolicyLink>
@@ -381,12 +379,12 @@ export function SettingsPageContent({ user }: { user: AuthProfile | null }) {
 
           <section className="rounded-[22px] border border-white/[.09] bg-[#191c1e]/80 p-5 shadow-[0_18px_60px_rgba(0,0,0,.16)] sm:p-6">
             <h2 className="text-lg font-black text-white">{t("settings.account")}</h2>
-            <p className="mt-2 text-sm leading-6 text-neutral-500">{t("settings.accountDescription")}</p>
+            <p className="mt-2 text-sm leading-6 text-neutral-400">{t("settings.accountDescription")}</p>
             <div className="mt-5 divide-y divide-white/[.07] overflow-hidden rounded-2xl border border-white/[.08]">
               <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <strong className="text-sm font-extrabold text-neutral-100">{t("auth.logout")}</strong>
-                  <p className="mt-1 text-xs leading-5 text-neutral-500">{t("settings.logoutDescription")}</p>
+                  <p className="mt-1 text-[13px] leading-5 text-neutral-400">{t("settings.logoutDescription")}</p>
                 </div>
                 <form action="/auth/sign-out" method="post" onSubmit={signOut}>
                   <input type="hidden" name="next" value="/" />
@@ -394,7 +392,7 @@ export function SettingsPageContent({ user }: { user: AuthProfile | null }) {
                     type="submit"
                     disabled={signingOut}
                     aria-busy={signingOut}
-                    className="min-h-10 rounded-xl border border-white/10 px-4 text-xs font-extrabold text-neutral-300 transition hover:border-white/20 hover:bg-white/[.05] hover:text-white disabled:cursor-wait disabled:opacity-60"
+                    className="min-h-10 rounded-xl border border-white/10 px-4 text-[13px] font-extrabold text-neutral-300 transition hover:border-white/20 hover:bg-white/[.05] hover:text-white disabled:cursor-wait disabled:opacity-60"
                   >
                     {t("auth.logout")}
                   </button>
@@ -403,12 +401,12 @@ export function SettingsPageContent({ user }: { user: AuthProfile | null }) {
               <div className="flex flex-col gap-4 bg-red-500/[.025] p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <strong className="text-sm font-extrabold text-red-200">{t("settings.withdraw")}</strong>
-                  <p className="mt-1 text-xs leading-5 text-neutral-500">{t("settings.withdrawDescription")}</p>
+                  <p className="mt-1 text-[13px] leading-5 text-neutral-400">{t("settings.withdrawDescription")}</p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setWithdrawalOpen(true)}
-                  className="min-h-10 rounded-xl border border-red-300/20 px-4 text-xs font-extrabold text-red-200 transition hover:border-red-300/40 hover:bg-red-400/[.08] hover:text-red-100"
+                  className="min-h-10 rounded-xl border border-red-300/20 px-4 text-[13px] font-extrabold text-red-200 transition hover:border-red-300/40 hover:bg-red-400/[.08] hover:text-red-100"
                 >
                   {t("settings.withdrawButton")}
                 </button>

@@ -2525,3 +2525,6 @@ main#top > section#results { border: 0; border-radius: 0; padding: 0; background
   .project-card-thumbnail .brand-progress { width: 48px; height: 48px; }
   .project-card-thumbnail .brand-progress-value { font-size: 12px; }
 }
+
+/* Workspace content does not need a second card around its cards. */
+.app-shell main > section.project-list-section {border:0;border-radius:0;padding:0;background:transparent;box-shadow:none;backdrop-filter:none}

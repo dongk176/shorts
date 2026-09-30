@@ -14,5 +14,5 @@ export function YoutubeLaunchAnnouncement() {
   const eligible = locale === "ko" && (pathname === "/" || pathname === "/projects" || /^\/projects\/\d+$/.test(pathname));
   useEffect(() => { if (active && !eligible) complete(); }, [active, eligible, complete]);
   if (!active || !eligible) return null;
-  return <YoutubeLaunchGuide preview={process.env.NODE_ENV === "development"} onDismiss={complete} />;
+  return <YoutubeLaunchGuide onDismiss={complete} />;
 }

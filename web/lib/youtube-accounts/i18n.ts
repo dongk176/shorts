@@ -2,6 +2,8 @@ import type { SiteLocale } from "@/lib/i18n/config";
 
 // Product copy only. Never pass channel names, video titles or descriptions here.
 export const youtubeCopy: Record<string, readonly [string, string]> = {
+ "추가 플랫폼 준비 중": ["More platforms coming soon", "ほかのプラットフォームも準備中"],
+ "관리": ["Manage", "管理"],
  "해당 플랫폼은 서비스 준비중입니다.": ["This platform is coming soon.", "このプラットフォームはサービス準備中です。"],
  "채널 연동": ["Channel connections", "チャンネル連携"],
  "채널을 연결하고, 프로젝트에서 바로 업로드하세요.": ["Connect a channel and upload directly from your projects.", "チャンネルを連携して、プロジェクトから直接アップロードしましょう。"],

@@ -31,7 +31,7 @@ async function render(preview = false, seen = false) {
   return { document, storage, dismissed, click };
 }
 
-it("records completion only after all three steps and never turns screenshots into links", async () => {
+it("records completion at the final step and never turns screenshots into links", async () => {
   const { document, storage, dismissed, click } = await render();
   expect(document.querySelector("dialog[open]")).not.toBeNull();
   expect(document.querySelectorAll(".yt-launch-shot a,.yt-launch-shot button")).toHaveLength(0);
@@ -43,9 +43,21 @@ it("records completion only after all three steps and never turns screenshots in
   expect(document.querySelector("dialog")).toBeNull();
 });
 
-it("does not mark an early close as completed", async () => {
-  const { storage, click } = await render();
-  await click("안내 닫기"); expect(storage.setItem).not.toHaveBeenCalled();
+it("remembers an early close so it stays dismissed on the next visit", async () => {
+  const { storage, click, document } = await render();
+  await click("안내 닫기");
+  expect(document.querySelector("dialog")).toBeNull();
+  expect(storage.setItem).toHaveBeenCalledExactlyOnceWith(YOUTUBE_LAUNCH_SEEN_KEY, "yes");
+  await act(async () => root!.unmount()); root = undefined;
+  const nextVisit = await render(false, true);
+  expect(nextVisit.document.querySelector("dialog")).toBeNull();
+});
+
+it("also remembers dismissal with Escape", async () => {
+  const { storage, document } = await render();
+  await act(async () => document.querySelector("dialog")!.dispatchEvent(new window.Event("cancel", { bubbles: false, cancelable: true })));
+  expect(storage.setItem).toHaveBeenCalledExactlyOnceWith(YOUTUBE_LAUNCH_SEEN_KEY, "yes");
+  expect(document.querySelector("dialog")).toBeNull();
 });
 
 it("skips a completed production announcement", async () => {

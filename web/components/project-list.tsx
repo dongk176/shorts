@@ -81,7 +81,7 @@ export function ProjectList({
 
   return (
     <section className="project-list-section mt-10" aria-labelledby="project-list-title">
-      <div className="mb-5 flex items-center gap-2">
+      <div className={authenticated ? "sr-only" : "mb-5 flex items-center gap-2"}>
         <h2 id="project-list-title" className="text-lg font-extrabold text-white">
           {ui(authenticated ? "전체 프로젝트" : "예시 작업")}
         </h2>

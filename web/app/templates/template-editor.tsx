@@ -820,7 +820,7 @@ export function TemplateEditor({
 
         <main className="min-h-dvh px-4 pb-[calc(80px+env(safe-area-inset-bottom,0px))] pt-[calc(72px+env(safe-area-inset-top,0px))] lg:px-0 lg:pb-10 lg:pl-[584px] lg:pr-6 lg:pt-24">
           <div className="mx-auto flex max-w-[920px] flex-col items-center">
-            <div className="mb-3 flex w-full max-w-[500px] items-center justify-between text-[11px] font-bold text-neutral-500 lg:mb-4 lg:text-xs"><span className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2.5 py-1 text-emerald-300 lg:px-3">● LIVE PREVIEW</span><span className="lg:hidden">{ui("끌어 이동 · 두 번 탭해 설정")}</span><span className="hidden lg:inline">9:16 · 1080 × 1920</span></div>
+            <div className="mb-3 flex w-full max-w-[500px] items-center justify-between text-[11px] font-bold text-neutral-500 lg:mb-4 lg:text-xs"><span className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2.5 py-1 text-emerald-300 lg:px-3">미리보기</span><span className="lg:hidden">{ui("끌어 이동 · 두 번 탭해 설정")}</span><span className="hidden lg:inline">9:16 · 1080 × 1920</span></div>
             <div className="flex min-h-[calc(100dvh-180px)] w-full items-center justify-center overflow-auto lg:min-h-[680px]">
               <div style={{ transform: `scale(${zoom})`, transformOrigin: "center" }}>
                 <div ref={canvasRef} data-i18n-content="" aria-label={ui("템플릿 미리보기. 레이아웃을 끌어 이동하고 두 번 탭하면 설정이 열립니다.")} className="relative aspect-[9/16] w-[min(76vw,360px)] touch-none overflow-hidden rounded-[12px] shadow-[0_30px_100px_rgba(0,0,0,.65)]" style={{ ...background, containerType: "inline-size" }} onPointerDown={(event) => beginCanvasTargetTap(event, "background")}>
@@ -902,7 +902,7 @@ export function TemplateEditor({
                   aria-pressed={active}
                   aria-controls="template-tool-detail"
                   onClick={() => activateSidebarTool(tool.id)}
-                  className={`flex min-h-[54px] w-[64px] shrink-0 flex-col items-center justify-center gap-1 rounded-xl px-1 py-1 text-center text-[10px] font-extrabold leading-tight tracking-[-.025em] transition lg:min-h-[76px] lg:w-full lg:gap-1.5 lg:py-2 lg:text-[13px] ${active ? "bg-white/[.12] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,.08)]" : "text-[#aaa8b0] hover:bg-white/[.06] hover:text-white"}`}
+                  className={`flex min-h-[54px] w-[64px] shrink-0 flex-col items-center justify-center gap-1 rounded-xl px-1 py-1 text-center text-[13px] font-extrabold leading-tight tracking-[-.025em] transition lg:min-h-[76px] lg:w-full lg:gap-1.5 lg:py-2 lg:text-[13px] ${active ? "bg-white/[.12] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,.08)]" : "text-[#aaa8b0] hover:bg-white/[.06] hover:text-white"}`}
                 >
                   <span className={`grid h-[28px] w-[28px] place-items-center rounded-[9px] lg:h-[34px] lg:w-[34px] lg:rounded-[10px] ${active ? "bg-white/[.16]" : "bg-white/[.07]"}`}>
                     <TemplateSidebarSectionIcon section={tool.id} />
@@ -916,23 +916,23 @@ export function TemplateEditor({
           <button type="button" onClick={() => setMobileControlsOpen(false)} aria-label={ui("설정 닫기")} className="absolute left-1/2 top-1 z-10 grid h-8 w-14 -translate-x-1/2 place-items-center rounded-full text-neutral-300 transition hover:bg-white/[.06] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#ff715e] lg:hidden"><svg viewBox="0 0 20 20" fill="none" className="h-5 w-5" aria-hidden="true"><path d="m5.5 7.75 4.5 4.5 4.5-4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg></button>
           <fieldset disabled={saving || backgroundBusy} className="min-h-0 flex-1 space-y-7 overflow-y-auto px-4 pb-32 pt-11 lg:px-[26px] lg:pt-[18px]">
             <header className="border-b border-white/[.08] pb-4">
-              <h1 className="text-lg font-extrabold tracking-[-.025em] text-[#f6f4f7]">{ui(TEMPLATE_SIDEBAR_TOOLS.find((tool) => tool.id === activeSidebarTool)?.label)}</h1><p className="mt-1.5 text-xs leading-5 text-[#8f8e97]"><span className="lg:hidden">{ui("미리보기를 보며 변경 내용을 실시간으로 확인하세요.")}</span><span className="hidden lg:inline">{ui("오른쪽 미리보기에서 변경 내용을 실시간으로 확인하세요.")}</span></p>
+              <h1 className="text-lg font-extrabold tracking-[-.025em] text-[#f6f4f7]">{ui(TEMPLATE_SIDEBAR_TOOLS.find((tool) => tool.id === activeSidebarTool)?.label)}</h1>
             </header>
 
             <section hidden={activeSidebarTool !== "template"}>
               <label className="block text-[15px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">{ui("템플릿 이름")}<input value={name} maxLength={50} onChange={(event) => setName(event.target.value)} className="mt-3 h-11 w-full rounded-xl border border-white/10 bg-black/25 px-3 text-sm font-medium text-white outline-none transition focus:border-[#ff715e]" /></label>
               <div className="mt-6 border-t border-white/10 pt-5">
                 <h2 className="text-[17px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">{ui("영상 프레임")}</h2>
-                <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3.5"><h3 className="text-sm font-semibold text-neutral-200">{ui("영상 비율")}</h3><div className="mt-3 grid grid-cols-5 gap-1">{videoAspectRatioOptions.map((option) => <button key={option.value} type="button" onClick={() => changeAspect(option.value)} className={`rounded-lg py-2 text-[10px] font-bold transition ${config.video.aspectRatio === option.value ? "bg-white text-black" : "bg-white/5 text-neutral-400 hover:bg-white/10"}`}>{option.value}</button>)}</div><p className="mt-3 text-[11px] leading-5 text-neutral-500">{ui("프레임을 끌어 이동하고 오른쪽 아래 핸들로 비율을 유지한 채 크기를 조절하세요.")}</p></div>
+                <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3.5"><h3 className="text-sm font-semibold text-neutral-200">{ui("영상 비율")}</h3><div className="mt-3 grid grid-cols-5 gap-1">{videoAspectRatioOptions.map((option) => <button key={option.value} type="button" onClick={() => changeAspect(option.value)} className={`rounded-lg py-2 text-[13px] font-bold transition ${config.video.aspectRatio === option.value ? "bg-white text-black" : "bg-white/5 text-neutral-400 hover:bg-white/10"}`}>{option.value}</button>)}</div><p className="mt-3 text-[13px] leading-5 text-neutral-400">{ui("프레임을 끌어 이동하고 오른쪽 아래 핸들로 비율을 유지한 채 크기를 조절하세요.")}</p></div>
               </div>
             </section>
 
             {customTemplateDesignEnabled && <section hidden={activeSidebarTool !== "text"} aria-label={ui("템플릿 추가 텍스트")}>
-              <div className="flex items-center justify-between gap-3"><h2 className="text-[17px] font-extrabold text-[#f2f0f4]">{ui("추가 텍스트")}</h2><span className="text-xs text-neutral-500">{extraTexts.length}/{TEMPLATE_TEXT_OVERLAY_LIMIT}</span></div>
-              <p className="mt-1.5 text-xs leading-5 text-[#8f8e97]">{ui("완성 영상 전체에 표시됩니다. 생성 후 편집기에서 표시 시간을 바꿀 수 있습니다.")}</p>
-              <button type="button" disabled={extraTexts.length >= TEMPLATE_TEXT_OVERLAY_LIMIT} onClick={addExtraText} className="mt-3 w-full rounded-xl border border-white/15 bg-white/[.04] py-3 text-xs font-bold text-neutral-100 hover:border-[#ff715e] disabled:opacity-40">{ui("+ 텍스트 추가")}</button>
+              <div className="flex items-center justify-between gap-3"><h2 className="text-[17px] font-extrabold text-[#f2f0f4]">{ui("추가 텍스트")}</h2><span className="text-[13px] text-neutral-400">{extraTexts.length}/{TEMPLATE_TEXT_OVERLAY_LIMIT}</span></div>
+              <p className="mt-1.5 text-[13px] leading-5 text-[#a8a7b2]">{ui("완성 영상 전체에 표시됩니다. 생성 후 편집기에서 표시 시간을 바꿀 수 있습니다.")}</p>
+              <button type="button" disabled={extraTexts.length >= TEMPLATE_TEXT_OVERLAY_LIMIT} onClick={addExtraText} className="mt-3 w-full rounded-xl border border-white/15 bg-white/[.04] py-3 text-[13px] font-bold text-neutral-100 hover:border-[#ff715e] disabled:opacity-40">{ui("+ 텍스트 추가")}</button>
               {extraTexts.length > 0 && <div className="mt-3 space-y-2" aria-label={ui("템플릿 추가 텍스트 목록")}>{extraTexts.map((text, index) => <div key={text.id}>
-                <button type="button" aria-pressed={selectedExtraText?.id === text.id} onClick={() => { selectLayer(`text:${text.id}`); setEditingTextId(null); }} className={`flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left text-xs ${selectedExtraText?.id === text.id ? "border-[#ff715e] bg-[#ff715e]/10 text-white" : "border-white/10 text-neutral-400"}`}><span aria-hidden="true" className="font-black">T</span><span data-i18n-content={text.text.trim() ? "" : undefined} className="min-w-0 truncate">{text.text.trim() || `텍스트 ${index + 1}`}</span></button>
+                <button type="button" aria-pressed={selectedExtraText?.id === text.id} onClick={() => { selectLayer(`text:${text.id}`); setEditingTextId(null); }} className={`flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left text-[13px] ${selectedExtraText?.id === text.id ? "border-[#ff715e] bg-[#ff715e]/10 text-white" : "border-white/10 text-neutral-400"}`}><span aria-hidden="true" className="font-black">T</span><span data-i18n-content={text.text.trim() ? "" : undefined} className="min-w-0 truncate">{text.text.trim() || `텍스트 ${index + 1}`}</span></button>
                 {selectedExtraText?.id === text.id && <EditorTextOverlayControls
                   textOverlay={text}
                   onChange={(patch, mode) => updateExtraText(text.id, patch, mode)}
@@ -953,11 +953,11 @@ export function TemplateEditor({
             </section>}
 
             {!customTemplateDesignEnabled && <section hidden={activeSidebarTool !== "text"} aria-label={ui("텍스트 설정 안내")}>
-              <p className="rounded-xl border border-white/10 bg-black/20 px-4 py-4 text-xs leading-6 text-neutral-400">{ui("추가 텍스트 기능은 현재 공개 범위에 포함되지 않습니다. 기존 템플릿 요소는 그대로 유지됩니다.")}</p>
+              <p className="rounded-xl border border-white/10 bg-black/20 px-4 py-4 text-[13px] leading-6 text-neutral-400">{ui("추가 텍스트 기능은 현재 공개 범위에 포함되지 않습니다. 기존 템플릿 요소는 그대로 유지됩니다.")}</p>
             </section>}
 
             {selectedTextLayer && (activeSidebarTool === "title" || activeSidebarTool === "channel") && <section><h2 className="text-[17px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">{ui(selectedLayer === "title" ? "제목 스타일" : "채널명 스타일")}</h2><div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3.5">
-              <div className="flex items-center justify-between"><span className="text-sm font-semibold text-neutral-200">{ui("레이어 표시")}</span><button type="button" onClick={() => commit((next) => { next[selectedLayer as TextLayerId].visible = !selectedTextLayer.visible; return next; })} className={`rounded-full px-3 py-1 text-xs font-bold ${selectedTextLayer.visible ? "bg-emerald-400 text-black" : "bg-white/10 text-neutral-400"}`}>{ui(selectedTextLayer.visible ? "켜짐" : "꺼짐")}</button></div>
+              <div className="flex items-center justify-between"><span className="text-sm font-semibold text-neutral-200">{ui("레이어 표시")}</span><button type="button" onClick={() => commit((next) => { next[selectedLayer as TextLayerId].visible = !selectedTextLayer.visible; return next; })} className={`rounded-full px-3 py-1 text-[13px] font-bold ${selectedTextLayer.visible ? "bg-emerald-400 text-black" : "bg-white/10 text-neutral-400"}`}>{ui(selectedTextLayer.visible ? "켜짐" : "꺼짐")}</button></div>
               {selectedLayer === "title" && unifiedTitleFontId && <label className="mt-5 block border-t border-white/10 pt-4 text-sm font-semibold text-neutral-200">{ui("후킹 제목 폰트")}<select
                   aria-label={ui("후킹 제목 폰트")}
                   value={unifiedTitleFontId}
@@ -970,21 +970,21 @@ export function TemplateEditor({
                 >
                   {editorFontOptions.map((font) => <option key={font.id} value={font.id}>{ui(font.label)}</option>)}
                 </select>
-                <span className="mt-2 block text-[11px] font-medium leading-5 text-neutral-500">{ui("저장한 폰트가 홈 미리보기와 완성 영상의 후킹 제목에 적용됩니다.")}</span>
+
               </label>}
               <label className="mt-5 block border-t border-white/10 pt-4 text-sm font-semibold text-neutral-200">{ui("글자 크기 ")}<span className="float-right text-sm text-[#ff9b8d]">{selectedTextLayer.fontSize}px</span><input type="range" min={selectedLayer === "channel" ? 20 : 24} max={selectedLayer === "title" ? 96 : 64} value={selectedTextLayer.fontSize} onChange={(event) => commit((next) => { next[selectedLayer as TextLayerId].fontSize = Number(event.target.value); return next; })} className="mt-3 w-full accent-[#ff715e]" /></label>
               {selectedLayer === "title" ? <>
-                <div className="mt-5 border-t border-white/10 pt-4"><h3 className="text-sm font-semibold text-neutral-200">{ui("1행 제목")}</h3><div className="mt-3 grid grid-cols-2 gap-5"><div><p className="text-xs font-semibold text-neutral-400">{ui("글자색")}</p><div className="mt-2"><ColorPalette key="title-line-1-text" value={config.title.primaryColor} onChange={(color) => { if (color) commit((next) => { next.title.primaryColor = color; return next; }); }} /></div></div><div><p className="text-xs font-semibold text-neutral-400">{ui("배경색")}</p><div className="mt-2"><ColorPalette key="title-line-1-background" allowNone value={config.title.primaryBackgroundColor} onChange={(color) => commit((next) => { next.title.primaryBackgroundColor = color; return next; })} /></div></div></div></div>
-                <div className="mt-5 border-t border-white/10 pt-4"><h3 className="text-sm font-semibold text-neutral-200">{ui("2행 제목")}</h3><div className="mt-3 grid grid-cols-2 gap-5"><div><p className="text-xs font-semibold text-neutral-400">{ui("글자색")}</p><div className="mt-2"><ColorPalette key="title-line-2-text" value={config.title.accentColor} onChange={(color) => { if (color) commit((next) => { next.title.accentColor = color; return next; }); }} /></div></div><div><p className="text-xs font-semibold text-neutral-400">{ui("배경색")}</p><div className="mt-2"><ColorPalette key="title-line-2-background" allowNone value={config.title.accentBackgroundColor} onChange={(color) => commit((next) => { next.title.accentBackgroundColor = color; return next; })} /></div></div></div></div>
-              </> : <div className="mt-5 border-t border-white/10 pt-4"><h3 className="text-sm font-semibold text-neutral-200">{ui("채널명")}</h3>{commentLayerEnabled && <p className="mt-1.5 text-[11px] leading-5 text-neutral-500">{ui("댓글 카드 크기가 바뀌어도 채널명은 항상 카드 아래로 자동 정렬됩니다.")}</p>}<div className="mt-3 grid grid-cols-2 gap-5"><div><p className="text-xs font-semibold text-neutral-400">{ui("글자색")}</p><div className="mt-2"><ColorPalette key="channel-color" value={config.channel.color} onChange={(color) => { if (color) commit((next) => { next.channel.color = color; return next; }); }} /></div></div><div><p className="text-xs font-semibold text-neutral-400">{ui("배경색")}</p><div className="mt-2"><ColorPalette key="channel-background" allowNone value={config.channel.backgroundColor} onChange={(color) => commit((next) => { next.channel.backgroundColor = color; return next; })} /></div></div></div></div>}
+                <div className="mt-5 border-t border-white/10 pt-4"><h3 className="text-sm font-semibold text-neutral-200">{ui("1행 제목")}</h3><div className="mt-3 grid grid-cols-2 gap-5"><div><p className="text-[13px] font-semibold text-neutral-400">{ui("글자색")}</p><div className="mt-2"><ColorPalette key="title-line-1-text" value={config.title.primaryColor} onChange={(color) => { if (color) commit((next) => { next.title.primaryColor = color; return next; }); }} /></div></div><div><p className="text-[13px] font-semibold text-neutral-400">{ui("배경색")}</p><div className="mt-2"><ColorPalette key="title-line-1-background" allowNone value={config.title.primaryBackgroundColor} onChange={(color) => commit((next) => { next.title.primaryBackgroundColor = color; return next; })} /></div></div></div></div>
+                <div className="mt-5 border-t border-white/10 pt-4"><h3 className="text-sm font-semibold text-neutral-200">{ui("2행 제목")}</h3><div className="mt-3 grid grid-cols-2 gap-5"><div><p className="text-[13px] font-semibold text-neutral-400">{ui("글자색")}</p><div className="mt-2"><ColorPalette key="title-line-2-text" value={config.title.accentColor} onChange={(color) => { if (color) commit((next) => { next.title.accentColor = color; return next; }); }} /></div></div><div><p className="text-[13px] font-semibold text-neutral-400">{ui("배경색")}</p><div className="mt-2"><ColorPalette key="title-line-2-background" allowNone value={config.title.accentBackgroundColor} onChange={(color) => commit((next) => { next.title.accentBackgroundColor = color; return next; })} /></div></div></div></div>
+              </> : <div className="mt-5 border-t border-white/10 pt-4"><h3 className="text-sm font-semibold text-neutral-200">{ui("채널명")}</h3>{commentLayerEnabled && <p className="mt-1.5 text-[13px] leading-5 text-neutral-400">{ui("댓글 카드 크기가 바뀌어도 채널명은 항상 카드 아래로 자동 정렬됩니다.")}</p>}<div className="mt-3 grid grid-cols-2 gap-5"><div><p className="text-[13px] font-semibold text-neutral-400">{ui("글자색")}</p><div className="mt-2"><ColorPalette key="channel-color" value={config.channel.color} onChange={(color) => { if (color) commit((next) => { next.channel.color = color; return next; }); }} /></div></div><div><p className="text-[13px] font-semibold text-neutral-400">{ui("배경색")}</p><div className="mt-2"><ColorPalette key="channel-background" allowNone value={config.channel.backgroundColor} onChange={(color) => commit((next) => { next.channel.backgroundColor = color; return next; })} /></div></div></div></div>}
             </div></section>}
 
             {activeSidebarTool === "subtitle" && selectedSubtitle && <section>
               <div className="flex items-center justify-between gap-3">
                 <h2 className="text-[17px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">{ui("자막 스타일")}</h2>
-                <span className="rounded-full border border-[#35e6e3]/25 bg-[#35e6e3]/10 px-2.5 py-1 text-[10px] font-bold text-[#74efec]">{ui("영상에 적용")}</span>
+
               </div>
-              <p className="mt-1.5 text-xs leading-5 text-[#8f8e97]">{ui("이 설정은 템플릿 미리보기와 링크로 만든 영상에 동일하게 적용됩니다.")}</p>
+
               <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3.5">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-semibold text-neutral-200">{ui("자막 표시")}</span>
@@ -994,7 +994,7 @@ export function TemplateEditor({
                       if (isTemplateConfigV5(next)) next.subtitle.visible = !next.subtitle.visible;
                       return next;
                     })}
-                    className={`rounded-full px-3 py-1 text-xs font-bold ${selectedSubtitle.visible ? "bg-emerald-400 text-black" : "bg-white/10 text-neutral-400"}`}
+                    className={`rounded-full px-3 py-1 text-[13px] font-bold ${selectedSubtitle.visible ? "bg-emerald-400 text-black" : "bg-white/10 text-neutral-400"}`}
                   >
                     {ui(selectedSubtitle.visible ? "켜짐" : "꺼짐")}
                   </button>
@@ -1014,8 +1014,8 @@ export function TemplateEditor({
                         })}
                         className={`rounded-xl border px-3 py-3 text-left transition ${selectedSubtitle.variant === option.value ? "border-[#ff715e] bg-[#ff715e]/10 text-white" : "border-white/10 bg-white/[.03] text-neutral-400 hover:border-white/30 hover:text-white"}`}
                       >
-                        <strong className="block text-xs">{ui(option.label)}</strong>
-                        <span className="mt-1 block text-[10px] leading-4 text-neutral-500">{ui(option.description)}</span>
+                        <strong className="block text-[13px]">{ui(option.label)}</strong>
+                        <span className="mt-1 block text-[13px] leading-4 text-neutral-400">{ui(option.description)}</span>
                       </button>
                     ))}
                   </div>
@@ -1066,59 +1066,59 @@ export function TemplateEditor({
                     className="mt-3 w-full accent-[#ff715e]"
                   />
                 </label>
-                <p className="mt-2 text-[11px] leading-5 text-neutral-500">{ui("가로 위치는 영상 중앙에 고정됩니다. 미리보기의 자막을 위아래로 끌어도 됩니다.")}</p>
+                <p className="mt-2 text-[13px] leading-5 text-neutral-400">{ui("가로 위치는 영상 중앙에 고정됩니다. 미리보기의 자막을 위아래로 끌어도 됩니다.")}</p>
 
                 <div className="mt-5 grid grid-cols-2 gap-5 border-t border-white/10 pt-4">
-                  <div><p className="text-xs font-semibold text-neutral-400">{ui("기본 글자색")}</p><div className="mt-2"><ColorPalette key="subtitle-text-color" value={selectedSubtitle.color} onChange={(color) => { if (color) commit((next) => { if (isTemplateConfigV5(next)) next.subtitle.color = color; return next; }); }} /></div></div>
-                  <div><p className="text-xs font-semibold text-neutral-400">{ui("강조 글자색")}</p><div className="mt-2"><ColorPalette key="subtitle-accent-color" value={selectedSubtitle.accentColor} rendererOnly onChange={(color) => { if (color && rendererPresetColor(color)) commit((next) => { if (isTemplateConfigV5(next)) next.subtitle.accentColor = color; return next; }); }} /></div></div>
+                  <div><p className="text-[13px] font-semibold text-neutral-400">{ui("기본 글자색")}</p><div className="mt-2"><ColorPalette key="subtitle-text-color" value={selectedSubtitle.color} onChange={(color) => { if (color) commit((next) => { if (isTemplateConfigV5(next)) next.subtitle.color = color; return next; }); }} /></div></div>
+                  <div><p className="text-[13px] font-semibold text-neutral-400">{ui("강조 글자색")}</p><div className="mt-2"><ColorPalette key="subtitle-accent-color" value={selectedSubtitle.accentColor} rendererOnly onChange={(color) => { if (color && rendererPresetColor(color)) commit((next) => { if (isTemplateConfigV5(next)) next.subtitle.accentColor = color; return next; }); }} /></div></div>
                 </div>
 
-                <div className="mt-5 rounded-lg border border-emerald-300/20 bg-emerald-300/[.06] px-3 py-2.5 text-[11px] leading-5 text-emerald-100/75">{ui("템플릿을 저장하면 선택한 자막 상태·위치·폰트·크기·색상이 함께 저장됩니다.")}</div>
+
               </div>
             </section>}
 
             {activeSidebarTool === "subtitle" && !selectedSubtitle && <section>
-              <p className="rounded-xl border border-white/10 bg-black/20 px-4 py-4 text-xs leading-6 text-neutral-400">{ui("이 템플릿에는 편집 가능한 자막 레이어가 없습니다.")}</p>
+              <p className="rounded-xl border border-white/10 bg-black/20 px-4 py-4 text-[13px] leading-6 text-neutral-400">{ui("이 템플릿에는 편집 가능한 자막 레이어가 없습니다.")}</p>
             </section>}
 
             {activeSidebarTool === "comment" && selectedLayer === "comment" && commentLayerEnabled && <section>
               <div className="flex items-center justify-between gap-3">
                 <h2 className="text-[17px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">{ui("댓글 레이아웃")}</h2>
-                <span className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2.5 py-1 text-[10px] font-bold text-emerald-300">{ui("렌더링 적용")}</span>
+
               </div>
-              <p className="mt-1.5 text-xs leading-5 text-[#8f8e97]">{ui("예시 문구는 편집용으로 고정되며, 저장한 모드·크기·위치가 실제 댓글에 적용됩니다.")}</p>
+              <p className="mt-1.5 text-[13px] leading-5 text-[#a8a7b2]">{ui("댓글 문구는 예시입니다. 실제 영상의 댓글로 바뀝니다.")}</p>
               <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3.5">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-semibold text-neutral-200">{ui("레이어 표시")}</span>
-                  <button type="button" onClick={() => commit((next) => { next.comment.visible = !next.comment.visible; return next; })} className={`rounded-full px-3 py-1 text-xs font-bold ${config.comment.visible ? "bg-emerald-400 text-black" : "bg-white/10 text-neutral-400"}`}>{ui(config.comment.visible ? "켜짐" : "꺼짐")}</button>
+                  <button type="button" onClick={() => commit((next) => { next.comment.visible = !next.comment.visible; return next; })} className={`rounded-full px-3 py-1 text-[13px] font-bold ${config.comment.visible ? "bg-emerald-400 text-black" : "bg-white/10 text-neutral-400"}`}>{ui(config.comment.visible ? "켜짐" : "꺼짐")}</button>
                 </div>
 
                 <div className="mt-5 border-t border-white/10 pt-4">
                   <h3 className="text-sm font-semibold text-neutral-200">{ui("댓글 모드")}</h3>
                   <div className="mt-3 grid grid-cols-2 gap-2">
-                    {commentThemeOptions.map((option) => <button key={option.value} type="button" onClick={() => commit((next) => { next.comment.theme = option.value; return next; })} className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-bold transition ${config.comment.theme === option.value ? "border-[#ff715e] bg-[#ff715e]/10 text-white" : "border-white/10 bg-white/[.03] text-neutral-400 hover:border-white/30 hover:text-white"}`}><span className="h-5 w-8 border border-white/15" style={{ backgroundColor: option.background }}><span className="mx-auto mt-[8px] block h-px w-4" style={{ backgroundColor: option.foreground }} /></span>{ui(option.label)}</button>)}
+                    {commentThemeOptions.map((option) => <button key={option.value} type="button" onClick={() => commit((next) => { next.comment.theme = option.value; return next; })} className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-[13px] font-bold transition ${config.comment.theme === option.value ? "border-[#ff715e] bg-[#ff715e]/10 text-white" : "border-white/10 bg-white/[.03] text-neutral-400 hover:border-white/30 hover:text-white"}`}><span className="h-5 w-8 border border-white/15" style={{ backgroundColor: option.background }}><span className="mx-auto mt-[8px] block h-px w-4" style={{ backgroundColor: option.foreground }} /></span>{ui(option.label)}</button>)}
                   </div>
-                  <p className="mt-2 text-[11px] leading-5 text-neutral-500">{ui("두 모드 모두 가로 여백 없이 캔버스 너비 전체를 채우며 모서리는 각지게 유지합니다.")}</p>
+
                 </div>
 
                 <div className="mt-5 border-t border-white/10 pt-4">
                   <h3 className="text-sm font-semibold text-neutral-200">{ui("댓글 크기")}</h3>
-                  <div className="mt-3 grid grid-cols-3 gap-1.5">{commentSizeOptions.map((option) => <button key={option.value} type="button" onClick={() => commit((next) => { next.comment.size = option.value; return next; })} className={`rounded-lg py-2.5 text-xs font-bold transition ${config.comment.size === option.value ? "bg-white text-black" : "bg-white/5 text-neutral-400 hover:bg-white/10 hover:text-white"}`}>{ui(option.label)}</button>)}</div>
-                  <p className="mt-2 text-[11px] leading-5 text-neutral-500">{ui("크기를 바꾸면 프로필·문구·반응 버튼과 안쪽 여백이 함께 줄고, 카드 높이도 내용에 맞춰 자동 조절됩니다.")}</p>
+                  <div className="mt-3 grid grid-cols-3 gap-1.5">{commentSizeOptions.map((option) => <button key={option.value} type="button" onClick={() => commit((next) => { next.comment.size = option.value; return next; })} className={`rounded-lg py-2.5 text-[13px] font-bold transition ${config.comment.size === option.value ? "bg-white text-black" : "bg-white/5 text-neutral-400 hover:bg-white/10 hover:text-white"}`}>{ui(option.label)}</button>)}</div>
+
                 </div>
 
                 <label className="mt-5 block border-t border-white/10 pt-4 text-sm font-semibold text-neutral-200">{ui("세로 위치 ")}<span className="float-right text-sm text-[#ff9b8d]">{Math.round((commentY / TEMPLATE_CANVAS.height) * 100)}%</span><input type="range" min={COMMENT_Y_MIN} max={COMMENT_Y_MAX} step={10} value={commentY} onChange={(event) => { const vertical = snapCommentYToVideo(Number(event.target.value), videoBottom, 30); commit((next) => { next.comment.y = vertical.value; next.comment.dockedToVideo = vertical.snapped; return next; }); }} className="mt-3 w-full accent-[#ff715e]" /></label>
-                <p className={`mt-2 text-[11px] leading-5 ${commentIsDockedToVideo ? "font-semibold text-[#74efec]" : "text-neutral-500"}`}>{ui(commentIsDockedToVideo ? "영상 하단에 자석처럼 붙어 있습니다." : "슬라이더를 쓰거나 댓글 카드를 끌어 영상 하단 가까이 가져가 보세요.")}</p>
+                <p className={`mt-2 text-[13px] leading-5 ${commentIsDockedToVideo ? "font-semibold text-[#74efec]" : "text-neutral-400"}`}>{ui(commentIsDockedToVideo ? "영상 하단에 자석처럼 붙어 있습니다." : "슬라이더를 쓰거나 댓글 카드를 끌어 영상 하단 가까이 가져가 보세요.")}</p>
 
-                <div className="mt-5 rounded-lg border border-emerald-300/20 bg-emerald-300/[.06] px-3 py-2.5 text-[11px] leading-5 text-emerald-100/75">{ui("저장하면 댓글 카드와 채널명 배치가 완성 영상에도 같은 설정으로 적용됩니다.")}</div>
+
               </div>
             </section>}
 
             {activeSidebarTool === "comment" && !commentLayerEnabled && <section>
-              <p className="rounded-xl border border-white/10 bg-black/20 px-4 py-4 text-xs leading-6 text-neutral-400">{ui("댓글 설정은 댓글 캡처 템플릿에서 사용할 수 있습니다.")}</p>
+              <p className="rounded-xl border border-white/10 bg-black/20 px-4 py-4 text-[13px] leading-6 text-neutral-400">{ui("댓글 설정은 댓글 캡처 템플릿에서 사용할 수 있습니다.")}</p>
             </section>}
 
-            <section hidden={activeSidebarTool !== "background"}><h2 className="text-[17px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">{ui("배경")}</h2><p className="mt-1.5 text-xs leading-5 text-[#8f8e97]">{ui("완성 영상과 같은 9:16 비율로 배경을 비교하세요.")}</p><div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3.5">
+            <section hidden={activeSidebarTool !== "background"}><h2 className="text-[17px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">{ui("배경")}</h2><div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3.5">
               {customTemplateDesignEnabled && <div className="mb-6 border-b border-white/10 pb-5"><BackgroundAssetPicker
                 value={config.background}
                 disabled={saving}
@@ -1127,10 +1127,10 @@ export function TemplateEditor({
                 onRestore={() => commit((next) => ({ ...next, background: createDefaultTemplateConfig(baseTemplateId).background }))}
               /></div>}
               <h3 className="text-sm font-semibold text-neutral-200">{ui("이미지 배경")}</h3><div className="mt-3 grid grid-cols-3 gap-2">{stockBackgrounds.map((asset) => <button key={asset.id} type="button" title={ui(asset.label)} aria-label={t("background.select", { title: ui(asset.label) })} aria-pressed={config.background.kind === "image" && config.background.assetId === asset.id} onClick={() => commit((next) => { next.background = { kind: "image", assetId: asset.id }; return next; })} className={`relative aspect-[9/16] overflow-hidden rounded-lg border transition ${config.background.kind === "image" && config.background.assetId === asset.id ? "border-[#ff715e] ring-2 ring-[#ff715e]/25" : "border-white/10 hover:border-white/35"}`}><span className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${asset.src})` }} /><span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-black/20 px-1 py-1.5 text-[9px] font-bold leading-3 text-white">{ui(asset.label)}</span></button>)}</div>
-              <div className="mt-6 border-t border-white/10 pt-5"><div className="flex items-center justify-between gap-3"><h3 className="text-sm font-semibold text-neutral-200">{ui("단색 배경")}</h3><button type="button" aria-expanded={showAllBackgroundColors} onClick={() => setShowAllBackgroundColors((current) => !current)} className="text-[11px] font-bold text-[#ff9b8d] transition hover:text-white">{ui(showAllBackgroundColors ? "접기" : "전체 보기")}</button></div><div className="mt-3 grid grid-cols-3 gap-2">{visibleBackgroundColors.map((option) => <button key={option.color} type="button" title={ui(option.name)} aria-label={t("background.select", { title: ui(option.name) })} aria-pressed={selectedBackgroundColor === option.color} onClick={() => commit((next) => { next.background = { kind: "color", color: option.color }; return next; })} className={`relative aspect-[9/16] overflow-hidden rounded-lg border transition ${selectedBackgroundColor === option.color ? "border-[#ff715e] ring-2 ring-[#ff715e]/25" : "border-white/10 hover:border-white/35"}`} style={{ backgroundColor: option.color }}><span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-black/20 px-1 py-1.5 text-[9px] font-bold leading-3 text-white">{ui(option.name)}</span></button>)}</div></div>
+              <div className="mt-6 border-t border-white/10 pt-5"><div className="flex items-center justify-between gap-3"><h3 className="text-sm font-semibold text-neutral-200">{ui("단색 배경")}</h3><button type="button" aria-expanded={showAllBackgroundColors} onClick={() => setShowAllBackgroundColors((current) => !current)} className="text-[13px] font-bold text-[#ff9b8d] transition hover:text-white">{ui(showAllBackgroundColors ? "접기" : "전체 보기")}</button></div><div className="mt-3 grid grid-cols-3 gap-2">{visibleBackgroundColors.map((option) => <button key={option.color} type="button" title={ui(option.name)} aria-label={t("background.select", { title: ui(option.name) })} aria-pressed={selectedBackgroundColor === option.color} onClick={() => commit((next) => { next.background = { kind: "color", color: option.color }; return next; })} className={`relative aspect-[9/16] overflow-hidden rounded-lg border transition ${selectedBackgroundColor === option.color ? "border-[#ff715e] ring-2 ring-[#ff715e]/25" : "border-white/10 hover:border-white/35"}`} style={{ backgroundColor: option.color }}><span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-black/20 px-1 py-1.5 text-[9px] font-bold leading-3 text-white">{ui(option.name)}</span></button>)}</div></div>
             </div></section>
           </fieldset>
-          <div className="absolute inset-x-0 bottom-0 border-t border-white/10 bg-[#19191c]/95 p-3 backdrop-blur-xl lg:p-5"><button type="button" disabled={saving || backgroundBusy || !dirty} onClick={() => void save()} className="h-11 w-full rounded-xl bg-[#ff715e] text-sm font-black text-white transition hover:bg-[#ff8a78] disabled:bg-neutral-700 disabled:text-neutral-400 lg:h-12">{ui(backgroundBusy ? "배경 이미지 확인 중…" : saving ? "저장 중..." : savedTemplate ? "템플릿 저장" : "내 템플릿으로 저장")}</button>{message && <p className="mt-2 text-center text-[11px] leading-4 text-neutral-400">{ui(message)}</p>}</div>
+          <div className="absolute inset-x-0 bottom-0 border-t border-white/10 bg-[#19191c]/95 p-3 backdrop-blur-xl lg:p-5"><button type="button" disabled={saving || backgroundBusy || !dirty} onClick={() => void save()} className="h-11 w-full rounded-xl bg-[#ff715e] text-sm font-black text-white transition hover:bg-[#ff8a78] disabled:bg-neutral-700 disabled:text-neutral-400 lg:h-12">{ui(backgroundBusy ? "배경 이미지 확인 중…" : saving ? "저장 중..." : savedTemplate ? "템플릿 저장" : "내 템플릿으로 저장")}</button>{message && <p className="mt-2 text-center text-[13px] leading-4 text-neutral-400">{ui(message)}</p>}</div>
           </div>
         </aside>
       </div>

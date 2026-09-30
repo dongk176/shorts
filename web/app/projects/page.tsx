@@ -46,9 +46,7 @@ export default async function ProjectsPage() {
       <main className="projects-page-main relative mx-auto w-full max-w-6xl flex-1 px-5 pb-24 pt-10 sm:px-8 sm:pt-14">
         <div className="projects-page-heading flex flex-col gap-6 border-b border-white/10 pb-8 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-xs font-extrabold uppercase tracking-[0.2em] text-[#ff9b8d]">Workspace</p>
-            <h1 className="mt-3 text-3xl font-black tracking-[-0.045em] text-white sm:text-4xl">{ui("내 프로젝트")}</h1>
-            <p className="mt-3 text-sm leading-6 text-neutral-400">{ui("만든 쇼츠와 현재 처리 상태를 한곳에서 확인할 수 있습니다.")}</p>
+            <h1 className="text-3xl font-black tracking-[-0.045em] text-white sm:text-4xl">{ui("내 프로젝트")}{user ? <span className="ml-3 text-base font-semibold tabular-nums text-neutral-400">{projectPage.totalCount}</span> : null}</h1>
           </div>
           {user && (
             <Link href="/#workspace" className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-xl bg-white px-5 text-sm font-extrabold text-black transition hover:bg-neutral-200">

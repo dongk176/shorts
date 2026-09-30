@@ -463,7 +463,7 @@ export function TemplateLibrary({
 
     const update = updateFavoriteTemplateKeys(favoriteTemplateKeys, templateKey);
     if (update.status === "limit") {
-      showToast("자주 쓰는 템플릿은 최대 4개까지 등록할 수 있습니다.");
+      showToast("즐겨찾기는 최대 4개까지 등록할 수 있습니다.");
       return;
     }
 
@@ -480,8 +480,8 @@ export function TemplateLibrary({
       if (!response.ok) throw new Error(body.detail || "자주 쓰는 템플릿을 저장하지 못했습니다.");
       setFavoriteTemplateKeys(body.templateKeys || update.templateKeys);
       showToast(update.status === "added"
-        ? "자주 쓰는 템플릿에 등록되었습니다."
-        : "자주 쓰는 템플릿에서 해제되었습니다.");
+        ? "즐겨찾기에 추가했습니다."
+        : "즐겨찾기에서 해제했습니다.");
     } catch (error) {
       setFavoriteTemplateKeys(previousTemplateKeys);
       showToast(userFacingErrorMessage(error, "자주 쓰는 템플릿을 저장하지 못했습니다."));
@@ -520,7 +520,7 @@ export function TemplateLibrary({
       <div className="flex flex-col gap-6 border-b border-white/10 pb-7 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-[28px] font-black tracking-[-.045em] text-[#e4e1e6] sm:text-4xl">{translateLegacyText("템플릿 라이브러리", locale)}</h1>
-          <p className="mt-3 text-sm text-[#94949e] sm:text-base">{translateLegacyText("다음 쇼츠의 시작점을 선택하세요.", locale)}</p>
+
         </div>
 
         <label className="relative block w-full sm:w-64">
@@ -544,7 +544,7 @@ export function TemplateLibrary({
             <article key={template.id} className="relative flex min-h-[456px] min-w-0 flex-col rounded-2xl border border-[#ff715e]/25 bg-[rgba(26,26,30,.72)] p-4 shadow-[0_16px_48px_rgba(0,0,0,.18)] backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:border-[#ff715e]/50 hover:shadow-[0_20px_55px_rgba(255,113,94,.09)]">
               <Link href={canUseCustomTemplates ? `/templates/${template.id}/edit` : "/pricing"} prefetch={false} className="flex flex-1 flex-col">
                 <div className="flex flex-1 items-center justify-center px-2 py-4"><CustomTemplatePreview template={template} showUnifiedSubtitle={unifiedSubtitleCanaryEnabled} positionedWordsV4Enabled={positionedWordsV4Enabled} /></div>
-                <div className="flex flex-col items-start gap-2 px-2 pb-1 pt-4"><div className="min-w-0"><h2 data-i18n-skip className="break-words text-base font-bold leading-snug tracking-[-.025em] text-[#e4e1e6]">{template.name}</h2><p className="mt-1 text-xs leading-relaxed text-[#9999a2]">{ui("내가 저장한 템플릿")}</p></div><span className="shrink-0 rounded-full border border-[#ff715e]/20 bg-[#ff715e]/10 px-2.5 py-1 text-[10px] font-bold text-[#ff9b8d]">{ui("내 템플릿")}</span></div>
+                <div className="flex flex-col items-start gap-2 px-2 pb-1 pt-4"><div className="min-w-0"><h2 data-i18n-skip className="break-words text-base font-bold leading-snug tracking-[-.025em] text-[#e4e1e6]">{template.name}</h2></div><span className="shrink-0 rounded-full border border-[#ff715e]/20 bg-[#ff715e]/10 px-2.5 py-1 text-[13px] font-bold text-[#ff9b8d]">{ui("내 템플릿")}</span></div>
               </Link>
               <TemplateFavoriteButton
                 active={favoriteTemplateKeySet.has(templateKey)}
@@ -575,8 +575,8 @@ export function TemplateLibrary({
               >
                 <div className="flex flex-1 items-center justify-center px-2 py-4"><UnifiedSubtitlePresetPreview preset={preset} positionedWordsV4Enabled={positionedWordsV4Enabled} /></div>
                 <div className="flex flex-col items-start gap-2 px-2 pb-1 pt-4">
-                  <div className="min-w-0"><h2 className="break-words text-base font-bold leading-snug tracking-[-.025em] text-[#e4e1e6]">{ui(preset.name)}</h2><p className="mt-1 text-xs leading-relaxed text-[#9999a2]">{ui(preset.description)}</p></div>
-                  <span className="shrink-0 rounded-full border border-[#35e6e3]/20 bg-[#35e6e3]/10 px-2.5 py-1 text-[10px] font-bold text-[#74efec]">{translateLegacyText("자막 템플릿", locale)}</span>
+                  <div className="min-w-0"><h2 className="break-words text-base font-bold leading-snug tracking-[-.025em] text-[#e4e1e6]">{ui(preset.name)}</h2><p className="mt-1 text-[13px] leading-relaxed text-[#b2b2bc]">{ui(preset.description)}</p></div>
+                  <span className="shrink-0 rounded-full border border-[#35e6e3]/20 bg-[#35e6e3]/10 px-2.5 py-1 text-[13px] font-bold text-[#74efec]">{translateLegacyText("자막 템플릿", locale)}</span>
                 </div>
               </Link>
             </article>
@@ -608,9 +608,9 @@ export function TemplateLibrary({
                 <div className="flex flex-col items-start gap-2 px-2 pb-1 pt-4">
                   <div className="min-w-0">
                     <h2 className="break-words text-base font-bold leading-snug tracking-[-.025em] text-[#e4e1e6]">{template.name}</h2>
-                    <p className="mt-1 text-xs leading-relaxed text-[#9999a2]">{template.description}</p>
+                    <p className="mt-1 text-[13px] leading-relaxed text-[#b2b2bc]">{template.description}</p>
                   </div>
-                  <span className="shrink-0 rounded-full border border-white/[.08] bg-[#1f1f22] px-2.5 py-1 text-[10px] font-bold text-[#94949e]">{template.category}</span>
+                  <span className="shrink-0 rounded-full border border-white/[.08] bg-[#1f1f22] px-2.5 py-1 text-[13px] font-bold text-[#94949e]">{template.category}</span>
                 </div>
               </Link>
               <TemplateFavoriteButton

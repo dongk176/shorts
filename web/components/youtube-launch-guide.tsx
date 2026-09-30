@@ -63,8 +63,8 @@ export function YoutubeLaunchGuide({ preview = false, onDismiss }: { preview?: b
     };
   }, [visible]);
 
-  function dismiss(completed: boolean) {
-    if (completed && !preview) {
+  function dismiss() {
+    if (!preview) {
       try { localStorage.setItem(YOUTUBE_LAUNCH_SEEN_KEY, "yes"); } catch { /* Still allow closing. */ }
     }
     setVisible(false);
@@ -79,11 +79,11 @@ export function YoutubeLaunchGuide({ preview = false, onDismiss }: { preview?: b
   if (!visible) return null;
   const current = steps[step];
   return <dialog ref={dialog} className="yt-launch" aria-labelledby={titleId} aria-describedby={descriptionId}
-    onCancel={(event) => { event.preventDefault(); dismiss(false); }}>
+    onCancel={(event) => { event.preventDefault(); dismiss(); }}>
     <div className="yt-launch-handle" aria-hidden="true" />
     <header className="yt-launch-header">
       <h2 id={titleId}><svg className="yt-launch-sparkle" aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="m12 3 2.3 6.7L21 12l-6.7 2.3L12 21l-2.3-6.7L3 12l6.7-2.3L12 3Z" fill="currentColor"/></svg><span>이지컷에 새로운 기능이 생겼어요!</span></h2>
-      <button type="button" className="yt-launch-close" aria-label="안내 닫기" onClick={() => dismiss(false)}>×</button>
+      <button type="button" className="yt-launch-close" aria-label="안내 닫기" onClick={() => dismiss()}>×</button>
     </header>
     <section className="yt-launch-content" aria-label={`${step + 1}단계`}>
       <div className="yt-launch-copy" aria-live="polite" aria-atomic="true"><h3 ref={heading} tabIndex={-1}><span className="yt-launch-step-number" data-step={step + 1}><span>{step + 1}</span></span>{current.title}</h3><p id={descriptionId}>{current.description}</p></div>
@@ -98,7 +98,16 @@ export function YoutubeLaunchGuide({ preview = false, onDismiss }: { preview?: b
     <footer className="yt-launch-footer">
       <span className="yt-launch-counter" aria-label={`${step + 1} / 3단계`}>{step + 1} <span>/ 3</span></span>
       <div>{step > 0 && <button type="button" className="yt-launch-back" onClick={() => changeStep(step - 1)}>이전</button>}
-        <button type="button" className="yt-launch-next" onClick={() => step === 2 ? dismiss(true) : changeStep(step + 1)}>{step === 2 ? "확인했어요" : "다음"}</button></div>
+        <button type="button" className="yt-launch-next" onClick={() => step === 2 ? dismiss() : changeStep(step + 1)}>{step === 2 ? "확인했어요" : "다음"}</button></div>
     </footer>
   </dialog>;
+}
+
+
+export function YoutubeLaunchGuideReplay() {
+  const [open, setOpen] = useState(false);
+  return <>
+    <button type="button" className="yt-launch-next" onClick={() => setOpen(true)}>업로드 안내 다시 보기</button>
+    {open ? <YoutubeLaunchGuide preview onDismiss={() => setOpen(false)} /> : null}
+  </>;
 }

@@ -13296,6 +13296,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const [resumedDraft] = useState(() => readCreationDraft<LocaleCreationDraft>(initialState?.user?.id ?? null, locale));
   useEffect(() => { clearCreationDraft(); }, []);
   const [state, setState] = useState<MvpState | null>(initialState);
+  const [showExamples, setShowExamples] = useState(false);
   const [stateLoadStatus, setStateLoadStatus] = useState<"loading" | "ready" | "error">(
     initialState ? "ready" : "loading",
   );
@@ -14674,18 +14675,18 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         onTry={trySubtitleTemplate}
       />
       <main id="top" className={`relative mx-auto w-full max-w-6xl flex-1 px-5 pb-20 pt-7 sm:px-8 sm:pt-10 ${adminTemplateLayoutEnabled ? "flex flex-col gap-10" : "space-y-10"}`}>
-      <ReusableViewCounter
+      {!state?.user && stateLoadStatus === "ready" ? <ReusableViewCounter
         counter={state?.reusableViewCounter ?? null}
         generatedShortCount={state?.generatedShortCount ?? null}
         locale={locale}
         className={adminTemplateLayoutEnabled ? "order-[-2]" : ""}
-      />
+      /> : null}
       <section className={`hero mx-auto flex w-full max-w-4xl flex-col items-center text-center ${adminTemplateLayoutEnabled ? "order-[-2]" : ""}`}>
-        <PersonalizedHomeHero
+        {state?.user ? <h1 className="text-3xl font-black tracking-tight sm:text-4xl">{ui("새 쇼츠 만들기")}</h1> : <PersonalizedHomeHero
           locale={locale}
           fallback={[t("home.heroLine1"), t("home.heroLine2")]}
           description={t("home.heroDescription")}
-        />
+        />}
         {uploadModeVisible ? (
           <div className="source-input-mode mt-8 w-full max-w-3xl" role="tablist" aria-label={t("home.sourceMode")}>
             <button
@@ -14816,8 +14817,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         </div>
         <ProjectCollection projects={state.recentJobs} authenticated={Boolean(state.user)} />
       </section> : null}
-      {state?.user ? <TransformationShowcase /> : null}
-      <BackgroundShowcase />
+      {!state?.user && stateLoadStatus === "ready" ? <BackgroundShowcase /> : null}
       {error && <div role="alert" className="rounded-xl border border-red-900 bg-red-950/50 p-4 text-sm text-red-200">{ui(error)}</div>}
       {stateLoadStatus === "error" && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-900 bg-amber-950/40 p-4 text-sm text-amber-100"><div><p>{t("home.serviceLoadError")}</p>{stateLoadError && <p className="mt-1 text-xs text-amber-300">{stateLoadError}</p>}</div><button type="button" onClick={retryStateLoad} className="rounded-lg border border-amber-300/30 px-3 py-2 font-semibold">{t("common.retry")}</button></div>}
       {selectedSource && (
@@ -15043,8 +15043,12 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
           </button>
         </section>
       )}
-      <ThreeStepProcess />
-      <CustomerReviews />
+      {state?.user ? <div className="home-examples border-t border-white/10 pt-6">
+        <button type="button" aria-expanded={showExamples} aria-controls="home-examples" onClick={() => setShowExamples(value => !value)} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-white/15 px-4 text-sm font-semibold text-neutral-300 hover:bg-white/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#ff8c7c]">
+          {ui(showExamples ? "예시 접기" : "예시 보기")}<span aria-hidden="true">{showExamples ? "−" : "+"}</span>
+        </button>
+        <div id="home-examples" hidden={!showExamples}>{showExamples ? <div className="mt-6 space-y-10"><TransformationShowcase /><BackgroundShowcase /><ThreeStepProcess /></div> : null}</div>
+      </div> : stateLoadStatus === "ready" ? <><ThreeStepProcess /><CustomerReviews /></> : null}
     </main>
     <SiteFooter />
     <SupportInquiryWidget

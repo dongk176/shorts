@@ -55,3 +55,12 @@
  .publish-dialog-footer{padding-bottom:max(14px,env(safe-area-inset-bottom))}
 }
 @media(max-width:700px){.publish-tabs button{flex:1 1 0;min-width:0;flex-direction:column;gap:0;padding:8px 4px;font-size:11px!important}.publish-tabs .publish-platform-icon{height:48px}}
+
+.publish-channel-actions{position:relative;flex-shrink:0;margin-left:auto;font-size:14px;color:#bbc7d8}
+.publish-channel-actions>summary{display:flex;align-items:center;justify-content:center;min-width:64px;min-height:44px;padding:0 12px;border:1px solid #394454;border-radius:8px;cursor:pointer;list-style:none}
+.publish-channel-actions>summary::-webkit-details-marker{display:none}
+.publish-channel-actions>summary:hover{background:#202a38}
+.publish-channel-actions>summary:focus-visible{outline:2px solid #ff8c7c;outline-offset:3px}
+.publish-channel-actions>div{position:absolute;right:0;top:calc(100% + 6px);z-index:20;display:grid;min-width:140px;padding:6px;background:#18212d;border:1px solid #3a4759;border-radius:10px;box-shadow:0 12px 30px #0008}
+.publish-channel-actions>div .publish-text-button{min-height:44px;padding:8px 12px;text-align:left;font-size:14px!important;border-radius:6px}
+.publish-channel-actions>div .publish-text-button:hover{background:#ffffff0a}

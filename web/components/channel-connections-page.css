@@ -14,3 +14,7 @@
 .channel-connections-page .publish-text-button{min-height:44px}
 .channel-connections-page .publish-coming .publish-outline{color:#a5afbe}
 @media(max-width:700px){.channel-connections-page{padding:24px 18px 48px}.channel-connections-heading h1{font-size:25px}.app-shell.site-chrome main.channel-connections-page .publish-channel-card{padding:20px 18px}.channel-connections-page .publish-channel-name{flex-basis:calc(100% - 50px)}.channel-connections-page .publish-card-heading{gap:12px}}
+
+.channel-platforms-soon{display:flex;flex-wrap:wrap;gap:6px 14px;margin:24px 0 0;font-size:14px;line-height:1.7;color:#a5afbe}
+.channel-platforms-soon>span:last-child{color:#bbc3d0}
+.channel-connections-page .publish-outline,.channel-connections-page .publish-text-button{font-size:14px!important}

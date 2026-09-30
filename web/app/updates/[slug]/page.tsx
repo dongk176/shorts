@@ -1,3 +1,4 @@
+import { YoutubeLaunchGuideReplay } from "@/components/youtube-launch-guide";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -23,6 +24,7 @@ export default async function UpdateArticle({ params }: Props) {
   <div className={styles.articleBody}>
     <section><p className={styles.eyebrow}>변경 내용</p><h2>이렇게 달라졌어요</h2>{post.changes.map((change, i) => <p key={change}>{i === 0 ? <strong>{change}</strong> : change}</p>)}</section>
     <section><h2>화면으로 살펴보기</h2><p>실제 화면에서 사용할 위치를 확인해 보세요. 이미지를 누르면 더 크게 볼 수 있어요.</p><AnnotatedScreen image={post.image}/>{post.slug === "saved-videos" ? <AnnotatedScreen image="saved-empty"/> : null}</section>
+    {post.slug === "channel-connections" ? <YoutubeLaunchGuideReplay /> : null}
     <section className={styles.steps}><p className={styles.eyebrow}>사용 방법</p><h2>이렇게 사용해 보세요</h2><ol>{post.steps.map((step, i) => <li key={step}><span>{String(i + 1).padStart(2, "0")}</span><p>{step}</p></li>)}</ol><a className={styles.cta} href={`https://www.easycut.co.kr${post.href}`} target="_blank" rel="noreferrer">실제 기능 열기 <span>↗</span></a><small>현재 서비스가 새 탭에서 열립니다.</small></section>
     <p className={styles.articleNote}>이 글은 {displayDate(post.date)} 변경 기록을 바탕으로 정리했어요. 캡처는 현재 화면으로, 업데이트 당시의 모습과 다를 수 있습니다. 사용 가능한 기능은 계정·플랜과 현재 서비스 안내를 확인해 주세요.</p>
   </div>
