@@ -14675,18 +14675,18 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         onTry={trySubtitleTemplate}
       />
       <main id="top" className={`relative mx-auto w-full max-w-6xl flex-1 px-5 pb-20 pt-7 sm:px-8 sm:pt-10 ${adminTemplateLayoutEnabled ? "flex flex-col gap-10" : "space-y-10"}`}>
-      {!state?.user && stateLoadStatus === "ready" ? <ReusableViewCounter
+      <ReusableViewCounter
         counter={state?.reusableViewCounter ?? null}
         generatedShortCount={state?.generatedShortCount ?? null}
         locale={locale}
         className={adminTemplateLayoutEnabled ? "order-[-2]" : ""}
-      /> : null}
+      />
       <section className={`hero mx-auto flex w-full max-w-4xl flex-col items-center text-center ${adminTemplateLayoutEnabled ? "order-[-2]" : ""}`}>
-        {state?.user ? <h1 className="text-3xl font-black tracking-tight sm:text-4xl">{ui("새 쇼츠 만들기")}</h1> : <PersonalizedHomeHero
+        <PersonalizedHomeHero
           locale={locale}
           fallback={[t("home.heroLine1"), t("home.heroLine2")]}
           description={t("home.heroDescription")}
-        />}
+        />
         {uploadModeVisible ? (
           <div className="source-input-mode mt-8 w-full max-w-3xl" role="tablist" aria-label={t("home.sourceMode")}>
             <button
