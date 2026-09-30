@@ -45,7 +45,7 @@ export function SnsTemplatePreview({ community = false, ratio, brandColor, chann
         <rect width="1080" height="1920" fill="white" />
         <g transform={`translate(0 ${offsetY})`}>
         <rect x="60" y="150" width="960" height="132" rx="26" fill={brandColor} />
-        <text x="540" y="245" textAnchor="middle" fill={contrastingTitleTextColor(brandColor)} fontSize="80" fontWeight="700" letterSpacing="-3">{content?.title ?? "퇴근 1분 전 내 모습"}</text>
+        <text x="540" y="245" textAnchor="middle" fill={contrastingTitleTextColor(brandColor)} fontSize="80" fontWeight="700" letterSpacing="-3">{content?.title ?? "다시 보게 되는 순간"}</text>
         <rect x={tall ? 60 : 30} y="342" width={tall ? 960 : 1020} height={y+height+30-342} fill="white" stroke="#e2e2e2" strokeWidth="2" />
         <circle cx={textX+44} cy="416" r="43" fill="#eeeeee" stroke="#222" strokeWidth="2" />
         {channelThumbnailUrl && failedAvatarUrl !== channelThumbnailUrl
@@ -55,10 +55,10 @@ export function SnsTemplatePreview({ community = false, ratio, brandColor, chann
           : <text x={textX+44} y="431" textAnchor="middle" fontSize="42" fill="#222">{(channelName || "채널")[0]}</text>}
         <text x={textX+110} y="435" fontSize="52" fontWeight="700" fill="#111">{channelName.slice(0, 12) || "채널명"}</text>
         <g style={{ fontFamily: snsFontFamily(language, 600) }} fontSize="72" fontWeight="600" letterSpacing="-1.7" fill="#111">
-          <text x={textX} y="543">{content?.body[0] ?? (portrait ? "퇴근 얘기에 살아남 ㅋㅋ" : "분명 방금까지 졸렸는데")}</text>
-          {!portrait && <text x={textX} y="633">{content?.body[1] ?? "퇴근 얘기에 바로 살아남 ㅋㅋ"}</text>}
+          <text x={textX} y="543">{content?.body[0] ?? (portrait ? "끝까지 보게 되는 장면" : "무심코 넘기려다가")}</text>
+          {!portrait && <text x={textX} y="633">{content?.body[1] ?? "끝까지 보게 되는 장면"}</text>}
         </g>
-        {(ratio === "16:9" || ratio === "5:4") && <text style={{ fontFamily: snsFontFamily(language, 400) }} x="60" y="730" fontSize="47" fontWeight="400" fill="#537398">{content?.hashtags.join("  ") ?? "#퇴근본능  #직장인공감  #칼퇴"}</text>}
+        {(ratio === "16:9" || ratio === "5:4") && <text style={{ fontFamily: snsFontFamily(language, 400) }} x="60" y="730" fontSize="47" fontWeight="400" fill="#537398">{content?.hashtags.join("  ") ?? "#하이라이트  #오늘의영상  #쇼츠"}</text>}
         <rect x={x} y={y} width={width} height={height} fill="#ddd" rx={30} />
         {videoUrl ? <foreignObject x={x} y={y} width={width} height={height} clipPath={`url(#${clipId})`}>
           <video key={videoUrl} src={videoUrl} controls playsInline preload="metadata"
