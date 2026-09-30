@@ -440,7 +440,7 @@
 .sidebar-icon-button{display:inline-flex;width:36px;min-height:36px;flex-shrink:0;align-items:center;justify-content:center;border:0;border-radius:8px;background:transparent;color:#9ba3ac;cursor:pointer}
 .sidebar-icon-button:hover{color:#fff;background:rgba(255,255,255,.065)}
 .sidebar-icon-button:focus-visible,.sidebar-group-toggle:focus-visible,.sidebar-nav-link:focus-visible{outline:2px solid #ffb4a8;outline-offset:3px}
-.sidebar-usage{flex-shrink:0;margin-bottom:22px}
+.sidebar-usage{flex-shrink:0;min-height:44px;margin-bottom:22px}
 .sidebar-usage .header-usage-indicator{display:flex;width:100%;min-height:44px;align-items:center;justify-content:flex-start;gap:9px;margin:0;padding:0 12px;border:1px solid #373032;border-radius:10px;background:#1d1919;color:#eddbd6;font-size:12px}
 .sidebar-usage .header-usage-indicator span{display:inline}.sidebar-usage .header-usage-indicator svg{width:18px;height:18px;flex:none}
 .sidebar-group-navigation{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#34383e transparent}
