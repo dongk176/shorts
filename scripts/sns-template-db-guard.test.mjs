@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {PGlite} from '../test-tools/node_modules/@electric-sql/pglite/dist/index.js';
 
-test('SNS DB admission is admin-only and leaves public admission intact',async()=>{
+test('SNS and community immutable releases preserve public admission and owner checks',async()=>{
  const db=new PGlite();
  try {
  await db.exec(`create schema shorts_mvp; create role anon; create role authenticated; create role service_role;
@@ -137,6 +137,30 @@ test('SNS DB admission is admin-only and leaves public admission intact',async()
   await edit({...cr,release_id:ce3});
  }
  await assert.rejects(edit({...cr,release_id:ce2}),/SNS_EDITOR_BINDING_MISMATCH/);
+ await check(nextJob);await check(betaJob);await check(job(publicId));
+ // Public community enables only the new verified generation/editor; old requests keep their gates.
+ await db.exec(fs.readFileSync(new URL('../supabase/migrations/202609300009_community_public.sql',import.meta.url),'utf8'));
+ const cg4='46d7f96b-7e16-4fa6-920f-b3c915cad8e8',ce4='d1bb4c9d-f055-4cbe-bdbd-318e51ffdf33';
+ await db.query('insert into shorts_mvp.language_test_releases select $1,registry,verified_at,$3 from shorts_mvp.language_test_releases where id=$2',[cg4,community,JSON.stringify({kind:'community_public_generation'})]);
+ for(const id of [cg4,ce4])await db.query('insert into shorts_mvp.editor_releases select $1,git_sha,worker_image_digest,font_manifest_sha256,status,staging_verified_at,ui_version,document_version,render_spec_version,caption_render_spec_version from shorts_mvp.editor_releases where id=$2',[id,communityEditor]);
+ await db.query("insert into shorts_mvp.editor_release_checks values($1,'isolated','sns_editor_compatibility','passed',now(),$2)",[ce4,JSON.stringify({...communityProof,generationReleaseIds:[community,cg2,cg3,cg4]})]);
+ const publicCommunity={...cj,user_id:user,language_test_release_id:cg4,initial_editor_release_id:cg4};
+ await check(publicCommunity);await check({...publicCommunity,user_id:admin});
+ await assert.rejects(check({...publicCommunity,user_id:null}),/COMMUNITY_TEMPLATE_ADMIN_ONLY/);
+ await assert.rejects(check({...publicCommunity,batch_job_definition:target(false).jobDefinitionArn}),/SNS_TEMPLATE_TARGET_MISMATCH/);
+ for(const id of [community,cg2,cg3]) await assert.rejects(check({...publicCommunity,language_test_release_id:id,initial_editor_release_id:id}),/COMMUNITY_TEMPLATE_ADMIN_ONLY/);
+ await db.query('update shorts_mvp.video_jobs set user_id=$1 where id=$2',[user,jobId]);
+ await db.query('update shorts_mvp.generated_shorts set user_id=$1 where id=$2',[user,shortId]);
+ const publicEdit={...cr,release_id:ce4,user_id:user};
+ for(const id of [community,cg2,cg3,cg4]) {
+  await db.query('update shorts_mvp.video_jobs set language_test_release_id=$1,initial_editor_release_id=$1 where id=$2',[id,jobId]);
+  await edit(publicEdit);
+  for(const patch of [{user_id:admin},{base_render_version:2},{release_channel:'stable'},{release_id:ce3}])await assert.rejects(edit({...publicEdit,...patch}),/SNS_EDITOR_BINDING_MISMATCH/);
+ }
+ await db.query("update shorts_mvp.editor_release_checks set details=jsonb_set(details,'{imageDigest}','\"wrong\"') where release_id=$1",[ce4]);
+ await assert.rejects(edit(publicEdit),/SNS_EDITOR_BINDING_MISMATCH/);
+ await db.query('update shorts_mvp.language_test_releases set verified_at=null where id=$1',[cg4]);
+ await assert.rejects(check(publicCommunity),/SNS_TEMPLATE_UNAVAILABLE/);
  await check(nextJob);await check(betaJob);await check(job(publicId));
  await db.query('update shorts_mvp.language_test_releases set verified_at=null where id=$1',[sns]);
  await assert.rejects(check(job(sns)),/SNS_TEMPLATE_UNAVAILABLE/); await check(job(publicId));

@@ -2164,6 +2164,11 @@ function TemplatePicker({
   const leadingFavoriteCards = favoriteCards.filter(
     (card) => card.kind === "preset" && card.template.id === "comment-capture",
   );
+  // Keep the default rail SNS → comments → community even if comments were unfavorited.
+  if (communityTemplateAvailable && leadingFavoriteCards.length === 0) {
+    const commentTemplate = templates.find((template) => template.id === "comment-capture");
+    if (commentTemplate) leadingFavoriteCards.push({ kind: "preset", template: commentTemplate });
+  }
   const remainingFavoriteCards = favoriteCards.filter(
     (card) => card.kind !== "preset" || card.template.id !== "comment-capture",
   );
@@ -2242,15 +2247,15 @@ function TemplatePicker({
             <span className="mt-1 block text-center text-[10px] font-bold" style={{ color: brandColor }}>베타</span>
           </button>
         )}
+        {leadingFavoriteCards.map(renderFavoriteCard)}
         {communityTemplateAvailable && <button type="button" aria-label="커뮤니티 템플릿"
           aria-pressed={communityTemplateActive} onClick={onCommunityTemplateSelect}
           className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 sm:w-[220px] ${communityTemplateActive ? "border-red-500" : "border-white/10 hover:border-white/30"}`}>
           <SnsTemplatePreview community ratio={effectiveAspectRatio} brandColor={brandColor}
             channelName={channelName} channelThumbnailUrl={channelThumbnailUrl} thumbnailUrl={sourceThumbnailUrl} />
           <span className="mt-2.5 block text-center text-sm font-semibold">커뮤니티 템플릿</span>
-          <span className="mt-1 block text-center text-[10px] text-cyan-300">관리자 테스트</span>
+          <span className="mt-1 block text-center text-[10px] text-cyan-300">베타</span>
         </button>}
-        {leadingFavoriteCards.map(renderFavoriteCard)}
         {subtitleTemplateSelectionEnabled && (
           <>
             {subtitleTemplateOptions.map((option) => {
@@ -14353,7 +14358,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const createJob = async () => {
     if (!analysis) return;
     if (communityTemplateSelected && !communityTemplateActive) {
-      setError("커뮤니티 템플릿의 관리자 테스트 연결을 확인해 주세요. 새로고침 후 다시 선택해 주세요.");
+      setError("커뮤니티 템플릿 연결을 확인해 주세요. 새로고침 후 다시 선택해 주세요.");
       return;
     }
     if (analysis.creationAllowed !== true) {

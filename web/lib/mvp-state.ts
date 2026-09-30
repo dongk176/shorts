@@ -139,7 +139,7 @@ async function readMvpState(
     paymentMethodAction,
     usage,
     capabilities: {
-      communityTemplate: session.isAdmin === true
+      communityTemplate: session.userId !== null
         ? await snsTemplateRelease(db, true).then(() => true).catch(() => false) : false,
       snsTemplate: session.userId !== null
         ? await snsTemplateRelease(db).then(() => true).catch(() => false) : false,

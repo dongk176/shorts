@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { TransactionSql } from "postgres";
 import { lockSnsTemplateAdmission, snsTemplateRelease, SNS_TEMPLATE_RELEASE_ID } from "./sns-template-release";
+import { COMMUNITY_TEMPLATE_RELEASE_ID } from "./community-template-contract";
 import { languageTestEditorRelease } from "./language-test";
 
 const sha = "a".repeat(40), digest = `sha256:${"b".repeat(64)}`, font = "c".repeat(64);
@@ -33,6 +34,19 @@ describe("SNS public beta release isolation", () => {
     expect(await lockSnsTemplateAdmission(db as unknown as TransactionSql, "admin"))
       .toMatchObject({ releaseId: SNS_TEMPLATE_RELEASE_ID });
     expect(db).toHaveBeenCalledTimes(2);
+  });
+  it("pins ordinary community creation to its own verified release", async () => {
+    const communityReady = { ...ready, id: COMMUNITY_TEMPLATE_RELEASE_ID,
+      registryJson: ready.registryJson.replaceAll('"sns-template-', '"sns-template-community-') };
+    const db = vi.fn(async (parts: TemplateStringsArray, ...values: unknown[]) => {
+      const sql = parts.join("?");
+      expect(sql).not.toContain("language_test_settings");
+      if (sql.includes("app_users")) return [{ id: "ordinary", isAdmin: false }];
+      expect(values[0]).toBe(COMMUNITY_TEMPLATE_RELEASE_ID);
+      return [communityReady];
+    });
+    expect(await lockSnsTemplateAdmission(db as unknown as TransactionSql, "ordinary", true))
+      .toMatchObject({ releaseId: COMMUNITY_TEMPLATE_RELEASE_ID });
   });
   it.each([{ verifiedAt: null }, { stagingVerifiedAt: null }, { workerImageDigest: `sha256:${"d".repeat(64)}` },
     { gitSha: "e".repeat(40) }, { fontManifestSha256: "f".repeat(64) }, { status: "built" },

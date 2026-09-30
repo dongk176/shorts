@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Sql } from "postgres";
 import { snsCopyLimits, snsEditedSnapshotSchema, SNS_EDITOR_RELEASE_ID, SNS_GENERATION_RELEASE_IDS } from "./sns-editor-contract";
+import { COMMUNITY_EDITOR_RELEASE_ID, COMMUNITY_GENERATION_RELEASE_IDS } from "./community-template-contract";
 import { snsEditorRelease } from "./sns-editor-release";
 
 describe("SNS edit contract", () => {
@@ -17,16 +18,27 @@ describe("SNS edit contract", () => {
     }
   });
   it("uses a separately verified editor without changing generation or public pointers", async () => {
-    const db = vi.fn(async (parts: TemplateStringsArray, ...values: unknown[]) => {
+    const db = vi.fn(async (parts: TemplateStringsArray) => {
       expect(parts.join("?")).not.toMatch(/editor_release_state|language_test_settings|update |insert /i);
-      expect(parts.join("?")).toContain("not ?::boolean or u.is_admin");
-      expect(values[4]).toBe(false); // Public SNS does not require administrator status.
+      expect(parts.join("?")).not.toContain("u.is_admin");
       expect(parts.join("?")).toContain("s.user_id=");
       expect(parts.join("?")).toContain("j.user_id=");
       return [{ id: SNS_EDITOR_RELEASE_ID, fontManifestSha256: "a".repeat(64),
         languageTestReleaseId: SNS_GENERATION_RELEASE_IDS[0], details: { generationReleaseIds: SNS_GENERATION_RELEASE_IDS } }];
     });
     expect(await snsEditorRelease(db as unknown as Sql, "ordinary", "short")).toMatchObject({ releaseId: SNS_EDITOR_RELEASE_ID, channel: "canary" });
+  });
+  it.each(COMMUNITY_GENERATION_RELEASE_IDS)("allows an ordinary owner to edit community generation %s with its verified editor", async generation => {
+    const db = vi.fn(async (parts: TemplateStringsArray, ...values: unknown[]) => {
+      expect(values[0]).toBe(COMMUNITY_EDITOR_RELEASE_ID);
+      expect(parts.join("?")).not.toContain("u.is_admin");
+      expect(parts.join("?")).toContain("s.user_id=");
+      expect(parts.join("?")).toContain("j.user_id=");
+      return [{ id: COMMUNITY_EDITOR_RELEASE_ID, fontManifestSha256: "a".repeat(64),
+        languageTestReleaseId: generation, details: { generationReleaseIds: COMMUNITY_GENERATION_RELEASE_IDS } }];
+    });
+    expect(await snsEditorRelease(db as unknown as Sql, "ordinary", "short", true))
+      .toMatchObject({ releaseId: COMMUNITY_EDITOR_RELEASE_ID, channel: "canary" });
   });
   it.each([[], [{ languageTestReleaseId: "ordinary", details: {} }], [{ languageTestReleaseId: SNS_GENERATION_RELEASE_IDS[0], details: {} }]].map(rows => ({ rows })))("requires matching proof and ownership", async ({ rows }) => {
     await expect(snsEditorRelease(vi.fn(async () => rows) as unknown as Sql, "user", "short"))

@@ -113,9 +113,6 @@ export async function POST(request: Request) {
     }
     const rightsConfirmed = input.rightsConfirmed === true;
     const session = await requireAuthenticatedMvpSession();
-    if (input.communityTemplate && session.isAdmin !== true) {
-      throw new HttpError(403, "커뮤니티 템플릿은 관리자만 테스트할 수 있습니다.", "COMMUNITY_TEMPLATE_ADMIN_ONLY");
-    }
     const db = getDb();
     const enterpriseAccess = await assertEnterpriseSessionServiceAccess(db, session);
     const enterpriseUsage = enterpriseAccess.accountType === "enterprise";

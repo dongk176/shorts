@@ -4,11 +4,11 @@ import { lockSnsTemplateAdmission } from "./sns-template-release";
 import { communityVideoFrames } from "./community-template-contract";
 import { snsEditedSnapshotSchema } from "./sns-editor-contract";
 
-describe("community admin isolation", () => {
-  it("rejects public users before querying any worker release", async () => {
-    const db = vi.fn(async () => [{ id: "user", isAdmin: false }]);
+describe("community public contract", () => {
+  it("rejects unknown users before querying any worker release", async () => {
+    const db = vi.fn(async () => []);
     await expect(lockSnsTemplateAdmission(db as unknown as TransactionSql, "user", true))
-      .rejects.toMatchObject({ status: 403, code: "COMMUNITY_TEMPLATE_ADMIN_ONLY" });
+      .rejects.toMatchObject({ status: 401, code: "AUTH_REQUIRED" });
     expect(db).toHaveBeenCalledTimes(1);
   });
   it("keeps a single copy profile and fixed video top at all five ratios", () => {

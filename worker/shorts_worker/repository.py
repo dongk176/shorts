@@ -816,8 +816,6 @@ class WorkerRepository:
                   and j.template_snapshot->>'snsTemplateVersion'='1'
                   and coalesce(s.template_snapshot->>'communityTemplateVersion','0')
                     =coalesce(j.template_snapshot->>'communityTemplateVersion','0')
-                  and (coalesce(j.template_snapshot->>'communityTemplateVersion','0')='0'
-                    or u.is_admin)
                   and e.staging_verified_at is not null
                   and e.status in ('canary_ready','canary_active','approved')
                   and e.ui_version=3 and e.document_version=3

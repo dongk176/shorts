@@ -34,6 +34,5 @@ export async function snsTemplateRelease(db: Sql | TransactionSql, community = f
 export async function lockSnsTemplateAdmission(db: TransactionSql, userId: string | null, community = false) {
   const [user] = await db`select id,is_admin from shorts_mvp.app_users where id=${userId} for share`;
   if (!user?.id) throw new HttpError(401, "로그인 후 SNS 템플릿을 이용해 주세요.", "AUTH_REQUIRED");
-  if (community && user.isAdmin !== true) throw new HttpError(403, "커뮤니티 템플릿은 관리자만 테스트할 수 있습니다.", "COMMUNITY_TEMPLATE_ADMIN_ONLY");
   return snsTemplateRelease(db, community);
 }

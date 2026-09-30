@@ -16,7 +16,6 @@ export async function snsEditorRelease(db: Sql | TransactionSql, userId: string 
       and check_row.environment='isolated' and check_row.check_name='sns_editor_compatibility'
       and check_row.status='passed' and check_row.completed_at is not null
     where s.id=${shortId} and s.user_id=${userId} and j.user_id=${userId}
-      and (not ${community}::boolean or u.is_admin)
       and coalesce(s.template_snapshot->>'communityTemplateVersion', '0')=${community ? "1" : "0"}
       and coalesce(j.template_snapshot->>'communityTemplateVersion', '0')=${community ? "1" : "0"}
       and s.template_snapshot->>'snsTemplateVersion'='1'
