@@ -2528,3 +2528,17 @@ main#top > section#results { border: 0; border-radius: 0; padding: 0; background
 
 /* Workspace content does not need a second card around its cards. */
 .app-shell main > section.project-list-section {border:0;border-radius:0;padding:0;background:transparent;box-shadow:none;backdrop-filter:none}
+
+/* Keep touch keyboards from triggering focus zoom on small form text.
+   !important also covers lazy-loaded dialog styles and utility classes.
+   Canvas editors keep their preview size, with the same minimum while typing. */
+@media (max-width: 767px), (hover: none) and (pointer: coarse) {
+  :root { --mobile-input-min-size: 16px; }
+
+  input:not([type]),
+  input:is([type="text"], [type="email"], [type="password"], [type="search"], [type="tel"], [type="url"], [type="number"], [type="date"], [type="time"], [type="datetime-local"], [type="month"], [type="week"]),
+  textarea:not([data-editor-overlay-layer="title"]):not([data-editor-text-overlay-id]),
+  select {
+    font-size: 16px !important;
+  }
+}

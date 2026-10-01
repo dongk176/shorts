@@ -250,7 +250,7 @@ export function EditorTitleV4Preview({
             height: percentY(maxY - minY),
             color: primaryColor,
             fontFamily: spec.font.family,
-            fontSize: `${spec.fontSize / 10.8}cqw`,
+            fontSize: `max(var(--mobile-input-min-size, 0px), ${spec.fontSize / 10.8}cqw)`,
             fontWeight: spec.font.resolvedWeight,
           }}
         />

@@ -92,7 +92,11 @@ export function EditorTextOverlayPreview({
           }
         }}
         className="absolute z-[56] resize-none overflow-hidden whitespace-pre-wrap break-words rounded-[2cqw] border-0 bg-transparent px-[2cqw] py-[1cqw] text-center font-extrabold outline outline-[3px] outline-[#ff715e]"
-        style={{ ...positionStyle, ...textStyle }}
+        style={{
+          ...positionStyle,
+          ...textStyle,
+          fontSize: `max(var(--mobile-input-min-size, 0px), ${textStyle.fontSize})`,
+        }}
       />
     );
   }

@@ -136,6 +136,7 @@ export function CustomTemplateTitlePreview({
         className="absolute z-20 resize-none overflow-hidden border-0 bg-black/45 px-[1.5cqw] py-[.8cqw] text-center font-bold outline outline-2 outline-[#ff715e]"
         style={{
           ...wrapperStyle,
+          fontSize: `max(var(--mobile-input-min-size, 0px), ${customCanvasWidth(fontSize)})`,
           minHeight: "2.3em",
           color: title.primaryColor,
         }}

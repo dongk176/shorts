@@ -215,6 +215,7 @@ export function TitleOverlayPreview({
                     minHeight: "2.25em",
                     color: primary,
                     ...movementStyle,
+                    fontSize: "max(var(--mobile-input-min-size, 0px), 1em)",
                   }}
                 />
               : <button
