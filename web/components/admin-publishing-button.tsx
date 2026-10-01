@@ -35,7 +35,7 @@ export function AdminPublishingButton({ shortId, title, tiktokEnabled = false, y
       try { sessionStorage.setItem("easycut-admin-publishing-short", shortId); } catch { /* Optional OAuth return preference. */ }
       setPlatform(available[0]);
       setOpen(true);
-    }}><UploadIcon/>{text.upload}</button>
+    }}><UploadIcon/>{text.upload}<span className="publish-beta-label">{locale === "ko" ? "베타" : locale === "ja" ? "ベータ" : "Beta"}</span></button>
     {open && createPortal(<dialog ref={dialog} data-i18n-skip className="publish-dialog" aria-labelledby={heading} onCancel={() => setOpen(false)}>
       <header className="publish-dialog-header"><div><h2 id={heading}>{text.heading}</h2><p>{text.help}</p></div><button className="publish-close" type="button" aria-label={text.close} onClick={() => setOpen(false)}>×</button></header>
       <div className="publish-tabs">{available.map(name => <button type="button" key={name} className={selected === name ? "is-active" : ""} aria-pressed={selected === name} onClick={() => setPlatform(name)}><PlatformIcon name={name}/>{name}</button>)}</div>
