@@ -359,7 +359,7 @@ export function AdminShell({
       </aside>
 
       <div className={styles.main}>
-        <header className={styles.topbar}>
+        <header className={styles.topbar} style={activeTab === "updates" ? { position: "static" } : undefined}>
           <div>
             <p className={styles.pageEyebrow}>
               <span className={styles.liveDot} aria-hidden="true" />
