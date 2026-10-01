@@ -26,11 +26,36 @@ async function render(props: Partial<ComponentProps<typeof AdminPublishingButton
   vi.stubGlobal('window',window);vi.stubGlobal('document',document);vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);
   const fetcher=vi.fn(async()=>Response.json({connections:[],disconnectStatus:'none',reconnectAfterSeconds:0}));vi.stubGlobal('fetch',fetcher);
   root=createRoot(document.getElementById('app')! as unknown as Element);
-  await act(async()=>{root!.render(<AdminPublishingButton shortId="short-a" title="Original clip" {...props}/>);});
+  await act(async()=>{root!.render(<AdminPublishingButton shortId="short-a" title="Original clip" adminEnabled {...props}/>);});
   const click=async(selector:string)=>{const element=document.querySelector(selector);expect(element).not.toBeNull();await act(async()=>{element!.dispatchEvent(new window.Event('click',{bubbles:true}));});};
   return {document,click,fetcher};
 }
 describe('one shared publishing dialog',()=>{
+ it('shows only maintenance for a member, without fetching connections, and can reopen',async()=>{
+  const {document,click,fetcher}=await render({adminEnabled:false,youtubeEnabled:true});
+  await click('.publish-trigger');
+  expect(document.body.textContent).toContain('Uploads are temporarily unavailable');
+  expect(document.querySelector('.publish-tabs')).toBeNull();
+  expect(document.querySelectorAll('dialog[open]').length).toBe(1);
+  expect(fetcher).not.toHaveBeenCalled();
+  await click('.publish-status-actions button');
+  expect(document.querySelector('dialog')).toBeNull();
+  await click('.publish-trigger');
+  expect(document.querySelectorAll('dialog[open]').length).toBe(1);
+  expect(fetcher).not.toHaveBeenCalled();
+ });
+ it('cannot bypass member maintenance with an OAuth callback or platform grants',async()=>{
+  const {document,fetcher}=await render({adminEnabled:false,youtubeEnabled:true,tiktokEnabled:true},"youtube");
+  expect(document.body.textContent).toContain('Uploads are temporarily unavailable');
+  expect(document.querySelector('.publish-tabs')).toBeNull();
+  expect(fetcher).not.toHaveBeenCalled();
+ });
+ it('fails closed to maintenance when the administrator flag is missing',async()=>{
+  const {document,click,fetcher}=await render({adminEnabled:undefined,youtubeEnabled:true});
+  await click('.publish-trigger');
+  expect(document.body.textContent).toContain('Uploads are temporarily unavailable');
+  expect(fetcher).not.toHaveBeenCalled();
+ });
  it('opens TikTok only with the explicit server-provided administrator flag',async()=>{
   const {document,click}=await render({youtubeEnabled:true,tiktokEnabled:true});
   await click('.publish-trigger'); await click('.publish-tabs button:nth-child(2)');
