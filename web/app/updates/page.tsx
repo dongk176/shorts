@@ -20,6 +20,6 @@ export default async function UpdatesPage({ searchParams }: Props) {
    </header>
    <UpdatesCatalog page={paging.page} totalPages={paging.totalPages} />
    <aside className={styles.endnote}><span className={styles.eyebrow}>MADE WITH YOUR FEEDBACK</span><h2>다음 업데이트의 시작은<br />여러분의 한마디입니다.</h2><a href="https://www.easycut.co.kr/support" target="_blank" rel="noreferrer">이지컷에 의견 보내기 <span>↗</span></a></aside>
-   <p className={styles.archiveNote}>7월 25일 이후 사용자 기능 변경을 모은 기록입니다. 날짜는 변경 이력 기준이며 실제 공개일과 차이가 있을 수 있습니다. 이미지는 2026년 9월 30일 실제 서비스 화면을 캡처했습니다.</p>
+   <p className={styles.archiveNote}>7월 25일 이후 사용자 기능 변경을 모은 기록입니다. 날짜는 변경 이력 기준이며 실제 공개일과 차이가 있을 수 있습니다. 이미지는 실제 서비스 화면이며, 각 이미지에 캡처 날짜를 표시했습니다.</p>
  </main>;
 }

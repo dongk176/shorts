@@ -86,3 +86,5 @@
 /* Let the latest update sit directly on the page. */
 .featured{background:transparent;border:0;border-radius:0;padding:0;gap:36px;margin-bottom:40px}
 @media(max-width:767px){.featured{padding:0;margin-bottom:32px}.featuredCopy{padding:22px 0 0}}
+
+.cover[data-tone="커뮤니티 템플릿"]{background:#183539;color:#d4f8f4}

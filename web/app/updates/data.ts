@@ -16,9 +16,13 @@ export const captures: Record<string, {
     height: number;
     cropX: number;
     cropY: number;
+    sourceWidth?: number;
+    sourceHeight?: number;
+    capturedAt?: string;
     alt: string;
     annotations: Annotation[];
 }> = {
+    community: { width: 934, height: 610, cropX: 0, cropY: 0, sourceWidth: 934, sourceHeight: 610, capturedAt: "2026-10-01", alt: "댓글 캡처 오른쪽의 커뮤니티 템플릿을 선택한 실제 제작 화면. 게시판 스타일 미리보기와 영상 비율·브랜드 컬러 설정", annotations: [{ x: 50.3, y: 2.3, w: 23.6, h: 72.6, label: "커뮤니티 템플릿 선택" }, { x: 1.5, y: 84.6, w: 37, h: 13, label: "영상 비율·브랜드 컬러 설정" }] },
     channels: { width: 900, height: 780, cropX: 635, cropY: 18, alt: "이지컷 채널 연동 화면. YouTube 연결하기와 준비 중인 다른 플랫폼", annotations: [{ x: 82, y: 18, w: 11, h: 8, label: "YouTube 연결하기" }, { x: 4, y: 40, w: 91, h: 58, label: "다른 플랫폼은 준비 중" }] },
     sns: { width: 1180, height: 780, cropX: 375, cropY: 25, alt: "프로필과 본문을 설정하는 실제 SNS 템플릿 편집 화면", annotations: [{ x: 4, y: 11, w: 30, h: 83, label: "SNS 스타일 미리보기" }, { x: 39, y: 12, w: 59, h: 68, label: "프로필·본문 설정" }] },
     popular: { width: 1140, height: 608, cropX: 515, cropY: 18, alt: "실시간 인기 영상 목록의 검색창, 언어 필터와 북마크 버튼", annotations: [{ x: 19.4, y: 46, w: 4.9, h: 9.5, label: "이 아이콘을 누르면 저장" }, { x: 57, y: 21, w: 41, h: 10, label: "언어·길이·재사용 조건" }] },
