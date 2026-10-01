@@ -1,3 +1,5 @@
+import { AdminUpdates } from "./admin-updates";
+import { listAdminUpdates } from "@/lib/update-store";
 import Link from "next/link";
 import { hasExpenseAccess } from "@/lib/admin-expenses-access";
 import { AdminExpenses } from "./expenses/admin-expenses";
@@ -121,6 +123,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
   const params = await searchParams;
   const requestedTab = first(params.tab);
   const validTabs: AdminTab[] = [
+    "updates",
     "billing",
     "expenses",
     "refunds",
@@ -145,6 +148,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
     if (!expenseAccess) notFound();
     return <AdminShell activeTab={tab} expenseAccess><AdminExpenses /></AdminShell>;
   }
+  if (tab === "updates") return <AdminShell activeTab={tab} expenseAccess={expenseAccess}><AdminUpdates initialPosts={await listAdminUpdates()}/></AdminShell>;
   const requestedStatus = first(params.status);
   const requestedProvider = first(params.provider);
   const status = ["pending", "processing", "succeeded", "failed", "unknown", "manual_review", "canceled", "expired"].includes(requestedStatus)

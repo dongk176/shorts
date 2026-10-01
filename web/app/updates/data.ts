@@ -1,6 +1,7 @@
 import records from "./posts.json";
-export type UpdatePost = typeof records[number];
-export const updates: UpdatePost[] = records;
+import type { UpdateContent, UpdateShot } from "@/lib/update-content";
+export type UpdatePost = UpdateContent;
+export const updates = records as UpdatePost[];
 export const updateKinds = ["전체", "새 기능", "개선", "오류 수정"] as const;
 export const displayDate = (date: string) => date.replaceAll("-", ".");
 export function findUpdate(slug: string) { return updates.find(post => post.slug === slug); }
@@ -43,3 +44,8 @@ export const captures: Record<string, {
     pricing: { width: 880, height: 560, cropX: 645, cropY: 15, alt: "현재 이지컷 요금제 안내 화면", annotations: [] },
     "saved-empty": { width: 1140, height: 390, cropX: 515, cropY: 0, alt: "저장한 영상이 없을 때 보이는 실제 보관함 안내", annotations: [] },
 };
+
+export function legacyShot(image: string): UpdateShot {
+ const shot = captures[image];
+ return { ...shot, src: `/updates/${image}.jpg`, sourceWidth: shot.sourceWidth ?? 1920, sourceHeight: shot.sourceHeight ?? 873, capturedAt: shot.capturedAt ?? "2026-09-30" };
+}

@@ -10,6 +10,7 @@ import { AdminSalesCard } from "./admin-sales-card";
 import type { AdminTrendData } from "@/lib/admin-trends";
 
 export type AdminTab =
+  | "updates"
   | "billing"
   | "expenses"
   | "refunds"
@@ -114,6 +115,7 @@ const navigationGroups: Array<{
     icon: "inquiries",
     items: [
       { tab: "inquiries", label: "고객 문의", icon: "inquiries" },
+      { tab: "updates", label: "업데이트 관리", icon: "feedback" },
       { tab: "feedback", label: "제품 피드백", icon: "feedback" },
     ],
   },
@@ -140,6 +142,7 @@ const navigationGroups: Array<{
 ];
 
 const pageCopy: Record<AdminTab, { eyebrow: string; title: string }> = {
+  updates: { eyebrow: "Content / Updates", title: "업데이트 관리" },
   expenses: { eyebrow: "Finance / Expenses", title: "매입·비용 관리" },
   billing: { eyebrow: "Commerce / Payments", title: "결제 운영" },
   refunds: { eyebrow: "Commerce / Refunds", title: "환불 운영" },
@@ -276,7 +279,7 @@ export function AdminShell({
   const [overviewError, setOverviewError] = useState<string | null>(null);
   const [overviewAttempt, setOverviewAttempt] = useState(0);
   useEffect(() => {
-    if (activeTab === "expenses") return;
+    if (activeTab === "expenses" || activeTab === "updates") return;
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 8_000);
     setOverviewError(null);
@@ -377,7 +380,7 @@ export function AdminShell({
         </header>
 
         <div className={styles.workspace}>
-          {activeTab !== "expenses" ? <section aria-labelledby="admin-overview-title" aria-busy={!overview && !overviewError}>
+          {activeTab !== "expenses" && activeTab !== "updates" ? <section aria-labelledby="admin-overview-title" aria-busy={!overview && !overviewError}>
             <div className={styles.overviewHeading}>
               <div>
                 <p className={styles.overviewKicker}>Operations overview</p>

@@ -7,6 +7,6 @@ export function UpdateCover({ post, priority = false }: {
 }) {
     return <div className={styles.cover} data-tone={post.topic}>
    <div className={styles.coverTitle}>{post.cover.split("\n").map(line => <span key={line}>{line}</span>)}</div>
-   <div className={styles.coverScreen}><div className={styles.screenBar}><i /><i /><i /><span>easycut.co.kr</span></div><CapturedImage image={post.image} priority={priority}/></div>
+   <div className={styles.coverScreen}><div className={styles.screenBar}><i /><i /><i /><span>easycut.co.kr</span></div><CapturedImage image={post.image} shot={post.shot} priority={priority}/></div>
  </div>;
 }

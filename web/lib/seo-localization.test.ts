@@ -4,6 +4,7 @@ import { localizedSeoCopy, searchLocalesForPath, seoCopyForPath } from "./seo-lo
 import { applicationIdentity, localizedArticle, localizedBreadcrumb, publicMonthlyOffer, websiteStructuredData } from "./seo-structured-data";
 import sitemap from "../app/sitemap";
 
+vi.mock("./update-store", () => ({ publishedUpdates: vi.fn(async () => []) }));
 vi.mock("server-only", () => ({}));
 vi.mock("./i18n/server", () => ({ getRequestLocale: vi.fn(async () => "ja") }));
 
@@ -37,8 +38,8 @@ describe("search language consistency", () => {
     expect(createNoIndexMetadata("Project", "Private").robots).toMatchObject({ index: false, googleBot: { index: false } });
     expect(metadataFor("/purchase-terms/versions/7", "ko").robots).toMatchObject({ index: false, googleBot: { index: false } });
   });
-  it("publishes reciprocal language alternatives only for translated sitemap entries", () => {
-    const pages = sitemap();
+  it("publishes reciprocal language alternatives only for translated sitemap entries", async () => {
+    const pages = await sitemap();
     const urls = new Set(pages.map(page => page.url));
     for (const page of pages) {
       for (const url of Object.values(page.alternates?.languages ?? {})) expect(urls.has(String(url))).toBe(true);

@@ -21,7 +21,6 @@ import { seoBrand, seoDescriptions, seoCopyForPath } from "@/lib/seo-localizatio
 import { websiteStructuredData } from "@/lib/seo-structured-data";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 import { RecentUpdatesProvider } from "@/components/recent-updates-provider";
-import updatePosts from "./updates/posts.json";
 import "./globals.css";
 import "./site-sidebar.css";
 import "./editor-v2.css";
@@ -123,7 +122,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
             initialState={initialUsageState}
           >
             <WelcomeOverlayQueueProvider>
-              <RecentUpdatesProvider publishedAt={[...new Set(updatePosts.map(post => Date.parse(`${post.date}T00:00:00+09:00`)))]}>
+              <RecentUpdatesProvider>
                 {children}
               </RecentUpdatesProvider>
               <ApplicationOverlays>

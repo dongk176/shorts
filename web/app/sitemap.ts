@@ -4,7 +4,7 @@ import { searchLocalesForPath } from "@/lib/seo-localization";
 import { localizedHref } from "@/lib/i18n/routing";
 import { absoluteUrl } from "@/lib/seo";
 import { TEAM_PAGE_VISIBLE } from "@/lib/site-visibility";
-import { updates } from "./updates/data";
+import { publishedUpdates } from "@/lib/update-store";
 import { publishedBlogPosts } from "@/lib/blog";
 
 export const dynamic = "force-dynamic";
@@ -31,7 +31,8 @@ const publicRoutes = [
   { path: "/privacy", changeFrequency: "yearly", priority: 0.2 },
 ] as const;
 
-export default function sitemap(): MetadataRoute.Sitemap {
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  const updates = await publishedUpdates();
   const pages = publicRoutes
     .filter(({ path }) => TEAM_PAGE_VISIBLE || path !== "/team")
     .flatMap(({ path, changeFrequency, priority }) => searchLocalesForPath(path).map((locale) => ({
@@ -44,7 +45,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency,
       priority,
     })));
-  return [...pages, { url: absoluteUrl("/updates"), lastModified: UPDATES_REVISED_AT, changeFrequency: "weekly" as const, priority: 0.7 }, ...updates.map((post) => ({ url: absoluteUrl(`/updates/${post.slug}`), lastModified: UPDATES_REVISED_AT, changeFrequency: "monthly" as const, priority: 0.6 })), ...publishedBlogPosts().map((post) => ({
+  return [...pages, { url: absoluteUrl("/updates"), lastModified: UPDATES_REVISED_AT, changeFrequency: "weekly" as const, priority: 0.7 }, ...updates.map((post) => ({ url: absoluteUrl(`/updates/${post.slug}`), lastModified: post.date, changeFrequency: "monthly" as const, priority: 0.6 })), ...publishedBlogPosts().map((post) => ({
     url: absoluteUrl(`/blog/${post.slug}`),
     lastModified: post.updatedAt,
     changeFrequency: "monthly" as const,
