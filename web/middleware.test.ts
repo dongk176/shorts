@@ -192,3 +192,24 @@ describe("locale routing boundaries", () => {
     expect(mocks.refreshSession).not.toHaveBeenCalled();
   });
 });
+
+describe("public asset session bypass", () => {
+  beforeEach(() => {
+    mocks.refreshSession.mockReset();
+    mocks.refreshSession.mockImplementation(async () => NextResponse.next());
+  });
+  it.each(["/east-cut-logo.png", "/fonts/editor/Pretendard-Bold.woff2", "/template-backgrounds/white-grid.png", "/guidebook/pages/page-1.jpg"])("serves %s without an auth request", async (path) => {
+    const response = await middleware(new NextRequest(`https://www.easycut.co.kr${path}`));
+    expect(response.status).toBe(200);
+    expect(mocks.refreshSession).not.toHaveBeenCalled();
+  });
+  it.each(["/projects/private.png", "/updates/private.png", "/account.jpg", "/fonts/editor/private.json"])("does not exempt application path %s", async (path) => {
+    await middleware(new NextRequest(`https://www.easycut.co.kr${path}`));
+    expect(mocks.refreshSession).toHaveBeenCalledOnce();
+  });
+  it("preserves legacy host redirects and rejects localized assets", async () => {
+    expect((await middleware(new NextRequest("https://easycut.co.kr/east-cut-logo.png"))).status).toBe(308);
+    expect((await middleware(new NextRequest("https://www.easycut.co.kr/jp/east-cut-logo.png"))).status).toBe(404);
+    expect(mocks.refreshSession).not.toHaveBeenCalled();
+  });
+});

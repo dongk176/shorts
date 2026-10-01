@@ -18,7 +18,7 @@ export function SiteFooter() {
   return (
     <footer className="site-footer">
       <div className="site-footer-inner">
-        <Link href="/" className="site-footer-brand" aria-label={t("nav.homeLabel")}>
+        <Link href="/" prefetch={false} className="site-footer-brand" aria-label={t("nav.homeLabel")}>
           <span className="brand-type">Easy <em>Cut</em></span>
           <span>© 2026</span>
         </Link>
@@ -34,7 +34,7 @@ export function SiteFooter() {
           <NextLink href="/blog" hrefLang="ko">{locale === "ko" ? "블로그" : locale === "ja" ? "ブログ（韓国語）" : "Blog (Korean)"}</NextLink>
           <Link href="/guidebook">{t("footer.guidebook")}</Link>
           <Link href="/compare/ai-shorts-tools">{t("footer.toolsComparison")}</Link>
-          <Link href="/pricing">{t("nav.pricing")}</Link>
+          <Link href="/pricing" prefetch={false}>{t("nav.pricing")}</Link>
           {TEAM_PAGE_VISIBLE ? (
             <Link href="/team">{t("footer.team")}</Link>
           ) : null}

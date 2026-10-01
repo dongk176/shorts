@@ -1,5 +1,7 @@
 import "server-only";
 import { cache } from "react";
+import { revalidateTag } from "next/cache";
+import { RECENT_UPDATES_TAG } from "./recent-updates";
 import { getDb } from "@/lib/db";
 import { HttpError } from "@/lib/http";
 import { updateAssetIds, updateDraftSchema, publicationIssues, type AdminUpdate, type UpdateContent } from "./update-content";
@@ -33,5 +35,6 @@ export async function saveUpdate(input: { id: string; version: number; action: "
    await tx`update shorts_mvp.update_posts set slug=${post.slug}, draft=${tx.json(post)}, version=version+1, updated_at=now(), updated_by=${adminId}::uuid where id=${input.id}::uuid`;
   }
  });
+ if (input.action === "publish" || input.action === "hide") revalidateTag(RECENT_UPDATES_TAG);
  return (await listAdminUpdates()).find(p => p.id === input.id)!;
 }

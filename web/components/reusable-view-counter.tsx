@@ -18,6 +18,16 @@ type PublicMetrics = {
   generatedShortCount: number | null;
 };
 
+function validMetrics(value: PublicMetrics) {
+  const next = value.reusableViewCounter;
+  return Boolean(next && Number.isSafeInteger(next.startValue) && Number.isSafeInteger(next.targetValue)
+    && next.startValue >= 0 && next.targetValue >= next.startValue
+    && Number.isFinite(Date.parse(next.serverNow))
+    && Number.isFinite(Date.parse(next.startedAt)) && Number.isFinite(Date.parse(next.endsAt))
+    && Date.parse(next.endsAt) > Date.parse(next.startedAt)
+    && Number.isSafeInteger(value.generatedShortCount) && value.generatedShortCount! >= 0);
+}
+
 function sameSchedule(left: ReusableViewCounterState | null, right: ReusableViewCounterState | null) {
   return left?.startValue === right?.startValue && left?.targetValue === right?.targetValue
     && left?.startedAt === right?.startedAt && left?.endsAt === right?.endsAt;
@@ -97,6 +107,7 @@ export function ReusableViewCounter({
   const counter = useLiveMetrics ? liveMetrics!.reusableViewCounter : initialCounter;
   const generatedShortCount = useLiveMetrics ? liveMetrics!.generatedShortCount : initialGeneratedShortCount;
 
+  const hasInitialMetrics = validMetrics({ reusableViewCounter: initialCounter, generatedShortCount: initialGeneratedShortCount });
   useEffect(() => {
     let stopped = false;
     let timer: number | undefined;
@@ -116,12 +127,7 @@ export function ReusableViewCounter({
         if (!response.ok) return;
         const value = await response.json() as PublicMetrics;
         const next = value.reusableViewCounter;
-        if (!next || !Number.isSafeInteger(next.startValue) || !Number.isSafeInteger(next.targetValue)
-          || next.startValue < 0 || next.targetValue < next.startValue
-          || !Number.isFinite(Date.parse(next.serverNow))
-          || !Number.isFinite(Date.parse(next.startedAt)) || !Number.isFinite(Date.parse(next.endsAt))
-          || Date.parse(next.endsAt) <= Date.parse(next.startedAt)
-          || !Number.isSafeInteger(value.generatedShortCount) || value.generatedShortCount! < 0) return;
+        if (!validMetrics(value)) return;
         if (!stopped && !request.signal.aborted) setLiveMetrics(previous =>
           previous && sameSchedule(previous.reusableViewCounter, next)
             && previous.generatedShortCount === value.generatedShortCount ? previous : value);
@@ -138,7 +144,8 @@ export function ReusableViewCounter({
       if (document.hidden) controller?.abort();
       else void refresh();
     };
-    void refresh();
+    if (hasInitialMetrics) timer = window.setTimeout(refresh, METRIC_REFRESH_INTERVAL_MS);
+    else void refresh();
     document.addEventListener("visibilitychange", handleVisibility);
     return () => {
       stopped = true;
@@ -146,7 +153,7 @@ export function ReusableViewCounter({
       controller?.abort();
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, []);
+  }, [hasInitialMetrics]);
 
   const [showingViews, setShowingViews] = useState(true);
   const [rotationResetToken, setRotationResetToken] = useState(0);

@@ -58,7 +58,7 @@ export default async function Home() {
       {initialState?.enterpriseAccess.accountType === "enterprise"
         && !initialState.enterpriseAccess.allowed
         ? <EnterpriseServiceGate access={initialState.enterpriseAccess} />
-        : <ShortsApp initialState={initialState} />}
+        : <ShortsApp key={`${locale}:${initialState?.user?.id ?? "guest"}`} initialState={initialState} initialLocale={locale} initialStateLoadedAt={Date.now()} />}
     </>
   );
 }

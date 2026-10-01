@@ -135,6 +135,7 @@ function NavigationLinks({ pathname, onNavigate, mobile = false, isEnterprise }:
           <Link
             key={item.href}
             href={item.href}
+            prefetch={item.href === "/shorts-monetization" ? undefined : false}
             onClick={onNavigate}
             aria-current={active ? "page" : undefined}
             className={`${mobile ? "rounded-xl px-4 py-3" : "nav-link"} ${active ? "text-[#ffb4a8]" : mobile ? "text-neutral-200 hover:bg-white/[.06] hover:text-white" : ""}`}
@@ -196,7 +197,7 @@ function LegacySiteHeader({
   return (
     <header className={`site-header${desktopSidebar ? " site-header-sidebar" : ""}`}>
       <div className="site-header-inner relative mx-auto flex h-[72px] max-w-6xl items-center justify-between gap-4 px-5 sm:px-8">
-        <Link href="/" className="flex shrink-0 items-center gap-3" aria-label={t("nav.homeLabel")}>
+        <Link href="/" prefetch={false} className="flex shrink-0 items-center gap-3" aria-label={t("nav.homeLabel")}>
           <span className="brand-mark" aria-hidden="true"><Image src="/east-cut-logo.png" alt="" width={34} height={34} priority /></span>
           <span className="brand-type">Easy <em>Cut</em></span>
         </Link>
@@ -287,7 +288,7 @@ function GroupedNavigation({ collapsed, groupsOpen, onToggle, onNavigate, isEnte
           {items.map(item => {
             const label = item.labelKey ? t(item.labelKey) : "EASYCUT PRIVATE";
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-            return <Link key={item.href} href={item.href} className="sidebar-nav-link" aria-label={label} aria-current={active ? "page" : undefined} title={collapsed ? label : undefined} onClick={onNavigate}>
+            return <Link key={item.href} href={item.href} prefetch={item.href === "/shorts-monetization" || item.href === "/easycut-private" ? undefined : false} className="sidebar-nav-link" aria-label={label} aria-current={active ? "page" : undefined} title={collapsed ? label : undefined} onClick={onNavigate}>
               <NavigationIcon path={item.href} /><span className="sidebar-link-label">{label}</span>
               {item.href === "/updates" && hasRecentUpdate ? <NewUpdateBadge /> : null}
             </Link>;
@@ -337,7 +338,7 @@ function GroupedSiteSidebar({ children, showUsageIndicator }: { children: ReactN
     };
   }, [menuOpen]);
 
-  const brand = <Link href="/" className="sidebar-brand" aria-label={t("nav.homeLabel")} onClick={() => setMenuOpen(false)}>
+  const brand = <Link href="/" prefetch={false} className="sidebar-brand" aria-label={t("nav.homeLabel")} onClick={() => setMenuOpen(false)}>
     <Image src="/east-cut-logo.png" alt="" width={32} height={32} priority /><span className="sidebar-brand-name">Easy <em>Cut</em></span>
   </Link>;
   const navProps = { groupsOpen, onToggle: toggleGroup, isEnterprise, pathname };

@@ -1,6 +1,7 @@
 "use client";
 
 import { SnsTemplatePreview } from "@/components/sns-template-preview";
+import { createTemplateRefresher } from "@/lib/template-refresher";
 import { presetChannelCenterY } from "@/lib/preset-channel-position";
 import dynamic from "next/dynamic";
 const AdminPublishingButton = dynamic(() => import("@/components/admin-publishing-button").then(module => module.AdminPublishingButton), { ssr: false });
@@ -13290,7 +13291,11 @@ type LocaleCreationDraft = {
   customTemplateId: string | null; videoAspectRatio: VideoAspectRatio;
 };
 
-export function ShortsApp({ initialState = null }: { initialState?: MvpState | null }) {
+export function ShortsApp({ initialState = null, initialLocale, initialStateLoadedAt = 0 }: {
+  initialState?: MvpState | null;
+  initialLocale?: SiteLocale;
+  initialStateLoadedAt?: number;
+}) {
   const ui = useUiText();
   const { locale, t } = useI18n();
   const [resumedDraft] = useState(() => readCreationDraft<LocaleCreationDraft>(initialState?.user?.id ?? null, locale));
@@ -13364,21 +13369,12 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const [brandColor, setBrandColor] = useState<TemplatePresetColor>(resumedDraft?.brandColor ?? SUBTITLE_TEMPLATE_BRAND_COLOR);
   const [customTemplateId, setCustomTemplateId] = useState<string | null>(resumedDraft?.customTemplateId ?? null);
   const [personalTemplates, setPersonalTemplates] = useState<CustomTemplate[]>([]);
-  const templateRefreshController = useRef<AbortController | null>(null);
+  const templateRefresher = useRef<{ userId: string; refresh: ReturnType<typeof createTemplateRefresher> } | null>(null);
   const templateUserId = state?.user?.id ?? null;
-  const refreshPersonalTemplates = useCallback(async () => {
-    if (!templateUserId) return;
-    templateRefreshController.current?.abort();
-    const controller = new AbortController();
-    templateRefreshController.current = controller;
-    try {
-      const response = await requestJson<{ templates: CustomTemplate[] }>(
-        "/api/templates", { signal: controller.signal, cache: "no-store" }, 12_000,
-      );
-      if (!controller.signal.aborted) setPersonalTemplates(response.templates);
-    } catch (cause) {
-      if (!controller.signal.aborted) throw cause;
-    }
+  const refreshPersonalTemplates = useCallback((force = true) => {
+    const current = templateRefresher.current;
+    if (!current || current.userId !== templateUserId) return Promise.resolve();
+    return current.refresh.refresh(force);
   }, [templateUserId]);
   const [favoriteTemplateKeys, setFavoriteTemplateKeys] = useState<TemplateFavoriteKey[]>([...DEFAULT_FAVORITE_TEMPLATE_KEYS]);
   const [videoAspectRatio, setVideoAspectRatio] = useState<VideoAspectRatio>(resumedDraft?.videoAspectRatio ?? "16:9");
@@ -13740,9 +13736,17 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       return;
     }
     const controller = new AbortController();
-    const refresh = () => { void refreshPersonalTemplates().catch(() => undefined); };
+    const refresher = createTemplateRefresher({
+      load: (signal) => requestJson<{ templates: CustomTemplate[] }>(
+        "/api/templates", { signal, cache: "no-store" }, 12_000,
+      ).then(response => response.templates),
+      apply: setPersonalTemplates,
+    });
+    templateRefresher.current = { userId: templateUserId, refresh: refresher };
+    const refresh = () => { void refreshPersonalTemplates(false).catch(() => undefined); };
+    const forceRefresh = () => { void refreshPersonalTemplates(true).catch(() => undefined); };
     refresh();
-    const unsubscribe = subscribeTemplateLibraryChanges(refresh);
+    const unsubscribe = subscribeTemplateLibraryChanges(forceRefresh);
     window.addEventListener("focus", refresh);
     window.addEventListener("pageshow", refresh);
     void requestJson<{ templateKeys: TemplateFavoriteKey[] }>("/api/template-favorites", { signal: controller.signal }, 12_000)
@@ -13755,7 +13759,8 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       });
     return () => {
       controller.abort();
-      templateRefreshController.current?.abort();
+      refresher.dispose();
+      if (templateRefresher.current?.refresh === refresher) templateRefresher.current = null;
       unsubscribe();
       window.removeEventListener("focus", refresh);
       window.removeEventListener("pageshow", refresh);
@@ -13763,10 +13768,20 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   }, [templateUserId, refreshPersonalTemplates]);
 
   useEffect(() => {
-    if (selectedSource?.key) void refreshPersonalTemplates().catch(() => undefined);
+    if (selectedSource?.key) void refreshPersonalTemplates(false).catch(() => undefined);
   }, [selectedSource?.key, refreshPersonalTemplates]);
 
   useEffect(() => {
+    // The server already loaded this account and locale. Keep recovery when it
+    // failed, and fetch again if the client switches language before new props arrive.
+    const initialAge = Date.now() - initialStateLoadedAt;
+    if (initialState && initialLocale === locale && initialAge >= 0 && initialAge < 30_000) {
+      setState(initialState);
+      publishUsageSnapshot(initialState.usage);
+      setStateLoadStatus("ready");
+      setStateLoadError(null);
+      return;
+    }
     let stopped = false;
     let timer: number | undefined;
     let attempt = 0;
@@ -13786,7 +13801,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       stopped = true;
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [loadState]);
+  }, [initialState, initialLocale, initialStateLoadedAt, locale, loadState]);
 
   useEffect(() => {
     const url = new URL(window.location.href);

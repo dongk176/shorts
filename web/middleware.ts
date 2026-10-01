@@ -19,6 +19,43 @@ const DATABASE_HEAVY_NAVIGATION_PATHS = [
   /^\/templates\/[^/]+\/edit\/?$/,
 ];
 
+// Only known public assets bypass session refresh; dotted application routes do not.
+const PUBLIC_ASSETS = new Set([
+  "/easycut-og-ja-v1.jpg",
+  "/easycut-og-en-v1.jpg",
+  "/thepayone-mark.png",
+  "/creator-support-og-20260912.png",
+  "/east-cut-logo.png",
+  "/easy-cut-og-1200x630-v3.jpg",
+  "/easycut-partner-1-og.png",
+  "/easy-cut-og-1200x630-v2.png",
+  "/updates/saved-empty.jpg",
+  "/updates/templates.jpg",
+  "/updates/pricing.jpg",
+  "/updates/guide.jpg",
+  "/updates/subtitles.jpg",
+  "/updates/community.jpg",
+  "/updates/showcase.jpg",
+  "/updates/channels.jpg",
+  "/updates/creation.jpg",
+  "/updates/background.jpg",
+  "/updates/search.jpg",
+  "/updates/project.jpg",
+  "/updates/upload.jpg",
+  "/updates/blog.jpg",
+  "/updates/language.jpg",
+  "/updates/sns.jpg",
+  "/updates/period.jpg",
+  "/updates/template-editor.jpg",
+  "/updates/navigation.jpg",
+  "/updates/popular.jpg",
+  "/updates/youtube-launch/privacy-detail.png",
+  "/updates/youtube-launch/title-description.png",
+  "/updates/youtube-launch/connect-focused.png",
+  "/updates/youtube-launch/project-actions.png"
+]);
+const PUBLIC_ASSET_DIRECTORY = /^\/(?:fonts\/editor\/[^/]+\.(?:ttf|otf|woff2?)|template-backgrounds\/[^/]+\.(?:png|jpg|webp)|guidebook\/pages\/page-\d+\.jpg)$/;
+
 function isNavigationPrefetch(request: NextRequest) {
   return request.headers.get("next-router-prefetch") === "1"
     || request.headers.get("purpose")?.toLowerCase() === "prefetch"
@@ -62,6 +99,10 @@ export async function middleware(request: NextRequest) {
   }
   if (route.prefixed && !isLocalizedPage(route.pathname)) {
     return new NextResponse(null, { status: 404 });
+  }
+  if (!route.prefixed && ["GET", "HEAD"].includes(request.method)
+    && (PUBLIC_ASSETS.has(pathname) || PUBLIC_ASSET_DIRECTORY.test(pathname))) {
+    return NextResponse.next();
   }
   pathname = route.pathname;
   // Always overwrite a supplied header; the page URL decides its language.
