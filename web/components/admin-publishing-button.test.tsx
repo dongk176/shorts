@@ -14,9 +14,9 @@ function visibleLabel(element: Element) {
 }
 let root: Root | undefined;
 afterEach(async () => { if(root) await act(async () => root!.unmount());root=undefined;vi.unstubAllGlobals(); });
-async function render(props: Partial<ComponentProps<typeof AdminPublishingButton>> = {}, oauth = false) {
+async function render(props: Partial<ComponentProps<typeof AdminPublishingButton>> = {}, oauth: false | "youtube" | "tiktok" = false) {
   const {window,document}=parseHTML('<html><body><div id="app"></div></body></html>');
-  const location=new URL(`https://www.easycut.co.kr/en/projects/1${oauth?'?youtubeAccount=connected':''}`);
+  const location=new URL(`https://www.easycut.co.kr/en/projects/1${oauth?`?${oauth}Account=connected`:''}`);
   Object.defineProperty(window,'location',{configurable:true,value:location});
   Object.defineProperty(window,'history',{configurable:true,value:{replaceState:vi.fn(),state:null}});
   const storage=new Map<string,string>();
@@ -31,6 +31,33 @@ async function render(props: Partial<ComponentProps<typeof AdminPublishingButton
   return {document,click,fetcher};
 }
 describe('one shared publishing dialog',()=>{
+ it('opens TikTok only with the explicit server-provided administrator flag',async()=>{
+  const {document,click}=await render({youtubeEnabled:true,tiktokEnabled:true});
+  await click('.publish-trigger'); await click('.publish-tabs button:nth-child(2)');
+  expect(document.querySelector('[data-platform="tiktok"]')).not.toBeNull();
+  await click('.publish-tabs button:nth-child(3)');
+  expect(document.body.textContent).toContain('This platform is coming soon.');
+ });
+ it('keeps TikTok unavailable for defaults and other publishing grants',async()=>{
+  const {document,click,fetcher}=await render({metaOnly:false,metaEnabled:true});
+  await click('.publish-trigger'); await click('.publish-tabs button:nth-child(2)');
+  expect(document.querySelector('[data-platform="tiktok"]')).toBeNull();
+  expect(document.body.textContent).toContain('This platform is coming soon.');
+  expect(fetcher).not.toHaveBeenCalled();
+ });
+ it('restores the administrator TikTok tab after OAuth',async()=>{
+  const {document}=await render({tiktokEnabled:true},"tiktok");
+  expect(document.querySelector('.publish-tabs .is-active')?.textContent).toBe('TikTok');
+  expect(document.querySelector('[data-platform="tiktok"]')).not.toBeNull();
+  expect(document.querySelectorAll('dialog').length).toBe(1);
+ });
+ it('does not grant TikTok access through an OAuth return URL',async()=>{
+  const {document,fetcher}=await render({},"tiktok");
+  expect(document.querySelector('[data-platform="tiktok"]')).toBeNull();
+  expect(document.body.textContent).toContain('This platform is coming soon.');
+  expect(fetcher).not.toHaveBeenCalled();
+ });
+
  it('places YouTube first and opens its existing connection panel inside the same dialog',async()=>{
   const {document,click}=await render({youtubeEnabled:true});
   expect(document.querySelectorAll('dialog').length).toBe(0);
@@ -47,7 +74,7 @@ describe('one shared publishing dialog',()=>{
   expect(document.querySelector('.publish-tabs .is-active')?.textContent).toBe('YouTube');
  });
  it('restores the shared YouTube tab after OAuth without creating a nested dialog',async()=>{
-  const {document}=await render({youtubeEnabled:true},true);
+  const {document}=await render({youtubeEnabled:true},"youtube");
   expect(document.querySelector('.publish-tabs .is-active')?.textContent).toBe('YouTube');
   expect(document.querySelectorAll('dialog').length).toBe(1);
   expect(document.body.textContent).toContain('Your channel is connected.');
