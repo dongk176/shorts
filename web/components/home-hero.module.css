@@ -8,7 +8,6 @@
 }
 .root:lang(ko) { word-break: keep-all; }
 .root:lang(ja) { line-break: strict; }
-.heading { position: relative; }
 .title {
   margin: 0;
   font-size: clamp(1.75rem, 4vw, 2.8rem);
@@ -16,24 +15,6 @@
   font-weight: 900;
   letter-spacing: -.05em;
   text-wrap: balance;
-}
-.stage { display: grid; width: 100%; min-width: 0; }
-/* Every slide reserves the same grid cell, including the tallest translated copy. */
-.slide {
-  grid-area: 1 / 1;
-  align-self: center;
-  min-width: 0;
-  width: 100%;
-  visibility: hidden;
-  opacity: 0;
-  /* Keep the outgoing copy visible until its fade finishes. */
-  transition: opacity .4s ease-in, visibility 0s linear .4s;
-}
-.active {
-  visibility: visible;
-  opacity: 1;
-  /* Let the previous copy fade out before bringing in the next headline. */
-  transition: opacity .6s ease-out .4s, visibility 0s linear;
 }
 .line { display: block; }
 .accent {
@@ -52,20 +33,5 @@
   color: #d4d4d4;
   text-wrap: pretty;
 }
-.toggle {
-  position: absolute;
-  right: 0;
-  top: -32px;
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid rgba(255,255,255,.13);
-  border-radius: 50%;
-  color: #99999f;
-  background: rgba(20,20,24,.5);
-}
-.toggle:hover, .toggle:focus-visible { color: white; border-color: #a078ff; }
 @media (min-width: 640px) { .description { font-size: 1rem; } }
 @media (max-width: 640px) { .title { letter-spacing: -.045em; } }
-@media (prefers-reduced-motion: reduce) { .slide { transition: none; } }
