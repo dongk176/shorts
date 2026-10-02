@@ -17,6 +17,8 @@ const announcementCopy: Record<SiteLocale, {
   description: string;
   dismiss: string;
   confirm: string;
+  topicsLabel: string;
+  topics: readonly string[];
 }> = {
   ko: {
     eyebrow: "EASYCUT PRIVATE",
@@ -24,6 +26,8 @@ const announcementCopy: Record<SiteLocale, {
     description: "재사용 허용으로 표시된 영상 추천과 쇼츠 제작 노하우, 이지컷의 새로운 기능과 업데이트 소식을 확인해 보세요.",
     dismiss: "다시 보지 않기",
     confirm: "확인",
+    topicsLabel: "EASYCUT PRIVATE 제공 정보",
+    topics: ["영상 추천", "제작 노하우", "기능·업데이트 소식"],
   },
   en: {
     eyebrow: "EASYCUT PRIVATE",
@@ -31,6 +35,8 @@ const announcementCopy: Record<SiteLocale, {
     description: "Explore reusable-video recommendations, production tips, and the latest Easy Cut features and updates in one place.",
     dismiss: "Don't show again",
     confirm: "Confirm",
+    topicsLabel: "EASYCUT PRIVATE topics",
+    topics: ["Video recommendations", "Production tips", "Features and updates"],
   },
   ja: {
     eyebrow: "EASYCUT PRIVATE",
@@ -38,6 +44,8 @@ const announcementCopy: Record<SiteLocale, {
     description: "再利用可能な動画のおすすめ、制作ノウハウ、Easy Cutの新機能やアップデート情報をまとめて確認できます。",
     dismiss: "今後表示しない",
     confirm: "確認",
+    topicsLabel: "EASYCUT PRIVATEの提供情報",
+    topics: ["おすすめ動画", "制作ノウハウ", "新機能・更新情報"],
   },
 };
 
@@ -147,10 +155,8 @@ export function PopularPrivateAnnouncement() {
         </header>
 
         <div className="px-6 pb-6">
-          <ul className="grid grid-cols-3 divide-x divide-white/[.08] rounded-2xl border border-white/[.06] bg-white/[.035] px-1 py-4 text-center text-[11px] font-extrabold leading-4 text-neutral-300" aria-label="EASYCUT PRIVATE 제공 정보">
-            <li className="px-2">영상<br />추천</li>
-            <li className="px-2">제작<br />노하우</li>
-            <li className="px-2">기능·업데이트<br />소식</li>
+          <ul className="grid grid-cols-3 divide-x divide-white/[.08] rounded-2xl border border-white/[.06] bg-white/[.035] px-1 py-4 text-center text-[11px] font-extrabold leading-4 text-neutral-300" aria-label={copy.topicsLabel}>
+            {copy.topics.map((topic) => <li key={topic} className="px-2">{topic}</li>)}
           </ul>
         </div>
 

@@ -1,3 +1,7 @@
+import { ContentLanguageSelect } from "@/components/content-language-select";
+import { EditorFontPicker } from "@/components/editor-font-picker";
+import { regularEditorFontOptions } from "@/lib/editor-fonts";
+import { upgradeTemplateConfigToV5 } from "@/lib/template-config";
 import { BackgroundShowcase } from "@/components/background-showcase";
 import { TransformationShowcase } from "@/components/transformation-showcase";
 import { showcaseAsset } from "@/lib/showcase-delivery";
@@ -49,6 +53,37 @@ const guestState: PricingState = {
 
 
 describe("localized first render without browser effects", () => {
+
+  it.each(["en", "ja"] as const)("localizes every %s template font and default name without changing font IDs", (locale) => {
+    const html = render(<TemplateEditor initialTemplate={null} baseTemplateId="dark-minimal"
+      initialConfig={upgradeTemplateConfigToV5(createDefaultTemplateConfig())}
+      unifiedSubtitleCanaryEnabled suggestedName="자막 팝형 템플릿" />, locale);
+    expect(html).toContain(locale === "en" ? "Pop-up caption template" : "ポップアップ字幕テンプレート");
+    for (const font of regularEditorFontOptions) {
+      expect(html).toContain(`value="${font.id}"`);
+      if (/[가-힣]/.test(font.label)) expect(html).not.toContain(font.label);
+    }
+    const picker = render(<EditorFontPicker value="paperlogy" onChange={noop} />, locale);
+    expect(picker).toContain("Paperlogy");
+    expect(picker).not.toContain("페이퍼로지");
+  });
+
+  it.each(["en", "ja"] as const)("localizes the %s language-select trigger before effects", (locale) => {
+    const html = render(<ContentLanguageSelect id="test-language" labelledBy="test-label" prefix="언어"
+      value="all" options={[{ value: "all", label: "전체" }]} onChange={noop} />, locale);
+    expect(html).not.toMatch(/[가-힣]/);
+    expect(html).toContain(locale === "en" ? "Language" : "言語");
+  });
+
+  it.each(["en", "ja"] as const)("preserves an existing %s template name that resembles a default", (locale) => {
+    const template: CustomTemplate = {
+      id: "owned-template", name: "자막 팝형 템플릿", baseTemplateId: "dark-minimal", config: createDefaultTemplateConfig(),
+      version: 1, createdAt: "2026-10-02T00:00:00Z", updatedAt: "2026-10-02T00:00:00Z",
+    };
+    const html = render(<TemplateEditor initialTemplate={template} baseTemplateId="dark-minimal" initialConfig={template.config} />, locale);
+    expect(html).toContain('value="자막 팝형 템플릿"');
+  });
+
   it.each(["en", "ja"] as const)("renders only %s showcase media before hydration", (locale) => {
     const html = render(<><BackgroundShowcase /><TransformationShowcase /></>, locale);
     for (const category of ["talk", "entertainment", "review", "education", "gaming", "vlog"]) {

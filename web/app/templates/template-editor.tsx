@@ -250,7 +250,7 @@ export function TemplateEditor({
   const { locale, t } = useI18n();
   const commentLayerEnabled = baseTemplateId === "comment-capture";
   const [history, setHistory] = useState<History>({ past: [], present: initialConfig, future: [] });
-  const initialName = initialTemplate?.name || suggestedName || "나의 템플릿";
+  const initialName = initialTemplate?.name || ui(suggestedName || "나의 템플릿");
   const [name, setName] = useState(initialName);
   const [selectedLayer, setSelectedLayer] = useState<SelectedLayerId>("title");
   const [activeSidebarTool, setActiveSidebarTool] = useState<TemplateSidebarTool>("title");

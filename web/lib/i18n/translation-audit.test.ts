@@ -1,3 +1,4 @@
+import { editorFontOptions } from "@/lib/editor-fonts";
 import { describe, expect, it } from "vitest";
 import { messagesByLocale, interpolateMessage } from "./messages";
 import { translateLegacyText } from "./legacy-phrases";
@@ -13,7 +14,7 @@ describe("language audit regressions", () => {
   it.each(["en", "ja"] as const)("translates data-driven %s onboarding, background and color labels", (locale) => {
     const labels: string[] = [
       ...userOccupationOptions, ...userUsagePurposeOptions, ...userDiscoverySourceOptions,
-      ...stockBackgrounds,
+      ...stockBackgrounds, ...editorFontOptions,
     ].map((item) => item.label);
     labels.push(...templateConfigColorOptions.map((color) => color.name));
     for (const label of labels) expect(translateLegacyText(label, locale), label).not.toMatch(/[가-힣]/);
