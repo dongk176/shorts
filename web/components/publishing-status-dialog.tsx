@@ -30,6 +30,7 @@ const copy = {
   close: ["닫기", "Close", "閉じる"], back: ["업로드 설정으로 돌아가기", "Back to upload settings", "投稿設定に戻る"],
   check: ["상태 다시 확인", "Check status", "状態を確認"], checking: ["확인 중…", "Checking…", "確認中…"],
   video: ["YouTube에서 영상 보기", "View video on YouTube", "YouTubeで動画を見る"], profile: ["TikTok 프로필 열기", "Open TikTok profile", "TikTokプロフィールを開く"],
+  studio: ["YouTube Studio에서 확인", "Check YouTube Studio", "YouTube Studioで確認"],
   post: ["게시물 보기", "View post", "投稿を見る"],
   result: ["게시 결과 보기", "View post status", "投稿結果を見る"],
 };
@@ -67,6 +68,7 @@ export function PublishingStatusDialog({ feedback, platform, account, privacy, c
     {feedback.phase === "complete" && platform === "TikTok" && <p className="publish-status-description">{t("tiktokHelp")}</p>}
     <div className="publish-status-actions">
       {feedback.phase !== "sending" && onCheck && feedback.phase !== "complete" && feedback.phase !== "failed" && <button type="button" className="publish-primary" disabled={checking} onClick={onCheck}>{t(checking ? "checking" : "check")}</button>}
+      {platform === "YouTube" && feedback.phase === "unknown" && !feedback.url && <a className="publish-outline" href="https://studio.youtube.com" target="_blank" rel="noreferrer">{t("studio")} ↗</a>}
       {feedback.url && (feedback.phase === "complete" || feedback.phase === "unknown") && <a className="publish-primary" href={feedback.url} target="_blank" rel="noreferrer">{t(platform === "YouTube" ? "video" : platform === "TikTok" ? "profile" : "post")} ↗</a>}
       <button type="button" className={feedback.phase === "failed" || feedback.phase === "complete" && !feedback.url ? "publish-primary" : "publish-outline"} disabled={feedback.phase === "sending"} onClick={onClose}>{t(feedback.phase === "failed" ? "back" : feedback.phase === "complete" ? "done" : "close")}</button>
     </div>

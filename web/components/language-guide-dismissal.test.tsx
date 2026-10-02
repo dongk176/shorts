@@ -1,0 +1,24 @@
+import { afterEach, expect, it, vi } from "vitest";
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { parseHTML } from "linkedom";
+import { LanguageGuide } from "./language-guide";
+vi.mock("./feature-guide-overlay",()=>({FeatureGuideOverlay:({enabled,onClose}:{enabled:boolean;onClose:()=>void})=>enabled?<button onClick={onClose}>Close guide</button>:null}));
+let root:Root|undefined;
+afterEach(async()=>{if(root)await act(async()=>root!.unmount());root=undefined;vi.unstubAllGlobals();});
+it("persists ordinary close, keeps it closed after reload, and permits deliberate replay",async()=>{
+ const {window,document}=parseHTML('<html><body><div id="app"></div></body></html>');
+ const values=new Map<string,string>();
+ vi.stubGlobal("window",window);vi.stubGlobal("document",document);vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT",true);
+ vi.stubGlobal("localStorage",{getItem:(key:string)=>values.get(key),setItem:(key:string,value:string)=>values.set(key,value)});
+ const request=vi.fn(async(_url:string,init?:RequestInit)=>init?.method==="POST"?Response.json({}, {status:503}):Response.json({available:true,seen:false}));vi.stubGlobal("fetch",request);
+ const done=vi.fn();const render=(replay=0)=>root!.render(<LanguageGuide userId="member-a" available enabled replay={replay} locale="ko" onComplete={done}/>);
+ root=createRoot(document.getElementById("app")! as unknown as Element);
+ await act(async()=>render());
+ await act(async()=>document.querySelector("button")!.dispatchEvent(new window.Event("click",{bubbles:true})));
+ expect(request.mock.calls.filter(([,init])=>init?.method==="POST")).toHaveLength(2);
+ expect(values.get("easycut-language-guide:member-a")).toBe("1");
+ await act(async()=>root!.unmount());root=createRoot(document.getElementById("app")! as unknown as Element);
+ await act(async()=>render());expect(document.querySelector("button")).toBeNull();
+ await act(async()=>render(1));expect(document.querySelector("button")).not.toBeNull();
+});

@@ -120,7 +120,7 @@ export const legacyDesktopEditorGuideSteps: readonly DesktopEditorGuideStep[] = 
     feature: "complete",
     eyebrow: "편집 가이드 완료",
     title: "이제 직접 편집해 보세요",
-    description: "확인을 누르면 다음에 편집 화면에 들어왔을 때 가이드를 다시 볼 수 있어요. 더 이상 필요하지 않다면 다시 보지 않기를 선택해 주세요.",
+    description: "안내를 닫으면 자동으로 다시 표시되지 않아요. 이제 직접 편집해 보세요.",
     targetSelector: null,
   },
 ];

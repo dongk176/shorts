@@ -56,7 +56,8 @@ export const eligibilityPost = (request: Request) => handle(async () => {
 export const uploadsGet = (request: Request) => handle(async () => {
   const { uploads, actor } = await accountContext();
   const shortId = uuid.parse(new URL(request.url).searchParams.get("shortId"));
-  return NextResponse.json({ uploads: await uploads.list(actor, shortId), capabilities: uploads.capabilities() });
+  const [records, renderVersion] = await Promise.all([uploads.list(actor, shortId), uploads.renderVersion(actor, shortId)]);
+  return NextResponse.json({ uploads: records, renderVersion, capabilities: uploads.capabilities() });
 });
 export const uploadsPost = (request: Request) => handle(async () => {
   assertSameOriginJsonRequest(request);

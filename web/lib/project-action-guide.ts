@@ -47,7 +47,7 @@ export const projectActionGuideSteps: readonly ProjectActionGuideStep[] = [
     feature: "complete",
     eyebrow: "프로젝트 가이드 완료",
     title: "이제 완성된 쇼츠를 활용해 보세요",
-    description: "확인을 누르면 다음 프로젝트에서도 가이드를 다시 볼 수 있어요. 더 이상 필요하지 않다면 다시 보지 않기를 선택해 주세요.",
+    description: "안내를 닫으면 자동으로 다시 표시되지 않아요. 이제 직접 편집해 보세요.",
     targetSelector: null,
   },
 ];

@@ -222,6 +222,15 @@ describe("per-user resumable publishing",()=>{
   });return {uploads,calls,bodies};
  }
  const input=(connectionId:string)=>({shortId:SA,connectionId,title:"My private video",description:"",madeForKids:false,synthetic:false});
+ it("pins recovery to the rendered version and rejects a stale compose before upload",async()=>{
+  const c=await connect(),{uploads,calls}=uploader();
+  expect(await uploads.renderVersion(A,SA)).toBe(1);
+  await expect(uploads.renderVersion(B,SA)).rejects.toThrow();
+  await expect(uploads.create(A,{...input(c.id),expectedRenderVersion:0})).rejects.toMatchObject({status:409});
+  expect(calls).toEqual([]);expect(await uploads.list(A,SA)).toEqual([]);
+  const result=await uploads.create(A,{...input(c.id),expectedRenderVersion:1});
+  expect((await uploads.list(A,SA))[0]).toMatchObject({id:result.id,connectionId:c.id,renderVersion:1});
+ });
  it("uploads owned output, encrypts progress, prevents duplicates and hides it from B",async()=>{
   const c=await connect(),{uploads,calls}=uploader();
   const result=await uploads.create(A,input(c.id));expect(result.status).toBe("complete");expect(result.videoId).toBe("test-video");

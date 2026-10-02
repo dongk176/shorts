@@ -15,7 +15,7 @@ it("opens progress immediately, prevents duplicate sending and reports actual vi
  vi.stubGlobal("window",window);vi.stubGlobal("document",document);vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT",true);
  vi.stubGlobal("sessionStorage",{getItem:()=>null,setItem:vi.fn()});
  let finish!:(value:Response)=>void;const pending=new Promise<Response>(resolve=>{finish=resolve;});
- const request=vi.fn(async(_url:string,init?:RequestInit)=>init?.method==="POST"?pending:Response.json({uploads:[],capabilities:{nonPrivateUploads:true}}));vi.stubGlobal("fetch",request);
+ const request=vi.fn(async(_url:string,init?:RequestInit)=>init?.method==="POST"?pending:Response.json({uploads:[],renderVersion:1,capabilities:{nonPrivateUploads:true}}));vi.stubGlobal("fetch",request);
  root=createRoot(document.getElementById("app")! as unknown as Element);
  await act(async()=>{root!.render(<YoutubeAccountUpload shortId="short-a" title="My clip" connections={[{id:"c",channelId:"UCtest",channelTitle:"My channel",status:"active"}]} attribution={{title:"Source title",author:"Source author",url:"https://www.youtube.com/watch?v=F-Dp78NJwlU",ccBy:true}} onManage={()=>{}}/>);});
  expect(document.querySelector("textarea")?.textContent).toContain("CC BY");
@@ -34,4 +34,48 @@ it("opens progress immediately, prevents duplicate sending and reports actual vi
  expect(document.querySelector(".publish-status-dialog")?.textContent).toContain("요청: 공개 · YouTube 확인: 비공개");
  expect(document.querySelector('.publish-status-dialog a')?.getAttribute("href")).toBe("https://www.youtube.com/watch?v=F-Dp78NJwlU");
  expect(document.querySelector('footer button')?.getAttribute("type")).toBe("button");
+});
+
+it.each(["complete", "interrupted", "missing"])("recovers a lost create response using the same channel and rendered video: %s",async status=>{
+ const {window,document}=parseHTML('<html><body><div id="app"></div></body></html>');
+ Object.defineProperty(window,"location",{configurable:true,value:new URL("https://www.easycut.co.kr/projects/1")});
+ Object.assign(window.HTMLElement.prototype,{showModal(this:HTMLElement){this.setAttribute("open","");},close(this:HTMLElement){this.removeAttribute("open");}});
+ Object.defineProperty(window,"innerHeight",{value:900,configurable:true});
+ Object.assign(window.HTMLElement.prototype,{getBoundingClientRect(){return {top:100,bottom:150,left:0,right:300,width:300,height:50};}});
+ vi.stubGlobal("window",window);vi.stubGlobal("document",document);vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT",true);
+ vi.stubGlobal("sessionStorage",{getItem:()=>null,setItem:vi.fn()});
+
+ let submitted=false, expose=status!=="missing";
+ const record={id:"recovered",connectionId:"c",renderVersion:3,title:"My clip",status:status==="missing"?"complete":status,requestedPrivacy:"private",actualPrivacy:"private",videoId:status==="interrupted"?null:"video-recovered",error:null};
+ const unrelated=[{...record,id:"other-channel",connectionId:"different",status:"complete"},{...record,id:"old-version",renderVersion:2,status:"complete"}];
+ const request=vi.fn(async(url:string,init?:RequestInit)=>{
+  if(init?.method==="POST") { submitted=true; throw new TypeError("Network response lost"); }
+  return Response.json({uploads:submitted&&expose?[...unrelated,record]:unrelated,renderVersion:3,capabilities:{nonPrivateUploads:true}});
+ });
+ vi.stubGlobal("fetch",request);
+ root=createRoot(document.getElementById("app")! as unknown as Element);
+ await act(async()=>{root!.render(<YoutubeAccountUpload shortId="short-a" title="My clip" connections={[{id:"c",channelId:"UCtest",channelTitle:"My channel",status:"active"}]} onManage={()=>{}}/>);});
+ for(const label of ["아동용 콘텐츠","사실적인 변경·합성 콘텐츠"]){
+  await act(async()=>{document.querySelector(`[role="combobox"][aria-label="${label}"]`)!.dispatchEvent(new window.Event("click",{bubbles:true}));});
+  await act(async()=>{document.querySelectorAll('[role="option"]')[1].dispatchEvent(new window.Event("click",{bubbles:true}));});
+ }
+ await act(async()=>{document.querySelector("form")!.dispatchEvent(new window.Event("submit",{bubbles:true,cancelable:true}));});
+ const posts=request.mock.calls.filter(([,init])=>init?.method==="POST");
+ expect(posts).toHaveLength(1);
+ expect(JSON.parse(String(posts[0][1]?.body))).toMatchObject({connectionId:"c",expectedRenderVersion:3});
+ if(status==="missing") {
+  expect(document.querySelector(".publish-status-dialog.is-unknown")).not.toBeNull();
+  expect(document.querySelector('.publish-status-dialog a')?.getAttribute("href")).toBe("https://studio.youtube.com");
+  expose=true;
+  await act(async()=>{document.querySelector('.publish-status-dialog button')!.dispatchEvent(new window.Event("click",{bubbles:true}));});
+ }
+ if(status!=="interrupted") {
+  expect(document.querySelector(".publish-status-dialog.is-complete")).not.toBeNull();
+  expect(document.querySelector('.publish-status-dialog a')?.getAttribute("href")).toContain("video-recovered");
+ } else {
+  expect(document.querySelector(".publish-status-dialog.is-unknown")).not.toBeNull();
+  await act(async()=>{document.querySelector('.publish-status-dialog button')!.dispatchEvent(new window.Event("click",{bubbles:true}));});
+  expect(request.mock.calls.filter(([,init])=>init?.method==="POST")[1][0]).toBe("/api/youtube/accounts/uploads/recovered/resume");
+ }
+ expect(request.mock.calls.filter(([url,init])=>init?.method==="POST"&&url==="/api/youtube/accounts/uploads")).toHaveLength(1);
 });

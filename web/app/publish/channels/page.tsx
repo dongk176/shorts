@@ -1,3 +1,5 @@
+import { getDb } from "@/lib/db";
+import { canUseYoutubeAdminPublishing } from "@/lib/youtube-accounts/review-access";
 import { notFound, redirect } from "next/navigation";
 import { accountContext } from "@/lib/youtube-accounts/runtime";
 import { ChannelConnectionsPage } from "@/components/channel-connections-page";
@@ -11,9 +13,10 @@ export const metadata = { robots: { index: false, follow: false } };
 export default async function Channels() {
   const user = await getAuthenticatedUser();
   if (!user) redirect(await localizedRedirectPath("/auth/sign-in?next=/publish/channels"));
-  try { await accountContext(true); } catch { notFound(); }
+  let adminEnabled = false;
+  try { const { actor } = await accountContext(true); adminEnabled = await canUseYoutubeAdminPublishing(getDb(), actor.userId); } catch { notFound(); }
   return <div className="app-shell site-chrome desktop-sidebar-layout min-h-screen overflow-visible text-neutral-100">
     <SiteHeader desktopSidebar><AuthControls user={authProfile(user)} next="/publish/channels" /></SiteHeader>
-    <ChannelConnectionsPage />
+    <ChannelConnectionsPage adminEnabled={adminEnabled} />
   </div>;
 }

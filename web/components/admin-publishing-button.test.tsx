@@ -33,7 +33,9 @@ async function render(props: Partial<ComponentProps<typeof AdminPublishingButton
 describe('one shared publishing dialog',()=>{
  it('shows only maintenance for a member, without fetching connections, and can reopen',async()=>{
   const {document,click,fetcher}=await render({adminEnabled:false,youtubeEnabled:true});
+  expect(document.querySelector('.publish-trigger')?.textContent).toContain('Maintenance');
   await click('.publish-trigger');
+  expect(document.querySelector('.publish-status-actions a')?.getAttribute('href')).toBe('/api/shorts/short-a/download');
   expect(document.body.textContent).toContain('Uploads are temporarily unavailable');
   expect(document.querySelector('.publish-tabs')).toBeNull();
   expect(document.querySelectorAll('dialog[open]').length).toBe(1);
@@ -52,7 +54,9 @@ describe('one shared publishing dialog',()=>{
  });
  it('fails closed to maintenance when the administrator flag is missing',async()=>{
   const {document,click,fetcher}=await render({adminEnabled:undefined,youtubeEnabled:true});
+  expect(document.querySelector('.publish-trigger')?.textContent).toContain('Maintenance');
   await click('.publish-trigger');
+  expect(document.querySelector('.publish-status-actions a')?.getAttribute('href')).toBe('/api/shorts/short-a/download');
   expect(document.body.textContent).toContain('Uploads are temporarily unavailable');
   expect(fetcher).not.toHaveBeenCalled();
  });

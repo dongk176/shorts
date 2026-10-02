@@ -15,7 +15,7 @@ import type { YoutubeAccountStore } from "./store";
 import type { YoutubeAccounts } from "./service";
 import { Google, metadata, type UploadJob } from "./upload-engine.mjs";
 
-export const uploadInput = z.object({ shortId: uuid, connectionId: uuid, title: z.string().trim().min(1).max(100), description: z.string().refine(value=>Buffer.byteLength(value,"utf8")<=5000,"설명은 UTF-8 기준 5,000바이트 이하여야 합니다."), privacy: z.enum(privacyValues).default("private"), madeForKids: z.boolean(), synthetic: z.boolean() }).strict();
+export const uploadInput = z.object({ shortId: uuid, connectionId: uuid, expectedRenderVersion: z.number().int().nonnegative().optional(), title: z.string().trim().min(1).max(100), description: z.string().refine(value=>Buffer.byteLength(value,"utf8")<=5000,"설명은 UTF-8 기준 5,000바이트 이하여야 합니다."), privacy: z.enum(privacyValues).default("private"), madeForKids: z.boolean(), synthetic: z.boolean() }).strict();
 type Config = { clientId: string; clientSecret: string; allowNonPrivateUploads?: boolean };
 export class YoutubeAccountUploads {
   constructor(private db: Sql, private store: YoutubeAccountStore, private accounts: YoutubeAccounts, private vault: TokenVault, private config: Config, private sourceRoot: string, private fetcher: typeof fetch = fetch, private hostedSources?: HostedYoutubeSources) {}
@@ -28,12 +28,16 @@ export class YoutubeAccountUploads {
   }
   private view(row: Record<string, unknown>) {
     if (row.status === 'expired' || (row.createdAt && new Date(row.createdAt as string).getTime() <= Date.now()-29*86400000)) return { id:String(row.id),shortId:String(row.shortId),title:'이전 업로드',status:'expired',progress:0,requestedPrivacy:null,actualPrivacy:null,privacyCheckedAt:null,videoId:null,error:null };
-    return { id: String(row.id), shortId: String(row.shortId), title: String(row.title), status: String(row.status), progress: Number(row.progress), requestedPrivacy: String(row.requestedPrivacy), actualPrivacy: row.actualPrivacy ? String(row.actualPrivacy) : null, privacyCheckedAt: row.privacyCheckedAt ? new Date(row.privacyCheckedAt as string).toISOString() : null, videoId: row.videoId ? String(row.videoId) : null, error: row.errorMessage ? String(row.errorMessage) : null };
+    return { connectionId: String(row.connectionId), renderVersion: Number(row.renderVersion), id: String(row.id), shortId: String(row.shortId), title: String(row.title), status: String(row.status), progress: Number(row.progress), requestedPrivacy: String(row.requestedPrivacy), actualPrivacy: row.actualPrivacy ? String(row.actualPrivacy) : null, privacyCheckedAt: row.privacyCheckedAt ? new Date(row.privacyCheckedAt as string).toISOString() : null, videoId: row.videoId ? String(row.videoId) : null, error: row.errorMessage ? String(row.errorMessage) : null };
   }
   async list(actor: Actor, shortId: string) {
     await this.accounts.list(actor, shortId);
-    const rows=await this.db`select id,short_id,title,status,progress,video_id,error_message,requested_privacy,actual_privacy,privacy_checked_at,created_at from shorts_mvp.youtube_account_uploads where user_id=${actor.userId} and short_id=${shortId} order by created_at desc`;
+    const rows=await this.db`select id,short_id,connection_id,render_version,title,status,progress,video_id,error_message,requested_privacy,actual_privacy,privacy_checked_at,created_at from shorts_mvp.youtube_account_uploads where user_id=${actor.userId} and short_id=${shortId} order by created_at desc`;
     return rows.map(row=>this.view(row));
+  }
+  async renderVersion(actor: Actor, shortId: string) {
+    await this.accounts.list(actor, shortId);
+    return (await this.store.source(actor.userId, shortId)).renderVersion;
   }
   async attribution(actor: Actor, shortId: string) {
     await this.accounts.list(actor, shortId);
@@ -64,6 +68,7 @@ export class YoutubeAccountUploads {
     await this.accounts.eligibility(actor,input.shortId,input.connectionId);
     this.assertPrivacy(input.privacy);
     const {source,connection}=await this.store.publicationContext(actor.userId,input.shortId,input.connectionId);
+    if (input.expectedRenderVersion !== undefined && input.expectedRenderVersion !== source.renderVersion) throw new HttpError(409,"영상이 변경됐습니다. 업로드 창을 다시 열어 주세요.");
     const file=await this.sourceFile(source.outputS3Key);
     const id=randomUUID();
     const job: UploadJob={size:file.size,channelId:String(connection.channelId),metadata:metadata(input),sourceKey:source.outputS3Key,sourceHash:await this.fingerprint(file.file),status:'queued'};

@@ -161,19 +161,15 @@ export function FeatureGuideOverlay({
 
   const closeForSession = useCallback((outcome: "dismissed" | "completed" = "dismissed") => {
     sessionClosedRef.current = true;
+    try { if (storageKey) window.localStorage.setItem(storageKey, "1"); } catch { /* Closing still works without storage. */ }
     setOpen(false);
     onClose?.(outcome);
-  }, [onClose]);
+  }, [onClose, storageKey]);
 
   const dismissPermanently = useCallback(() => {
-    try {
-      if (storageKey) window.localStorage.setItem(storageKey, "1");
-    } catch {
-      // Closing the current guide still works if storage is unavailable.
-    }
     closeForSession("completed");
     onLastStepPrimaryAction?.();
-  }, [closeForSession, onLastStepPrimaryAction, storageKey]);
+  }, [closeForSession, onLastStepPrimaryAction]);
 
   useEffect(() => {
     if (!enabled || !open) return;

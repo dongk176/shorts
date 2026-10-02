@@ -10490,12 +10490,12 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
               <span className={`editor-draft-status is-${editorDraftSaveState}`}>
                 <span aria-hidden="true" />
                 {ui(editorDraftSaveState === "saving"
-                  ? "임시 저장 중…"
+                  ? "이 기기에 임시 저장 중…"
                   : editorDraftSaveState === "saved"
-                    ? "임시 저장됨"
+                    ? "이 기기에 임시 저장됨"
                     : editorDraftSaveState === "error"
-                      ? "임시 저장 실패"
-                      : "편집 내용 자동 저장")}
+                      ? "이 기기에 임시 저장 실패"
+                      : "이 기기에 자동 저장")}
               </span>
               <span className={`editor-video-apply-status${hasUnappliedEditorChanges ? " is-pending" : ""}`}>
                 {ui(saving ? "영상 적용 요청 중…" : hasUnappliedEditorChanges ? "영상 반영 전 · 적용 필요" : "현재 영상과 같음")}

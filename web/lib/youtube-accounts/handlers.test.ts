@@ -7,11 +7,12 @@ import { HttpError } from "@/lib/http";
 
 const actor = { userId: "11111111-1111-4111-8111-111111111111", sessionId: "authenticated-server-session" };
 const origin = "http://localhost:3001";
-const uploads = { attribution: vi.fn(async()=>null), cleanup: vi.fn(), capabilities: vi.fn(()=>({nonPrivateUploads:false})), list: vi.fn(), create: vi.fn(), run: vi.fn() };
+const uploads = { renderVersion: vi.fn(), attribution: vi.fn(async()=>null), cleanup: vi.fn(), capabilities: vi.fn(()=>({nonPrivateUploads:false})), list: vi.fn(), create: vi.fn(), run: vi.fn() };
 const service = { list: vi.fn(), start: vi.fn(), disconnect: vi.fn(), disconnectStatus: vi.fn(), disconnectState: vi.fn(), callback: vi.fn(), eligibility: vi.fn() };
 const request = (path: string, method = "GET", body?: unknown, from = origin) => new Request(origin + path, { method, headers: method === "GET" ? {} : { origin: from, "content-type": "application/json" }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
 beforeEach(() => {
   vi.resetAllMocks();
+  uploads.renderVersion.mockResolvedValue(1);
   uploads.capabilities.mockReturnValue({nonPrivateUploads:false});
   vi.mocked(accountContext).mockResolvedValue({ service, uploads, actor, origin } as never);
   service.list.mockResolvedValue([]); service.start.mockResolvedValue("https://accounts.google.com/o/oauth2/v2/auth");
@@ -76,6 +77,7 @@ it("upload handlers use the authenticated actor and never accept owner from quer
  uploads.list.mockResolvedValue([]);uploads.create.mockResolvedValue({id:'created'});uploads.run.mockResolvedValue({id:'existing'});
  expect((await uploadsGet(request('/api/youtube/accounts/uploads?shortId='+actor.userId+'&userId=attacker'))).status).toBe(200);
  expect(uploads.list).toHaveBeenCalledWith(actor,actor.userId);
+ expect(uploads.renderVersion).toHaveBeenCalledWith(actor,actor.userId);
  const response=await uploadsPost(request('/api/youtube/accounts/uploads','POST',{title:'test'}));
  expect(response.headers.get('cache-control')).toBe('private, no-store');expect(uploads.create).toHaveBeenCalledWith(actor,{title:'test'});
  await uploadResume(request('/api/youtube/accounts/uploads/id/resume','POST',{}),{params:Promise.resolve({uploadId:actor.userId})});

@@ -20,6 +20,11 @@ export function LanguageGuide({ userId, available, enabled, replay, locale, onCo
   const copy = languageCopy[locale];
   useEffect(() => {
     if (!available || !userId || checked.current) return;
+    try {
+      if (localStorage.getItem(`easycut-language-guide:${userId}`) === "1") {
+        checked.current = true; setPhase("done"); onComplete(); return;
+      }
+    } catch { /* Server state remains the fallback. */ }
     let disposed = false;
     const controller = new AbortController();
     const timer = window.setTimeout(() => controller.abort(), 8_000);
@@ -40,12 +45,9 @@ export function LanguageGuide({ userId, available, enabled, replay, locale, onCo
     return () => { disposed = true; window.clearTimeout(timer); controller.abort(); };
   }, [available, userId, onComplete]);
 
-  const close = useCallback(() => {
-    setPhase("done"); setClosedReplay(replay); onComplete();
-  }, [replay, onComplete]);
-
   const hidePermanently = useCallback(() => {
     if (!userId) return;
+    try { localStorage.setItem(`easycut-language-guide:${userId}`, "1"); } catch { /* Server persistence is still attempted. */ }
     // Persist immediately, with one bounded retry for a transient network error.
     const save = async () => {
       for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -61,8 +63,13 @@ export function LanguageGuide({ userId, available, enabled, replay, locale, onCo
     void save();
   }, [userId]);
 
+  const close = useCallback(() => {
+    hidePermanently();
+    setPhase("done"); setClosedReplay(replay); onComplete();
+  }, [hidePermanently, replay, onComplete]);
+
   return <FeatureGuideOverlay key={replay} enabled={available && enabled && (phase === "new" || replay > closedReplay)}
     steps={steps} closeAriaLabel={copy.close} smoothTransitions onClose={close}
     previousLabel={copy.previous} nextLabel={copy.next} lastStepSecondaryLabel={copy.confirm}
-    lastStepPrimaryLabel={copy.dontShowAgain} onLastStepPrimaryAction={hidePermanently} />;
+    lastStepPrimaryLabel={copy.dontShowAgain} />;
 }
