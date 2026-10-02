@@ -6,6 +6,9 @@ import {
   subtitleTemplateDiscoverySteps,
 } from "@/lib/subtitle-template-discovery";
 
+// Retired automatic introduction; subtitle template selection stays available.
+const AUTO_DISCOVERY_ENABLED = false;
+
 export function SubtitleTemplateDiscoveryOverlay({
   enabled,
   onTry,
@@ -15,7 +18,7 @@ export function SubtitleTemplateDiscoveryOverlay({
 }) {
   return (
     <FeatureGuideOverlay
-      enabled={enabled}
+      enabled={AUTO_DISCOVERY_ENABLED && enabled}
       steps={subtitleTemplateDiscoverySteps}
       storageKey={SUBTITLE_TEMPLATE_DISCOVERY_STORAGE_KEY}
       closeAriaLabel="자막 템플릿 안내 닫기"
