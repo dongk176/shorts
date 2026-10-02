@@ -1,6 +1,7 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/lib/i18n/navigation";
+import { useUiText } from "@/lib/i18n/use-ui-text";
 import { communityBoardLimits, communityLegacyHeading } from "@/lib/community-template-contract";
 import { validateSnsTextWidths } from "@/lib/sns-editor-fonts";
 import { useEffect, useRef, useState } from "react";
@@ -23,6 +24,7 @@ export function SnsShortEditor({ item, projectNumber, channelThumbnailUrl, relea
   item: GeneratedShort; projectNumber: number; channelThumbnailUrl: string | null;
   release: EditorReleaseAssignment; canEdit: boolean; onChanged: () => Promise<void>;
 }) {
+  const ui = useUiText();
   const original = item.templateSnapshot!;
   const community = original.communityTemplateVersion === 1;
   const name = community ? "커뮤니티" : "SNS";
@@ -101,29 +103,29 @@ export function SnsShortEditor({ item, projectNumber, channelThumbnailUrl, relea
   const inputClass = "mt-2 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white focus:border-cyan-300 focus:outline-none";
   return <main className="min-h-screen bg-[#121212] p-4 text-white sm:p-8">
     <header className="mx-auto mb-6 flex max-w-6xl items-center justify-between gap-3">
-      <div><Link href={`/projects/${projectNumber}`} className="text-sm text-neutral-400">← 프로젝트</Link>
-        <h1 className="mt-2 text-xl font-bold">{name} 템플릿 편집 <span className="text-xs" style={{ color: brandColor }}>베타</span></h1></div>
+      <div><Link href={`/projects/${projectNumber}`} className="text-sm text-neutral-400">{ui("← 프로젝트")}</Link>
+        <h1 className="mt-2 text-xl font-bold">{ui(`${name} 템플릿 편집`)} <span className="text-xs" style={{ color: brandColor }}>{ui("베타")}</span></h1></div>
       <button type="button" onClick={() => void save()} disabled={busy || !timeline || !canEdit}
-        className="rounded-xl bg-cyan-300 px-5 py-3 font-bold text-black disabled:opacity-40">{busy ? "영상에 반영 중…" : "수정 반영"}</button>
+        className="rounded-xl bg-cyan-300 px-5 py-3 font-bold text-black disabled:opacity-40">{ui(busy ? "영상에 반영 중…" : "수정 반영")}</button>
     </header>
     <div className="mx-auto grid max-w-6xl gap-8 md:grid-cols-[minmax(260px,420px)_1fr]">
       <div className="mx-auto w-full max-w-[360px]">
         <SnsTemplatePreview community={community} language={language} ratio={ratio} brandColor={brandColor} channelName={channel} channelThumbnailUrl={avatar}
           thumbnailUrl="" content={{ ...(community ? { boardName } : {}), title, body, hashtags: tags }} videoUrl={timeline?.url}
           videoStart={timeline ? start - timeline.timelineStartSeconds : 0} videoEnd={timeline ? end - timeline.timelineStartSeconds : undefined} />
-        <p className="mt-3 text-center text-xs text-neutral-400">영상 {ratio} · 출력 1080 × 1920</p>
+        <p className="mt-3 text-center text-xs text-neutral-400">{ui(`영상 ${ratio} · 출력 1080 × 1920`)}</p>
       </div>
       <fieldset disabled={busy} className="space-y-5 disabled:opacity-60" onChange={changed}>
-        {community && <label className="block text-sm">게시판 이름 · {communityBoardLimits[language][0]}~{communityBoardLimits[language][1]}자
-          <input aria-label="커뮤니티 게시판 이름" className={inputClass} value={boardName} onChange={e => setBoardName(e.target.value)} /></label>}
-        <label className="block text-sm">제목 · 한 줄, {limits.title}자 이내<input aria-label="SNS 제목" className={inputClass} value={title} onChange={e => setTitle(e.target.value)} /></label>
-        {body.map((line, index) => <label key={index} className="block text-sm">본문 {index + 1} · {limits.body}자 이내
-          <input aria-label={`SNS 본문 ${index + 1}`} className={inputClass} value={line} onChange={e => setBody(body.map((v, i) => i === index ? e.target.value : v))} /></label>)}
-        {limits.tags > 0 && <div><p className="text-sm">해시태그 · 각 {limits.tag}자 이내</p><div className="grid grid-cols-3 gap-2">
-          {tags.map((tag, index) => <input key={index} aria-label={`SNS 해시태그 ${index + 1}`} className={inputClass} value={tag} onChange={e => setTags(tags.map((v, i) => i === index ? e.target.value : v))} />)}</div></div>}
-        <label className="flex items-center gap-4 text-sm">브랜드 컬러<input aria-label="SNS 브랜드 컬러" type="color" value={brandColor} onChange={e => setBrandColor(e.target.value)} className="h-10 w-16 cursor-pointer rounded" /><span className="text-neutral-400">{community ? "최상단 네모 배경에 적용됩니다." : "제목 색은 자동으로 맞춰집니다."}</span></label>
-        <label className="block text-sm">채널명<input aria-label="SNS 채널명" maxLength={50} className={inputClass} value={channel} onChange={e => setChannel(e.target.value)} /></label>
-        <label className="block text-sm">채널 사진<input aria-label="SNS 채널 사진" type="file" accept="image/png,image/jpeg,image/webp" className={inputClass} onChange={async e => {
+        {community && <label className="block text-sm">{ui(`게시판 이름 · ${communityBoardLimits[language][0]}~${communityBoardLimits[language][1]}자`)}
+          <input aria-label={ui("커뮤니티 게시판 이름")} className={inputClass} value={boardName} onChange={e => setBoardName(e.target.value)} /></label>}
+        <label className="block text-sm">{ui(`제목 · 한 줄, ${limits.title}자 이내`)}<input aria-label={ui("SNS 제목")} className={inputClass} value={title} onChange={e => setTitle(e.target.value)} /></label>
+        {body.map((line, index) => <label key={index} className="block text-sm">{ui(`본문 ${index + 1} · ${limits.body}자 이내`)}
+          <input aria-label={ui(`SNS 본문 ${index + 1}`)} className={inputClass} value={line} onChange={e => setBody(body.map((v, i) => i === index ? e.target.value : v))} /></label>)}
+        {limits.tags > 0 && <div><p className="text-sm">{ui(`해시태그 · 각 ${limits.tag}자 이내`)}</p><div className="grid grid-cols-3 gap-2">
+          {tags.map((tag, index) => <input key={index} aria-label={ui(`SNS 해시태그 ${index + 1}`)} className={inputClass} value={tag} onChange={e => setTags(tags.map((v, i) => i === index ? e.target.value : v))} />)}</div></div>}
+        <label className="flex items-center gap-4 text-sm">{ui("브랜드 컬러")}<input aria-label={ui("SNS 브랜드 컬러")} type="color" value={brandColor} onChange={e => setBrandColor(e.target.value)} className="h-10 w-16 cursor-pointer rounded" /><span className="text-neutral-400">{ui(community ? "최상단 네모 배경에 적용됩니다." : "제목 색은 자동으로 맞춰집니다.")}</span></label>
+        <label className="block text-sm">{ui("채널명")}<input aria-label={ui("SNS 채널명")} maxLength={50} className={inputClass} value={channel} onChange={e => setChannel(e.target.value)} /></label>
+        <label className="block text-sm">{ui("채널 사진")}<input aria-label={ui("SNS 채널 사진")} type="file" accept="image/png,image/jpeg,image/webp" className={inputClass} onChange={async e => {
           const file = e.target.files?.[0]; if (!file) return;
           if (file.size > 2 * 1024 * 1024) { setError("2MB 이하의 이미지를 선택해 주세요."); return; }
           try {
@@ -139,12 +141,12 @@ export function SnsShortEditor({ item, projectNumber, channelThumbnailUrl, relea
           } catch { setError("사진을 불러오지 못했습니다. JPG·PNG·WebP 파일을 선택해 주세요."); }
         }} /></label>
         <div className="grid grid-cols-2 gap-3">
-          <label className="text-sm">시작(초)<input aria-label="SNS 영상 시작" className={inputClass} type="number" step="0.1" value={start} onChange={e => setStart(Number(e.target.value))} /></label>
-          <label className="text-sm">끝(초)<input aria-label="SNS 영상 끝" className={inputClass} type="number" step="0.1" value={end} onChange={e => setEnd(Number(e.target.value))} /></label>
+          <label className="text-sm">{ui("시작(초)")}<input aria-label={ui("SNS 영상 시작")} className={inputClass} type="number" step="0.1" value={start} onChange={e => setStart(Number(e.target.value))} /></label>
+          <label className="text-sm">{ui("끝(초)")}<input aria-label={ui("SNS 영상 끝")} className={inputClass} type="number" step="0.1" value={end} onChange={e => setEnd(Number(e.target.value))} /></label>
         </div>
-        {error && <p role="alert" className="rounded-xl bg-red-500/10 p-3 text-sm text-red-300">{error}</p>}
-        {!canEdit && <p className="text-sm text-amber-200">이 계정의 편집 이용 권한을 확인해 주세요.</p>}
-        {(applied || busy) && <p role="status" className="rounded-xl bg-cyan-500/10 p-3 text-sm text-cyan-200">{busy ? `수정한 내용으로 영상을 만들고 있습니다. ${item.rerenderProgress || 5}%` : item.editorApplyFailed ? "반영에 실패했습니다. 내용을 확인하고 다시 시도해 주세요." : "영상 반영이 완료되었습니다."} <Link href={`/projects/${projectNumber}`} className="underline">프로젝트에서 보기</Link></p>}
+        {error && <p role="alert" className="rounded-xl bg-red-500/10 p-3 text-sm text-red-300">{ui(error)}</p>}
+        {!canEdit && <p className="text-sm text-amber-200">{ui("이 계정의 편집 이용 권한을 확인해 주세요.")}</p>}
+        {(applied || busy) && <p role="status" className="rounded-xl bg-cyan-500/10 p-3 text-sm text-cyan-200">{ui(busy ? `수정한 내용으로 영상을 만들고 있습니다. ${item.rerenderProgress || 5}%` : item.editorApplyFailed ? "반영에 실패했습니다. 내용을 확인하고 다시 시도해 주세요." : "영상 반영이 완료되었습니다.")} <Link href={`/projects/${projectNumber}`} className="underline">{ui("프로젝트에서 보기")}</Link></p>}
       </fieldset>
     </div>
   </main>;

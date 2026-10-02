@@ -1,3 +1,5 @@
+import { SnsShortEditor } from "@/components/sns-short-editor";
+import type { GeneratedShort } from "@/lib/contracts";
 import { ContentLanguageSelect } from "@/components/content-language-select";
 import { EditorFontPicker } from "@/components/editor-font-picker";
 import { regularEditorFontOptions } from "@/lib/editor-fonts";
@@ -53,6 +55,24 @@ const guestState: PricingState = {
 
 
 describe("localized first render without browser effects", () => {
+  it.each(["en", "ja"] as const)("localizes %s community editor controls and preserves authored content", (locale) => {
+    const item = {
+      id: "5eddeec0-39cd-4497-87b7-ebbcd5499971", videoAspectRatio: "16:9", channelDisplayName: "저장",
+      startSeconds: 0, endSeconds: 10, status: "ready", renderVersion: 1,
+      templateSnapshot: { communityTemplateVersion: 1, snsTemplateVersion: 1, snsLanguage: "ko", brandColor: "#ffd84d",
+        snsContent: { boardName: "나의 게시판", title: "수정 반영", body: ["원본 문구 보존"], hashtags: [] } },
+    } as unknown as GeneratedShort;
+    const html = render(<SnsShortEditor item={item} projectNumber={42} channelThumbnailUrl={null}
+      release={{ channel: "legacy", releaseId: null, uiVersion: null, documentVersion: null, subtitleEditingCapable: false, subtitleEditingPublicEnabled: false }}
+      canEdit onChanged={async () => {}} />, locale);
+    expect(html).toContain(locale === "en" ? "Edit community template" : "コミュニティテンプレートを編集");
+    expect(html).toContain(locale === "en" ? "Board name · 4–8 characters" : "掲示板名・4〜8文字");
+    expect(html).toContain(`href="/${locale === "ja" ? "jp" : "en"}/projects/42"`);
+    for (const label of ["시작(초)", "SNS 제목", "커뮤니티 게시판 이름", "최상단 네모 배경에 적용됩니다."]) expect(html).not.toContain(label);
+    for (const authored of ["나의 게시판", "수정 반영", "원본 문구 보존", "저장"]) expect(html).toContain(`value="${authored}"`);
+    expect(html).toContain('data-i18n-content=""');
+  });
+
 
   it.each(["en", "ja"] as const)("localizes every %s template font and default name without changing font IDs", (locale) => {
     const html = render(<TemplateEditor initialTemplate={null} baseTemplateId="dark-minimal"

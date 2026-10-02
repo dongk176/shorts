@@ -5,6 +5,35 @@ type Phrase = readonly [ko: string, en: string, ja: string];
 // Legacy page copy is kept here while the product moves to semantic message keys.
 // User-provided and generated content is intentionally excluded from this table.
 const phrases: readonly Phrase[] = [
+  ["2MB 이하의 이미지를 선택해 주세요.", "Choose an image no larger than 2 MB.", "2MB以下の画像を選択してください。"],
+  ["사진을 불러오지 못했습니다. JPG·PNG·WebP 파일을 선택해 주세요.", "Could not load the photo. Choose a JPG, PNG, or WebP file.", "画像を読み込めませんでした。JPG・PNG・WebPファイルを選択してください。"],
+
+  ["← 프로젝트", "← Project", "← プロジェクト"],
+  ["SNS 템플릿 편집", "Edit social media template", "SNSテンプレートを編集"],
+  ["커뮤니티 템플릿 편집", "Edit community template", "コミュニティテンプレートを編集"],
+  ["수정 반영", "Apply changes", "変更を適用"],
+  ["영상에 반영 중…", "Applying changes…", "変更を適用中…"],
+  ["커뮤니티 게시판 이름", "Community board name", "コミュニティの掲示板名"],
+  ["SNS 제목", "Social media title", "SNSタイトル"],
+  ["SNS 채널명", "Social media channel name", "SNSチャンネル名"],
+  ["채널 사진", "Channel photo", "チャンネル画像"],
+  ["SNS 채널 사진", "Social media channel photo", "SNSチャンネル画像"],
+  ["시작(초)", "Start (seconds)", "開始（秒）"],
+  ["끝(초)", "End (seconds)", "終了（秒）"],
+  ["SNS 영상 시작", "Social media video start", "SNS動画の開始"],
+  ["SNS 영상 끝", "Social media video end", "SNS動画の終了"],
+  ["최상단 네모 배경에 적용됩니다.", "Applied to the top banner background.", "最上部のバナー背景に適用されます。"],
+  ["제목 색은 자동으로 맞춰집니다.", "The title color adjusts automatically.", "タイトルの色は自動調整されます。"],
+  ["이 계정의 편집 이용 권한을 확인해 주세요.", "Please check this account’s editing access.", "このアカウントの編集権限をご確認ください。"],
+  ["게시판 이름·제목·본문의 글자 수와 해시태그 형식을 확인해 주세요.", "Check the character limits for the board name, title, and body, and the hashtag format.", "掲示板名・タイトル・本文の文字数とハッシュタグの形式をご確認ください。"],
+  ["편집 범위 안에서 3초 이상의 구간을 선택해 주세요.", "Select at least 3 seconds within the editable range.", "編集可能な範囲で3秒以上の区間を選択してください。"],
+  ["수정 반영에 실패했습니다.", "Could not apply your changes.", "変更を適用できませんでした。"],
+  ["반영에 실패했습니다. 내용을 확인하고 다시 시도해 주세요.", "Could not apply changes. Check your edits and try again.", "変更を適用できませんでした。内容を確認してもう一度お試しください。"],
+  ["영상 반영이 완료되었습니다.", "Your changes have been applied to the video.", "動画への変更の適用が完了しました。"],
+  ["프로젝트에서 보기", "View in project", "プロジェクトで見る"],
+  ["쇼츠 편집 | 이지컷", "Shorts editor | Easy Cut", "ショート動画編集 | Easy Cut"],
+  ["내 프로젝트 | 이지컷", "My projects | Easy Cut", "マイプロジェクト | Easy Cut"],
+
   ["재사용 허용 필터는 YouTube에서", "The reuse filter selects YouTube videos marked as", "再利用可能フィルターはYouTubeで"],
   ["로 표시된 영상을 선별합니다. 게시자가 라이선스를 변경하거나 제3자 권리가 포함될 수 있으므로, 사용 직전에 원본 영상에서 최신 표시를 다시 확인하세요. 정확한 라이선스 확인은 데스크톱에서 진행해 주세요.", ". Licenses may change and third-party rights may apply. Check the current license on the original video before using it. Use a desktop browser to check the license accurately.", "と表示された動画を抽出します。投稿者がライセンスを変更したり、第三者の権利が含まれたりする場合があるため、使用直前に元動画の最新の表示をご確認ください。正確な確認はパソコンで行ってください。"],
   ["원본 영상을 YouTube에서 엽니다.", "Open the original video on YouTube.", "YouTubeで元の動画を開きます。"],
@@ -1584,6 +1613,23 @@ function withOriginalWhitespace(original: string, translated: string) {
 
 function translateDynamicText(value: string, locale: Exclude<SiteLocale, "ko">) {
   const trimmed = value.trim();
+  const editorPatterns: readonly [RegExp, (m: RegExpExecArray) => string, (m: RegExpExecArray) => string][] = [
+    [/^게시판 이름 · (\d+)~(\d+)자$/, m => `Board name · ${m[1]}–${m[2]} characters`, m => `掲示板名・${m[1]}〜${m[2]}文字`],
+    [/^제목 · 한 줄, (\d+)자 이내$/, m => `Title · one line, up to ${m[1]} characters`, m => `タイトル・1行、${m[1]}文字以内`],
+    [/^본문 (\d+) · (\d+)자 이내$/, m => `Body ${m[1]} · up to ${m[2]} characters`, m => `本文${m[1]}・${m[2]}文字以内`],
+    [/^해시태그 · 각 (\d+)자 이내$/, m => `Hashtags · up to ${m[1]} characters each`, m => `ハッシュタグ・各${m[1]}文字以内`],
+    [/^SNS 본문 (\d+)$/, m => `Social media body ${m[1]}`, m => `SNS本文${m[1]}`],
+    [/^SNS 해시태그 (\d+)$/, m => `Social media hashtag ${m[1]}`, m => `SNSハッシュタグ${m[1]}`],
+    [/^영상 ([0-9:]+) · 출력 1080 × 1920$/, m => `Video ${m[1]} · Output 1080 × 1920`, m => `動画 ${m[1]}・出力 1080 × 1920`],
+    [/^수정한 내용으로 영상을 만들고 있습니다\. (\d+)%$/, m => `Rendering your changes. ${m[1]}%`, m => `変更内容で動画を作成中です。${m[1]}%`],
+    [/^([0-9:]+) 커뮤니티 템플릿 예시$/, m => `${m[1]} community template preview`, m => `${m[1]} コミュニティテンプレートのプレビュー`],
+    [/^([0-9:]+) SNS 템플릿 예시$/, m => `${m[1]} social media template preview`, m => `${m[1]} SNSテンプレートのプレビュー`],
+    [/^프로젝트 \/(\d+) \| 이지컷$/, m => `Project /${m[1]} | Easy Cut`, m => `プロジェクト /${m[1]} | Easy Cut`],
+  ];
+  for (const [pattern, en, ja] of editorPatterns) {
+    const match = pattern.exec(trimmed);
+    if (match) return withOriginalWhitespace(value, (locale === "en" ? en : ja)(match));
+  }
   const translateKnown = (source: string) => phraseMaps[locale].get(source) || source;
   const monthlyShortsMatch = /^쇼츠 매월 약 ([\d,]+)개$/.exec(trimmed);
   if (monthlyShortsMatch) return withOriginalWhitespace(value, locale === "en"

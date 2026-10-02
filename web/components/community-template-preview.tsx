@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import { useId, useState } from "react";
 import { communityVideoFrames, communityHeadingColor, communityLegacyHeading } from "@/lib/community-template-contract";
 import { snsFontFamily } from "@/lib/sns-editor-fonts";
@@ -9,10 +11,11 @@ import type { SnsTemplatePreview } from "./sns-template-preview";
 export function CommunityTemplatePreview({ ratio, brandColor, channelName, channelThumbnailUrl,
   thumbnailUrl, content, videoUrl, videoStart = 0, videoEnd, language = "ko",
 }: ComponentProps<typeof SnsTemplatePreview>) {
+  const ui = useUiText();
   const clipId = useId();
   const [failedAvatar, setFailedAvatar] = useState<string | null>(null);
   const [x, y, width, height] = communityVideoFrames[ratio];
-  return <svg viewBox="0 0 1080 1920" role="img" aria-label={`${ratio} 커뮤니티 템플릿 예시`}
+  return <svg data-i18n-content="" viewBox="0 0 1080 1920" role="img" aria-label={ui(`${ratio} 커뮤니티 템플릿 예시`)}
     className="aspect-[9/16] w-full overflow-hidden rounded-lg" style={{ fontFamily: snsFontFamily(language, 700) }}>
     <defs><clipPath id={clipId}><circle cx="92" cy="534" r="32" /></clipPath></defs>
     <rect width="1080" height="1920" fill="white" />
@@ -31,7 +34,7 @@ export function CommunityTemplatePreview({ ratio, brandColor, channelName, chann
     <text x="60" y="646" fontSize="46" fontWeight="600" letterSpacing="-1" fill="#222" style={{ fontFamily: snsFontFamily(language, 600) }}>{content?.body[0] ?? "한 번 보면 그냥 지나치기 어려움"}</text>
     <rect x={x} y={y} width={width} height={height} fill="#eee" />
     {videoUrl ? <foreignObject x={x} y={y} width={width} height={height}>
-      <video key={videoUrl} src={videoUrl} controls playsInline preload="metadata" aria-label="커뮤니티 편집 영상 미리보기"
+      <video key={videoUrl} src={videoUrl} controls playsInline preload="metadata" aria-label={ui("커뮤니티 편집 영상 미리보기")}
         style={{ width: "100%", height: "100%", objectFit: "cover" }}
         onLoadedMetadata={e => { e.currentTarget.currentTime = videoStart; }}
         onPlay={e => { if (e.currentTarget.currentTime < videoStart || (videoEnd && e.currentTarget.currentTime >= videoEnd)) e.currentTarget.currentTime = videoStart; }}

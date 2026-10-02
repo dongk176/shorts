@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import { CommunityTemplatePreview } from "./community-template-preview";
 import { useEffect, useId, useState } from "react";
 import { loadSnsFonts, snsFontFamily } from "@/lib/sns-editor-fonts";
@@ -26,6 +28,7 @@ export function SnsTemplatePreview({ community = false, ratio, brandColor, chann
   videoEnd?: number;
 }) {
   useEffect(() => { void loadSnsFonts(language).catch(() => {}); }, [language]);
+  const ui = useUiText();
   const clipId = useId();
   const avatarClipId = useId();
   const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null);
@@ -36,7 +39,7 @@ export function SnsTemplatePreview({ community = false, ratio, brandColor, chann
   const offsetY = portrait ? 0 : 150;
   if (community) return <CommunityTemplatePreview {...{ ratio, brandColor, channelName, channelThumbnailUrl, thumbnailUrl, content, videoUrl, videoStart, videoEnd, language }} />;
   return (
-      <svg viewBox="0 0 1080 1920" role="img" aria-label={`${ratio} SNS 템플릿 예시`}
+      <svg data-i18n-content="" viewBox="0 0 1080 1920" role="img" aria-label={ui(`${ratio} SNS 템플릿 예시`)}
         className="aspect-[9/16] w-full overflow-hidden rounded-lg" style={{ fontFamily: snsFontFamily(language, 700) }}>
         <defs>
           <clipPath id={clipId}><rect x={x} y={y} width={width} height={height} rx={30} /></clipPath>
@@ -49,7 +52,7 @@ export function SnsTemplatePreview({ community = false, ratio, brandColor, chann
         <rect x={tall ? 60 : 30} y="342" width={tall ? 960 : 1020} height={y+height+30-342} fill="white" stroke="#e2e2e2" strokeWidth="2" />
         <circle cx={textX+44} cy="416" r="43" fill="#eeeeee" stroke="#222" strokeWidth="2" />
         {channelThumbnailUrl && failedAvatarUrl !== channelThumbnailUrl
-          ? <image href={channelThumbnailUrl} aria-label={`${channelName} 채널 사진`}
+          ? <image href={channelThumbnailUrl} aria-label={`${channelName} · ${ui("채널 사진")}`}
               x={textX+4} y="376" width="80" height="80" preserveAspectRatio="xMidYMid slice"
               clipPath={`url(#${avatarClipId})`} onError={() => setFailedAvatarUrl(channelThumbnailUrl)} />
           : <text x={textX+44} y="431" textAnchor="middle" fontSize="42" fill="#222">{(channelName || "채널")[0]}</text>}
@@ -62,7 +65,7 @@ export function SnsTemplatePreview({ community = false, ratio, brandColor, chann
         <rect x={x} y={y} width={width} height={height} fill="#ddd" rx={30} />
         {videoUrl ? <foreignObject x={x} y={y} width={width} height={height} clipPath={`url(#${clipId})`}>
           <video key={videoUrl} src={videoUrl} controls playsInline preload="metadata"
-            aria-label="SNS 편집 영상 미리보기" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 30 }}
+            aria-label={ui("SNS 편집 영상 미리보기")} style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 30 }}
             onLoadedMetadata={event => { event.currentTarget.currentTime = videoStart; }}
             onPlay={event => { if (event.currentTarget.currentTime < videoStart || (videoEnd && event.currentTarget.currentTime >= videoEnd)) event.currentTarget.currentTime = videoStart; }}
             onTimeUpdate={event => { if (videoEnd && event.currentTarget.currentTime >= videoEnd) { event.currentTarget.pause(); event.currentTarget.currentTime = videoStart; } }} />
