@@ -37,12 +37,11 @@ describe("package installment UI", () => {
     expect(checkoutSource).not.toContain("priceFormatter.format(chargeAmount)");
   });
 
-  it("advertises and preselects the matching package installment only when supported", () => {
-    expect(pricingSource).toContain("paymentFlow === \"manual_direct\"");
-    expect(pricingSource).toContain("${tierName} ${packageMonths}개월 할부결제");
-    expect(pricingSource).toContain("Pay for ${tierName} in ${packageMonths} installments");
-    expect(pricingSource).toContain("${tierName}を${packageMonths}回払いで決済");
-    expect(pricingSource).toContain("할부 최대 ${maximumInstallmentMonths}개월");
+  it("omits installment promotion while preserving supported checkout options", () => {
+    expect(pricingSource).not.toContain("할부");
+    expect(pricingSource).not.toContain(" installments");
+    expect(pricingSource).not.toContain("回払い");
+    expect(pricingSource).toContain("${tierName} ${packageMonths}개월 결제");
     expect(pricingSource).toContain("preferredInstallmentMonths");
     expect(checkoutSource).toContain("preferredInstallmentMonths");
     expect(checkoutSource).toContain(

@@ -352,15 +352,6 @@ export function PricingClient({
     const monthlyMinutes = packagePlanMinutes(plan.code);
     const monthlyShorts = plan.code === "starter" ? 160 : 480;
     const totalShorts = monthlyShorts * packageMonths;
-    const installmentOffer = packageInstallmentOffers.get(packagePrice.code);
-    const maximumInstallmentMonths = Math.max(
-      0,
-      ...(installmentOffer?.selectableMonths || []),
-    );
-    const supportsMatchingInstallments = (
-      installmentOffer?.paymentFlow === "manual_direct"
-      && installmentOffer.selectableMonths.includes(packageMonths)
-    );
     const tierName = packageTierName(plan.code, locale);
     const localizedMonthlyMinutes = locale === "ko"
       ? `매월 ${priceFormatter.format(monthlyMinutes)}분`
@@ -377,21 +368,16 @@ export function PricingClient({
       eyebrow: locale === "ko" ? `${packagePrice.discountPercent}% 할인` : locale === "en" ? `${packagePrice.discountPercent}% off` : `${packagePrice.discountPercent}%割引`,
       checkoutPlanCode: packagePrice.code,
       price: `₩${priceFormatter.format(packagePrice.monthlyPriceKrw)}`,
-      billing: installmentOffer?.paymentFlow === "manual_direct"
-        && maximumInstallmentMonths > 0
-        ? locale === "ko"
-          ? `이용기간 ${packageMonths}개월 · 총 ₩${priceFormatter.format(packagePrice.totalPriceKrw)} · 할부 최대 ${maximumInstallmentMonths}개월`
-          : locale === "en"
-            ? `${packageMonths}-month term · ₩${priceFormatter.format(packagePrice.totalPriceKrw)} total · up to ${maximumInstallmentMonths} installments`
-            : `利用期間${packageMonths}か月 · 合計₩${priceFormatter.format(packagePrice.totalPriceKrw)} · 最大${maximumInstallmentMonths}回払い`
-        : locale === "ko"
-          ? `${packageMonths}개월 총 ₩${priceFormatter.format(packagePrice.totalPriceKrw)}`
-          : locale === "en"
-            ? `${packageMonths} months · ₩${priceFormatter.format(packagePrice.totalPriceKrw)} total`
-            : `${packageMonths}か月 · 合計₩${priceFormatter.format(packagePrice.totalPriceKrw)}`,
-      cta: supportsMatchingInstallments
-        ? locale === "ko" ? `${tierName} ${packageMonths}개월 할부결제` : locale === "en" ? `Pay for ${tierName} in ${packageMonths} installments` : `${tierName}を${packageMonths}回払いで決済`
-        : locale === "ko" ? `${tierName} ${packageMonths}개월 선택` : locale === "en" ? `Choose ${tierName} · ${packageMonths} months` : `${tierName}・${packageMonths}か月を選択`,
+      billing: locale === "ko"
+        ? `이용기간 ${packageMonths}개월 · 총 ₩${priceFormatter.format(packagePrice.totalPriceKrw)}`
+        : locale === "en"
+          ? `${packageMonths}-month term · ₩${priceFormatter.format(packagePrice.totalPriceKrw)} total`
+          : `利用期間${packageMonths}か月 · 合計₩${priceFormatter.format(packagePrice.totalPriceKrw)}`,
+      cta: locale === "ko"
+        ? `${tierName} ${packageMonths}개월 결제`
+        : locale === "en"
+          ? `Pay for ${tierName} · ${packageMonths} months`
+          : `${tierName}・${packageMonths}か月を購入`,
       features: [
         {
           text: locale === "ko"
