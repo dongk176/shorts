@@ -1,4 +1,6 @@
 import { SnsShortEditor } from "@/components/sns-short-editor";
+import { SnsTemplatePreview } from "@/components/sns-template-preview";
+import { TemplateLibrary } from "@/app/templates/template-library";
 import type { GeneratedShort } from "@/lib/contracts";
 import { ContentLanguageSelect } from "@/components/content-language-select";
 import { EditorFontPicker } from "@/components/editor-font-picker";
@@ -55,6 +57,47 @@ const guestState: PricingState = {
 
 
 describe("localized first render without browser effects", () => {
+  it.each(["en", "ja"] as const)("localizes %s social and community sample content in every aspect ratio", (locale) => {
+    for (const community of [false, true]) {
+      for (const ratio of ["16:9", "5:4", "1:1", "4:5", "9:16"] as const) {
+        const html = render(<SnsTemplatePreview community={community} ratio={ratio} brandColor="#ffd84d"
+          channelName="" channelThumbnailUrl={null} thumbnailUrl="/sample.jpg" />, locale);
+        expect(html).not.toMatch(/[가-힣]/);
+        expect(html).toContain(community
+          ? locale === "ja" ? "この場面が話題の理由" : "Why everyone is talking about this"
+          : locale === "ja" ? "もう一度見たくなる瞬間" : "Worth another look");
+      }
+    }
+  });
+
+  it("preserves Korean authored social content and explicit output language on a Japanese site", () => {
+    for (const community of [false, true]) {
+      const html = render(<SnsTemplatePreview community={community} language="ko" ratio="16:9" brandColor="#ffd84d"
+        channelName="내 채널" channelThumbnailUrl={null} thumbnailUrl="/sample.jpg"
+        content={{ boardName: "내 게시판", title: "원본 제목", body: ["원본 본문", "두 번째 줄"], hashtags: ["#원본"] }} />, "ja");
+      for (const authored of ["내 채널", "원본 제목", "원본 본문"]) expect(html).toContain(authored);
+      if (community) expect(html).toContain("실시간 베스트");
+      expect(html).not.toContain("この場面が話題の理由");
+    }
+  });
+
+  it.each(["en", "ja"] as const)("localizes %s personal library preview samples while preserving the saved name", (locale) => {
+    const config = upgradeTemplateConfigToV5(createDefaultTemplateConfig());
+    config.subtitle.visible = true;
+    const template: CustomTemplate = {
+      id: "owned-template", name: "사용자 지정 이름", baseTemplateId: "dark-minimal",
+      config, version: 1,
+      createdAt: "2026-10-04T00:00:00Z", updatedAt: "2026-10-04T00:00:00Z",
+    };
+    const html = render(<TemplateLibrary personalTemplates={[template]} authenticated canUseCustomTemplates
+      adminPresetNamesEnabled unifiedSubtitleCanaryEnabled unifiedSubtitlePreviewEnabled initialFavoriteTemplateKeys={[]} />, locale);
+    expect(html).toContain(template.name);
+    const personalCard = html.match(/<article\b[\s\S]*?<\/article>/)?.[0] || "";
+    expect(personalCard).toContain(template.name);
+    expect(personalCard.replaceAll(template.name, "").match(/[가-힣]+/g)).toBeNull();
+    expect(html).toContain(`href="/${locale === "ja" ? "jp" : "en"}/templates/${template.id}/edit"`);
+  });
+
   it.each(["en", "ja"] as const)("localizes %s community editor controls and preserves authored content", (locale) => {
     const item = {
       id: "5eddeec0-39cd-4497-87b7-ebbcd5499971", videoAspectRatio: "16:9", channelDisplayName: "저장",
@@ -65,7 +108,7 @@ describe("localized first render without browser effects", () => {
     const html = render(<SnsShortEditor item={item} projectNumber={42} channelThumbnailUrl={null}
       release={{ channel: "legacy", releaseId: null, uiVersion: null, documentVersion: null, subtitleEditingCapable: false, subtitleEditingPublicEnabled: false }}
       canEdit onChanged={async () => {}} />, locale);
-    expect(html).toContain(locale === "en" ? "Edit community template" : "コミュニティテンプレートを編集");
+    expect(html).toContain(locale === "en" ? "Edit community template" : "コミュニティ風を編集");
     expect(html).toContain(locale === "en" ? "Board name · 4–8 characters" : "掲示板名・4〜8文字");
     expect(html).toContain(`href="/${locale === "ja" ? "jp" : "en"}/projects/42"`);
     for (const label of ["시작(초)", "SNS 제목", "커뮤니티 게시판 이름", "최상단 네모 배경에 적용됩니다."]) expect(html).not.toContain(label);

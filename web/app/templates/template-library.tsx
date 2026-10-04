@@ -343,13 +343,15 @@ function CustomTemplatePreview({
   showUnifiedSubtitle?: boolean;
   positionedWordsV4Enabled?: boolean;
 }) {
+  const { locale } = useI18n();
   const titleLines = isTemplateConfigV5(template.config) && template.config.subtitle.visible
     ? (["AI가 고른 오늘의", "핵심 장면"] as const)
     : templatePresetPresentation[template.baseTemplateId].titleLines;
   return <CustomTemplateCanvasPreview
     template={template}
-    firstLine={titleLines[0]}
-    secondLine={titleLines[1]}
+    previewLocale={locale}
+    firstLine={translateLegacyText(titleLines[0], locale)}
+    secondLine={translateLegacyText(titleLines[1], locale)}
     channelLabel="Easy Cut"
     showUnifiedSubtitle={showUnifiedSubtitle}
     positionedWordsV4Enabled={positionedWordsV4Enabled}
@@ -575,7 +577,7 @@ export function TemplateLibrary({
               >
                 <div className="flex flex-1 items-center justify-center px-2 py-4"><UnifiedSubtitlePresetPreview preset={preset} positionedWordsV4Enabled={positionedWordsV4Enabled} /></div>
                 <div className="flex flex-col items-start gap-2 px-2 pb-1 pt-4">
-                  <div className="min-w-0"><h2 className="break-words text-base font-bold leading-snug tracking-[-.025em] text-[#e4e1e6]">{ui(preset.name)}</h2><p className="mt-1 text-[13px] leading-relaxed text-[#b2b2bc]">{ui(preset.description)}</p></div>
+                  <div className="min-w-0"><h2 className="break-words text-base font-bold leading-snug tracking-[-.025em] text-[#e4e1e6]">{ui(preset.name)}</h2><p className="mt-1 whitespace-pre-line text-[13px] leading-relaxed text-[#b2b2bc]">{ui(preset.description)}</p></div>
                   <span className="shrink-0 rounded-full border border-[#35e6e3]/20 bg-[#35e6e3]/10 px-2.5 py-1 text-[13px] font-bold text-[#74efec]">{translateLegacyText("자막 템플릿", locale)}</span>
                 </div>
               </Link>

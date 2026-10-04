@@ -2283,7 +2283,7 @@ function TemplatePicker({
                     fontId={DEFAULT_EDITOR_FONT_ID}
                   />
                   <span className="mt-2.5 block text-center text-sm font-extrabold text-white">{ui(option.name)}</span>
-                  <span className="mt-1 block text-center text-[11px] leading-4 text-neutral-400">{ui(option.description)}</span>
+                  <span className="mt-1 block whitespace-pre-line text-center text-[11px] leading-4 text-neutral-400">{ui(option.description)}</span>
                   <span className="mt-1.5 block text-center text-[10px] font-black text-[#ff9b8d]">{ui("자막")}</span>
                 </button>
               );

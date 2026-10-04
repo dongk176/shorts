@@ -4,6 +4,7 @@ import { useUiText } from "@/lib/i18n/use-ui-text";
 
 import { useI18n } from "@/lib/i18n/provider";
 import { translateLegacyText } from "@/lib/i18n/legacy-phrases";
+import { localizedHref } from "@/lib/i18n/routing";
 
 import Link from "@/lib/i18n/navigation";
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
@@ -786,7 +787,7 @@ export function TemplateEditor({
       baselineRef.current = JSON.stringify({ name: payload.template.name, config: payload.template.config });
       setMessage("템플릿을 저장했습니다. 홈의 템플릿 선택에서도 바로 사용할 수 있습니다.");
       notifyTemplateLibraryChanged();
-      if (!initialTemplate) window.history.replaceState(null, "", `/templates/${payload.template.id}/edit`);
+      if (!initialTemplate) window.history.replaceState(null, "", localizedHref(`/templates/${payload.template.id}/edit`, locale));
     } catch (error) {
       setMessage(userFacingErrorMessage(error, "템플릿을 저장하지 못했습니다."));
     } finally {
