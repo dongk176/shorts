@@ -1,5 +1,8 @@
 # 개인용 관리자 iOS 앱 준비
 
+이 문서는 초기 준비 기록이다. 키 연결·DB 적용·서버 후보 검증 이후의 상태는
+[서버 후보 검증](20261005-admin-native-candidate.md)을 따른다.
+
 ## 대상과 기준
 
 - 작업 폴더: `/Users/gimdongmin/shorts-clean/.tmp/admin-native-20261005`
