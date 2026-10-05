@@ -6,6 +6,8 @@ import type { Sql } from "postgres";
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/db", () => ({ getDb: () => sql, ensureAdminDbReady: async () => {} }));
 vi.mock("@/lib/admin-mobile-push", () => ({ sendMobilePush: vi.fn(async () => ({})) }));
+const inventoryMock = vi.hoisted(()=>vi.fn(async()=>[] as Array<{routeId:string;identity:string;assignedAt:string;assignmentExact:boolean}>));
+vi.mock("@/lib/admin-ip-inventory",()=>({loadRouteAssignments:inventoryMock}));
 let nativeCookie: string | undefined;
 vi.mock("next/headers", () => ({ cookies: async () => ({get: () => nativeCookie ? {value:nativeCookie} : undefined}) }));
 import { allowedPushEndpoint, defaultMobilePreferences, isQuietHour, shouldNotify, subscriptionSchema } from "./admin-mobile-contract";
@@ -43,7 +45,7 @@ beforeAll(async () => {
     create table shorts_mvp.user_subscriptions(user_id uuid,status text);
     create table shorts_mvp.customer_inquiries(status text);
     create table shorts_mvp.ingestion_route_slots(route_id text,enabled boolean,cooldown_until timestamptz);
-    create table shorts_mvp.ingestion_attempts(id uuid default gen_random_uuid(),route_id text,result text,created_at timestamptz default now());
+    create table shorts_mvp.ingestion_attempts(id uuid default gen_random_uuid(),job_id uuid,route_id text,result text,created_at timestamptz default now());
     create table shorts_mvp.ingestion_circuit(singleton boolean,blocked_until timestamptz);
     insert into shorts_mvp.app_users(id,is_admin) values('${uid}',true);
     insert into shorts_mvp.paddle_subscriptions values('live','live',now()),('sandbox','sandbox',now());`);
@@ -52,7 +54,7 @@ beforeAll(async () => {
 });
 afterAll(async () => { await pg.close(); });
 beforeEach(async () => {
-  vi.clearAllMocks();vi.unstubAllEnvs();nativeCookie=undefined;
+  vi.clearAllMocks();vi.unstubAllEnvs();nativeCookie=undefined;inventoryMock.mockResolvedValue([]);
   await pg.exec(`truncate shorts_mvp.admin_mobile_events,shorts_mvp.admin_mobile_deliveries,shorts_mvp.admin_mobile_receipts,
     shorts_mvp.admin_mobile_subscriptions,shorts_mvp.admin_mobile_preferences,shorts_mvp.admin_native_auth_codes,shorts_mvp.admin_native_sessions,shorts_mvp.billing_orders,
     shorts_mvp.paddle_payments,shorts_mvp.paddle_adjustments,shorts_mvp.video_jobs,shorts_mvp.ingestion_route_slots,shorts_mvp.ingestion_attempts;
@@ -231,9 +233,10 @@ describe("persisted monitoring and delivery", () => {
   it("clips every IP window at its verified assignment and leaves ambiguous denominators unknown", async () => {
     await pg.exec("insert into shorts_mvp.ingestion_route_slots values('webshare-01',true,null);insert into shorts_mvp.ingestion_attempts(route_id,result,created_at) values('webshare-01','success',now()),('webshare-01','bot_check',now()-interval '2 hours')");
     expect((await loadMobileRoutes())[0].samples["24"]).toBeNull();
-    vi.stubEnv("ADMIN_ROUTE_ASSIGNMENTS_JSON",JSON.stringify([{routeId:"webshare-01",identity:"abc123",assignedAt:new Date(Date.now()-3600000).toISOString(),evidence:"verified-secret-version"}]));
+    inventoryMock.mockResolvedValue([{routeId:"webshare-01",identity:"abc1234567",assignedAt:new Date(Date.now()-3600000).toISOString(),assignmentExact:true}]);
+    await pg.exec("insert into shorts_mvp.video_jobs(id,status) values('00000000-0000-4000-8000-000000000042','completed');update shorts_mvp.ingestion_attempts set job_id='00000000-0000-4000-8000-000000000042'");
     expect((await loadMobileRoutes())[0].samples["24"]).toEqual([1,1]);
-    await pg.exec("insert into shorts_mvp.ingestion_attempts(route_id,result) values('webshare-01','other_error')");
+    await pg.exec("insert into shorts_mvp.ingestion_attempts(job_id,route_id,result) values('00000000-0000-4000-8000-000000000042','webshare-01','other_error')");
     expect((await loadMobileRoutes())[0].samples["1"]).toBeNull();
   });
   it("protects all six state tables from public Supabase roles", async () => {
@@ -241,5 +244,34 @@ describe("persisted monitoring and delivery", () => {
     expect(rows).toHaveLength(6);expect(rows.every(r=>r.rowsecurity)).toBe(true);
     const {rows:access}=await pg.query<{allowed:boolean}>("select has_table_privilege('authenticated','shorts_mvp.admin_mobile_subscriptions','SELECT') as allowed");
     expect(access[0].allowed).toBe(false);
+  });
+  it("excludes tasks that started before replacement even if they reported afterwards", async()=>{
+    inventoryMock.mockResolvedValue([{routeId:"webshare-01",identity:"abc1234567",assignedAt:new Date(Date.now()-3600000).toISOString(),assignmentExact:true}]);
+    await pg.exec(`insert into shorts_mvp.ingestion_route_slots values('webshare-01',true,null);
+      insert into shorts_mvp.video_jobs(id,status,created_at) values('${sid}','completed',now()-interval '2 hours');
+      insert into shorts_mvp.ingestion_attempts(job_id,route_id,result) values('${sid}','webshare-01','bot_check');`);
+    const [route]=await loadMobileRoutes();
+    for(const h of [1,6,24,72]) expect(route.samples[h]).toEqual([0,0]);
+    expect(route.consecutiveFailures).toBe(0);
+  });
+  it("deduplicates IP alerts, links the affected route, and retires replaced or disabled IP incidents", async()=>{
+    const assignedAt=new Date(Date.now()-3600000).toISOString();
+    inventoryMock.mockResolvedValue([{routeId:"webshare-01",identity:"abc1234567",assignedAt,assignmentExact:true}]);
+    await pg.exec(`insert into shorts_mvp.ingestion_route_slots values('webshare-01',true,null);
+      insert into shorts_mvp.video_jobs(id,status) values('${sid}','completed');
+      insert into shorts_mvp.ingestion_attempts(job_id,route_id,result) select '${sid}','webshare-01','bot_check' from generate_series(1,5);`);
+    await scanMobileEvents();await scanMobileEvents();
+    let rows=(await pg.query<{payload:{routeId:string},resolved_at:string|null}>("select payload,resolved_at from shorts_mvp.admin_mobile_events where incident_key like 'route:%'")).rows;
+    expect(rows).toHaveLength(1);expect(rows[0].payload.routeId).toBe("webshare-01");
+    inventoryMock.mockResolvedValue([]);await scanMobileEvents();
+    expect((await pg.query("select id from shorts_mvp.admin_mobile_events where resolved_at is null")).rows).toHaveLength(1);
+    inventoryMock.mockResolvedValue([{routeId:"webshare-01",identity:"new1234567",assignedAt:new Date().toISOString(),assignmentExact:true}]);
+    await scanMobileEvents();
+    rows=(await pg.query<{payload:{routeId:string},resolved_at:string|null}>("select payload,resolved_at from shorts_mvp.admin_mobile_events where incident_key like 'route:%'")).rows;
+    expect(rows[0].resolved_at).not.toBeNull();
+    expect((await pg.query("select id from shorts_mvp.admin_mobile_events where kind='recovery'")).rows).toHaveLength(0);
+    inventoryMock.mockResolvedValue([{routeId:"webshare-01",identity:"abc1234567",assignedAt,assignmentExact:true}]);
+    await pg.exec("update shorts_mvp.ingestion_route_slots set enabled=false");await scanMobileEvents();
+    expect((await pg.query("select id from shorts_mvp.admin_mobile_events where resolved_at is null")).rows).toHaveLength(0);
   });
 });

@@ -27,8 +27,7 @@ const periods = [1, 7, 30];
   function routeCoverage(route, hours, checkedAt) {
     if (!route.assignedAt) return "교체 기준 미확인";
     const age = Math.max(0, (Date.parse(checkedAt) - Date.parse(route.assignedAt)) / 3600_000);
-    return age < hours ? `교체 후 ${age < 1 ? `${Math.max(1, Math.floor(age * 60))}분` : `${Math.floor(age)}시간`}` : `${hours}시간 기준`;
+    return age < hours ? `${route.assignmentExact===false?"확인된":"교체 후"} ${age < 1 ? `${Math.max(1, Math.floor(age * 60))}분` : `${Math.floor(age)}시간`}` : `${hours}시간 기준`;
   }
   function safeText(value = "") { return String(value).replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]); }
 export { periods, windows, won, money, number, percent, kstDay, shiftDay, clock, relative, periodSales, salesSummary, routeCoverage, safeText };
-

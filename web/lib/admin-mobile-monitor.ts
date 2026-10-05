@@ -6,7 +6,7 @@ import { defaultMobilePreferences, shouldNotify } from "@/lib/admin-mobile-contr
 import { loadMobileRoutes } from "@/lib/admin-mobile-overview";
 import { sendMobilePush } from "@/lib/admin-mobile-push";
 
-type Incident = { key: string; active: boolean | null; title: string; detail: string; nextStep: string; impact: string; urgent?: boolean };
+type Incident = { key: string; active: boolean | null; title: string; detail: string; nextStep: string; impact: string; urgent?: boolean; payload?: {routeId:string; identity:string; summary:string} };
 
 export function operationalIncidents(row: Record<string, unknown>): Incident[] {
   const waiting = Number(row.waiting), oldest = Number(row.oldestWait), running = Number(row.running);
@@ -35,9 +35,9 @@ async function syncIncident(tx: TransactionSql, incident: Incident) {
   }
   if (incident.active) {
     await tx`insert into shorts_mvp.admin_mobile_events
-      (event_key,incident_key,kind,title,subtitle,detail,next_step,impact)
+      (event_key,incident_key,kind,title,subtitle,detail,next_step,impact,payload)
       values(${"incident:" + randomUUID()},${incident.key},${incident.urgent ? "urgent" : "attention"},
-        ${incident.title},${incident.impact},${incident.detail},${incident.nextStep},${incident.impact})
+        ${incident.title},${incident.impact},${incident.detail},${incident.nextStep},${incident.impact},${JSON.stringify(incident.payload || {})}::text::jsonb)
       on conflict do nothing`;
     await tx`update shorts_mvp.admin_mobile_events set healthy_since=null
       where incident_key=${incident.key} and resolved_at is null`;
@@ -95,11 +95,24 @@ export async function scanMobileEvents() {
         or status in ('queued','retry_waiting','validating','starting','downloading','transcribing','selecting','extracting','rendering','uploading')`;
     for (const incident of operationalIncidents(health)) await syncIncident(tx, incident);
     for (const route of routes) {
-      const sample = route.samples["1"];
-      await syncIncident(tx, { key: "route:" + route.id,
-        active: !sample || sample[1] < 20 ? null : sample[0] / sample[1] < .8,
-        title: "IP 수집 성공률이 낮아졌어요", detail: route.id + " · 최근 1시간 · 교체 이후 기록만 집계",
-        nextStep: "운영에서 해당 경로의 긴 구간 추세와 실패 원인을 확인해주세요.", impact: route.id, urgent: false });
+      if (!route.identity || !route.assignedAt) continue;
+      const key = "route:"+route.id+":"+route.identity+":"+route.assignedAt;
+      // A replacement retires the old IP's incident without claiming recovery.
+      await tx`update shorts_mvp.admin_mobile_events set resolved_at=now()
+        where resolved_at is null and incident_key like ${"route:"+route.id+":%"} and incident_key<>${key}`;
+      if (!route.enabled) {
+        await tx`update shorts_mvp.admin_mobile_events set resolved_at=now() where incident_key=${key} and resolved_at is null`;
+        continue;
+      }
+      const sample = route.samples["1"], streak=route.consecutiveFailures;
+      const fresh = !!route.lastAttempt && Date.now()-Date.parse(route.lastAttempt)<15*60_000;
+      const bad = sample && ((sample[1]>=20 && sample[0]/sample[1]<.8) || (fresh && (streak??0)>=5));
+      const healthy = sample && sample[1]>=5 && sample[0]/sample[1]>=.8 && streak===0;
+      const summary = route.id+" · "+(sample?.[1] ? Math.round(sample[0]/sample[1]*100)+"% ("+sample[0]+"/"+sample[1]+")" : "표본 확인 중")+" · 연속 실패 "+(streak??"미확인")+"회";
+      await syncIncident(tx, { key, active:bad?true:healthy?false:null,
+        title: route.recommendation==="교체 검토" ? "교체를 검토할 IP가 있어요" : "IP 수집 성공률을 확인해주세요",
+        detail:summary+" · 최근 1시간 · 현재 IP 기록", nextStep:route.reason,
+        impact:route.id, urgent:false, payload:{routeId:route.id,identity:route.identity,summary} });
     }
     await tx`insert into shorts_mvp.admin_mobile_deliveries(event_id,subscription_id)
       select e.id,s.id from shorts_mvp.admin_mobile_events e
@@ -115,6 +128,7 @@ export async function scanMobileEvents() {
 export function notificationContent(event: { id: string; kind: string; title: string; payload: Record<string, unknown> }, showAmount: boolean) {
   const amount = Number(event.payload?.amountMinor), currency = String(event.payload?.currency);
   let body = event.kind === "payment" ? "새로운 결제 승인이 확인됐어요." : "앱에서 현재 상태를 확인해주세요.";
+  if (event.kind !== "payment" && typeof event.payload?.summary === "string") body = event.payload.summary.slice(0,160);
   if (event.kind === "payment" && showAmount && Number.isFinite(amount) && ["KRW","USD","JPY"].includes(currency)) {
     body = new Intl.NumberFormat("ko-KR", { style: "currency", currency, maximumFractionDigits: currency === "USD" ? 2 : 0 })
       .format(currency === "USD" ? amount / 100 : amount) + " 결제 승인";

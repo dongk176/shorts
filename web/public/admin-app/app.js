@@ -1,5 +1,6 @@
+import { ipOverview, ipDetail } from "./ip-view.js";
 import { nativeAvailable, nativeCall } from "./native.js";
-import { periods, windows, money, number, percent, kstDay, shiftDay, clock, relative, periodSales, salesSummary, routeCoverage, safeText } from "./model.js";
+import { periods, windows, money, number, percent, kstDay, shiftDay, clock, relative, periodSales, salesSummary, safeText } from "./model.js";
 
 const PREVIEW = new URLSearchParams(location.search).get("preview") === "1";
   const tabs = [{id:"today",name:"오늘",icon:"grid"},{id:"operations",name:"운영",icon:"activity"},{id:"revenue",name:"매출",icon:"chart"},{id:"inbox",name:"알림",icon:"bell"}];
@@ -36,13 +37,14 @@ const PREVIEW = new URLSearchParams(location.search).get("preview") === "1";
   function toast(text) { clearTimeout(toastTimer);toastEl.textContent=text;toastEl.classList.add("visible");toastTimer=setTimeout(()=>toastEl.classList.remove("visible"),3600); }
   function switchTab(tab) { if(!tabs.some(t=>t.id===tab))return;state.tab=tab;history.replaceState(null,"","#"+tab);closeSheet();render();window.scrollTo({top:0,behavior:"instant"});document.querySelector("h1")?.focus({preventScroll:true}); }
   function openSheet(title, content) {
+    state.routeDetail=null;
     lastFocus=document.activeElement;
     sheet.innerHTML=`<div class="sheet-header"><h2 id="sheet-title">${esc(title)}</h2><button class="icon-button" data-action="close" aria-label="닫기">${icon("close")}</button></div><div class="sheet-body">${content}</div>`;
     if(!sheet.open)sheet.showModal();
     document.body.style.overflow="hidden";
   }
-  function closeSheet() { if(sheet.open)sheet.close();document.body.style.overflow=""; }
-  sheet.addEventListener("close",()=>{document.body.style.overflow="";if(lastFocus?.isConnected)lastFocus.focus();});
+  function closeSheet() { state.routeDetail=null;if(sheet.open)sheet.close();document.body.style.overflow=""; }
+  sheet.addEventListener("close",()=>{state.routeDetail=null;document.body.style.overflow="";if(lastFocus?.isConnected)lastFocus.focus();});
   sheet.addEventListener("click",event=>{if(event.target===sheet){const r=sheet.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)closeSheet();}});
   function segments(options,selected,action) {
     return `<div class="segments" role="group" aria-label="${action==="period"?"매출 기간":action==="window"?"성공률 기간":"목록 필터"}">${options.map(([value,label])=>`<button data-action="${action}" data-value="${esc(value)}" aria-pressed="${String(value)===String(selected)}">${esc(label)}</button>`).join("")}</div>`;
@@ -81,9 +83,8 @@ const PREVIEW = new URLSearchParams(location.search).get("preview") === "1";
     return heading("오늘의 흐름","한눈에 보는 이지컷.")+`<div class="overview-grid"><div class="stack">${revenueHero()}<div class="metric-pair"><section class="card mini-metric"><div class="metric-top"><span>제작 성공률</span>${icon("activity")}</div><div class="metric-value">${percent(d.jobs?.sample)}</div><p class="metric-note">${sampleNote(d.jobs?.sample)} · ${esc(d.jobs?.window||"미확인")}</p></section><section class="card mini-metric"><div class="metric-top"><span>활성 구독</span>${icon("users")}</div><div class="metric-value">${number(d.stats.activeSubscriptions)}<small>명</small></div><p class="metric-note">오늘 신규 가입 <strong>${number(d.stats.newMembers)}명</strong></p></section></div></div><div class="stack"><section class="card event-card"><div class="section-head"><h2>확인할 일</h2><span class="attention-count">${events.length}건</span></div>${!d.availability.alerts?empty("알림 상태 미확인","연결 상태를 확인해주세요.","wifi"):events.length?events.slice(0,3).map(eventRow).join(""):empty("지금은 여유로워요","확인할 운영 알림이 없어요.")}<p class="card-note">${events.length?"사건을 누르면 영향과 확인할 내용을 볼 수 있어요.":"문제가 생기면 이곳에 알려드릴게요."}</p></section><section class="card queue-strip" aria-label="작업 현황"><div class="queue-item"><span>대기 중</span><strong>${number(d.jobs?.waiting)}<small>건</small></strong></div><div class="queue-item"><span>제작 중</span><strong>${number(d.jobs?.running)}<small>건</small></strong></div><div class="queue-item"><span>최장 대기</span><strong>${number(d.jobs?.oldestWaitMinutes)}<small>분</small></strong></div></section></div></div><div class="feed-heading"><h2>최근 결제</h2><button class="text-link" data-action="tab" data-value="revenue">전체 보기 ${icon("chevron")}</button></div><section class="card payment-table">${d.payments.slice(0,3).map(paymentRow).join("")||empty("아직 결제 내역이 없어요")}</section>`;
   }
   function operations() {
-    const d=state.data,valid=d.routes.map(r=>r.samples[state.window]).filter(Boolean);
-    const total=valid.length===d.routes.length&&valid.length?valid.reduce((a,s)=>[a[0]+s[0],a[1]+s[1]],[0,0]):null;
-    return heading("차분하게, 운영","수집부터 제작 완료까지.")+`<div class="screen-top-controls">${segments(windows.map(h=>[h,`${h}시간`]),state.window,"window")}</div><div class="operation-summary"><section class="card"><div class="hero-label">IP 시도 성공률</div><div class="metric-value">${percent(total)}</div><p class="metric-note">${sampleNote(total)} · 재시도 포함</p></section><section class="card"><div class="hero-label">제작 최종 성공률</div><div class="metric-value">${percent(d.jobs?.sample)}</div><p class="metric-note">${sampleNote(d.jobs?.sample)} · ${esc(d.jobs?.window||"미확인")}</p></section></div><div class="overview-grid"><section><div class="section-head"><h2>IP 상태</h2><span>${d.routes.length}개 경로</span></div><div class="route-list">${d.routes.map((r,i)=>`<button class="route-row" data-action="route" data-id="${esc(r.id)}"><span class="route-avatar">${String(i+1).padStart(2,"0")}</span><span class="route-info"><strong>${esc(r.id)}</strong><small>${r.samples[state.window]?`${sampleNote(r.samples[state.window])}`:"할당 이력 확인 필요"}</small></span><span class="route-right"><strong>${percent(r.samples[state.window],0)}</strong><small class="${r.recommendation!=="유지"?"warning":""}">${esc(r.recommendation)}</small></span>${icon("chevron","row-chevron")}</button>`).join("")||`<div class="card">${empty("IP 상태 미확인","수집 경로가 연결되면 표시돼요.","wifi")}</div>`}</div><p class="card-note">교체 이후 기록만 집계해요. 영상 자체의 접근 제한은 별도로 봅니다.</p></section><section class="card"><div class="section-head"><h2>제작 흐름</h2><span>${esc(d.jobs?.window||"미확인")}</span></div>${d.stages.length?`<div class="pipeline">${d.stages.map((s,i)=>`<div class="pipeline-row"><span class="stage-index">${i+1}</span><div><strong>${esc(s.title)}</strong><small>${esc(s.duration)}</small></div><span>${percent(s.sample,0)}</span></div>`).join("")}</div>`:`<div class="detail-row"><span>완료 / 종료된 작업</span><strong>${sampleNote(d.jobs?.sample)}</strong></div><p class="card-note">단계별 소요 시간은 집계 연결 후 표시됩니다.</p>`}<div class="detail-list"><div class="detail-row"><span>대기 중</span><strong>${number(d.jobs?.waiting)}건</strong></div><div class="detail-row"><span>현재 제작 중</span><strong>${number(d.jobs?.running)}건</strong></div><div class="detail-row"><span>최장 대기</span><strong>${number(d.jobs?.oldestWaitMinutes)}분</strong></div></div></section></div>`;
+    const d=state.data;
+    return heading("차분하게, 운영","수집부터 제작 완료까지.")+`<div class="screen-top-controls">${segments(windows.map(h=>[h,`${h}시간`]),state.window,"window")}</div>${ipOverview(d,state.window,icon,PREVIEW)}`;
   }
   function revenue() {
     const d=state.data,summary=salesSummary(d,state.period,state.currency),start=shiftDay(kstDay(d.checkedAt),-state.period+1);
@@ -112,9 +113,11 @@ const PREVIEW = new URLSearchParams(location.search).get("preview") === "1";
     if(!p){toast("이전 결제는 관리자 페이지에서 확인할 수 있어요.");return;}
     openSheet("결제 상세",`<div class="event-icon sheet-hero-icon">${icon(p.kind==="renewal"?"repeat":"down")}</div><div class="eyebrow">${p.kind==="new"?"신규 결제":p.kind==="renewal"?"구독 갱신":"결제 승인"}</div><h3 class="sheet-title" style="font-size:35px">${money(p.amountMinor,p.currency)}</h3><p class="sheet-text">${clock(p.occurredAt)} 승인</p><div class="detail-list"><div class="detail-row"><span>주문</span><strong>${esc(p.id)}</strong></div><div class="detail-row"><span>결제 상태</span><strong>승인 완료</strong></div><div class="detail-row"><span>이용권 지급</span><strong>${p.entitlement===true?"지급 기록 확인":p.entitlement===false?"확인 필요":"해당 없음 / 미확인"}</strong></div><div class="detail-row"><span>누적 환불</span><strong>${money(p.refundedMinor,p.currency)}</strong></div></div>${!PREVIEW?'<a class="secondary-button" href="/admin/easycutcutcutcutcutcut?tab=billing">관리자에서 자세히 보기</a>':""}`);
   }
-  function routeDetail(id) {
+  function routeDetail(id,updating=false) {
     const r=state.data.routes.find(r=>r.id===id);if(!r)return;
-    openSheet("IP 상세",`<div class="event-icon sheet-hero-icon ${r.recommendation==="유지"?"recovery":"attention"}">${icon("activity")}</div><div class="eyebrow">${esc(r.recommendation)}</div><h3 class="sheet-title">${esc(r.id)}</h3><p class="sheet-text">${esc(r.reason)}</p><div class="window-grid">${windows.map(h=>`<div class="window-card"><span>최근 ${h}시간</span><strong>${percent(r.samples[h])}</strong><small>${sampleNote(r.samples[h])}<br>${routeCoverage(r,h,state.data.checkedAt)}</small></div>`).join("")}</div><div class="detail-list"><div class="detail-row"><span>마지막 성공</span><strong>${r.lastSuccess?relative(r.lastSuccess,state.data.checkedAt):"미확인"}</strong></div><div class="detail-row"><span>연속 실패</span><strong>${number(r.consecutiveFailures)}회</strong></div><div class="detail-row"><span>상태</span><strong>${r.coolingDown?"잠시 대기 중":"대기 제한 없음"}</strong></div>${r.failures.map(f=>`<div class="detail-row"><span>${esc(f.name)}</span><strong>${f.count}건</strong></div>`).join("")}</div><p class="card-note">IP 교체 권고는 추세와 고객 영향을 함께 확인한 뒤 결정해요.</p>`);
+    const content=ipDetail(r,state.data,icon,PREVIEW);
+    if(updating&&sheet.open)sheet.querySelector(".sheet-body").innerHTML=content;
+    else {openSheet("IP 상세",content);state.routeDetail=id;}
   }
   async function saveReceipt(event,ack) {
     if(PREVIEW){persist("easycut.admin.preview.receipts",state.data.events.map(e=>({id:e.id,read:e.read,acknowledged:e.acknowledged})));return;}
@@ -159,7 +162,7 @@ const PREVIEW = new URLSearchParams(location.search).get("preview") === "1";
       const data=await api("/overview");
       state.data=data;state.error="";
       if(!data.dailySales.some(p=>p.currency===state.currency)&&data.dailySales.length)state.currency=data.dailySales[0].currency;
-      render();if(manual)toast("최신 상태를 확인했어요.");
+      render();if(state.routeDetail)routeDetail(state.routeDetail,true);if(manual)toast("최신 상태를 확인했어요.");
     }catch(error){
       if(state.data){state.error="연결이 잠시 끊겼어요. 마지막 확인 상태를 보고 있어요.";render();}
       else if(!app.querySelector(".auth-page"))app.innerHTML=`<div class="auth-page"><section class="card auth-card"><h1>연결을 확인해주세요</h1><p>운영 정보를 불러오지 못했어요.</p><button class="primary-button" data-action="refresh">다시 시도</button><a class="text-link" href="?preview=1">화면 미리보기</a></section></div>`;
@@ -254,10 +257,10 @@ const PREVIEW = new URLSearchParams(location.search).get("preview") === "1";
       const {previewSnapshot}=await import("./preview.js");state.data=previewSnapshot();
       for(const receipt of stored("easycut.admin.preview.receipts",[])){const e=state.data.events.find(e=>e.id===receipt.id);if(e){e.read=!!receipt.read;e.acknowledged=!!receipt.acknowledged;}}
       render();
-    }else{await refresh();pollTimer=setInterval(()=>{if(!document.hidden)refresh();},60_000);}
+    }else{await refresh();pollTimer=setInterval(()=>{if(!document.hidden)refresh();},30_000);}
   }
   window.addEventListener("pagehide",()=>{clearInterval(pollTimer);});
-  window.addEventListener("pageshow",event=>{if(event.persisted&&!PREVIEW){refresh();clearInterval(pollTimer);pollTimer=setInterval(()=>{if(!document.hidden)refresh();},60_000);}});
+  window.addEventListener("pageshow",event=>{if(event.persisted&&!PREVIEW){refresh();clearInterval(pollTimer);pollTimer=setInterval(()=>{if(!document.hidden)refresh();},30_000);}});
   async function syncNative() {
     if(PREVIEW||!nativeAvailable()||!state.data)return;
     try { const d=await nativeCall("status");if(d.connected&&d.token&&d.permission==="authorized")await api("/native/push",{method:"POST",body:JSON.stringify(d)}); } catch { /* Settings exposes an actionable connection error. */ }
