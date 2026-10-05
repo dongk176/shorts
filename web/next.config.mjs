@@ -47,6 +47,7 @@ const nextConfig = {
     ];
     return [
       { source: "/:path*", headers: productionSecurityHeaders },
+      { source: "/admin-app/:path*", headers: [{ key: "Cache-Control", value: "no-store, max-age=0" }, { key: "X-Robots-Tag", value: "noindex, nofollow" }] },
       { source: "/transformation-showcase/:path*", headers: immutableShowcaseHeaders },
       { source: "/showcase-examples/:path*", headers: immutableShowcaseHeaders },
       { source: "/home-showcase/:path*", headers: immutableShowcaseHeaders },
