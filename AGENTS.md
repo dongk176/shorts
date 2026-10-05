@@ -146,11 +146,16 @@
   disappears unexpectedly.
 - Deploy to an unaliased candidate URL first, verify the five protected paths,
   then promote that exact deployment without rebuilding it.
-- Keep the unfinished YouTube publishing/content-calendar experiment out of
-  production releases. Production candidates must not contain the
-  `/content-calendar` route, publishing OAuth/publication APIs, publishing
-  navigation or share UI, test publishing migrations, `EasyCutYoutubeTest-*`
-  infrastructure, or the YouTube uploader worker.
+- User clarification (2026-10-05): YouTube publishing is implemented and is
+  temporarily blocked for maintenance. This supersedes the former blanket
+  exclusion of the unfinished publishing/content-calendar experiment.
+- Preserve the currently promoted publishing code and its maintenance gates
+  when releasing unrelated changes, including the administrator app. Do not
+  remove existing publishing OAuth/publication APIs or lift maintenance as
+  part of those changes. Keeping the existing feature does not require another
+  approval solely because of the superseded exclusion.
+- Keep unpromoted experiments, test publishing migrations, and
+  `EasyCutYoutubeTest-*` infrastructure outside unrelated production releases.
 
 ## `확인` comprehensive inspection trigger
 

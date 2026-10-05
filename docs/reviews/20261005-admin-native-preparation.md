@@ -21,7 +21,8 @@ Apple 개인 키는 서버에만 설정하며 앱에 포함하지 않는다.
 - 웹 production build, typecheck, lint 성공.
 - 관리자 관련 27개 테스트 성공: 기존 PWA 동작, PKCE/재사용/만료, 권한 회수,
   APNs 토큰 갱신·소유권, 서명 검증, 짧은 수집 제한의 과도한 알림 방지 포함.
-- 실제 iPhone은 현재 Mac에서 unavailable 상태여서 설치와 실제 APNs 전달은 미검증.
+- 초기 확인에서 실제 iPhone은 Mac에서 unavailable 상태였다. 이후 사용자가 연결 해결을
+  알렸다. 실제 설치와 APNs 전달은 아직 미검증이다.
 - 추가 스키마는 로컬 PostgreSQL 호환 엔진에서 검증했으며 운영에 적용하지 않았다.
 
 ## 수집 알림 진단
@@ -43,15 +44,15 @@ bot_check_rate 제한 만료 시 자동으로 해제한다. 회로 과거 reason
 ## 남은 외부 연결과 배포 확인 사항
 
 1. EasyCut 전용 APNs 키 생성/서버 연결. 다른 앱의 키를 복사하거나 재사용하지 않았다.
-   Apple 웹에서 영구 발송 자격 증명을 생성하기 직전 컴퓨터 제어 도구의 보안 규칙상
-   명시적 확인이 필요하다. 전용 앱 주제로 범위를 제한한다.
-   Apple 생성 검토 화면에는 `EasyCut Admin Push`, Sandbox, Topic Specific,
-   `kr.co.easycut.admin` 1개만 설정했고 Register는 누르지 않았다.
+   2026-10-05 사용자가 `전용 푸시 키 생성·연결 진행`을 명시적으로 승인했다.
+   Apple 키는 `EasyCut Admin Push`, Sandbox, Topic Specific,
+   `kr.co.easycut.admin` 1개로 제한하며 기존 운영 Vercel의 서버 비밀 설정에만 저장한다.
 2. 현재 운영 원본에는 `/api/youtube/accounts/oauth/start` 및 callback과
-   `youtube.upload` scope가 이미 포함돼 있다. 이는 제공된 AGENTS.md의
-   'Production candidates must not contain ... publishing OAuth/publication APIs'
-   조건과 충돌하므로 서버 재배포/운영 DB 변경은 보류했다. 기존 기능을 임의로 삭제하거나
-   새 관리 앱 작업을 명목으로 이 지침을 무시하지 않았다. 현재 기능 유지에 대한 범위 확인이 필요하다.
+   `youtube.upload` scope가 이미 포함돼 있다. 2026-10-05 사용자가 유튜브 게시 기능은
+   완성됐으며 일시적인 점검으로 막아둔 상태라고 명확히 정정했다. 이에 2026-08-04의
+   미완성 기능 일괄 제외 지침을 갱신했다. 기존 게시 코드와 점검 상태를 유지하는 것은
+   관리자 앱 배포의 승인 장애 사유가 아니다. 이 정정으로 점검 해제나 별도 실험 기능의
+   배포까지 승인된 것은 아니다. 이번 정정은 로컬 문서 변경이며 운영 변경은 아직 없다.
 3. 이후 현재 운영 기준 재확인 → additive migration → unaliased candidate → 기존 5개 보호 경로
    및 네이티브 인증 검증 → 같은 배포 승격 → iPhone 설치/테스트 알림을 수행한다.
 
