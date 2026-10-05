@@ -1,21 +1,27 @@
 import { readFileSync } from "node:fs";
+import { generateKeyPairSync, verify } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PGlite } from "../../test-tools/node_modules/@electric-sql/pglite/dist/index.js";
 import type { Sql } from "postgres";
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/db", () => ({ getDb: () => sql, ensureAdminDbReady: async () => {} }));
 vi.mock("@/lib/admin-mobile-push", () => ({ sendMobilePush: vi.fn(async () => ({})) }));
+let nativeCookie: string | undefined;
+vi.mock("next/headers", () => ({ cookies: async () => ({get: () => nativeCookie ? {value:nativeCookie} : undefined}) }));
 import { allowedPushEndpoint, defaultMobilePreferences, isQuietHour, shouldNotify, subscriptionSchema } from "./admin-mobile-contract";
 import { loadAdminMobileOverview, loadMobileRoutes } from "./admin-mobile-overview";
 import { dispatchMobilePushes, notificationContent, operationalIncidents, scanMobileEvents } from "./admin-mobile-monitor";
 import { sendMobilePush } from "./admin-mobile-push";
+import { createNativeCode, exchangeNativeCode, nativeAdminUser, pkceChallenge } from "./admin-native-auth";
+import { apnsJwt, registerNativeDevice } from "./admin-native-push";
+import { nativeDeviceSchema } from "./admin-native-contract";
 
 let pg: PGlite;
 const uid = "00000000-0000-4000-8000-000000000001";
 const sid = "00000000-0000-4000-8000-000000000002";
 const sql = (async (strings: TemplateStringsArray,...values: unknown[]) => {
   const query = strings.reduce((s,p,i) => s+(i ? "$"+i : "")+p,"");
-  if (query.includes("pg_try_advisory_xact_lock")) return [{ acquired: true }];
+  if (query.includes("pg_try_advisory_xact_lock") || query.includes("pg_advisory_xact_lock")) return [{ acquired: true }];
   const { rows } = await pg.query<Record<string,unknown>>(query,values);
   return rows.map(row => Object.fromEntries(Object.entries(row).map(([k,v]) => [k.replace(/_([a-z])/g,(_,c) => c.toUpperCase()),v])));
 }) as unknown as Sql;
@@ -27,7 +33,7 @@ Object.assign(sql,{ begin: async (fn: (sql: Sql) => Promise<unknown>) => {
 beforeAll(async () => {
   pg = new PGlite();
   await pg.exec(`create schema shorts_mvp; create role anon; create role authenticated; create role service_role;
-    create table shorts_mvp.app_users(id uuid primary key,is_admin boolean,created_at timestamptz default now());
+    create table shorts_mvp.app_users(id uuid primary key,is_admin boolean,auth_user_id uuid,email text,display_name text,created_at timestamptz default now());
     create table shorts_mvp.billing_orders(id uuid primary key default gen_random_uuid(),order_id text,kind text,amount_krw bigint,refunded_amount_krw bigint default 0,status text,approved_at timestamptz,created_at timestamptz default now());
     create table shorts_mvp.paddle_subscriptions(paddle_id text primary key,environment text,created_at timestamptz default now());
     create table shorts_mvp.paddle_payments(transaction_id text primary key,paddle_subscription_id text,currency text,amount_minor bigint,grant_id uuid,created_at timestamptz default now());
@@ -42,15 +48,67 @@ beforeAll(async () => {
     insert into shorts_mvp.app_users(id,is_admin) values('${uid}',true);
     insert into shorts_mvp.paddle_subscriptions values('live','live',now()),('sandbox','sandbox',now());`);
   await pg.exec(readFileSync(new URL("../../supabase/migrations/202610050001_admin_mobile_push.sql",import.meta.url),"utf8"));
+  await pg.exec(readFileSync(new URL("../../supabase/migrations/202610050002_admin_native_push.sql",import.meta.url),"utf8"));
 });
 afterAll(async () => { await pg.close(); });
 beforeEach(async () => {
-  vi.clearAllMocks();vi.unstubAllEnvs();
+  vi.clearAllMocks();vi.unstubAllEnvs();nativeCookie=undefined;
   await pg.exec(`truncate shorts_mvp.admin_mobile_events,shorts_mvp.admin_mobile_deliveries,shorts_mvp.admin_mobile_receipts,
-    shorts_mvp.admin_mobile_subscriptions,shorts_mvp.admin_mobile_preferences,shorts_mvp.billing_orders,
+    shorts_mvp.admin_mobile_subscriptions,shorts_mvp.admin_mobile_preferences,shorts_mvp.admin_native_auth_codes,shorts_mvp.admin_native_sessions,shorts_mvp.billing_orders,
     shorts_mvp.paddle_payments,shorts_mvp.paddle_adjustments,shorts_mvp.video_jobs,shorts_mvp.ingestion_route_slots,shorts_mvp.ingestion_attempts;
     update shorts_mvp.admin_mobile_monitor_state set started_at=now()-interval '1 day';
     update shorts_mvp.app_users set is_admin=true;`);
+});
+describe("native login and APNs boundary",()=>{
+  const verifier="v".repeat(43),token="a".repeat(64),installationId="00000000-0000-4000-8000-000000000099";
+  function configure(){for(const name of ["ADMIN_APNS_KEY_ID","ADMIN_APNS_TEAM_ID","ADMIN_APNS_PRIVATE_KEY","ADMIN_APNS_TOPIC"])vi.stubEnv(name,"test");vi.stubEnv("ADMIN_MOBILE_ENABLED","1");}
+  it("binds a single-use login code to PKCE and stores only hashed session credentials",async()=>{
+    const code=await createNativeCode(uid,pkceChallenge(verifier));
+    await expect(exchangeNativeCode(code,"x".repeat(43))).rejects.toMatchObject({status:401});
+    nativeCookie=await exchangeNativeCode(code,verifier);
+    expect(await nativeAdminUser()).toMatchObject({id:uid});
+    await expect(exchangeNativeCode(code,verifier)).rejects.toMatchObject({status:401});
+    const {rows}=await pg.query("select * from shorts_mvp.admin_native_sessions");
+    expect(JSON.stringify(rows)).not.toContain(nativeCookie);
+    await pg.exec("update shorts_mvp.app_users set is_admin=false");
+    expect(await nativeAdminUser()).toBeNull();
+  });
+  it("rejects expired login codes and expired native sessions",async()=>{
+    const code=await createNativeCode(uid,pkceChallenge(verifier));
+    await pg.exec("update shorts_mvp.admin_native_auth_codes set expires_at=now()-interval '1 second'");
+    await expect(exchangeNativeCode(code,verifier)).rejects.toMatchObject({status:401});
+    nativeCookie=await exchangeNativeCode(await createNativeCode(uid,pkceChallenge(verifier)),verifier);
+    await pg.exec("update shorts_mvp.admin_native_sessions set expires_at=now()-interval '1 second'");
+    expect(await nativeAdminUser()).toBeNull();
+  });
+  it("rotates the APNs token on the same installation without replaying past events",async()=>{
+    configure();
+    await registerNativeDevice(uid,{installationId,token,environment:"development"});
+    await pg.exec("update shorts_mvp.admin_mobile_subscriptions set active_from=now()-interval '1 hour'");
+    await registerNativeDevice(uid,{installationId,token:"b".repeat(64),environment:"production"});
+    const {rows}=await pg.query<{apns_token:string,transport:string,old:boolean}>("select apns_token,transport,active_from<now()-interval '30 minutes' as old from shorts_mvp.admin_mobile_subscriptions");
+    expect(rows).toEqual([{apns_token:"b".repeat(64),transport:"apns",old:true}]);
+    await payment();await scanMobileEvents();await dispatchMobilePushes();
+    expect(sendMobilePush).toHaveBeenCalledWith(expect.objectContaining({transport:"apns",apnsToken:"b".repeat(64),apnsEnvironment:"production"}),expect.anything());
+  });
+  it("rejects token ownership takeover by a different administrator",async()=>{
+    configure();await registerNativeDevice(uid,{installationId,token,environment:"development"});
+    await expect(registerNativeDevice("00000000-0000-4000-8000-000000000011",{installationId,token,environment:"development"})).rejects.toMatchObject({status:409});
+  });
+  it("keeps native registration unavailable before the APNs server is configured",async()=>{
+    await expect(registerNativeDevice(uid,{installationId,token,environment:"development"})).rejects.toMatchObject({status:503});
+    expect(nativeDeviceSchema.safeParse({installationId,token:"https://evil.test",environment:"development"}).success).toBe(false);
+    expect(nativeDeviceSchema.safeParse({installationId,token,environment:"unknown"}).success).toBe(false);
+  });
+  it("produces an Apple-compatible ES256 token with a verifiable signature",()=>{
+    const {privateKey,publicKey}=generateKeyPairSync("ec",{namedCurve:"prime256v1"});
+    const pem=privateKey.export({format:"pem",type:"pkcs8"}).toString();
+    const jwt=apnsJwt("KEY123","TEAM123",pem,1_700_000_000_000);
+    const [header,claims,signature]=jwt.split(".");
+    expect(JSON.parse(Buffer.from(header,"base64url").toString())).toEqual({alg:"ES256",kid:"KEY123"});
+    expect(JSON.parse(Buffer.from(claims,"base64url").toString())).toEqual({iss:"TEAM123",iat:1700000000});
+    expect(verify("sha256",Buffer.from(header+"."+claims),{key:publicKey,dsaEncoding:"ieee-p1363"},Buffer.from(signature,"base64url"))).toBe(true);
+  });
 });
 async function device() {
   await pg.exec(`insert into shorts_mvp.admin_mobile_subscriptions(id,admin_id,endpoint,p256dh,auth,active_from)
@@ -161,6 +219,14 @@ describe("persisted monitoring and delivery", () => {
     const row={waiting:0,oldestWait:0,running:0,failures:3,failedCustomers:1,billingReview:0,circuitBlocked:false};
     expect(operationalIncidents(row).find(i=>i.key==="multiple-job-failures")?.active).toBe(false);
     expect(operationalIncidents({...row,failedCustomers:2}).find(i=>i.key==="multiple-job-failures")?.active).toBe(true);
+  });
+  it("does not report a short protection pause as an ingestion outage", () => {
+    const row={waiting:1,oldestWait:1,running:2,failures:0,failedCustomers:0,billingReview:0,circuitBlocked:true,recentIngestionSuccess:true};
+    const paused=(value:Record<string,unknown>)=>operationalIncidents(value).find(i=>i.key==="ingestion-paused")?.active;
+    expect(paused(row)).toBe(false);
+    expect(paused({...row,oldestWait:10})).toBe(false);
+    expect(paused({...row,oldestWait:10,recentIngestionSuccess:false})).toBe(true);
+    expect(paused({...row,waiting:0,oldestWait:10,recentIngestionSuccess:false})).toBe(false);
   });
   it("clips every IP window at its verified assignment and leaves ambiguous denominators unknown", async () => {
     await pg.exec("insert into shorts_mvp.ingestion_route_slots values('webshare-01',true,null);insert into shorts_mvp.ingestion_attempts(route_id,result,created_at) values('webshare-01','success',now()),('webshare-01','bot_check',now()-interval '2 hours')");

@@ -4,6 +4,7 @@ import webPush from "web-push";
 import { getDb } from "@/lib/db";
 import { HttpError } from "@/lib/http";
 import { allowedPushEndpoint, defaultMobilePreferences, pushConfigured, type MobilePreferences, type MobileSubscription } from "@/lib/admin-mobile-contract";
+import { sendNativePush } from "@/lib/admin-native-push";
 
 export function endpointHash(endpoint: string) { return createHash("sha256").update(endpoint).digest("hex"); }
 export async function mobilePreferences(adminId: string): Promise<MobilePreferences> {
@@ -36,9 +37,10 @@ export async function registerMobileSubscription(adminId: string, subscription: 
     return String(rows[0].id);
   });
 }
-export type PushTarget = { endpoint: string; p256dh: string; auth: string };
+export type PushTarget = { endpoint: string; p256dh: string; auth: string; transport?: string; apnsToken?: string; apnsEnvironment?: string };
 export type PushPayload = { eventId: string; title: string; body: string };
 export async function sendMobilePush(target: PushTarget, payload: PushPayload) {
+  if(target.transport==="apns")return sendNativePush(target.apnsToken||"",target.apnsEnvironment||"",payload);
   if (!pushConfigured()) throw new HttpError(503, "푸시알림 연결을 준비하고 있어요.");
   if (!allowedPushEndpoint(target.endpoint)) throw new HttpError(400, "지원하지 않는 알림 주소입니다.");
   return webPush.sendNotification({ endpoint: target.endpoint, keys: { p256dh: target.p256dh, auth: target.auth } },

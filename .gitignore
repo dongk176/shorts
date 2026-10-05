@@ -8,6 +8,10 @@
 .tmp/paddle-fullapp/
 *.pem
 *.key
+*.p8
+**/xcuserdata/
+**/DerivedData/
+/output/admin-ios/
 
 # JavaScript and framework build products
 node_modules/

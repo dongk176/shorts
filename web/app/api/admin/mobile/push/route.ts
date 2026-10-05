@@ -10,7 +10,7 @@ export async function GET(request: Request) {
   try {
     const admin = await authorizeMobile();
     const device = new URL(request.url).searchParams.get("device");
-    const rows = await getDb()`select endpoint from shorts_mvp.admin_mobile_subscriptions where admin_id=${admin.id} and active`;
+    const rows = await getDb()`select endpoint from shorts_mvp.admin_mobile_subscriptions where admin_id=${admin.id} and active and transport='web'`;
     return mobileJSON({ configured: pushConfigured(), publicKey: process.env.ADMIN_PUSH_VAPID_PUBLIC_KEY || null,
       subscribed: !!device && rows.some(row => endpointHash(String(row.endpoint)) === device),
       preferences: await mobilePreferences(admin.id) });

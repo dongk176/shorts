@@ -2,10 +2,11 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { requireAdminUser } from "@/lib/admin";
 import { apiError, HttpError } from "@/lib/http";
+import { nativeAdminUser } from "@/lib/admin-native-auth";
 
 export async function authorizeMobile(request?: Request) {
-  const admin = await requireAdminUser();
   if (process.env.ADMIN_MOBILE_ENABLED !== "1") throw new HttpError(503, "관리자 앱 연결을 준비하고 있어요.");
+  const admin = await nativeAdminUser() || await requireAdminUser();
   if (request && !["GET", "HEAD"].includes(request.method)) {
     const origin = request.headers.get("origin");
     if (!origin || origin !== new URL(request.url).origin) throw new HttpError(403, "요청 출처를 확인해주세요.");

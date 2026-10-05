@@ -1,3 +1,4 @@
+import { nativeAvailable, nativeCall } from "./native.js";
 import { periods, windows, money, number, percent, kstDay, shiftDay, clock, relative, periodSales, salesSummary, routeCoverage, safeText } from "./model.js";
 
 const PREVIEW = new URLSearchParams(location.search).get("preview") === "1";
@@ -124,15 +125,18 @@ const PREVIEW = new URLSearchParams(location.search).get("preview") === "1";
   }
   async function settings() {
     openSheet("내 설정",`<p class="sheet-text">설정을 불러오는 중이에요.</p>`);
-    const subscription=state.registration?await state.registration.pushManager?.getSubscription().catch(()=>null):null;
+    const native=nativeAvailable()?await nativeCall("status"):null;
+    state.native=native;
+    const subscription=!native&&state.registration?await state.registration.pushManager?.getSubscription().catch(()=>null):null;
     state.subscription=subscription;
     const device=subscription?Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(subscription.endpoint))),b=>b.toString(16).padStart(2,"0")).join(""):"";
-    if(!PREVIEW){try{state.push=await api("/push"+(device?"?device="+device:""));}catch{state.push=null;}}
+    if(!PREVIEW){try{state.push=await api(native?"/native/push?installationId="+encodeURIComponent(native.installationId):"/push"+(device?"?device="+device:""));}catch{state.push=null;}}
     const current=state.push?.preferences||stored("easycut.admin.preview.preferences",{payments:true,operations:true,quietNight:true,showAmount:true});
-    const enabled=!!subscription&&!!state.push?.subscribed;
-    openSheet("내 설정",`<section class="settings-section"><h3>알림</h3><div class="setting-row"><span>이 기기 푸시알림<small>${PREVIEW?"미리보기에서는 발송하지 않아요.":enabled?"알림을 받을 준비가 됐어요.":state.push?.configured?"알림을 허용하면 앱을 닫아도 받을 수 있어요.":"서버 연결 상태를 확인해주세요."}</small></span><span class="status-pill ${enabled?"":"unknown"}">${enabled?"연결됨":PREVIEW?"예시":"연결 전"}</span></div>${toggleRow("payments","결제 알림","신규 · 갱신 결제마다",current.payments)}${toggleRow("operations","운영 알림","제작 실패 · 대기 지연",current.operations)}${toggleRow("quietNight","야간에는 긴급만","23:00–08:00 · 일반 알림은 알림함에만",current.quietNight)}${toggleRow("showAmount","알림에 금액 표시","고객 개인정보는 표시하지 않아요.",current.showAmount)}<button class="primary-button" style="margin-top:20px" data-action="${enabled?"test-push":"enable-push"}">${icon("bell")}${enabled?"테스트 알림 받기":"푸시알림 켜기"}</button>${enabled?'<button class="text-link" style="margin:12px auto 0;display:flex" data-action="disable-push">이 기기 알림 끄기</button>':""}</section><section class="settings-section"><h3>화면</h3>${segments([["system","자동"],["light","라이트"],["dark","다크"]],stored("easycut.admin.theme","system"),"theme")}</section><section class="settings-section"><h3>앱</h3><button class="setting-row" style="width:100%;text-align:left" data-action="install"><span>홈 화면에 추가<small>다시 설치할 필요 없이 업데이트돼요.</small></span>${icon("chevron","row-chevron")}</button><button class="setting-row" style="width:100%;text-align:left" data-action="refresh"><span>최신 상태 확인</span>${icon("refresh")}</button></section><p class="neutral-note">EasyCut Admin · ${PREVIEW?"미리보기":"개인 관리자"}</p>`);
+    const enabled=!!state.push?.subscribed&&(native?native.permission==="authorized":!!subscription);
+    openSheet("내 설정",`<section class="settings-section"><h3>알림</h3><div class="setting-row"><span>이 기기 푸시알림<small>${PREVIEW?"미리보기에서는 발송하지 않아요.":enabled?"알림을 받을 준비가 됐어요.":state.push?.configured?"알림을 허용하면 앱을 닫아도 받을 수 있어요.":"서버 연결 상태를 확인해주세요."}</small></span><span class="status-pill ${enabled?"":"unknown"}">${enabled?"연결됨":PREVIEW?"예시":"연결 전"}</span></div>${toggleRow("payments","결제 알림","신규 · 갱신 결제마다",current.payments)}${toggleRow("operations","운영 알림","제작 실패 · 대기 지연",current.operations)}${toggleRow("quietNight","야간에는 긴급만","23:00–08:00 · 일반 알림은 알림함에만",current.quietNight)}${toggleRow("showAmount","알림에 금액 표시","고객 개인정보는 표시하지 않아요.",current.showAmount)}<button class="primary-button" style="margin-top:20px" data-action="${enabled?"test-push":"enable-push"}">${icon("bell")}${enabled?"테스트 알림 받기":"푸시알림 켜기"}</button>${enabled?'<button class="text-link" style="margin:12px auto 0;display:flex" data-action="disable-push">이 기기 알림 끄기</button>':""}</section><section class="settings-section"><h3>화면</h3>${segments([["system","자동"],["light","라이트"],["dark","다크"]],stored("easycut.admin.theme","system"),"theme")}</section><section class="settings-section"><h3>앱</h3><button class="setting-row" style="width:100%;text-align:left" data-action="install"><span>${nativeAvailable()?"iPhone 앱":"홈 화면에 추가"}<small>화면은 자동으로 업데이트돼요.</small></span>${icon("chevron","row-chevron")}</button><button class="setting-row" style="width:100%;text-align:left" data-action="refresh"><span>최신 상태 확인</span>${icon("refresh")}</button></section>${nativeAvailable()?'<button class="text-link" style="display:block;margin:16px auto" data-action="native-logout">로그아웃</button>':""}<p class="neutral-note">EasyCut Admin · ${PREVIEW?"미리보기":"개인 관리자"}</p>`);
   }
   function install() {
+    if(nativeAvailable()){toast("화면 업데이트는 자동으로 반영돼요.");return;}
     if(installPrompt){installPrompt.prompt();installPrompt=null;return;}
     const installed=matchMedia("(display-mode:standalone)").matches||navigator.standalone;
     openSheet("홈 화면에 추가",`<div class="event-icon sheet-hero-icon">${icon("phone")}</div><h3 class="sheet-title">${installed?"이미 앱으로 사용 중이에요":"더 가깝게, EasyCut"}</h3><p class="sheet-text">${installed?"업데이트는 다음 실행에 자동으로 반영돼요.":"아이폰 홈 화면에서 바로 열어보세요."}</p>${installed?"":`<ol class="install-steps"><li><b>1</b><span>Safari에서 이 페이지를 열어요.</span></li><li><b>2</b><span>공유 ${icon("share")} 메뉴를 눌러요.</span></li><li><b>3</b><span><strong>홈 화면에 추가</strong>를 선택해요.</span></li><li><b>4</b><span>앱을 열고 설정에서 알림을 켜요.</span></li></ol>`}<div class="notice-box">새 버전도 같은 아이콘으로 열 수 있어요.<br>앱스토어에서 다시 받을 필요가 없어요.</div>`);
@@ -166,6 +170,12 @@ const PREVIEW = new URLSearchParams(location.search).get("preview") === "1";
   function base64Bytes(value) { return Uint8Array.from(atob(value.replace(/-/g,"+").replace(/_/g,"/")),c=>c.charCodeAt(0)); }
   async function enablePush() {
     if(PREVIEW){toast("실제 알림은 관리자 로그인 후 켤 수 있어요.");return;}
+    if(nativeAvailable()){
+      if(!state.push?.configured)throw new Error("iPhone 알림 서버를 연결하고 있어요.");
+      const device=await nativeCall("subscribe");
+      await api("/native/push",{method:"POST",body:JSON.stringify(device)});
+      await nativeCall("connected");toast("이 iPhone에 알림을 연결했어요.");await settings();return;
+    }
     if(!("Notification" in window)||!("serviceWorker" in navigator)||!("PushManager" in window)){install();toast("홈 화면에 추가한 앱에서 알림을 켜주세요.");return;}
     const isiOS=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
     if(isiOS&&!matchMedia("(display-mode:standalone)").matches&&!navigator.standalone){install();return;}
@@ -179,11 +189,13 @@ const PREVIEW = new URLSearchParams(location.search).get("preview") === "1";
     toast("이 기기에 푸시알림을 연결했어요.");await settings();
   }
   async function disablePush() {
+    if(nativeAvailable()){const d=await nativeCall("status");await api("/native/push",{method:"DELETE",body:JSON.stringify({installationId:d.installationId})});await nativeCall("disconnect");toast("이 기기의 알림을 껐어요.");await settings();return;}
     const subscription=await state.registration?.pushManager.getSubscription();
     if(subscription){await api("/push",{method:"DELETE",body:JSON.stringify({endpoint:subscription.endpoint})});await subscription.unsubscribe();}
     toast("이 기기의 알림을 껐어요.");await settings();
   }
   async function testPush() {
+    if(nativeAvailable()){const d=await nativeCall("status");await api("/native/push",{method:"PATCH",body:JSON.stringify({installationId:d.installationId})});toast("테스트 알림을 보냈어요.");return;}
     const subscription=await state.registration?.pushManager.getSubscription();if(!subscription)throw new Error("먼저 이 기기에 알림을 연결해주세요.");
     await api("/push/test",{method:"POST",body:JSON.stringify({endpoint:subscription.endpoint})});
     toast("테스트 알림을 보냈어요.");
@@ -199,6 +211,7 @@ const PREVIEW = new URLSearchParams(location.search).get("preview") === "1";
       else if(action==="route")routeDetail(id);
       else if(action==="settings")await settings();
       else if(action==="install")install();
+      else if(action==="native-logout"){const d=await nativeCall("status");await api("/native/session",{method:"DELETE",body:JSON.stringify({installationId:d.installationId})});await nativeCall("disconnect");location.reload();}
       else if(action==="refresh")await refresh(true);
       else if(action==="period"){state.period=Number(value);render();}
       else if(action==="window"){state.window=Number(value);render();}
@@ -245,4 +258,10 @@ const PREVIEW = new URLSearchParams(location.search).get("preview") === "1";
   }
   window.addEventListener("pagehide",()=>{clearInterval(pollTimer);});
   window.addEventListener("pageshow",event=>{if(event.persisted&&!PREVIEW){refresh();clearInterval(pollTimer);pollTimer=setInterval(()=>{if(!document.hidden)refresh();},60_000);}});
-  start();
+  async function syncNative() {
+    if(PREVIEW||!nativeAvailable()||!state.data)return;
+    try { const d=await nativeCall("status");if(d.connected&&d.token&&d.permission==="authorized")await api("/native/push",{method:"POST",body:JSON.stringify(d)}); } catch { /* Settings exposes an actionable connection error. */ }
+  }
+  window.addEventListener("easycut-native-ready",()=>syncNative());
+  window.addEventListener("easycut-native-foreground",async()=>{await refresh();await syncNative();});
+  start().then(syncNative);

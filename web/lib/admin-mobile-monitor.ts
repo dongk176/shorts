@@ -21,9 +21,9 @@ export function operationalIncidents(row: Record<string, unknown>): Incident[] {
     { key: "billing-review", active: Number(row.billingReview) > 0,
       title: "확인이 필요한 결제가 있어요", detail: "최근 24시간 결제 중 수동 확인 상태의 내역이 있어요.",
       nextStep: "기존 관리자 페이지에서 결제 상태와 이용권 반영을 확인해주세요.", impact: Number(row.billingReview) + "건 확인", urgent: true },
-    { key: "ingestion-paused", active: Boolean(row.circuitBlocked),
-      title: "영상 수집이 잠시 멈췄어요", detail: "수집 보호 회로가 일시적으로 새 수집을 제한하고 있어요.",
-      nextStep: "수집 경로 상태와 보호 회로의 해제 시각을 확인해주세요.", impact: "새 제작 지연", urgent: true },
+    { key: "ingestion-paused", active: Boolean(row.circuitBlocked) && waiting>0 && oldest>=5 && !row.recentIngestionSuccess,
+      title: "영상 수집 대기가 길어지고 있어요", detail: "수집 제한 중 5분 이상 기다린 제작이 있고, 최근 5분간 수집 성공이 없어요.",
+      nextStep: "대기 작업과 수집 경로 상태를 확인해주세요.", impact: "새 제작 지연", urgent: true },
   ];
 }
 
@@ -89,7 +89,8 @@ export async function scanMobileEvents() {
       count(*) filter(where status='failed' and created_at>=now()-interval '30 minutes')::integer as failures,
       count(distinct user_id) filter(where status='failed' and created_at>=now()-interval '30 minutes')::integer as failed_customers,
       (select count(*)::integer from shorts_mvp.billing_orders where status='manual_review' and created_at>=now()-interval '24 hours') as billing_review,
-      coalesce((select blocked_until>now() from shorts_mvp.ingestion_circuit where singleton),false) as circuit_blocked
+      coalesce((select blocked_until>now() from shorts_mvp.ingestion_circuit where singleton),false) as circuit_blocked,
+      exists(select 1 from shorts_mvp.ingestion_attempts where result='success' and created_at>=now()-interval '5 minutes') as recent_ingestion_success
       from shorts_mvp.video_jobs where created_at>=now()-interval '30 minutes'
         or status in ('queued','retry_waiting','validating','starting','downloading','transcribing','selecting','extracting','rendering','uploading')`;
     for (const incident of operationalIncidents(health)) await syncIncident(tx, incident);
@@ -137,7 +138,7 @@ export async function dispatchMobilePushes() {
   for (let offset = 0; offset < claimed.length; offset += 3) {
     await Promise.all(claimed.slice(offset,offset+3).map(async delivery => {
       const [row] = await db`select e.id,e.kind,e.title,e.payload,e.occurred_at,e.resolved_at,
-        s.endpoint,s.p256dh,s.auth,s.active,u.is_admin,
+        s.endpoint,s.p256dh,s.auth,s.transport,s.apns_token,s.apns_environment,s.active,u.is_admin,
         p.payments,p.operations,p.quiet_night,p.show_amount
         from shorts_mvp.admin_mobile_events e
         join shorts_mvp.admin_mobile_subscriptions s on s.id=${delivery.subscriptionId}
@@ -152,13 +153,15 @@ export async function dispatchMobilePushes() {
       else if (!row.active || !row.isAdmin || row.resolvedAt || !shouldNotify(row.kind,preferences,new Date())) status = "skipped";
       else {
         try {
-          await sendMobilePush({ endpoint: row.endpoint, p256dh: row.p256dh, auth: row.auth },
+          await sendMobilePush({ endpoint: row.endpoint, p256dh: row.p256dh, auth: row.auth,
+            transport: row.transport, apnsToken: row.apnsToken, apnsEnvironment: row.apnsEnvironment },
             notificationContent({ id: row.id, kind: row.kind, title: row.title, payload: row.payload },preferences.showAmount));
         } catch (error) {
           code = Number((error as { statusCode?: number }).statusCode || 0);
           if (code === 404 || code === 410) {
             status = "expired";
-            await db`update shorts_mvp.admin_mobile_subscriptions set active=false,updated_at=now() where id=${delivery.subscriptionId}`;
+            await db`update shorts_mvp.admin_mobile_subscriptions set active=false,updated_at=now() where id=${delivery.subscriptionId}
+              and (transport<>'apns' or apns_token=${row.apnsToken ?? null})`;
           } else status = Number(delivery.attempts) >= 3 ? "failed" : "pending";
         }
       }

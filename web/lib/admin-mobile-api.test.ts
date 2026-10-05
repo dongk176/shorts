@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/admin", () => ({ requireAdminUser: vi.fn() }));
+vi.mock("@/lib/admin-native-auth", () => ({ nativeAdminUser: async () => null }));
 import { requireAdminUser } from "@/lib/admin";
 import { HttpError } from "@/lib/http";
 import { authorizeMobile, authorizedMobileCron, mobileBody, mobileError, mobileJSON } from "./admin-mobile-api";
