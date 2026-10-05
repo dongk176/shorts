@@ -125,6 +125,7 @@ const PREVIEW = new URLSearchParams(location.search).get("preview") === "1";
   async function settings() {
     openSheet("내 설정",`<p class="sheet-text">설정을 불러오는 중이에요.</p>`);
     const subscription=state.registration?await state.registration.pushManager?.getSubscription().catch(()=>null):null;
+    state.subscription=subscription;
     const device=subscription?Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(subscription.endpoint))),b=>b.toString(16).padStart(2,"0")).join(""):"";
     if(!PREVIEW){try{state.push=await api("/push"+(device?"?device="+device:""));}catch{state.push=null;}}
     const current=state.push?.preferences||stored("easycut.admin.preview.preferences",{payments:true,operations:true,quietNight:true,showAmount:true});
@@ -168,13 +169,12 @@ const PREVIEW = new URLSearchParams(location.search).get("preview") === "1";
     if(!("Notification" in window)||!("serviceWorker" in navigator)||!("PushManager" in window)){install();toast("홈 화면에 추가한 앱에서 알림을 켜주세요.");return;}
     const isiOS=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
     if(isiOS&&!matchMedia("(display-mode:standalone)").matches&&!navigator.standalone){install();return;}
-    // Ask within this user gesture, before awaiting network work.
-    const permission=await Notification.requestPermission();
-    if(permission!=="granted"){toast("브라우저 설정에서 알림을 허용해주세요.");return;}
-    const config=await api("/push");
-    if(!config.configured||!config.publicKey)throw new Error("푸시 서버 연결을 확인해주세요.");
-    const registration=state.registration||await navigator.serviceWorker.ready;
-    const subscription=await registration.pushManager.getSubscription()||await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:base64Bytes(config.publicKey)});
+    if(Notification.permission==="denied"){toast("브라우저 설정에서 알림을 허용해주세요.");return;}
+    // Settings preloads the key so Safari sees subscribe() directly in this gesture.
+    const config=state.push,registration=state.registration;
+    if(!config?.configured||!config.publicKey)throw new Error("푸시 서버 연결을 확인해주세요.");
+    if(!registration?.active)throw new Error("앱을 준비하고 있어요. 잠시 후 다시 눌러주세요.");
+    const subscription=state.subscription||await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:base64Bytes(config.publicKey)});
     await api("/push",{method:"POST",body:JSON.stringify({subscription:subscription.toJSON()})});
     toast("이 기기에 푸시알림을 연결했어요.");await settings();
   }
