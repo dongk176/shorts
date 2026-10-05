@@ -139,6 +139,56 @@ function localizedResult(value: unknown, locale: SiteLocale) {
   return labels[key] ? label(locale, labels[key]) : key;
 }
 
+function ActivityCards({ items, tab, locale }: { items: ActivityResponse["items"]; tab: "payments" | "usage"; locale: SiteLocale }) {
+  const copy = {
+    receipt: label(locale, { ko: "결제확인서", en: "Receipt", ja: "決済確認書" }),
+    details: label(locale, { ko: "결제 상세", en: "Payment details", ja: "決済詳細" }),
+    order: label(locale, { ko: "주문번호", en: "Order ID", ja: "注文番号" }),
+    method: label(locale, { ko: "승인·결제수단", en: "Approval or method", ja: "承認・決済手段" }),
+    transaction: label(locale, { ko: "거래번호", en: "Transaction ID", ja: "取引番号" }),
+  };
+  return <ul className="space-y-3 p-3 lg:hidden">
+    {items.map((item) => <li key={String(item.id)} className="min-w-0 rounded-2xl border border-white/10 bg-white/[.025] p-4 text-sm [overflow-wrap:anywhere]">
+      {tab === "payments" ? <>
+        <p className="text-xs text-neutral-400">{date(item.approvedAt || item.createdAt, locale)}</p>
+        <h2 className="mt-2 font-bold leading-6">{localizedProductName(item.orderName || item.productCode, locale)}</h2>
+        <p className="mt-1 text-xs leading-5 text-neutral-400">{billingCycleLabel(item.billingCycle, locale)}{item.isEnterpriseProduct ? ` · ${label(locale, { ko: `결제 순서 ${Number(item.sortOrder)}번`, en: `Payment order ${Number(item.sortOrder)}`, ja: `決済順序 ${Number(item.sortOrder)}` })}` : ""}</p>
+        {Boolean(item.isEnterpriseProduct) && <p className="mt-1 text-xs leading-5 text-neutral-400">{calendarDate(item.serviceStartDate, locale)} ~ {calendarDate(item.serviceEndDate, locale)} · {Number(item.includedMinutes || 0).toLocaleString(formatLocale(locale))}{label(locale, { ko: "분", en: " min", ja: "分" })}</p>}
+        <div className="mt-4 flex flex-wrap items-start justify-between gap-x-4 gap-y-3 border-t border-white/10 pt-4">
+          <div>
+            <p className="text-xl font-black">{money(item.amountKrw, locale)}</p>
+            <p className="mt-1 text-xs text-neutral-400">{item.isEnterpriseProduct ? enterpriseVatLabel(item.vatTreatment, locale) : Number(item.installmentMonths || 0) > 0 ? label(locale, { ko: `${Number(item.installmentMonths)}개월 할부`, en: `${Number(item.installmentMonths)}-month installments`, ja: `${Number(item.installmentMonths)}回払い` }) : label(locale, { ko: "일시불", en: "One-time payment", ja: "一括払い" })}</p>
+          </div>
+          <div>
+            <p className="font-bold">{paymentStatusLabels[String(item.status)] ? label(locale, paymentStatusLabels[String(item.status)]) : String(item.status)}</p>
+            <p className="mt-1 text-xs leading-5 text-neutral-400">{item.isEnterpriseProduct
+              ? `${label(locale, { ko: "결제 기한", en: "Due", ja: "決済期限" })} ${calendarDate(item.paymentDueDate, locale)}`
+              : refundLabel(item, locale)}</p>
+          </div>
+        </div>
+        {item.status === "succeeded" && <a target="_blank" rel="noreferrer" href={`/api/account/receipts/${String(item.id)}`} className="mt-4 flex min-h-11 items-center justify-center rounded-xl border border-white/15 px-3 py-2 font-bold transition hover:bg-white/[.05]">{copy.receipt}</a>}
+        <details className="mt-3 border-t border-white/10 pt-1">
+          <summary className="cursor-pointer py-3 font-semibold text-neutral-300">{copy.details}</summary>
+          <dl className="space-y-3 pb-2 text-xs">
+            <div><dt className="text-neutral-400">{copy.order}</dt><dd className="mt-1 font-mono">{String(item.orderId || label(locale, { ko: "결제 전", en: "Not paid", ja: "決済前" }))}</dd></div>
+            <div><dt className="text-neutral-400">{copy.method}</dt><dd className="mt-1">{String(item.isEnterpriseProduct ? item.paymentMethod || "-" : item.providerAuthCode || "-")}</dd></div>
+            <div><dt className="text-neutral-400">{copy.transaction}</dt><dd className="mt-1 font-mono">{String(item.providerTransactionId || "-")}</dd></div>
+          </dl>
+        </details>
+      </> : <>
+        <p className="text-xs text-neutral-400">{date(item.occurredAt, locale)}</p>
+        <h2 className="mt-2 font-bold leading-6">{eventLabels[String(item.eventType)] ? label(locale, eventLabels[String(item.eventType)]) : String(item.eventType)}</h2>
+        <p className="mt-2 leading-6 text-neutral-300">{item.projectNumber ? label(locale, { ko: `프로젝트 #${String(item.projectNumber)}`, en: `Project #${String(item.projectNumber)}`, ja: `プロジェクト #${String(item.projectNumber)}` }) : item.productName ? localizedProductName(item.productName, locale) : productLabels[String(item.productCode)] ? label(locale, productLabels[String(item.productCode)]) : String(item.productCode || "-")}</p>
+        {Boolean(item.videoTitle) && <p data-i18n-skip className="mt-1 text-xs leading-5 text-neutral-400">{String(item.videoTitle)}</p>}
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-4">
+          <p className={`text-xl font-black ${Number(item.seconds || 0) < 0 ? "text-[#ff9b8d]" : "text-emerald-300"}`}>{minutes(item.seconds, locale)}</p>
+          <p className="text-neutral-300">{localizedResult(item.result, locale)}</p>
+        </div>
+      </>}
+    </li>)}
+  </ul>;
+}
+
 export function AccountActivity() {
   const ui = useUiText();
   const { locale } = useI18n();
@@ -166,12 +216,13 @@ export function AccountActivity() {
 
   return (
     <section className="mt-8 overflow-hidden rounded-3xl border border-white/10 bg-[#171a1b]">
-      <div className="flex gap-2 border-b border-white/10 p-4">
-        <button type="button" onClick={() => { setTab("payments"); setPage(1); }} className={`rounded-xl px-5 py-2.5 text-sm font-black ${tab === "payments" ? "bg-white text-black" : "text-neutral-400"}`}>{copy.payments}</button>
-        <button type="button" onClick={() => { setTab("usage"); setPage(1); }} className={`rounded-xl px-5 py-2.5 text-sm font-black ${tab === "usage" ? "bg-white text-black" : "text-neutral-400"}`}>{copy.usage}</button>
+      <div className="grid grid-cols-2 gap-2 border-b border-white/10 p-3 sm:flex sm:p-4">
+        <button type="button" aria-pressed={tab === "payments"} onClick={() => { setTab("payments"); setPage(1); }} className={`min-h-11 rounded-xl px-3 py-2.5 text-sm font-black sm:px-5 ${tab === "payments" ? "bg-white text-black" : "text-neutral-400"}`}>{copy.payments}</button>
+        <button type="button" aria-pressed={tab === "usage"} onClick={() => { setTab("usage"); setPage(1); }} className={`min-h-11 rounded-xl px-3 py-2.5 text-sm font-black sm:px-5 ${tab === "usage" ? "bg-white text-black" : "text-neutral-400"}`}>{copy.usage}</button>
       </div>
       {error && <p className="bg-red-400/10 px-5 py-3 text-sm text-red-200">{ui(error)}</p>}
-      <div className="overflow-x-auto">
+      <ActivityCards items={data.items} tab={tab} locale={locale} />
+      <div className="hidden overflow-x-auto lg:block">
         {tab === "payments" ? <table className="w-full min-w-[1400px] table-fixed text-left text-sm">
           <colgroup>
             <col className="w-[170px]" />
@@ -209,11 +260,11 @@ export function AccountActivity() {
             <td className="whitespace-nowrap px-5 py-4 text-neutral-400">{localizedResult(item.result, locale)}</td>
           </tr>)}</tbody>
         </table>}
-        {!data.items.length && <p className="px-5 py-16 text-center text-neutral-500">{copy.empty}</p>}
       </div>
-      <div className="flex items-center justify-between border-t border-white/10 p-4 text-sm">
+      {!data.items.length && <p className="px-5 py-16 text-center text-neutral-500">{copy.empty}</p>}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 p-4 text-sm">
         <span className="text-neutral-500">{ui(label(locale, { ko: `총 ${data.total.toLocaleString(formatLocale(locale))}건 · ${page}/${pages}페이지`, en: `${data.total.toLocaleString(formatLocale(locale))} total · Page ${page}/${pages}`, ja: `全${data.total.toLocaleString(formatLocale(locale))}件・${page}/${pages}ページ` }))}</span>
-        <div className="flex gap-2"><button type="button" disabled={page <= 1} onClick={() => setPage((value) => value - 1)} className="rounded-lg border border-white/10 px-3 py-2 disabled:opacity-30">{copy.previous}</button><button type="button" disabled={page >= pages} onClick={() => setPage((value) => value + 1)} className="rounded-lg border border-white/10 px-3 py-2 disabled:opacity-30">{copy.next}</button></div>
+        <div className="flex gap-2"><button type="button" disabled={page <= 1} onClick={() => setPage((value) => value - 1)} className="min-h-11 rounded-lg border border-white/10 px-3 py-2 disabled:opacity-30">{copy.previous}</button><button type="button" disabled={page >= pages} onClick={() => setPage((value) => value + 1)} className="min-h-11 rounded-lg border border-white/10 px-3 py-2 disabled:opacity-30">{copy.next}</button></div>
       </div>
     </section>
   );

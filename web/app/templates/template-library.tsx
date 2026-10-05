@@ -306,10 +306,12 @@ function EmptyTemplateCard({
   authenticated,
   canUseCustomTemplates,
   onLoginRequest,
+  compact = false,
 }: {
   authenticated: boolean;
   canUseCustomTemplates: boolean;
   onLoginRequest?: (next: string) => void;
+  compact?: boolean;
 }) {
   const ui = useUiText();
   const next = "/templates/new";
@@ -325,11 +327,15 @@ function EmptyTemplateCard({
         event.preventDefault();
         onLoginRequest(next);
       }}
-      className="flex min-h-[456px] flex-col items-center justify-center rounded-2xl border border-dashed border-white/15 bg-white/[.018] px-6 text-center transition duration-300 hover:border-[#ff715e]/50 hover:bg-[#ff715e]/[.035]"
+      className={compact
+        ? "flex min-h-12 items-center justify-center gap-2 rounded-xl border border-[#ff715e]/30 bg-[#ff715e]/10 px-4 py-3 text-sm font-bold text-[#ffad9f] transition hover:border-[#ff715e]/60 hover:bg-[#ff715e]/15 sm:hidden"
+        : "hidden min-h-[456px] flex-col items-center justify-center rounded-2xl border border-dashed border-white/15 bg-white/[.018] px-6 text-center transition duration-300 hover:border-[#ff715e]/50 hover:bg-[#ff715e]/[.035] sm:flex"}
     >
-      <span className="grid h-16 w-16 place-items-center rounded-full border border-white/10 bg-[#1f1f22] text-3xl font-light text-neutral-400 shadow-inner" aria-hidden="true">+</span>
-      <h2 className="mt-5 text-lg font-bold tracking-[-.025em] text-neutral-200">{ui("새 템플릿")}</h2>
-      <p className="mt-2 text-xs font-semibold text-neutral-500">{ui(canUseCustomTemplates ? "빈 화면에서 직접 디자인하기" : "유료 플랜에서 직접 디자인하기")}</p>
+      {compact ? <><span aria-hidden="true" className="text-xl leading-none">+</span><span>{ui("새 템플릿")}</span></> : <>
+        <span className="grid h-16 w-16 place-items-center rounded-full border border-white/10 bg-[#1f1f22] text-3xl font-light text-neutral-400 shadow-inner" aria-hidden="true">+</span>
+        <h2 className="mt-5 text-lg font-bold tracking-[-.025em] text-neutral-200">{ui("새 템플릿")}</h2>
+        <p className="mt-2 text-xs font-semibold text-neutral-500">{ui(canUseCustomTemplates ? "빈 화면에서 직접 디자인하기" : "유료 플랜에서 직접 디자인하기")}</p>
+      </>}
     </Link>
   );
 }
@@ -519,13 +525,14 @@ export function TemplateLibrary({
 
   return (
     <div className="mx-auto w-full max-w-[1040px]">
-      <div className="flex flex-col gap-6 border-b border-white/10 pb-7 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex flex-col gap-5 border-b border-white/10 pb-7 xl:flex-row xl:items-end xl:justify-between">
         <div>
-          <h1 className="text-[28px] font-black tracking-[-.045em] text-[#e4e1e6] sm:text-4xl">{translateLegacyText("템플릿 라이브러리", locale)}</h1>
+          <h1 className="break-keep text-[28px] font-black tracking-[-.045em] text-[#e4e1e6] sm:text-4xl">{translateLegacyText("템플릿 라이브러리", locale)}</h1>
 
         </div>
 
-        <label className="relative block w-full sm:w-64">
+        <div className="flex w-full flex-col gap-3 xl:w-64 xl:shrink-0">
+        <label className="relative block w-full">
           <span className="sr-only">{translateLegacyText("템플릿 검색", locale)}</span>
           <span aria-hidden="true" className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-lg text-neutral-500">⌕</span>
           <input
@@ -536,6 +543,8 @@ export function TemplateLibrary({
             className="h-11 w-full rounded-xl border border-white/10 bg-[#1f1f22] pl-10 pr-4 text-sm text-neutral-100 outline-none transition placeholder:text-neutral-600 focus:border-[#ff715e]/70 focus:ring-2 focus:ring-[#ff715e]/10"
           />
         </label>
+        <EmptyTemplateCard compact authenticated={authenticated} canUseCustomTemplates={canUseCustomTemplates} onLoginRequest={onLoginRequest} />
+        </div>
       </div>
 
       <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4" aria-live="polite">
