@@ -18,9 +18,10 @@
 
 ## Verification
 
-- `make lint` includes Python static checks, web ESLint and TypeScript.
+- Python static checks and web ESLint passed. TypeScript initially found the new worktree lacked the existing local PGlite test runtime; linking that existing runtime resolved it and typecheck passed.
 - Existing legal/footer/SEO/sidebar-announcement tests: 34 passed across 6 files.
 - Existing release guard tests: 8 passed.
+- Local production build passed. At 1440px the affected pages and EN/JP samples have no horizontal overflow. At 390/768px the support table revealed an intrinsic-width overflow; constrain the legal main to the available width so the table scroll stays inside its wrapper. Sidebar collapse/expand and the mobile drawer passed.
 - Candidate route manifest must preserve all baseline routes and the existing release guard. Compare actual Vercel lambda paths as well.
 - Check the actual unaliased candidate before promotion: home, guidebook, pricing, administrator login boundary, editor route, affected footer pages and desktop/mobile sidebar interactions. Promote that exact deployment without rebuilding.
 - This is navigation/layout verification, not video generation, billing or worker execution verification.

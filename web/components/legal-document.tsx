@@ -56,7 +56,7 @@ export function LegalDocument({ eyebrow, title, description, effectiveDate, chil
       <SiteHeader desktopSidebar showUsageIndicator={false}>
         <Link href="/" className="header-cta">{t("legal.home")}</Link>
       </SiteHeader>
-      <main className="mx-auto max-w-4xl px-5 py-14 sm:px-8 sm:py-20">
+      <main className="mx-auto w-full min-w-0 max-w-4xl px-5 py-14 sm:px-8 sm:py-20">
         <div className="border-b border-white/10 pb-10">
           <p className="text-xs font-black uppercase tracking-[.22em] text-[#ff8c7c]">{translated?.eyebrow ?? eyebrow}</p>
           <h1 className="mt-4 text-[28px] font-black tracking-tight text-white sm:text-[42px]">{translated?.title ?? title}</h1>
