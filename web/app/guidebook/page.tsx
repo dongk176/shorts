@@ -42,9 +42,9 @@ export default async function GuidebookPage() {
   };
 
   return (
-    <div className="app-shell site-chrome min-h-screen text-neutral-100">
+    <div className="app-shell site-chrome desktop-sidebar-layout min-h-screen text-neutral-100">
       <StructuredData data={documentData} />
-      <SiteHeader>
+      <SiteHeader desktopSidebar>
         <AuthControls
           user={user ? authProfile(user) : null}
           next={PAGE_PATH}

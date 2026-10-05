@@ -118,10 +118,10 @@ export default async function AiShortsToolsComparisonPage() {
   const articleData = localizedArticle(locale, PAGE_PATH, searchCopy.title, searchCopy.description, PUBLISHED_DATE, REVIEWED_DATE);
   const breadcrumbData = localizedBreadcrumb(locale, PAGE_PATH, searchCopy.title.split(" | ")[0]);
   return (
-    <div className="app-shell site-chrome min-h-screen text-neutral-100">
+    <div className="app-shell site-chrome desktop-sidebar-layout min-h-screen text-neutral-100">
       <StructuredData data={articleData} />
       <StructuredData data={breadcrumbData} />
-      <SiteHeader><AuthControls user={user ? authProfile(user) : null} next={PAGE_PATH} /></SiteHeader>
+      <SiteHeader desktopSidebar><AuthControls user={user ? authProfile(user) : null} next={PAGE_PATH} /></SiteHeader>
       <main className="mx-auto w-full max-w-6xl px-5 pb-24 pt-10 sm:px-8 sm:pt-14">
         <header className="mx-auto max-w-4xl py-12 text-center sm:py-16">
           <p className="text-xs font-black uppercase tracking-[.2em] text-[#ff9b8d]">2026 AI Shorts Tools</p>

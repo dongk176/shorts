@@ -154,9 +154,9 @@ export default async function TeamPage() {
   };
 
   return (
-    <div className="app-shell site-chrome min-h-screen text-neutral-100">
+    <div className="app-shell site-chrome desktop-sidebar-layout min-h-screen text-neutral-100">
       <StructuredData data={personData} />
-      <SiteHeader>
+      <SiteHeader desktopSidebar>
         <AuthControls user={user ? authProfile(user) : null} next={PAGE_PATH} />
       </SiteHeader>
 

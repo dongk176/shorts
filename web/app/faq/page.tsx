@@ -67,10 +67,10 @@ export default async function FaqPage() {
   const breadcrumbData = localizedBreadcrumb(locale, PAGE_PATH, { ko: "자주 묻는 질문", en: "FAQ", ja: "よくある質問" }[locale]);
 
   return (
-    <div className="app-shell site-chrome min-h-screen text-neutral-100">
+    <div className="app-shell site-chrome desktop-sidebar-layout min-h-screen text-neutral-100">
       <StructuredData data={faqData} />
       <StructuredData data={breadcrumbData} />
-      <SiteHeader><AuthControls user={user ? authProfile(user) : null} next={PAGE_PATH} /></SiteHeader>
+      <SiteHeader desktopSidebar><AuthControls user={user ? authProfile(user) : null} next={PAGE_PATH} /></SiteHeader>
       <main className="mx-auto w-full max-w-5xl px-5 pb-24 pt-10 sm:px-8 sm:pt-14">
         <header className="mx-auto max-w-3xl py-12 text-center sm:py-16">
           <p className="text-xs font-black uppercase tracking-[.2em] text-[#ff9b8d]">FAQ</p>
