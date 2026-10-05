@@ -279,4 +279,15 @@ describe("persisted monitoring and delivery", () => {
     await pg.exec("update shorts_mvp.ingestion_route_slots set enabled=false");await scanMobileEvents();
     expect((await pg.query("select id from shorts_mvp.admin_mobile_events where resolved_at is null")).rows).toHaveLength(0);
   });
+  it("alerts on a poor daily sample even with few hourly attempts and identifies the correct period",async()=>{
+    inventoryMock.mockResolvedValue([{routeId:"webshare-01",identity:"abc1234567",assignedAt:new Date(Date.now()-86400000).toISOString(),assignmentExact:true}]);
+    await pg.exec(`insert into shorts_mvp.ingestion_route_slots values('webshare-01',true,null);
+      insert into shorts_mvp.video_jobs(id,status,created_at) values('${sid}','completed',now()-interval '23 hours');
+      insert into shorts_mvp.ingestion_attempts(job_id,route_id,result,created_at)
+      select '${sid}','webshare-01','bot_check',now()-interval '2 hours'-i*interval '1 minute' from generate_series(1,30) i;
+      insert into shorts_mvp.ingestion_attempts(job_id,route_id,result) values('${sid}','webshare-01','success');`);
+    await scanMobileEvents();await scanMobileEvents();
+    const {rows}=await pg.query<{payload:{summary:string}}>("select payload from shorts_mvp.admin_mobile_events where incident_key like 'route:%'");
+    expect(rows).toHaveLength(1);expect(rows[0].payload.summary).toContain("24시간");expect(rows[0].payload.summary).toContain("1/31");
+  });
 });

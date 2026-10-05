@@ -5,16 +5,21 @@ import { loadRouteAssignments } from "@/lib/admin-ip-inventory";
 type Sample = [number, number] | null;
 export function ipRecommendation(enabled: boolean, samples: Record<string,Sample>, streak: number | null, peers: number | null) {
   if (!enabled) return { recommendation:"일시 제외", reason:"현재 수집에 사용하지 않는 경로예요." };
-  const short = samples["1"], long = samples["24"];
+  const short = samples["1"], medium = samples["6"], long = samples["24"];
   if (!short) return { recommendation:"미확인", reason:"현재 IP 이력 또는 실패 유형을 확인하지 못했어요." };
   const shortBad = short[1] >= 20 && short[0]/short[1] < .8;
   const longBad = long && long[1] >= 30 && long[0]/long[1] < .6;
   const individuallyBad = longBad && peers !== null && peers-long[0]/long[1] >= .2;
-  if (individuallyBad && (shortBad || (streak ?? 0) >= 5)) return {
-    recommendation:"교체 검토", reason:"하루 성공률이 60% 미만이고 다른 경로보다 20%p 이상 낮아요. 최근 실패도 이어지고 있어요." };
+  const mediumBad = medium && medium[1]>=10 && medium[0]/medium[1]<.6;
+  const shortRecovered = short[1]>=5 && short[0]/short[1]>=.8 && streak===0;
+  if (individuallyBad && !shortRecovered && (shortBad || mediumBad || (streak ?? 0) >= 5)) return {
+    recommendation:"교체 검토", reason:"하루 성공률이 60% 미만이고 다른 경로보다 20%p 이상 낮아요. 최근 구간에서도 실패가 이어지고 있어요." };
   if (shortBad || (streak ?? 0) >= 5) return {
     recommendation:"관찰", reason:(streak ?? 0) >= 5 ? "봇 확인 실패가 5회 이상 이어졌어요. 긴 구간 추세도 확인해주세요." : "최근 1시간 성공률이 80% 미만이에요. 다른 경로의 상태도 함께 확인해주세요." };
-  if (short[1] < 5) return { recommendation:"표본 부족", reason:short[1] ? "최근 시도가 적어요. 긴 구간의 성공률도 함께 봐주세요." : "최근 1시간에는 수집 시도가 없어요." };
+  if (long && long[1]>=30 && long[0]/long[1]<.8) return {
+    recommendation:"관찰", reason:shortRecovered ? "최근 시도는 나아졌지만 하루 성공률은 80% 미만이에요. 회복 추세를 확인해주세요." : "하루 30회 이상 시도에서 성공률이 80% 미만이에요. 최근 시도가 적어도 긴 구간의 실패는 확인이 필요해요." };
+  if (short[1] < 5 && (!long || long[1]<30)) return { recommendation:"표본 부족", reason:"현재 IP의 시도 기록이 적어요. 더 쌓인 뒤 추세를 확인해주세요." };
+  if (short[1] < 5) return { recommendation:"유지", reason:"최근 1시간 시도가 적어 하루 추세를 함께 확인했어요. 하루 성공률은 80% 이상이에요." };
   return { recommendation:"유지", reason:"현재 IP의 확인된 이력 이후 기록이에요. 최근 경고 기준에 해당하지 않아요." };
 }
 

@@ -104,14 +104,17 @@ export async function scanMobileEvents() {
         await tx`update shorts_mvp.admin_mobile_events set resolved_at=now() where incident_key=${key} and resolved_at is null`;
         continue;
       }
-      const sample = route.samples["1"], streak=route.consecutiveFailures;
+      const sample = route.samples["1"], long=route.samples["24"], streak=route.consecutiveFailures;
       const fresh = !!route.lastAttempt && Date.now()-Date.parse(route.lastAttempt)<15*60_000;
-      const bad = sample && ((sample[1]>=20 && sample[0]/sample[1]<.8) || (fresh && (streak??0)>=5));
+      const longBad = !!long && long[1]>=30 && long[0]/long[1]<.6;
       const healthy = sample && sample[1]>=5 && sample[0]/sample[1]>=.8 && streak===0;
-      const summary = route.id+" · "+(sample?.[1] ? Math.round(sample[0]/sample[1]*100)+"% ("+sample[0]+"/"+sample[1]+")" : "표본 확인 중")+" · 연속 실패 "+(streak??"미확인")+"회";
+      const bad = sample && ((sample[1]>=20 && sample[0]/sample[1]<.8) || (fresh && (streak??0)>=5) || (fresh && longBad && !healthy));
+      const shown = longBad && (!sample || sample[1]<20) ? long : sample;
+      const period = shown===long ? "24시간" : "1시간";
+      const summary = route.id+" · "+period+" "+(shown?.[1] ? Math.round(shown[0]/shown[1]*100)+"% ("+shown[0]+"/"+shown[1]+")" : "표본 확인 중")+" · 연속 실패 "+(streak??"미확인")+"회";
       await syncIncident(tx, { key, active:bad?true:healthy?false:null,
         title: route.recommendation==="교체 검토" ? "교체를 검토할 IP가 있어요" : "IP 수집 성공률을 확인해주세요",
-        detail:summary+" · 최근 1시간 · 현재 IP 기록", nextStep:route.reason,
+        detail:summary+" · 현재 IP 기록", nextStep:route.reason,
         impact:route.id, urgent:false, payload:{routeId:route.id,identity:route.identity,summary} });
     }
     await tx`insert into shorts_mvp.admin_mobile_deliveries(event_id,subscription_id)
