@@ -96,7 +96,7 @@ export async function scanMobileEvents() {
     for (const incident of operationalIncidents(health)) await syncIncident(tx, incident);
     for (const route of routes) {
       if (!route.identity || !route.assignedAt) continue;
-      const key = "route:"+route.id+":"+route.identity+":"+route.assignedAt;
+      const key = "route:"+route.id+":"+route.identity;
       // A replacement retires the old IP's incident without claiming recovery.
       await tx`update shorts_mvp.admin_mobile_events set resolved_at=now()
         where resolved_at is null and incident_key like ${"route:"+route.id+":%"} and incident_key<>${key}`;
@@ -121,7 +121,7 @@ export async function scanMobileEvents() {
       where e.occurred_at>=now()-interval '1 hour' and e.resolved_at is null
       on conflict(event_id,subscription_id) do nothing`;
     await tx`update shorts_mvp.admin_mobile_monitor_state set last_success_at=now() where singleton`;
-    return { skipped: false };
+    return { skipped: false, ipRoutes: routes.length, ipVerified: routes.filter(route=>route.identity).length };
   });
 }
 

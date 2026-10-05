@@ -263,6 +263,11 @@ describe("persisted monitoring and delivery", () => {
     await scanMobileEvents();await scanMobileEvents();
     let rows=(await pg.query<{payload:{routeId:string},resolved_at:string|null}>("select payload,resolved_at from shorts_mvp.admin_mobile_events where incident_key like 'route:%'")).rows;
     expect(rows).toHaveLength(1);expect(rows[0].payload.routeId).toBe("webshare-01");
+    // A bounded historical snapshot can move its known-since timestamp while
+    // the current IP stays identical. That must not re-notify the same problem.
+    inventoryMock.mockResolvedValue([{routeId:"webshare-01",identity:"abc1234567",assignedAt:new Date(Date.now()-1800000).toISOString(),assignmentExact:false}]);
+    expect(await scanMobileEvents()).toMatchObject({ipRoutes:1,ipVerified:1});
+    expect((await pg.query("select id from shorts_mvp.admin_mobile_events where incident_key like 'route:%'")).rows).toHaveLength(1);
     inventoryMock.mockResolvedValue([]);await scanMobileEvents();
     expect((await pg.query("select id from shorts_mvp.admin_mobile_events where resolved_at is null")).rows).toHaveLength(1);
     inventoryMock.mockResolvedValue([{routeId:"webshare-01",identity:"new1234567",assignedAt:new Date().toISOString(),assignmentExact:true}]);
