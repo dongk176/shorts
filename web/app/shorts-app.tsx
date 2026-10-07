@@ -420,6 +420,7 @@ const subtitleCaptionPositionOptions: ReadonlyArray<{
 type ProjectActionAccess = {
   canEdit: boolean;
   canDownload: boolean;
+  canPublish: boolean;
 };
 
 function editableCustomTemplate(item: GeneratedShort): CustomTemplate | null {
@@ -12958,7 +12959,7 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
                         : access.canDownload
                           ? <a data-project-guide={item.id === guideDownloadShortId ? "download" : undefined} href={`/api/shorts/${encodeURIComponent(item.id)}/download`} download={shortDownloadFilename(item.hookTitle)} className="tool-button short-download-button flex items-center justify-center" aria-label={locale === "ko" ? `${item.hookTitle} 다운로드` : locale === "en" ? `Download ${item.hookTitle}` : `${item.hookTitle}をダウンロード`}>{ui("↓ 다운로드")}</a>
                           : <button data-project-guide={item.id === guideDownloadShortId ? "download" : undefined} type="button" onClick={() => setDownloadPaywallOpen(true)} className="tool-button short-download-button">{ui("↓ 다운로드")}</button>}
-                      {(adminPublishingEnabled || youtubePublishingEnabled && access.canDownload || metaReviewerShortId === item.id || youtubeReviewerShortId === item.id) && !job.isExample && !itemIsRerendering && item.status === "ready" && <AdminPublishingButton adminEnabled={adminPublishingEnabled} shortId={item.id} title={item.hookTitle} tiktokEnabled={adminPublishingEnabled} metaOnly={!adminPublishingEnabled} metaEnabled={adminPublishingEnabled || metaReviewerShortId === item.id} youtubeEnabled={youtubePublishingEnabled || youtubeReviewerShortId === item.id}/>}
+                      {(adminPublishingEnabled || youtubePublishingEnabled && access.canPublish || metaReviewerShortId === item.id || youtubeReviewerShortId === item.id) && !job.isExample && !itemIsRerendering && item.status === "ready" && <AdminPublishingButton adminEnabled={adminPublishingEnabled} shortId={item.id} title={item.hookTitle} tiktokEnabled={adminPublishingEnabled} metaOnly={!adminPublishingEnabled} metaEnabled={adminPublishingEnabled || metaReviewerShortId === item.id} youtubeEnabled={youtubePublishingEnabled || youtubeReviewerShortId === item.id}/>}
                     </div>
                     {subtitleEditorUnavailable && (
                       <p className="mt-2 text-center text-xs font-medium text-neutral-400">
@@ -13027,7 +13028,7 @@ export function ShortEditorPage({ projectNumber, shortId, rangeEditingEnabled = 
 export function ProjectPage({ projectNumber, adminSubtitleLayoutEnabled = false, unifiedTemplateSubtitleCanaryEnabled = false, adminPublishingEnabled = false, metaReviewerShortId = null, youtubeReviewerShortId = null, youtubePublishingEnabled = false }: { projectNumber: number; adminSubtitleLayoutEnabled?: boolean; unifiedTemplateSubtitleCanaryEnabled?: boolean; adminPublishingEnabled?: boolean; metaReviewerShortId?: string | null; youtubeReviewerShortId?: string | null; youtubePublishingEnabled?: boolean }) {
   const ui = useUiText();
   const [project, setProject] = useState<VideoJob | null>(null);
-  const [access, setAccess] = useState<ProjectActionAccess>({ canEdit: false, canDownload: false });
+  const [access, setAccess] = useState<ProjectActionAccess>({ canEdit: false, canDownload: false, canPublish: false });
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 

@@ -49,11 +49,13 @@ describe("project download route", () => {
     expect(mocks.archive).not.toHaveBeenCalled();
   });
 
-  it.each([GET, HEAD])("rejects unpaid or inaccessible projects", async (handler) => {
+  it.each([GET, HEAD])("allows free members to download owned projects", async (handler) => {
     mocks.billing.mockResolvedValue({ activeProducts: [] });
-    expect((await handler(request(), context())).status).toBe(402);
-    expect(mocks.db).not.toHaveBeenCalled();
-    mocks.billing.mockResolvedValue({ activeProducts: [{ planCode: "plus" }] });
+    expect((await handler(request(), context())).status).toBe(200);
+  });
+
+  it.each([GET, HEAD])("rejects inaccessible projects for free members", async (handler) => {
+    mocks.billing.mockResolvedValue({ activeProducts: [] });
     mocks.db.mockResolvedValue([]);
     expect((await handler(request(), context())).status).toBe(404);
     expect(mocks.archive).not.toHaveBeenCalled();

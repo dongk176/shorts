@@ -2,7 +2,6 @@ import { resolveSourceLanguage } from "@/lib/language-context";
 import { languageTestCommentProfile } from "@/lib/language-test";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getBillingSummary } from "@/lib/billing";
 import {
   generateCommentsWithGemini,
   paidGeminiCommentGenerationEnabled,
@@ -13,7 +12,6 @@ import { assertEnterpriseSessionServiceAccess } from "@/lib/enterprise-access";
 import { editorOverlayPreviewEnabled } from "@/lib/editor-overlay-preview-flag";
 import { editorRenderingV2Enabled } from "@/lib/editor-rendering-release";
 import { apiError, HttpError } from "@/lib/http";
-import { assertPaidProjectActionAccess } from "@/lib/project-action-entitlements";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 import { getEffectiveSubtitleTemplateAccess } from "@/lib/subtitle-template-release";
 import {
@@ -94,9 +92,7 @@ export async function POST(
         and status='reserved'
         and created_at<clock_timestamp()-interval '5 minutes'
     `;
-    const [billing, shortRows] = await Promise.all([
-      getBillingSummary(db, session.userId),
-      db`
+    const shortRows = await db`
         select
           generated_short.id,
           generated_short.hook_title,
@@ -120,9 +116,8 @@ export async function POST(
           and generated_short.expires_at>clock_timestamp()
           and generated_short.status='ready'
         limit 1
-      `,
-    ]);
-    assertPaidProjectActionAccess(billing, "edit");
+      `;
+
     const generatedShort = shortRows[0] as {
       id: string;
       hookTitle: string;

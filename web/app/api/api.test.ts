@@ -3446,7 +3446,7 @@ describe("job API security and idempotency", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
       project: { id: "job-a", projectNumber: 12 },
-      access: { canEdit: true, canDownload: true },
+      access: { canEdit: true, canDownload: true, canPublish: true },
     });
     expect(mocks.projectByNumber).toHaveBeenCalledWith(
       expect.anything(),
@@ -3474,7 +3474,7 @@ describe("job API security and idempotency", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
       project: { id: "example-job", projectNumber: 12, isExample: true },
-      access: { canEdit: false, canDownload: false },
+      access: { canEdit: false, canDownload: false, canPublish: false },
     });
     expect(mocks.authenticatedSession).not.toHaveBeenCalled();
     expect(mocks.projectByNumber).not.toHaveBeenCalled();
@@ -3515,7 +3515,7 @@ describe("job API security and idempotency", () => {
     expect(mocks.projectByNumber).not.toHaveBeenCalled();
   });
 
-  it("returns blocked project actions without an active paid product", async () => {
+  it("allows free editing and downloads while keeping publishing paid", async () => {
     mocks.getDb.mockReturnValue(dbWithRows());
     mocks.projectByNumber.mockResolvedValue({ id: "job-free", projectNumber: 14 });
     mocks.billing.mockResolvedValue({ activeProducts: [] });
@@ -3528,7 +3528,7 @@ describe("job API security and idempotency", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
       project: { id: "job-free", projectNumber: 14 },
-      access: { canEdit: false, canDownload: false },
+      access: { canEdit: true, canDownload: true, canPublish: false },
     });
   });
 
@@ -3548,7 +3548,7 @@ describe("job API security and idempotency", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
       project: { id: "job-managed", projectNumber: 15 },
-      access: { canEdit: true, canDownload: true },
+      access: { canEdit: true, canDownload: true, canPublish: true },
     });
   });
 });
@@ -3562,35 +3562,52 @@ describe("plan API", () => {
 });
 
 describe("short ownership, expiry, and edit validation", () => {
-  it("does not issue a download URL without an active paid product", async () => {
+  beforeEach(() => {
+    // The entire edit/source/timeline/save/rerender suite also covers free members.
     mocks.billing.mockResolvedValue({ activeProducts: [] });
-    mocks.getDb.mockReturnValue(dbWithRows([{ allowed: false }]));
+  });
 
+  it("issues an owned download URL to a free member", async () => {
+    mocks.getDb.mockReturnValue(dbWithRows([{
+      outputS3Key: "outputs/free-short.mp4",
+      expiresAt: new Date(Date.now() + 60_000),
+      hookTitle: "무료 쇼츠",
+    }]));
     const response = await downloadShort(
       new Request("http://localhost/api/shorts/short-free/download"),
       { params: Promise.resolve({ shortId: "short-free" }) },
     );
-
-    expect(response.status).toBe(402);
-    await expect(response.json()).resolves.toMatchObject({
-      code: "PAID_PROJECT_ACTION_REQUIRED",
-    });
-    expect(mocks.shortDownloadUrl).not.toHaveBeenCalled();
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toBe("https://cdn.example.com/signed-download.mp4");
+    expect(mocks.shortDownloadUrl).toHaveBeenCalledOnce();
   });
 
-  it("does not issue an edit source URL without an active paid product", async () => {
-    mocks.billing.mockResolvedValue({ activeProducts: [] });
-    mocks.getDb.mockReturnValue(dbWithRows([{ allowed: false }]));
-
+  it("issues an owned edit source URL to a free member", async () => {
+    process.env.CLOUDFRONT_DOMAIN = "cdn.example.com";
+    process.env.CLOUDFRONT_KEY_PAIR_ID = "key-pair";
+    process.env.CLOUDFRONT_PRIVATE_KEY_B64 = Buffer.from("private-key").toString("base64");
+    mocks.getDb.mockReturnValue(dbWithRows([{
+      cleanClipS3Key: "edit-sources/free-clean.mp4",
+      expiresAt: new Date(Date.now() + 60_000),
+    }]));
     const response = await accessEditSource(
       new Request("http://localhost/api/shorts/short-free/edit-source"),
       { params: Promise.resolve({ shortId: "short-free" }) },
     );
-
-    expect(response.status).toBe(402);
+    expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
-      code: "PAID_PROJECT_ACTION_REQUIRED",
+      url: "https://cdn.example.com/signed-edit-source.mp4",
     });
+  });
+
+  it.each([downloadShort, accessEditSource])("requires authentication before signing free member media", async (handler) => {
+    mocks.authenticatedSession.mockRejectedValue(new HttpError(401, "로그인이 필요합니다."));
+    const response = await handler(
+      new Request("http://localhost/api/shorts/short-free/access"),
+      { params: Promise.resolve({ shortId: "short-free" }) },
+    );
+    expect(response.status).toBe(401);
+    expect(mocks.shortDownloadUrl).not.toHaveBeenCalled();
     expect(mocks.signedUrl).not.toHaveBeenCalled();
   });
 
@@ -3848,10 +3865,12 @@ describe("short ownership, expiry, and edit validation", () => {
     expect(begin).not.toHaveBeenCalled();
   });
 
-  it("queues rerendering in the database without calling Batch from Vercel", async () => {
+  it("queues a free welcome member first rerender without calling Batch from Vercel", async () => {
     const db = dbWithRows([{
       id: "short-a",
       status: "ready",
+      renderVersion: 1,
+      onboardingWelcomeFunded: true,
       renderedConfigHash: "old-hash",
       currentConfigHash: "new-hash",
     }]);

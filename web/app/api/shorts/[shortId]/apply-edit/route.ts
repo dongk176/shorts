@@ -8,7 +8,6 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import type { JSONValue } from "postgres";
 import { putEditorChannelAsset } from "@/lib/aws";
-import { getBillingSummary } from "@/lib/billing";
 import {
   captionRenderSpecForEditor,
   captionSpecMatchesTemplate,
@@ -62,7 +61,6 @@ import {
   ONBOARDING_WELCOME_PRODUCT_CODE,
   onboardingWelcomeRerenderAllowed,
 } from "@/lib/onboarding-welcome";
-import { assertPaidProjectActionAccess } from "@/lib/project-action-entitlements";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 import {
   getEffectiveSubtitleTemplateAccess,
@@ -286,8 +284,7 @@ async function applyEditorDocument({
       "EDITOR_SUBTITLE_EDITING_DISABLED",
     );
   }
-  const billing = await getBillingSummary(db, session.userId);
-  assertPaidProjectActionAccess(billing, "edit");
+
   const requestedClipWindows = requestedDocument.video.clips.map((clip) => ({
     sourceStartSeconds: clip.sourceStartSeconds,
     sourceEndSeconds: clip.sourceEndSeconds,
@@ -954,8 +951,7 @@ export async function POST(request: Request, context: { params: Promise<{ shortI
     const session = await requireAuthenticatedMvpSession();
     const db = getDb();
     await assertEnterpriseSessionServiceAccess(db, session);
-    const billing = await getBillingSummary(db, session.userId);
-    assertPaidProjectActionAccess(billing, "edit");
+
     const existingRows = await db`
       select s.id,s.status,s.render_version,s.duration_seconds,
           s.template_id,s.custom_template_id,

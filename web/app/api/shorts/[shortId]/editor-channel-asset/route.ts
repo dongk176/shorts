@@ -2,13 +2,11 @@ import { getSignedUrl } from "@aws-sdk/cloudfront-signer";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
-import { getBillingSummary } from "@/lib/billing";
 import { getDb } from "@/lib/db";
 import {
   subtitleEditingReleaseEnabled,
 } from "@/lib/editor-rendering-release";
 import { apiError, HttpError } from "@/lib/http";
-import { assertPaidProjectActionAccess } from "@/lib/project-action-entitlements";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 import { resolveUnifiedTemplateSubtitleEditorContext } from "@/lib/subtitle-template-release";
 import {
@@ -30,8 +28,7 @@ export async function GET(
     const { shortId } = await context.params;
     const session = await requireAuthenticatedMvpSession();
     const db = getDb();
-    const billing = await getBillingSummary(db, session.userId);
-    assertPaidProjectActionAccess(billing, "edit");
+
     const rows = await db`
       select
         s.editor_document->'channel'->>'thumbnailAssetKey' as asset_key,

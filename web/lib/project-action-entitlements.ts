@@ -29,3 +29,21 @@ export function assertPaidProjectActionAccess(
     );
   }
 }
+
+export type ProjectActionAccess = {
+  canEdit: boolean;
+  canDownload: boolean;
+  canPublish: boolean;
+};
+
+// Call only after authenticating the owner and checking project availability.
+// Editing/downloading use the existing ownership, retention and usage limits.
+export function ownedProjectActionAccess(
+  billing: FeatureEntitlementBilling,
+): ProjectActionAccess {
+  return {
+    canEdit: true,
+    canDownload: true,
+    canPublish: billingSupportsPaidProjectActions(billing),
+  };
+}

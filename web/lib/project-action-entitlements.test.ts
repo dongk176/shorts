@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   assertPaidProjectActionAccess,
+  ownedProjectActionAccess,
   billingSupportsPaidProjectActions,
   paidProjectActionMessages,
 } from "./project-action-entitlements";
@@ -42,5 +43,20 @@ describe("paid project action entitlements", () => {
     expect(billingSupportsPaidProjectActions(billing)).toBe(true);
     expect(() => assertPaidProjectActionAccess(billing, "edit")).not.toThrow();
     expect(() => assertPaidProjectActionAccess(billing, "download")).not.toThrow();
+  });
+});
+
+
+describe("owned project actions", () => {
+  it("allows free editing and downloads without granting publishing", () => {
+    expect(ownedProjectActionAccess({ activeProducts: [] })).toEqual({
+      canEdit: true, canDownload: true, canPublish: false,
+    });
+  });
+
+  it("preserves managed member publishing", () => {
+    expect(ownedProjectActionAccess({ activeProducts: [], hasManagedFeatureAccess: true })).toEqual({
+      canEdit: true, canDownload: true, canPublish: true,
+    });
   });
 });

@@ -2,14 +2,12 @@ import { getSignedUrl } from "@aws-sdk/cloudfront-signer";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
-import { getBillingSummary } from "@/lib/billing";
 import { getDb } from "@/lib/db";
 import { assertEnterpriseSessionServiceAccess } from "@/lib/enterprise-access";
 import {
   subtitleEditingReleaseEnabled,
 } from "@/lib/editor-rendering-release";
 import { apiError, HttpError } from "@/lib/http";
-import { assertPaidProjectActionAccess } from "@/lib/project-action-entitlements";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 import { resolveUnifiedTemplateSubtitleEditorContext } from "@/lib/subtitle-template-release";
 import {
@@ -25,8 +23,7 @@ export async function GET(_: Request, context: { params: Promise<{ shortId: stri
     const session = await requireAuthenticatedMvpSession();
     const db = getDb();
     await assertEnterpriseSessionServiceAccess(db, session);
-    const billing = await getBillingSummary(db, session.userId);
-    assertPaidProjectActionAccess(billing, "edit");
+
     const rows = await db`
       select s.clean_clip_s3_key, s.expires_at, s.subtitle_template_id,
         s.subtitle_template_snapshot

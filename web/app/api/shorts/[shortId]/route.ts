@@ -1,13 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { deleteShortObjects } from "@/lib/aws";
-import { getBillingSummary } from "@/lib/billing";
 import { templateIds } from "@/lib/contracts";
 import { getDb } from "@/lib/db";
 import { assertEnterpriseSessionServiceAccess } from "@/lib/enterprise-access";
 import { resolveEditedTemplateSelection } from "@/lib/edit-template-selection";
 import { apiError, HttpError } from "@/lib/http";
-import { assertPaidProjectActionAccess } from "@/lib/project-action-entitlements";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 import { storedShortHasCustomDesign } from "@/lib/template-design";
 
@@ -72,8 +70,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ short
     const session = await requireAuthenticatedMvpSession();
     const db = getDb();
     await assertEnterpriseSessionServiceAccess(db, session);
-    const billing = await getBillingSummary(db, session.userId);
-    assertPaidProjectActionAccess(billing, "edit");
+
     const existing = await db`
       select s.id, s.subtitle_segments, s.duration_seconds, s.template_id,
         s.custom_template_id, s.template_snapshot, s.subtitle_template_id,

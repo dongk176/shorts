@@ -5,7 +5,7 @@ import { getDb } from "@/lib/db";
 import { withReadRequest } from "@/lib/read-request";
 import { assertEnterpriseSessionServiceAccess } from "@/lib/enterprise-access";
 import { apiError, HttpError } from "@/lib/http";
-import { billingSupportsPaidProjectActions } from "@/lib/project-action-entitlements";
+import { ownedProjectActionAccess } from "@/lib/project-action-entitlements";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 import {
   getEffectiveSubtitleTemplateAccess,
@@ -38,7 +38,7 @@ export async function GET(
       if (publicExample) {
         const response = NextResponse.json({
           project: publicExample,
-          access: { canEdit: false, canDownload: false },
+          access: { canEdit: false, canDownload: false, canPublish: false },
         });
         response.headers.set("Cache-Control", "no-store");
         return response;
@@ -54,11 +54,10 @@ export async function GET(
         includeExactWordTimingAvailability: subtitleTemplateAccess.unifiedEnabled,
       }));
       if (!project) throw new HttpError(404, "프로젝트를 찾을 수 없습니다.");
-      const hasPaidAccess = billingSupportsPaidProjectActions(billing);
 
       const response = NextResponse.json({
         project,
-        access: { canEdit: hasPaidAccess, canDownload: hasPaidAccess },
+        access: ownedProjectActionAccess(billing),
       });
       response.headers.set("Cache-Control", "private, no-store");
       return response;

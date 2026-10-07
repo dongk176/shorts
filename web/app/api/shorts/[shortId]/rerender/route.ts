@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { getBillingSummary } from "@/lib/billing";
 import { getDb } from "@/lib/db";
 import { assertEnterpriseSessionServiceAccess } from "@/lib/enterprise-access";
 import { apiError, HttpError } from "@/lib/http";
@@ -8,7 +7,6 @@ import {
   ONBOARDING_WELCOME_PRODUCT_CODE,
   onboardingWelcomeRerenderAllowed,
 } from "@/lib/onboarding-welcome";
-import { assertPaidProjectActionAccess } from "@/lib/project-action-entitlements";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 import { storedShortHasCustomDesign } from "@/lib/template-design";
 
@@ -18,8 +16,7 @@ export async function POST(_: Request, context: { params: Promise<{ shortId: str
     const session = await requireAuthenticatedMvpSession();
     const db = getDb();
     await assertEnterpriseSessionServiceAccess(db, session);
-    const billing = await getBillingSummary(db, session.userId);
-    assertPaidProjectActionAccess(billing, "edit");
+
     const rows = await db`
       select s.id,s.status,s.render_version,s.rendered_config_hash,
         s.subtitle_template_id,s.template_snapshot,s.editor_document,

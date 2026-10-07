@@ -42,7 +42,7 @@ export function accountServices() {
       await assertHostedYoutubeAccess(getDb(), userId);
       if (userId === config.grant.userId || await canUseYoutubeAdminPublishing(getDb(), userId)) return;
     }
-    // Publishing must retain the same paid entitlement as downloading this output.
+    // Publishing retains its paid entitlement independently of free editing/downloads.
     assertPaidProjectActionAccess(await getBillingSummary(getDb(), userId), "download");
   });
   const uploads = new YoutubeAccountUploads(getDb(), store, service, vault, config, path.join(process.cwd(), "storage/youtube-account-sources"), fetch, config.hosted ? new HostedYoutubeSources() : undefined);

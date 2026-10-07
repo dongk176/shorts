@@ -1,8 +1,6 @@
-import { getBillingSummary } from "@/lib/billing";
 import { getDb } from "@/lib/db";
 import { assertEnterpriseSessionServiceAccess } from "@/lib/enterprise-access";
 import { apiError, HttpError } from "@/lib/http";
-import { assertPaidProjectActionAccess } from "@/lib/project-action-entitlements";
 import { projectDownloadArchive, type ProjectDownloadItem } from "@/lib/project-download-archive";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 
@@ -25,8 +23,7 @@ async function downloadItems(context: Context) {
   const session = await requireAuthenticatedMvpSession();
   const db = getDb();
   await assertEnterpriseSessionServiceAccess(db, session);
-  const billing = await getBillingSummary(db, session.userId);
-  assertPaidProjectActionAccess(billing, "download");
+
   const rows = await db`
     select s.output_s3_key,s.hook_title,s.expires_at
     from shorts_mvp.generated_shorts s
