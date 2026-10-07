@@ -3611,6 +3611,21 @@ describe("short ownership, expiry, and edit validation", () => {
     expect(mocks.signedUrl).not.toHaveBeenCalled();
   });
 
+  it.each([downloadShort, accessEditSource, accessEditorChannelAsset])("retains enterprise service blocks for owned media", async (handler) => {
+    mocks.authenticatedSession.mockResolvedValue({ id: "session-a", userId: "user-a", isEnterprise: true });
+    mocks.getDb.mockReturnValue(dbWithRows([{
+      accountType: "enterprise", hasActive: false, requestStatus: "open",
+    }]));
+    const response = await handler(
+      new Request("http://localhost/api/shorts/short-enterprise/access"),
+      { params: Promise.resolve({ shortId: "short-enterprise" }) },
+    );
+    expect(response.status).toBe(402);
+    await expect(response.json()).resolves.toMatchObject({ code: "ENTERPRISE_PAYMENT_REQUIRED" });
+    expect(mocks.shortDownloadUrl).not.toHaveBeenCalled();
+    expect(mocks.signedUrl).not.toHaveBeenCalled();
+  });
+
   it("issues a download URL for an active administrator-issued account", async () => {
     mocks.billing.mockResolvedValue({
       activeProducts: [],

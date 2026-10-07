@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { assertEnterpriseSessionServiceAccess } from "@/lib/enterprise-access";
 import {
   subtitleEditingReleaseEnabled,
 } from "@/lib/editor-rendering-release";
@@ -28,6 +29,7 @@ export async function GET(
     const { shortId } = await context.params;
     const session = await requireAuthenticatedMvpSession();
     const db = getDb();
+    await assertEnterpriseSessionServiceAccess(db, session);
 
     const rows = await db`
       select
