@@ -1724,31 +1724,10 @@
 }
 
 
-/* Content and timing share one inspector on desktop and mobile. */
-.editor-v2-root .editor-timing-controls { display: grid; gap: 10px; min-width: 0; margin: 12px 0 16px; padding: 0; border: 0; }
-.editor-v2-root .editor-timing-controls legend { margin-bottom: 10px; color: #eeeaf3; font-size: 12px; font-weight: 800; }
-.editor-v2-root .editor-time-range { display: grid; grid-template-columns: minmax(0,1fr) 16px minmax(0,1fr); align-items: center; gap: 8px; }
-.editor-v2-root .editor-time-range-arrow { color: #878390; text-align: center; }
-.editor-v2-root .editor-time-field { min-width: 0; border: 1px solid rgba(255,255,255,.13); border-radius: 10px; background: #222126; }
-.editor-v2-root .editor-time-field.is-selected { border-color: #ba9cff; background: #30283e; }
-.editor-v2-root .editor-time-field > label { display: block; padding: 9px 12px 0; color: #beb9c7; font-size: 11px; cursor: text; }
-.editor-v2-root .editor-time-field.is-selected > label { color: #dbcaff; }
-.editor-v2-root .editor-time-value { display: flex; align-items: baseline; gap: 4px; padding: 0 12px; }
-.editor-v2-root .editor-time-value input { appearance: textfield; width: 100%; min-width: 0; min-height: 44px; padding: 2px 0 7px; border: 0; border-radius: 0; background: transparent; color: #fff; font-size: 23px; font-weight: 650; font-variant-numeric: tabular-nums; line-height: 1.3; }
-.editor-v2-root .editor-time-value > span { flex: none; color: #a8a4b1; font-size: 11px; }
-.editor-v2-root .editor-time-value input::-webkit-inner-spin-button,
-.editor-v2-root .editor-time-value input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-.editor-v2-root .editor-time-field:focus-within { outline: 2px solid #ba9cff; outline-offset: 2px; }
-.editor-v2-root .editor-time-value input:focus { outline: none; box-shadow: none; }
-/* Keep these large time values above the global mobile input minimum override. */
-.editor-v2-root .editor-time-value input { font-size: 23px !important; }
-.editor-v2-root .editor-time-adjustment { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.editor-v2-root .editor-time-adjustment > span { color: #beb9c7; font-size: 12px; }
-.editor-v2-root .editor-time-stepper { display: flex; gap: 6px; }
-.editor-v2-root .editor-time-stepper button { width: 62px; min-height: 44px; border: 1px solid rgba(255,255,255,.10); border-radius: 8px; background: rgba(255,255,255,.04); color: #e3dce9; font-size: 14px; font-variant-numeric: tabular-nums; }
-.editor-v2-root .editor-time-stepper button:disabled { opacity: .3; }
-.editor-v2-root .editor-time-stepper button:focus-visible { outline: 2px solid #ba9cff; outline-offset: 2px; }
 @media (max-width: 920px) {
+  /* Reserve room inside the scrolling lanes for handles at 0 and the final frame. */
+  .editor-v2-root .editor-filmstrip-wrap,
+  .editor-v2-root .editor-overlay-timeline-lanes { padding-inline: 44px; }
   /* Extend away from the range: even short clips keep separate start/end targets. */
   .editor-v2-root .editor-comment-range-handle,
   .editor-v2-root .editor-text-range-handle { width: 24px; min-height: 44px; touch-action: none; }
@@ -1765,7 +1744,6 @@
 .editor-v2-root .editor-caption-text-entry textarea { width: 100%; min-height: 84px; resize: vertical; border: 1px solid rgba(255,255,255,.16); border-radius: 9px; padding: 10px; background: #222126; color: white; font-size: 16px; line-height: 1.5; }
 .editor-v2-root .editor-fixed-timing-note { margin-top: 10px; color: #a8a4b1; font-size: 12px; }
 @media (max-width: 640px) {
-  .editor-v2-root .editor-timing-controls { gap: 8px; margin: 4px 0; }
   .editor-v2-root .editor-selected-comment-setting { gap: 8px; padding: 12px; }
   .editor-v2-root .editor-selected-comment-setting textarea { min-height: 64px; height: 72px; }
 }

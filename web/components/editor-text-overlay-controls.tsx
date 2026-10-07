@@ -1,6 +1,5 @@
 "use client";
 
-import type { ReactNode } from "react";
 import { useUiText } from "@/lib/i18n/use-ui-text";
 
 import { EditorFontPicker } from "@/components/editor-font-picker";
@@ -19,7 +18,6 @@ export function EditorTextOverlayControls({
   onDelete,
   fontOptions,
   geometryControls,
-  timingControls,
 }: {
   textOverlay: Omit<EditorTextOverlay, "startSeconds" | "endSeconds">;
   onChange: (patch: EditorTextStylePatch, historyMode?: "continuous" | "record") => void;
@@ -28,7 +26,6 @@ export function EditorTextOverlayControls({
   onInteractionEnd: () => void;
   onDelete: () => void;
   fontOptions?: readonly (typeof editorFontOptions)[number][];
-  timingControls?: ReactNode;
   geometryControls?: {
     onScaleChange: (scale: number) => void;
     onWidthChange: (width: number) => void;
@@ -50,7 +47,6 @@ export function EditorTextOverlayControls({
         onChange={(event) => onChange({ text: event.target.value }, "continuous")}
       />
     </label>
-    {timingControls}
     <EditorFontPicker value={textOverlay.fontId || DEFAULT_EDITOR_FONT_ID} onChange={onFontChange} options={fontOptions} />
     <fieldset className="editor-text-color-setting">
       <legend>{ui("색상")}</legend>

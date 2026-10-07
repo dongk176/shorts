@@ -5,17 +5,8 @@ type Phrase = readonly [ko: string, en: string, ja: string];
 // Legacy page copy is kept here while the product moves to semantic message keys.
 // User-provided and generated content is intentionally excluded from this table.
 const phrases: readonly Phrase[] = [
-  ["내용·시간", "Text · timing", "内容・時間"],
-  ["표시 시간", "Display timing", "表示時間"],
-  ["초", "seconds", "秒"],
-  ["시작 (초)", "Start (seconds)", "開始（秒）"],
-  ["종료 (초)", "End (seconds)", "終了（秒）"],
-  ["시작 0.1초 줄이기", "Start 0.1 seconds earlier", "開始を0.1秒早める"],
-  ["시작 0.1초 늘리기", "Start 0.1 seconds later", "開始を0.1秒遅らせる"],
-  ["종료 0.1초 줄이기", "End 0.1 seconds earlier", "終了を0.1秒早める"],
-  ["종료 0.1초 늘리기", "End 0.1 seconds later", "終了を0.1秒遅らせる"],
-  ["시작 조절", "Adjust start", "開始を調整"],
-  ["종료 조절", "Adjust end", "終了を調整"],
+  ["내용 수정", "Edit text", "内容を編集"],
+  ["양끝 손잡이로 시간 조절 · 더블클릭해서 내용 수정", "Drag the end handles to adjust timing · Double-click to edit text", "両端のハンドルで時間を調整・ダブルクリックで内容を編集"],
   ["제목은 영상 전체에 표시됩니다.", "The title appears throughout the video.", "タイトルは動画全体に表示されます。"],
   ["현재 자막 내용", "Current caption text", "現在の字幕の内容"],
   ["현재 자막의 내용을 고치고, 아래에서 모양을 조정하세요.", "Edit this caption, then adjust its style below.", "現在の字幕を編集し、下でスタイルを調整できます。"],

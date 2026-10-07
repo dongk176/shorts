@@ -38,7 +38,6 @@ import { CustomTemplateTitlePreview } from "@/components/custom-template-title-p
 import { DesktopEditorGuide } from "@/components/desktop-editor-guide";
 import { EditorApplyFailureNotice } from "@/components/editor-apply-failure-notice";
 import { EditorFontPicker } from "@/components/editor-font-picker";
-import { EditorTimingControls } from "@/components/editor-timing-controls";
 import { EditorTextOverlayControls } from "@/components/editor-text-overlay-controls";
 import { EditorTitleV4Preview } from "@/components/editor-title-v4-preview";
 import { TemplateTitleV4Preview } from "@/components/template-title-v4-preview";
@@ -3934,7 +3933,8 @@ function CommentTimelineEditor({
     if (active.rangeEditStarted) onRangeEditEnd();
     if (active.moved || event.type !== "pointerup") return;
     const previousActivation = lastCommentActivationRef.current;
-    const isDoubleActivation = previousActivation?.commentId === active.commentId
+    const isDoubleActivation = active.adjustment === "move"
+      && previousActivation?.commentId === active.commentId
       && event.timeStamp - previousActivation.timestamp <= 450;
     if (isDoubleActivation) {
       lastCommentActivationRef.current = null;
@@ -3953,7 +3953,9 @@ function CommentTimelineEditor({
       timestamp: event.timeStamp,
     };
     onSeek(active.initialRange.startSeconds);
-    if (active.adjustment === "move") onActivate(active.commentId);
+    if (active.adjustment === "move" && !window.matchMedia("(max-width: 640px)").matches) {
+      onActivate(active.commentId);
+    }
   };
 
   return <section
@@ -4009,7 +4011,7 @@ function CommentTimelineEditor({
             data-editor-guide={index === 0 ? "comment-item" : undefined}
             aria-label={ui(`${fallbackLabel}: ${commentText} 선택 및 이동`)}
             aria-pressed={selected}
-            title={ui(`${commentText}: 선택해서 내용·시간 수정 · 드래그해서 구간 이동`)}
+            title={`${commentText}: ${ui("양끝 손잡이로 시간 조절 · 더블클릭해서 내용 수정")}`}
             style={{ backgroundColor: comment.avatarColor }}
             onPointerDown={(event) => startDrag(comment, "move", event)}
             onKeyDown={(event) => {
@@ -10350,16 +10352,6 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
     onInteractionEnd={finishEditorOverlayHistoryInteraction}
     onDelete={deleteSelectedEditorOverlay}
     fontOptions={availableEditorFontOptions}
-    timingControls={<EditorTimingControls
-      range={selectedTextOverlay}
-      durationSeconds={previewDuration}
-      onInteractionStart={beginEditorOverlayHistoryInteraction}
-      onInteractionEnd={finishEditorOverlayHistoryInteraction}
-      onChange={(range) => {
-        updateEditorTextOverlay(selectedTextOverlay.id, (current) => ({ ...current, ...range }));
-        seekCommentTimeline(range.startSeconds);
-      }}
-    />}
   /> : null;
   const editorTimelineZoomStyle: CSSProperties | undefined = overlayPreviewEnabled
     ? { width: `${editorTimelineZoom * 100}%` }
@@ -10367,10 +10359,6 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
   const selectedTimelineComment = selectedTimelineCommentId
     ? comments.find((comment) => comment.id === selectedTimelineCommentId) || null
     : null;
-  const selectedCommentPreviewIndex = orderedCommentsForPreview.findIndex(
-    (comment) => comment.id === selectedTimelineCommentId,
-  );
-  const selectedCommentPreview = orderedCommentsForPreview[selectedCommentPreviewIndex];
   const selectedMobileLayoutTool = editorSidebarToolForSelection(
     selectedOverlay,
   );
@@ -11520,7 +11508,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                     <path d="m11.5 4.6 3.9 3.9" stroke="currentColor" strokeWidth="1.5" />
                   </svg>
                 </span>
-                {ui(selectedOverlay === "comment" || isEditorTextSelection(selectedOverlay) ? "내용·시간" : "수정")}</button>
+                {ui(selectedOverlay === "comment" || isEditorTextSelection(selectedOverlay) ? "내용 수정" : "수정")}</button>
               <button
                 type="button"
                 className="is-delete"
@@ -12139,18 +12127,6 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                   )}
                 />
               </label>
-              {selectedCommentPreview && <EditorTimingControls
-                range={selectedCommentPreview}
-                durationSeconds={previewDuration}
-                previousEndSeconds={orderedCommentsForPreview[selectedCommentPreviewIndex - 1]?.endSeconds ?? 0}
-                nextStartSeconds={orderedCommentsForPreview[selectedCommentPreviewIndex + 1]?.startSeconds ?? previewDuration}
-                onInteractionStart={beginEditorCommentTextInteraction}
-                onInteractionEnd={finishEditorCommentTextInteraction}
-                onChange={(range) => {
-                  updateCommentRange(selectedCommentPreview.id, range);
-                  seekCommentTimeline(range.startSeconds);
-                }}
-              />}
             </div>}
             <fieldset className="editor-comment-theme-setting">
               <legend>{ui("댓글 모드")}</legend>

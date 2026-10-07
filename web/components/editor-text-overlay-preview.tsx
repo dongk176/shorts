@@ -313,7 +313,9 @@ export function EditorTextTimeline({
     if (active.moved || event.type !== "pointerup") return;
     onSelect();
     onSeek(active.initialRange.startSeconds);
-    if (active.adjustment === "move") onEdit();
+    if (active.adjustment === "move" && !window.matchMedia("(max-width: 640px)").matches) {
+      onEdit();
+    }
   };
 
   const adjustWithKeyboard = (

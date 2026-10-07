@@ -201,7 +201,7 @@ describe("editor mobile layout", () => {
     );
     expect(editorSource).toContain("editorTextSelection(id),");
     expect(textTimelineSource).not.toContain("lastTouchActivationRef");
-    expect(textTimelineSource).toContain('if (active.adjustment === "move") onEdit();');
+    expect(textTimelineSource).toContain('if (active.adjustment === "move" && !window.matchMedia("(max-width: 640px)").matches)');
   });
 
   it("opens the selected preview comment sheet from a stationary mobile tap", () => {
@@ -236,10 +236,10 @@ describe("editor mobile layout", () => {
     );
   });
 
-  it("uses one content-and-time action for selected comments", () => {
+  it("keeps timing on the timeline and one text-edit action for selected comments", () => {
     expect(editorSource).not.toContain("editSelectedCommentContent");
-    expect(editorSource).toContain("내용·시간");
-    expect(editorSource).toContain("<EditorTimingControls");
+    expect(editorSource).toContain("내용 수정");
+    expect(editorSource).not.toContain("EditorTimingControls");
   });
 
   it("edits the double-clicked comment inside the comment bottom sheet", () => {
