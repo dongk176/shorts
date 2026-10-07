@@ -40,7 +40,7 @@ describe("editor mobile layout", () => {
     expect(styles).toContain("height: max(0px,calc(100% - 72px));");
     expect(styles).toContain("max-width: min(58vw,244px);");
     expect(styles).toContain("aspect-ratio: 9/16;");
-    expect(styles).toContain("grid-template-rows: minmax(0,1fr) clamp(168px,28dvh,260px);");
+    expect(styles).toContain("grid-template-rows: minmax(0,1fr) clamp(252px,32dvh,300px);");
   });
 
   it("reserves action-row space when the mobile viewport gets shorter", () => {
@@ -99,7 +99,9 @@ describe("editor mobile layout", () => {
     expect(styles).toContain("overscroll-behavior-y: contain;");
     expect(styles).toContain("touch-action: pan-y;");
     expect(styles).toContain("scrollbar-width: none;");
-    expect(styles).toContain("height: calc(100% - 10px);");
+    expect(styles).toContain("padding-block: 8px 12px;");
+    expect(editorSource).toContain("finishMobileEditorControls");
+    expect(editorSource).toContain("restoreMobileTimelineFocusRef");
   });
 
   it("pans layout tracks horizontally and selects only from a stationary tap", () => {

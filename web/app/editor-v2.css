@@ -1197,7 +1197,7 @@
     height: calc(100dvh - var(--editor-mobile-topbar-height));
     min-height: 0;
     grid-template-columns: minmax(0,1fr);
-    grid-template-rows: minmax(0,1fr) clamp(168px,28dvh,260px);
+    grid-template-rows: minmax(0,1fr) clamp(252px,32dvh,300px);
     gap: 0;
     overflow: hidden;
     margin: 0;
@@ -1378,12 +1378,9 @@
     align-self: stretch;
     overflow-y: auto;
     overscroll-behavior-y: contain;
-    padding-bottom: 0;
+    padding-block: 8px 12px;
+    scroll-padding-block: 8px 12px;
     scrollbar-width: none;
-  }
-
-  .editor-v2-root .editor-workspace-timeline:not(.editor-comment-only-panel) .editor-overlay-timeline-lanes > :only-child {
-    height: calc(100% - 10px);
   }
 
   .editor-v2-root .editor-workspace-timeline:not(.editor-comment-only-panel) .editor-overlay-timeline-lanes::-webkit-scrollbar {
@@ -1746,4 +1743,12 @@
 @media (max-width: 640px) {
   .editor-v2-root .editor-selected-comment-setting { gap: 8px; padding: 12px; }
   .editor-v2-root .editor-selected-comment-setting textarea { min-height: 64px; height: 72px; }
+}
+
+/* Finish a mobile settings edit and return to the selected timeline row. */
+.editor-v2-root .editor-controls-done { display: none; }
+@media (max-width: 640px) and (orientation: portrait) {
+  .editor-v2-root .editor-controls-pane.is-mobile-open .editor-controls-done { display: inline-flex; min-width: 64px; min-height: 44px; align-items: center; justify-content: center; flex: none; border: 1px solid rgba(255,255,255,.14); border-radius: 10px; padding: 0 14px; background: #f2edf9; color: #231a31; font-size: 14px; font-weight: 750; }
+  .editor-v2-root .editor-controls-done:focus-visible { outline: 2px solid #ba9cff; outline-offset: 3px; }
+  .editor-v2-root .editor-controls-pane.is-mobile-open .editor-controls-chevron { display: none; }
 }

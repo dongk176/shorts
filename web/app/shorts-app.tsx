@@ -4446,6 +4446,8 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
   const editorCanvasRef = useRef<HTMLDivElement>(null);
   const filmstripRef = useRef<HTMLDivElement>(null);
   const editorTimelineScrollAreaRef = useRef<HTMLDivElement>(null);
+  const restoreMobileTimelineFocusRef = useRef(false);
+  const mobileSelectionEditButtonRef = useRef<HTMLButtonElement>(null);
   const editorTimelineZoomCenterRef = useRef<number | null>(null);
   const activeRangeHandleRef = useRef<"start" | "end" | null>(null);
   const rangeInteractionStartClipsRef = useRef<EditorVideoClip[] | null>(null);
@@ -7851,6 +7853,55 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
     setError("자막 문구는 비워둘 수 없습니다. 자막을 숨기려면 자막 끄기를 사용해 주세요.");
     return true;
   }, [hasInvalidCaptionTextDraft]);
+
+  const finishMobileEditorControls = useCallback(() => {
+    if (rejectInvalidCaptionTextDraft()) return;
+    setError((current) => current === "자막 문구는 비워둘 수 없습니다. 자막을 숨기려면 자막 끄기를 사용해 주세요." ? null : current);
+    finishPendingEditorInteractionsIncludingCaption();
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    setCaptionEditingInSidebar(false);
+    restoreMobileTimelineFocusRef.current = true;
+    setMobileControlsOpen(false);
+    setDesktopSidebarOpen(false);
+  }, [finishPendingEditorInteractionsIncludingCaption, rejectInvalidCaptionTextDraft]);
+
+  useLayoutEffect(() => {
+    if (!overlayPreviewEnabled || mobileControlsOpen || !window.matchMedia("(max-width: 640px)").matches) return;
+    const scrollArea = editorTimelineScrollAreaRef.current;
+    const lanes = scrollArea?.querySelector<HTMLElement>(".editor-overlay-timeline-lanes");
+    const range = selectedOverlay === "comment"
+      ? Array.from(scrollArea?.querySelectorAll<HTMLElement>("[data-editor-comment-id]") || [])
+        .find((element) => element.dataset.editorCommentId === selectedTimelineCommentId)
+      : isEditorTextSelection(selectedOverlay)
+        ? scrollArea?.querySelector<HTMLElement>(".editor-text-timeline-panel.is-selected .editor-text-range")
+        : null;
+    const row = range?.closest<HTMLElement>(".editor-comment-timeline-panel, .editor-text-timeline-panel");
+    if (restoreMobileTimelineFocusRef.current) {
+      restoreMobileTimelineFocusRef.current = false;
+      (range?.querySelector<HTMLButtonElement>(".editor-comment-range-body, .editor-text-range-body")
+        || mobileSelectionEditButtonRef.current)?.focus({ preventScroll: true });
+    }
+    if (!scrollArea || !lanes || !range || !row) return;
+    const revealSelection = () => {
+      const viewport = lanes.getBoundingClientRect();
+      if (!viewport.height) return;
+      const rowRect = row.getBoundingClientRect();
+      const margin = 8;
+      if (rowRect.top < viewport.top + margin) lanes.scrollTop -= viewport.top + margin - rowRect.top;
+      else if (rowRect.bottom > viewport.bottom - margin) lanes.scrollTop += rowRect.bottom - viewport.bottom + margin;
+      const rangeRect = range.getBoundingClientRect();
+      const horizontalViewport = scrollArea.getBoundingClientRect();
+      const handleSpace = 44;
+      if (rangeRect.width + handleSpace * 2 <= horizontalViewport.width) {
+        if (rangeRect.left < horizontalViewport.left + handleSpace) scrollArea.scrollLeft -= horizontalViewport.left + handleSpace - rangeRect.left;
+        else if (rangeRect.right > horizontalViewport.right - handleSpace) scrollArea.scrollLeft += rangeRect.right - horizontalViewport.right + handleSpace;
+      }
+    };
+    revealSelection();
+    const observer = new ResizeObserver(revealSelection);
+    observer.observe(lanes);
+    return () => observer.disconnect();
+  }, [mobileControlsOpen, overlayPreviewEnabled, selectedOverlay, selectedTimelineCommentId]);
 
   const preserveInvalidCaptionTextFocus = useCallback((
     event: PointerEvent<HTMLButtonElement>,
@@ -11497,6 +11548,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
               aria-label={ui(`${selectedMobileLayoutLabel} 선택 작업`)}
             >
               <button
+                ref={mobileSelectionEditButtonRef}
                 type="button"
                 onClick={() => {
                   openMobileEditorControlsForSelection(selectedOverlay);
@@ -11547,14 +11599,10 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
               className="editor-controls-sheet-toggle"
               aria-expanded={mobileControlsOpen}
               aria-controls="editor-controls-scroll"
+              onPointerDown={preserveInvalidCaptionTextFocus}
               onClick={() => {
-                setMobileControlsOpen((current) => {
-                  const next = !current;
-                  if (!next && window.matchMedia("(max-width: 640px)").matches) {
-                    setDesktopSidebarOpen(false);
-                  }
-                  return next;
-                });
+                if (mobileControlsOpen) finishMobileEditorControls();
+                else setMobileControlsOpen((current) => !current);
               }}
             >
               <span className="editor-controls-title">
@@ -11568,6 +11616,12 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                 </svg>
               </span>
             </button>
+            {overlayPreviewEnabled && <button
+              type="button"
+              className="editor-controls-done"
+              onPointerDown={preserveInvalidCaptionTextFocus}
+              onClick={finishMobileEditorControls}
+            >{ui("완료")}</button>}
             {!standalone && <button onClick={onClose} className="editor-dialog-close-button rounded-lg px-3 py-2 text-sm text-white hover:bg-white/10">{ui("닫기")}</button>}
           </div>
           <div id="editor-controls-scroll" className="editor-controls-scroll">
