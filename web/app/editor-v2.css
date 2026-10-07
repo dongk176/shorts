@@ -745,6 +745,44 @@
   text-overflow: ellipsis;
 }
 
+.editor-v2-root .editor-sidebar-layer-order {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 18px;
+  border-top: 1px solid rgba(255,255,255,.1);
+  padding-top: 12px;
+  color: #fff;
+  font-size: 11px;
+}
+
+.editor-v2-root .editor-sidebar-layer-order > div {
+  display: flex;
+  gap: 6px;
+}
+
+.editor-v2-root .editor-sidebar-layer-order button {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 9px;
+  padding: 0 10px;
+  background: rgba(255,255,255,.06);
+  color: #fff;
+  font-weight: 750;
+}
+
+.editor-v2-root .editor-sidebar-layer-order button:disabled { opacity: .35; }
+.editor-v2-root .editor-sidebar-layer-order button:focus-visible { outline: 2px solid #fff; }
+.editor-v2-root .editor-sidebar-layer-order svg { width: 16px; height: 16px; }
+
+@media (min-width: 641px) {
+  .editor-v2-root .editor-controls-scroll.is-video-selected .editor-sidebar-tool-panel { display: none; }
+}
+
 .editor-v2-root .editor-v2-text-add {
   display: flex;
   width: 100%;
@@ -799,10 +837,6 @@
   margin-top: 14px;
 }
 
-.editor-v2-root .editor-v2-text-list-entry {
-  min-width: 0;
-}
-
 .editor-v2-root .editor-v2-text-list-item {
   display: flex;
   width: 100%;
@@ -822,12 +856,6 @@
 .editor-v2-root .editor-v2-text-list-item:hover {
   border-color: rgba(255,255,255,.3);
   background: rgba(255,255,255,.075);
-}
-
-.editor-v2-root .editor-v2-text-list-item[aria-pressed="true"] {
-  border-color: rgba(255,255,255,.78);
-  background: rgba(255,255,255,.13);
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,.12);
 }
 
 .editor-v2-root .editor-v2-text-list-item:focus-visible {
@@ -884,19 +912,6 @@
 .editor-v2-root .editor-v2-text-list-chevron svg {
   width: 17px;
   height: 17px;
-}
-
-.editor-v2-root .editor-v2-text-list-item[aria-expanded="true"] .editor-v2-text-list-chevron {
-  color: #fff;
-  transform: rotate(180deg);
-}
-
-.editor-v2-root .editor-v2-text-accordion-detail {
-  margin-top: 8px;
-  border: 1px solid rgba(255,255,255,.1);
-  border-radius: 12px;
-  padding: 13px;
-  background: rgba(0,0,0,.16);
 }
 
 .editor-v2-root .editor-v2-text-empty {
@@ -1324,7 +1339,7 @@
   .editor-v2-root .editor-preview-edge-fullscreen-control,
   .editor-v2-root .editor-overlay-size-control,
   .editor-v2-root .editor-comment-position-apply,
-  .editor-v2-root .editor-layer-order-control {
+  .editor-v2-root .editor-sidebar-layer-order {
     display: none;
   }
 
@@ -1480,6 +1495,14 @@
     justify-content: flex-start;
     gap: 2px;
     transform: translateY(-3px);
+  }
+
+  .editor-v2-root .editor-controls-pane.is-mobile-open .editor-tool-rail.has-mobile-selection {
+    display: none;
+  }
+
+  .editor-v2-root .editor-controls-pane.is-mobile-open:has(.editor-tool-rail.has-mobile-selection) .editor-controls-scroll {
+    padding-bottom: calc(24px + env(safe-area-inset-bottom,0px));
   }
 
   .editor-v2-root .editor-tool-rail.has-mobile-selection .editor-tool-rail-buttons {

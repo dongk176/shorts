@@ -64,7 +64,7 @@ describe("editor mobile layout", () => {
 
   it("hides desktop-only controls beside the mobile preview", () => {
     expect(styles).toContain(".editor-v2-root .editor-overlay-size-control,");
-    expect(styles).toContain(".editor-v2-root .editor-layer-order-control {");
+    expect(styles).toContain(".editor-v2-root .editor-sidebar-layer-order {");
   });
 
   it("does not leave play and pause tooltips on touch screens", () => {

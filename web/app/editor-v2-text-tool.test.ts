@@ -25,23 +25,15 @@ describe("editor v2 text tool", () => {
     );
     expect(editorSource).toContain("seekCommentTimeline(Math.max(");
     expect(editorSource).toContain(
-      "setExpandedEditorTextId(selectedEditorTextId(selectedOverlay))",
+      "const selectedTextOverlayId = selectedEditorTextId(selectedOverlay)",
     );
   });
 
-  it("expands text settings below the selected item and collapses on repeat", () => {
-    expect(editorSource).toContain(
-      "selectedOverlay === selection\n      && expandedEditorTextId === textOverlay.id",
-    );
-    expect(editorSource).toContain("setExpandedEditorTextId(null)");
-    expect(editorSource).toContain("aria-expanded={expanded}");
-    expect(editorSource).toContain(
-      "{expanded && <div\n                      id={detailId}\n                      className=\"editor-v2-text-accordion-detail\"",
-    );
-    const styles = source("./editor-v2.css");
-    expect(styles).toContain(
-      ".editor-v2-root .editor-v2-text-accordion-detail",
-    );
+  it("opens selected text directly and returns to the library from the text tool", () => {
+    expect(editorSource).toContain("{selectedTextOverlay ? renderSelectedEditorTextSettings() : <>");
+    expect(editorSource).toContain('const openTextLibrary = tool === "text" && isEditorTextSelection(selectedOverlay)');
+    expect(editorSource).not.toContain("expandedEditorTextId");
+    expect(editorSource).not.toContain("editor-v2-text-accordion-detail");
   });
 
   it("moves text creation into the text panel", () => {
@@ -87,7 +79,7 @@ describe("editor v2 text tool", () => {
     );
     expect(editorSource).toContain("forceVisible={overlayPreviewEnabled}");
     expect(editorSource).toContain(
-      'selectedOverlay === "channel" ? "맨앞 고정" : "레이어 순서"',
+      'selectedOverlay === "channel" ? "맨앞 고정" : "앞뒤 순서"',
     );
   });
 

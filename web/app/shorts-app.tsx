@@ -3488,7 +3488,7 @@ function EditorSidebarSectionIcon({
 }
 
 const EDITOR_SIDEBAR_TOOLS = [
-  { id: "title", label: "후킹 제목" },
+  { id: "title", label: "제목" },
   { id: "text", label: "텍스트" },
   { id: "subtitle", label: "자막" },
   { id: "comment", label: "댓글" },
@@ -4634,9 +4634,6 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
   const [activeEditorSidebarTool, setActiveEditorSidebarTool] = useState<
     EditorSidebarTool
   >("title");
-  const [expandedEditorTextId, setExpandedEditorTextId] = useState<
-    string | null
-  >(null);
   const [editorFontApplySuggestion, setEditorFontApplySuggestion] = useState<{
     source: EditorFontApplySource;
     fontId: EditorFontId;
@@ -4734,6 +4731,15 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
       setDesktopSidebarOpen(true);
     }
   }, [overlayPreviewEnabled, selectedOverlay]);
+  useEffect(() => {
+    if (
+      overlayPreviewEnabled
+      && selectedOverlay === "video"
+      && !window.matchMedia("(max-width: 640px)").matches
+    ) {
+      setDesktopSidebarOpen(true);
+    }
+  }, [overlayPreviewEnabled, selectedOverlay]);
   const openMobileEditorControlsForSelection = useCallback((
     selection: EditorOverlaySelection,
   ) => {
@@ -4741,9 +4747,6 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
     const tool = editorSidebarToolForSelection(selection);
     if (!tool || selection === null) return false;
     setSelectedOverlay(selection);
-    if (isEditorTextSelection(selection)) {
-      setExpandedEditorTextId(selectedEditorTextId(selection));
-    }
     setActiveEditorSidebarTool(tool);
     setDesktopSidebarOpen(true);
     setMobileControlsOpen(true);
@@ -4842,7 +4845,6 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
     ) {
       return;
     }
-    setExpandedEditorTextId(selectedEditorTextId(selectedOverlay));
     setActiveEditorSidebarTool("text");
     if (!window.matchMedia("(max-width: 640px)").matches) {
       setDesktopSidebarOpen(true);
@@ -4949,9 +4951,17 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
   const toggleEditorSidebarTool = (
     tool: EditorSidebarTool,
   ) => {
+    const openTextLibrary = tool === "text" && isEditorTextSelection(selectedOverlay);
+    const leaveVideoSelection = selectedOverlay === "video";
+    if (openTextLibrary || leaveVideoSelection) {
+      finishPendingEditorInteractionsIncludingCaption();
+      setSelectedOverlay(null);
+    }
     if (window.matchMedia("(max-width: 640px)").matches) {
       const toolAlreadyOpen = activeEditorSidebarTool === tool
-        && mobileControlsOpen;
+        && mobileControlsOpen
+        && !openTextLibrary
+        && !leaveVideoSelection;
       if (tool === "channel" && overlayLayoutRef.current.visible.channel) {
         setInlineEditingOverlay(null);
         setSelectedOverlay("channel");
@@ -4965,7 +4975,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
       return;
     }
     if (tool === "text") {
-      if (activeEditorSidebarTool === tool) {
+      if (activeEditorSidebarTool === tool && !openTextLibrary && !leaveVideoSelection) {
         setDesktopSidebarOpen((current) => !current);
         return;
       }
@@ -4988,7 +4998,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
       setInlineEditingOverlay(null);
       setSelectedOverlay("channel");
     }
-    if (activeEditorSidebarTool === tool) {
+    if (activeEditorSidebarTool === tool && !leaveVideoSelection) {
       setDesktopSidebarOpen((current) => !current);
       return;
     }
@@ -5629,16 +5639,6 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
   const selectedTextOverlay = selectedTextOverlayId
     ? textOverlays.find((textOverlay) => textOverlay.id === selectedTextOverlayId) || null
     : null;
-  useEffect(() => {
-    if (
-      expandedEditorTextId
-      && !textOverlays.some((textOverlay) => (
-        textOverlay.id === expandedEditorTextId
-      ))
-    ) {
-      setExpandedEditorTextId(null);
-    }
-  }, [expandedEditorTextId, textOverlays]);
   useEffect(() => {
     if (
       editorFontApplySuggestion
@@ -9449,9 +9449,6 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
     setSelectedOverlay(selection);
     setActiveEditorSidebarTool(tool);
     setDesktopSidebarOpen(true);
-    if (isEditorTextSelection(selection)) {
-      setExpandedEditorTextId(selectedEditorTextId(selection));
-    }
   };
 
   const requestCommentTextEdit = (commentId: string) => {
@@ -9498,16 +9495,8 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
   const selectEditorTextFromSidebar = (textOverlay: EditorTextOverlay) => {
     if (inlineEditingOverlay !== null) finishEditorInlineEdit();
     const selection = editorTextSelection(textOverlay.id);
-    if (
-      selectedOverlay === selection
-      && expandedEditorTextId === textOverlay.id
-    ) {
-      setExpandedEditorTextId(null);
-      return;
-    }
     setSelectedVideoClipId(null);
     setSelectedOverlay(selection);
-    setExpandedEditorTextId(textOverlay.id);
     setActiveEditorSidebarTool("text");
     setDesktopSidebarOpen(true);
     seekCommentTimeline(Math.max(
@@ -11382,35 +11371,6 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
             >
               {ui("모든 댓글에 위치 적용")}</button>
           </aside>}
-        {overlayPreviewEnabled && selectedOverlay !== null && selectedLayerOrderLabel && <aside
-          className="editor-layer-order-control"
-          aria-label={ui(`${selectedLayerOrderLabel} 레이어 순서`)}
-          onPointerDown={(event) => event.stopPropagation()}
-        >
-          <strong>{ui(selectedOverlay === "channel" ? "맨앞 고정" : "레이어 순서")}</strong>
-          {selectedOverlay !== "channel" && <div>
-            <button
-              type="button"
-              disabled={!canMoveSelectedLayerForward}
-              onClick={() => moveSelectedEditorLayer("forward")}
-            >
-              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                <path d="m5.5 11.5 4.5-4.5 4.5 4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M5.5 15h9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-              </svg>
-              {ui("앞으로")}</button>
-            <button
-              type="button"
-              disabled={!canMoveSelectedLayerBackward}
-              onClick={() => moveSelectedEditorLayer("backward")}
-            >
-              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                <path d="m5.5 8.5 4.5 4.5 4.5-4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M5.5 5h9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-              </svg>
-              {ui("뒤로")}</button>
-          </div>}
-        </aside>}
         {overlayPreviewEnabled && <button
           type="button"
           className="editor-preview-fullscreen-control editor-preview-edge-fullscreen-control"
@@ -11483,7 +11443,9 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
           >
             {ui("+ 댓글")}</button>
         </div>}
-        {videoCuttingEnabled && <div
+        {videoCuttingEnabled
+          && (selectedOverlay === "video" || (selectedOverlay === null && selectedVideoClipId))
+          && <div
           className="editor-preview-cut-actions"
           aria-label={ui("영상 자르기")}
           onPointerDown={(event) => event.stopPropagation()}
@@ -11525,7 +11487,8 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
               || subtitleToolVisible
             )).map((tool) => {
               const active = activeEditorSidebarTool === tool.id
-                && desktopSidebarOpen;
+                && desktopSidebarOpen
+                && selectedOverlay !== "video";
               return (
                 <button
                   key={tool.id}
@@ -11606,7 +11569,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
               }}
             >
               <span className="editor-controls-title">
-                {ui(EDITOR_SIDEBAR_TOOLS.find((tool) => (
+                {ui(selectedOverlay === "video" ? "영상" : EDITOR_SIDEBAR_TOOLS.find((tool) => (
                   tool.id === activeEditorSidebarTool
                 ))?.label || "편집 설정")}
               </span>
@@ -11624,7 +11587,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
             >{ui("완료")}</button>}
             {!standalone && <button onClick={onClose} className="editor-dialog-close-button rounded-lg px-3 py-2 text-sm text-white hover:bg-white/10">{ui("닫기")}</button>}
           </div>
-          <div id="editor-controls-scroll" className="editor-controls-scroll">
+          <div id="editor-controls-scroll" className={`editor-controls-scroll${overlayPreviewEnabled && selectedOverlay === "video" ? " is-video-selected" : ""}`}>
           {overlayPreviewEnabled && <section
             className={`editor-sidebar-tool-panel editor-v2-text-tool-panel${activeEditorSidebarTool === "text" ? " is-active" : ""}`}
             aria-label={ui("텍스트 설정")}
@@ -11632,33 +11595,23 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
             <header className="editor-tool-panel-header">
               <strong>{ui("텍스트")}</strong>
             </header>
-            <button
-              type="button"
-              className="editor-v2-text-add"
-              disabled={textOverlays.length >= EDITOR_TEXT_OVERLAY_LIMIT}
-              onClick={addEditorTextOverlay}
-            >
-              <span aria-hidden="true">+</span>
-              {ui("텍스트 추가")}</button>
-            {textOverlays.length > 0
-              ? <div className="editor-v2-text-list" aria-label={ui("추가한 텍스트 목록")}>
-                {textOverlays.map((textOverlay, index) => {
-                  const selection = editorTextSelection(textOverlay.id);
-                  const textLabel = textOverlay.text.trim() || `텍스트 ${index + 1}`;
-                  const selected = selectedOverlay === selection;
-                  const expanded = selected
-                    && expandedEditorTextId === textOverlay.id;
-                  const detailId = `editor-v2-text-detail-${textOverlay.id}`;
-                  return <div
-                    key={textOverlay.id}
-                    className={`editor-v2-text-list-entry${expanded ? " is-expanded" : ""}`}
-                  >
-                    <button
+            {selectedTextOverlay ? renderSelectedEditorTextSettings() : <>
+              <button
+                type="button"
+                className="editor-v2-text-add"
+                disabled={textOverlays.length >= EDITOR_TEXT_OVERLAY_LIMIT}
+                onClick={addEditorTextOverlay}
+              >
+                <span aria-hidden="true">+</span>
+                {ui("텍스트 추가")}</button>
+              {textOverlays.length > 0
+                ? <div className="editor-v2-text-list" aria-label={ui("추가한 텍스트 목록")}>
+                  {textOverlays.map((textOverlay, index) => {
+                    const textLabel = textOverlay.text.trim() || `텍스트 ${index + 1}`;
+                    return <button
+                      key={textOverlay.id}
                       type="button"
                       className="editor-v2-text-list-item"
-                      aria-pressed={selected}
-                      aria-expanded={expanded}
-                      aria-controls={detailId}
                       onClick={() => selectEditorTextFromSidebar(textOverlay)}
                     >
                       <span className="editor-v2-text-list-icon" aria-hidden="true">T</span>
@@ -11668,21 +11621,15 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                       </span>
                       <span className="editor-v2-text-list-chevron" aria-hidden="true">
                         <svg viewBox="0 0 20 20" fill="none">
-                          <path d="m6 8 4 4 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                          <path d="m8 6 4 4-4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                         </svg>
                       </span>
-                    </button>
-                    {expanded && <div
-                      id={detailId}
-                      className="editor-v2-text-accordion-detail"
-                    >
-                      {renderSelectedEditorTextSettings()}
-                    </div>}
-                  </div>;
-                })}
-              </div>
-              : <p className="editor-v2-text-empty">
-                {ui("추가한 텍스트가 없습니다.")}</p>}
+                    </button>;
+                  })}
+                </div>
+                : <p className="editor-v2-text-empty">
+                  {ui("추가한 텍스트가 없습니다.")}</p>}
+            </>}
           </section>}
           {overlayPreviewEnabled
             && subtitleToolVisible
@@ -11769,7 +11716,6 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                   : <>{ui("자막의 위치·글꼴·크기·색상을 조정할 수 있습니다. 정확한 자막 구간이 저장되지 않은 영상에서는 문구 편집을 지원하지 않습니다.")}</>}
               </p>
               <div className="mb-6">
-                <span className="mb-2 block text-xs font-semibold text-white">{ui("자막 글씨체")}</span>
                 <EditorFontPicker
                   value={activeCaptionFontId}
                   options={availableEditorFontOptions}
@@ -12161,12 +12107,11 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
               <strong>{ui("댓글")}</strong>
             </header>
             {selectedTimelineComment && <div className="editor-selected-comment-setting">
-              <div className="editor-selected-comment-setting-heading">
-                <strong>{ui("선택한 댓글")}</strong>
-                <span>{selectedTimelineComment.text.length}/200</span>
-              </div>
               <label>
-                <span>{ui("댓글 내용")}</span>
+                <span className="editor-selected-comment-setting-heading">
+                  <strong>{ui("내용")}</strong>
+                  <span>{selectedTimelineComment.text.length}/200</span>
+                </span>
                 <textarea
                   aria-label={ui("선택한 댓글 내용 수정")}
                   value={selectedTimelineComment.text}
@@ -12226,7 +12171,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
           >
             <summary className="editor-accordion-summary">
               <span className="editor-accordion-summary-icon"><EditorSidebarSectionIcon section="title" /></span>
-              <span>{ui("후킹 제목")}</span>
+              <span>{ui("제목")}</span>
               <span className="editor-accordion-chevron" aria-hidden="true">
                 <svg viewBox="0 0 20 20" fill="none">
                   <path d="m6 8 4 4 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
@@ -12235,10 +12180,10 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
             </summary>
             <div className="editor-accordion-panel">
               {overlayPreviewEnabled && <header className="editor-tool-panel-header">
-                <strong>{ui("후킹 제목")}</strong>
+                <strong>{ui("제목")}</strong>
               </header>}
               <label className="block">
-                <span className="sr-only">{ui("후킹 제목")}</span>
+                <span className="sr-only">{ui("제목")}</span>
                 <textarea
                   ref={titleInputRef}
                   value={title}
@@ -12460,6 +12405,36 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
               </div>
             </div>
           </details>
+          {overlayPreviewEnabled && selectedOverlay !== null && selectedLayerOrderLabel
+              && (selectedOverlay === "video" || selectedMobileLayoutTool === activeEditorSidebarTool) && <aside
+            className="editor-sidebar-layer-order"
+            aria-label={ui(`${selectedLayerOrderLabel} 레이어 순서`)}
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <strong>{ui(selectedOverlay === "video" ? "영상" : selectedOverlay === "channel" ? "맨앞 고정" : "앞뒤 순서")}</strong>
+            {selectedOverlay !== "channel" && <div>
+              <button
+                type="button"
+                disabled={!canMoveSelectedLayerForward}
+                onClick={() => moveSelectedEditorLayer("forward")}
+              >
+                <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                  <path d="m5.5 11.5 4.5-4.5 4.5 4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M5.5 15h9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+                {ui("앞으로")}</button>
+              <button
+                type="button"
+                disabled={!canMoveSelectedLayerBackward}
+                onClick={() => moveSelectedEditorLayer("backward")}
+              >
+                <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                  <path d="m5.5 8.5 4.5 4.5 4.5-4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M5.5 5h9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+                {ui("뒤로")}</button>
+            </div>}
+          </aside>}
           {!standalone && <div className="mt-6 flex flex-wrap justify-end gap-2"><button onClick={onClose} className="h-11 rounded-lg border border-white/15 px-4 text-sm font-semibold">{ui("변경 취소")}</button><button disabled={(overlayPreviewEnabled && !editorSaveEnabled) || !editorValid || saving} onPointerDown={preserveInvalidCaptionTextFocus} onClick={openEditorApplyConfirmation} className="h-11 rounded-lg bg-white px-4 text-sm font-bold text-black disabled:opacity-40">{ui(overlayPreviewEnabled && !editorSaveEnabled ? "저장 잠금" : saving ? "처리 중..." : "영상에 적용")}</button></div>}
           </div>
           </div>
