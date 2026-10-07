@@ -7,11 +7,13 @@ import { adjustTimedRange, COMMENT_RANGE_MIN_SECONDS } from "@/lib/range-editing
 type Range = { startSeconds: number; endSeconds: number };
 const secondsText = (seconds: number) => String(Math.round(seconds * 1000) / 1000);
 
-function TimeField({ label, value, minimum, maximum, onChange }: {
+function TimeField({ label, value, minimum, maximum, selected, onSelect, onChange }: {
   label: string;
   value: number;
   minimum: number;
   maximum: number;
+  selected: boolean;
+  onSelect: () => void;
   onChange: (value: number) => void;
 }) {
   const ui = useUiText();
@@ -23,10 +25,9 @@ function TimeField({ label, value, minimum, maximum, onChange }: {
     if (text.trim() && Number.isFinite(next) && text.trim() !== secondsText(value)) onChange(next);
     setDraft(secondsText(value));
   };
-  return <div className="editor-time-field">
+  return <div className={`editor-time-field${selected ? " is-selected" : ""}`}>
     <label htmlFor={inputId}>{ui(label)}</label>
-    <div className="editor-time-stepper">
-      <button type="button" aria-label={ui(`${label} 0.1초 줄이기`)} disabled={value <= minimum + 0.0001} onClick={() => onChange(value - 0.1)}>−0.1</button>
+    <div className="editor-time-value">
       <input
         id={inputId}
         type="number"
@@ -36,6 +37,7 @@ function TimeField({ label, value, minimum, maximum, onChange }: {
         max={maximum}
         step="0.1"
         value={draft}
+        onFocus={onSelect}
         onChange={(event) => setDraft(event.target.value)}
         onBlur={(event) => commit(event.currentTarget.value)}
         onKeyDown={(event) => {
@@ -48,7 +50,7 @@ function TimeField({ label, value, minimum, maximum, onChange }: {
           }
         }}
       />
-      <button type="button" aria-label={ui(`${label} 0.1초 늘리기`)} disabled={value >= maximum - 0.0001} onClick={() => onChange(value + 0.1)}>+0.1</button>
+      <span aria-hidden="true">{ui("초")}</span>
     </div>
   </div>;
 }
@@ -63,6 +65,11 @@ export function EditorTimingControls({ range, durationSeconds, previousEndSecond
   onInteractionEnd: () => void;
 }) {
   const ui = useUiText();
+  const [selectedEdge, setSelectedEdge] = useState<"start" | "end">("start");
+  const selectedLabel = selectedEdge === "start" ? "시작" : "종료";
+  const selectedValue = range[`${selectedEdge}Seconds`];
+  const minimum = selectedEdge === "start" ? previousEndSeconds : range.startSeconds + COMMENT_RANGE_MIN_SECONDS;
+  const maximum = selectedEdge === "start" ? range.endSeconds - COMMENT_RANGE_MIN_SECONDS : nextStartSeconds;
   const update = (edge: "start" | "end", seconds: number) => {
     const next = adjustTimedRange(range, edge, seconds - range[`${edge}Seconds`], durationSeconds, previousEndSeconds, nextStartSeconds);
     if (next.startSeconds === range.startSeconds && next.endSeconds === range.endSeconds) return;
@@ -71,9 +78,18 @@ export function EditorTimingControls({ range, durationSeconds, previousEndSecond
     onInteractionEnd();
   };
   return <fieldset className="editor-timing-controls">
-    <legend>{ui("표시 시간")} <span>{ui("초")}</span></legend>
-    <TimeField label="시작" value={range.startSeconds} minimum={previousEndSeconds} maximum={range.endSeconds - COMMENT_RANGE_MIN_SECONDS} onChange={(value) => update("start", value)} />
-    <TimeField label="종료" value={range.endSeconds} minimum={range.startSeconds + COMMENT_RANGE_MIN_SECONDS} maximum={nextStartSeconds} onChange={(value) => update("end", value)} />
-    <p>{ui("0.1초씩 조절하거나 시간을 직접 입력하세요.")}</p>
+    <legend>{ui("표시 시간")}</legend>
+    <div className="editor-time-range">
+      <TimeField label="시작" value={range.startSeconds} minimum={previousEndSeconds} maximum={range.endSeconds - COMMENT_RANGE_MIN_SECONDS} selected={selectedEdge === "start"} onSelect={() => setSelectedEdge("start")} onChange={(value) => update("start", value)} />
+      <span className="editor-time-range-arrow" aria-hidden="true">→</span>
+      <TimeField label="종료" value={range.endSeconds} minimum={range.startSeconds + COMMENT_RANGE_MIN_SECONDS} maximum={nextStartSeconds} selected={selectedEdge === "end"} onSelect={() => setSelectedEdge("end")} onChange={(value) => update("end", value)} />
+    </div>
+    <div className="editor-time-adjustment">
+      <span>{ui(selectedEdge === "start" ? "시작 조절" : "종료 조절")}</span>
+      <div className="editor-time-stepper">
+        <button type="button" aria-label={ui(`${selectedLabel} 0.1초 줄이기`)} disabled={selectedValue <= minimum + 0.0001} onClick={() => update(selectedEdge, selectedValue - 0.1)}>−0.1</button>
+        <button type="button" aria-label={ui(`${selectedLabel} 0.1초 늘리기`)} disabled={selectedValue >= maximum - 0.0001} onClick={() => update(selectedEdge, selectedValue + 0.1)}>+0.1</button>
+      </div>
+    </div>
   </fieldset>;
 }
