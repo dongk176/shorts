@@ -25,9 +25,10 @@ test("legacy editor global CSS remains byte-for-byte at the approved baseline", 
 
   assert.equal(
     digest,
-    // Current promoted de6a5c74 (dpl_ABreAxaSKKAhK57p2cjgeQkHrr8o), checked 2026-09-30.
-    // This release changes no CSS. Retain an exact digest guard at that baseline.
-    "eb03ff1e170fb3969d458d60153ab8857281a25e6f5d616494132d29e740a27a",
+    // Current promoted cc9eab84 (dpl_CmTEr5pde3ewpzzSwP1jBvxGjtre), checked 2026-10-07.
+    // Reviewed existing workspace chrome and mobile input-size additions.
+    // This release leaves global CSS byte-identical; retain the exact digest guard.
+    "17d86ec47ef67e8f0c0ead1b9f5c95111c4a0cd4cfc3804f791bbe54cf3685f3",
     "Do not change the approved global CSS baseline without a dedicated public UI review.",
   );
 });
