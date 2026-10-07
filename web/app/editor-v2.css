@@ -1497,9 +1497,7 @@
     transform: translateY(-3px);
   }
 
-  .editor-v2-root .editor-tool-rail.has-mobile-selection .editor-mobile-selection-actions.has-comment-edit {
-    grid-template-columns: repeat(4,minmax(0,1fr));
-  }
+
 
   .editor-v2-root .editor-mobile-selection-actions button.is-delete {
     color: #ff8b7b;
@@ -1723,4 +1721,46 @@
   .editor-v2-root .editor-text-range-handle.is-end::before { left: 0; }
   .editor-v2-root .editor-comment-only-panel .editor-overlay-timeline-lanes { padding-top: 54px; }
   .editor-v2-root .editor-save-status { flex-wrap: wrap; }
+}
+
+
+/* Content and timing share one inspector on desktop and mobile. */
+.editor-v2-root .editor-timing-controls { display: grid; gap: 10px; min-width: 0; margin: 12px 0 16px; padding: 0; border: 0; }
+.editor-v2-root .editor-timing-controls legend { margin-bottom: 10px; color: #eeeaf3; font-size: 12px; font-weight: 800; }
+.editor-v2-root .editor-timing-controls legend span { margin-left: 6px; color: #a8a4b1; font-size: 11px; font-weight: 500; }
+.editor-v2-root .editor-time-field { display: grid; gap: 6px; min-width: 0; }
+.editor-v2-root .editor-time-field > label { color: #beb9c7; font-size: 11px; }
+.editor-v2-root .editor-time-stepper { display: grid; grid-template-columns: 52px minmax(0,1fr) 52px; gap: 6px; }
+.editor-v2-root .editor-time-stepper button,
+.editor-v2-root .editor-time-stepper input { width: 100%; min-width: 0; min-height: 44px; border: 1px solid rgba(255,255,255,.16); border-radius: 9px; background: #222126; color: #fff; font-size: 14px; font-variant-numeric: tabular-nums; text-align: center; }
+.editor-v2-root .editor-time-stepper input { appearance: textfield; padding: 6px; }
+.editor-v2-root .editor-time-stepper input::-webkit-inner-spin-button,
+.editor-v2-root .editor-time-stepper input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.editor-v2-root .editor-time-stepper button:disabled { opacity: .3; }
+.editor-v2-root .editor-time-stepper :focus-visible { outline: 2px solid #6fe7f3; outline-offset: 2px; }
+.editor-v2-root .editor-timing-controls > p { color: #a8a4b1; font-size: 11px; line-height: 1.5; }
+@media (max-width: 920px) {
+  /* Extend away from the range: even short clips keep separate start/end targets. */
+  .editor-v2-root .editor-comment-range-handle,
+  .editor-v2-root .editor-text-range-handle { width: 24px; min-height: 44px; touch-action: none; }
+  .editor-v2-root .editor-comment-range-handle.is-start,
+  .editor-v2-root .editor-text-range-handle.is-start { left: -24px; }
+  .editor-v2-root .editor-comment-range-handle.is-end,
+  .editor-v2-root .editor-text-range-handle.is-end { right: -24px; }
+  .editor-v2-root .editor-comment-range-handle::before,
+  .editor-v2-root .editor-text-range-handle::before { width: 44px; }
+  .editor-v2-root .editor-time-stepper input { font-size: 16px; }
+  .editor-v2-root .editor-selected-comment-setting textarea { font-size: 16px; }
+}
+
+.editor-v2-root .editor-caption-text-entry > label { display: grid; width: 100%; gap: 8px; }
+.editor-v2-root .editor-caption-text-entry textarea { width: 100%; min-height: 84px; resize: vertical; border: 1px solid rgba(255,255,255,.16); border-radius: 9px; padding: 10px; background: #222126; color: white; font-size: 16px; line-height: 1.5; }
+.editor-v2-root .editor-fixed-timing-note { margin-top: 10px; color: #a8a4b1; font-size: 12px; }
+@media (max-width: 640px) {
+  .editor-v2-root .editor-timing-controls { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; margin: 4px 0; }
+  .editor-v2-root .editor-timing-controls > p { grid-column: 1 / -1; }
+  .editor-v2-root .editor-time-stepper { grid-template-columns: 44px minmax(0,1fr) 44px; gap: 3px; }
+  .editor-v2-root .editor-time-stepper button { font-size: 12px; }
+  .editor-v2-root .editor-selected-comment-setting { gap: 8px; padding: 12px; }
+  .editor-v2-root .editor-selected-comment-setting textarea { min-height: 64px; height: 72px; }
 }

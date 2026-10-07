@@ -58,7 +58,7 @@ describe("editor v2 resilience", () => {
     expect(editorSource).toContain(
       "editorDraftDocumentSnapshotSchema.safeParse(",
     );
-    expect(editorSource).toContain('"임시 저장됨"');
+    expect(editorSource).toContain('"이 기기에 임시 저장됨"');
     expect(editorSource).toContain('"영상 반영 전 · 적용 필요"');
   });
 

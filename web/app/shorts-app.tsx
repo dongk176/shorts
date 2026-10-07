@@ -38,6 +38,7 @@ import { CustomTemplateTitlePreview } from "@/components/custom-template-title-p
 import { DesktopEditorGuide } from "@/components/desktop-editor-guide";
 import { EditorApplyFailureNotice } from "@/components/editor-apply-failure-notice";
 import { EditorFontPicker } from "@/components/editor-font-picker";
+import { EditorTimingControls } from "@/components/editor-timing-controls";
 import { EditorTextOverlayControls } from "@/components/editor-text-overlay-controls";
 import { EditorTitleV4Preview } from "@/components/editor-title-v4-preview";
 import { TemplateTitleV4Preview } from "@/components/template-title-v4-preview";
@@ -3662,6 +3663,7 @@ function CommentTimelineEditor({
   onDelete,
   onSelect,
   onEdit,
+  onActivate,
   onDeselect,
   onTextEditStart,
   onTextEditEnd,
@@ -3683,6 +3685,7 @@ function CommentTimelineEditor({
   onDelete: (id: string) => void;
   onSelect: (id: string) => void;
   onEdit: (id: string) => boolean;
+  onActivate: (id: string) => void;
   onDeselect: () => void;
   onTextEditStart: () => void;
   onTextEditEnd: () => void;
@@ -3950,6 +3953,7 @@ function CommentTimelineEditor({
       timestamp: event.timeStamp,
     };
     onSeek(active.initialRange.startSeconds);
+    if (active.adjustment === "move") onActivate(active.commentId);
   };
 
   return <section
@@ -4005,12 +4009,12 @@ function CommentTimelineEditor({
             data-editor-guide={index === 0 ? "comment-item" : undefined}
             aria-label={ui(`${fallbackLabel}: ${commentText} 선택 및 이동`)}
             aria-pressed={selected}
-            title={ui(`${commentText}: 더블클릭해서 댓글 수정 · 드래그해서 구간 이동`)}
+            title={ui(`${commentText}: 선택해서 내용·시간 수정 · 드래그해서 구간 이동`)}
             style={{ backgroundColor: comment.avatarColor }}
             onPointerDown={(event) => startDrag(comment, "move", event)}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
-                openCommentTextEditor(comment, event.currentTarget);
+                if (!onEdit(comment.id)) openCommentTextEditor(comment, event.currentTarget);
                 event.preventDefault();
                 event.stopPropagation();
               } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
@@ -4451,10 +4455,6 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
     targetClipId: string | null;
     moved: boolean;
   } | null>(null);
-  const mobileOverlayActivationRef = useRef<{
-    selection: Exclude<EditorOverlaySelection, null>;
-    timestamp: number;
-  } | null>(null);
   const mobileSubtitleActivationRef = useRef<{
     key: string;
     timestamp: number;
@@ -4541,6 +4541,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
   const [editingSubtitleIndex, setEditingSubtitleIndex] = useState<number | null>(
     null,
   );
+  const [captionEditingInSidebar, setCaptionEditingInSidebar] = useState(false);
   const [captionTextDraft, setCaptionTextDraft] = useState<
     EditorCaptionTextDraft | null
   >(null);
@@ -4744,32 +4745,12 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
     setMobileControlsOpen(true);
     return true;
   }, []);
-  const openMobileEditorControlsFromDoubleTap = useCallback((
+  const openMobileEditorControlsAfterTap = useCallback((
     selection: Exclude<EditorOverlaySelection, null>,
-    timeStamp: number,
-    pointerType: string,
     moved: boolean,
   ) => {
-    if (
-      pointerType === "mouse"
-      || !window.matchMedia("(max-width: 640px)").matches
-    ) {
-      return false;
-    }
-    if (moved) {
-      mobileOverlayActivationRef.current = null;
-      return false;
-    }
-    const previousActivation = mobileOverlayActivationRef.current;
-    if (
-      previousActivation?.selection === selection
-      && timeStamp - previousActivation.timestamp <= 450
-    ) {
-      mobileOverlayActivationRef.current = null;
-      return openMobileEditorControlsForSelection(selection);
-    }
-    mobileOverlayActivationRef.current = { selection, timestamp: timeStamp };
-    return false;
+    if (moved) return false;
+    return openMobileEditorControlsForSelection(selection);
   }, [openMobileEditorControlsForSelection]);
   const activateMobileSubtitleFromDoubleTap = useCallback((
     key: string,
@@ -7057,6 +7038,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
 
   const beginEditorCaptionTextEdit = useCallback((
     sourceCueIndex: number,
+    inSidebar = false,
   ) => {
     if (!captionTextEditingEnabled || !editableCaptionSourceSpec) return;
     const target = resolveEditorCaptionTextEditTarget(
@@ -7071,6 +7053,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
     videoRef.current?.pause();
     setActiveEditorSidebarTool("subtitle");
     setDesktopSidebarOpen(true);
+    setCaptionEditingInSidebar(inSidebar);
     setCaptionTextDraft({
       sourceCueIndex,
       initialText: target.currentText,
@@ -8399,14 +8382,14 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
         || (layer === "comment" && commentId)
       ) {
         if (finishEvent.type === "pointerup") {
-          openMobileEditorControlsFromDoubleTap(
+          openMobileEditorControlsAfterTap(
             layer,
-            finishEvent.timeStamp,
-            finishEvent.pointerType,
             moved,
           );
-        } else {
-          mobileOverlayActivationRef.current = null;
+          if (!moved && layer === "comment" && !window.matchMedia("(max-width: 640px)").matches) {
+            setActiveEditorSidebarTool("comment");
+            setDesktopSidebarOpen(true);
+          }
         }
       }
     };
@@ -8418,7 +8401,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
     beginEditorOverlayHistoryInteraction,
     finishEditorOverlayHistoryInteraction,
     finishPendingEditorInteractionsIncludingCaption,
-    openMobileEditorControlsFromDoubleTap,
+    openMobileEditorControlsAfterTap,
     overlayPreviewEnabled,
     renderSpec?.version,
     resolveEditorOverlayDelta,
@@ -8508,14 +8491,10 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
       setOverlayGuides(EMPTY_EDITOR_OVERLAY_GUIDES);
       finishEditorOverlayHistoryInteraction();
       if (finishEvent.type === "pointerup") {
-        openMobileEditorControlsFromDoubleTap(
+        openMobileEditorControlsAfterTap(
           editorTextSelection(id),
-          finishEvent.timeStamp,
-          finishEvent.pointerType,
           moved,
         );
-      } else {
-        mobileOverlayActivationRef.current = null;
       }
     };
     overlayDragCleanupRef.current = cleanup;
@@ -8525,7 +8504,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
   }, [
     beginEditorOverlayHistoryInteraction,
     finishEditorOverlayHistoryInteraction,
-    openMobileEditorControlsFromDoubleTap,
+    openMobileEditorControlsAfterTap,
     overlayPreviewEnabled,
     resolveEditorOverlayDelta,
     updateEditorTextOverlay,
@@ -9308,6 +9287,9 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
     overlayDragCleanupRef.current?.();
     finishPendingEditorInteractionsIncludingCaption();
     beginEditorCopyInteraction();
+    videoRef.current?.pause();
+    setSelectedOverlay(null);
+    setSelectedTimelineCommentId(null);
     setActiveEditorSidebarTool("subtitle");
     setDesktopSidebarOpen(true);
 
@@ -9378,7 +9360,9 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
       }
       cleanup();
       finishEditorCopyInteraction();
-      if (finishEvent.type === "pointerup") {
+      if (finishEvent.type === "pointerup" && !moved && window.matchMedia("(max-width: 640px)").matches) {
+        setMobileControlsOpen(true);
+      } else if (finishEvent.type === "pointerup") {
         activateMobileSubtitleFromDoubleTap(
           `caption:${cueIndex}`,
           finishEvent.timeStamp,
@@ -9404,30 +9388,31 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
     updateCaptionTemplateSubtitleLayout,
   ]);
 
-  const requestCommentTextEdit = (
-    commentId: string,
-    openControlsOnMobile = true,
-  ) => {
+  const openEditorSelectionControls = (selection: EditorOverlaySelection) => {
+    if (!selection) return;
+    if (openMobileEditorControlsForSelection(selection)) return;
+    const tool = editorSidebarToolForSelection(selection);
+    if (!tool) return;
+    setSelectedOverlay(selection);
+    setActiveEditorSidebarTool(tool);
+    setDesktopSidebarOpen(true);
+    if (isEditorTextSelection(selection)) {
+      setExpandedEditorTextId(selectedEditorTextId(selection));
+    }
+  };
+
+  const requestCommentTextEdit = (commentId: string) => {
     setInlineEditingOverlay(null);
     setSelectedOverlay("comment");
     setSelectedTimelineCommentId(commentId);
-    if (
-      openControlsOnMobile
-      && openMobileEditorControlsForSelection("comment")
-    ) {
+    if (overlayPreviewEnabled) {
+      openEditorSelectionControls("comment");
       return;
     }
     setCommentEditRequest((current) => ({
       commentId,
       revision: (current?.revision || 0) + 1,
     }));
-  };
-
-  const editSelectedCommentContent = () => {
-    if (!selectedTimelineCommentId) return;
-    setMobileControlsOpen(false);
-    setDesktopSidebarOpen(false);
-    requestCommentTextEdit(selectedTimelineCommentId, false);
   };
 
   const updateCommentRange = (
@@ -10300,7 +10285,12 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
         }}
         onEdit={(id) => {
           setSelectedTimelineCommentId(id);
-          return openMobileEditorControlsForSelection("comment");
+          if (!overlayPreviewEnabled) return false;
+          openEditorSelectionControls("comment");
+          return true;
+        }}
+        onActivate={(id) => {
+          if (overlayPreviewEnabled) requestCommentTextEdit(id);
         }}
         onDeselect={clearEditorOverlaySelection}
         onTextEditStart={beginEditorCommentTextInteraction}
@@ -10340,7 +10330,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
               setSelectedOverlay(selection);
             }}
             onEdit={() => {
-              openMobileEditorControlsForSelection(selection);
+              openEditorSelectionControls(selection);
             }}
             onInteractionStart={beginEditorOverlayHistoryInteraction}
             onInteractionEnd={finishEditorOverlayHistoryInteraction}
@@ -10360,6 +10350,16 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
     onInteractionEnd={finishEditorOverlayHistoryInteraction}
     onDelete={deleteSelectedEditorOverlay}
     fontOptions={availableEditorFontOptions}
+    timingControls={<EditorTimingControls
+      range={selectedTextOverlay}
+      durationSeconds={previewDuration}
+      onInteractionStart={beginEditorOverlayHistoryInteraction}
+      onInteractionEnd={finishEditorOverlayHistoryInteraction}
+      onChange={(range) => {
+        updateEditorTextOverlay(selectedTextOverlay.id, (current) => ({ ...current, ...range }));
+        seekCommentTimeline(range.startSeconds);
+      }}
+    />}
   /> : null;
   const editorTimelineZoomStyle: CSSProperties | undefined = overlayPreviewEnabled
     ? { width: `${editorTimelineZoom * 100}%` }
@@ -10367,6 +10367,10 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
   const selectedTimelineComment = selectedTimelineCommentId
     ? comments.find((comment) => comment.id === selectedTimelineCommentId) || null
     : null;
+  const selectedCommentPreviewIndex = orderedCommentsForPreview.findIndex(
+    (comment) => comment.id === selectedTimelineCommentId,
+  );
+  const selectedCommentPreview = orderedCommentsForPreview[selectedCommentPreviewIndex];
   const selectedMobileLayoutTool = editorSidebarToolForSelection(
     selectedOverlay,
   );
@@ -10930,7 +10934,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
             }}
             onPointerDown={beginEditorSubtitleDrag}
             onEditStart={beginEditorCaptionTextEdit}
-            editing={captionTextDraft}
+            editing={captionEditingInSidebar ? null : captionTextDraft}
             onEditingChange={(text) => setCaptionTextDraft((current) => (
               current ? { ...current, text } : current
             ))}
@@ -11501,7 +11505,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
             })}
             </div>
             {selectedMobileLayoutTool && <div
-              className={`editor-mobile-selection-actions${selectedOverlay === "comment" && selectedTimelineCommentId ? " has-comment-edit" : ""}`}
+              className="editor-mobile-selection-actions"
               aria-label={ui(`${selectedMobileLayoutLabel} 선택 작업`)}
             >
               <button
@@ -11516,7 +11520,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                     <path d="m11.5 4.6 3.9 3.9" stroke="currentColor" strokeWidth="1.5" />
                   </svg>
                 </span>
-                {ui("수정")}</button>
+                {ui(selectedOverlay === "comment" || isEditorTextSelection(selectedOverlay) ? "내용·시간" : "수정")}</button>
               <button
                 type="button"
                 className="is-delete"
@@ -11542,18 +11546,6 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                   </svg>
                 </span>
                 {ui("선택 해제")}</button>
-              {selectedOverlay === "comment" && selectedTimelineCommentId && <button
-                type="button"
-                className="is-comment-edit"
-                onClick={editSelectedCommentContent}
-              >
-                <span aria-hidden="true">
-                  <svg viewBox="0 0 20 20" fill="none">
-                    <path d="M3.5 4.25h13v8.5H9l-4.25 3.1v-3.1H3.5v-8.5Z" stroke="currentColor" strokeWidth="1.45" strokeLinejoin="round" />
-                    <path d="m8 10.8.35-1.8 3.9-3.9 1.45 1.45-3.9 3.9-1.8.35Z" stroke="currentColor" strokeWidth="1.25" strokeLinejoin="round" />
-                  </svg>
-                </span>
-                {ui("댓글 내용 수정")}</button>}
             </div>}
           </nav>}
           <div
@@ -11689,26 +11681,40 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                 </button>
               </header>
               {subtitlesEnabled && captionTextEditingEnabled && <div className="editor-caption-text-entry">
-                <div>
-                  <span>{ui("현재 자막")}</span>
-                  <p data-i18n-skip={Boolean(activeCaptionTextTarget || activeSubtitle) || undefined}>
-                    {activeCaptionTextTarget?.currentText || (!editableCaptionSourceSpec ? activeSubtitle?.text : null) || ui("자막이 나오는 구간에서 일시정지해 주세요.")}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  disabled={editableCaptionSourceSpec ? !activeCaptionTextTarget : !activeSubtitle}
-                  onClick={() => {
-                    videoRef.current?.pause();
-                    setMobileControlsOpen(false);
-                    if (activeCaptionTextTarget) {
-                      beginEditorCaptionTextEdit(activeCaptionTextTarget.sourceCueIndex);
-                    } else if (!editableCaptionSourceSpec && activeSubtitle) {
-                      finishPendingEditorInteractions();
-                      setEditingSubtitleIndex(activeSubtitleIndex);
-                    }
-                  }}
-                >{ui("문구 수정")}</button>
+                {activeCaptionTextTarget || (!editableCaptionSourceSpec && activeSubtitle)
+                  ? <label>
+                    <span>{ui("현재 자막")}</span>
+                    <textarea
+                      aria-label={ui("현재 자막 내용")}
+                      value={captionEditingInSidebar && captionTextDraft
+                        ? captionTextDraft.text
+                        : activeCaptionTextTarget?.currentText || activeSubtitle?.text || ""}
+                      rows={3}
+                      maxLength={200}
+                      onFocus={() => {
+                        videoRef.current?.pause();
+                        if (activeCaptionTextTarget) {
+                          beginEditorCaptionTextEdit(activeCaptionTextTarget.sourceCueIndex, true);
+                        } else {
+                          beginEditorCopyInteraction();
+                        }
+                      }}
+                      onChange={(event) => {
+                        if (activeCaptionTextTarget) {
+                          setCaptionTextDraft((current) => current
+                            ? { ...current, text: event.target.value }
+                            : current);
+                        } else {
+                          updateSubtitleText(activeSubtitleIndex, event.target.value);
+                        }
+                      }}
+                      onBlur={() => {
+                        if (captionEditingInSidebar && captionTextDraft) commitEditorCaptionTextEdit();
+                        else finishEditorCopyInteraction();
+                      }}
+                    />
+                  </label>
+                  : <p>{ui("자막이 나오는 구간에서 일시정지해 주세요.")}</p>}
               </div>}
               {subtitlesEnabled
                 ? editableCaptionSourceSpec
@@ -11717,7 +11723,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                 {editableCaptionSourceSpec.templateId === "basic"
                   ? "번역 자막은 팝업·강조 효과 없이 기본형으로 표시됩니다. 위치·글꼴·크기·색상을 바꾸거나 자막을 더블클릭해 문구를 수정할 수 있습니다."
                   : captionTextEditingEnabled
-                  ? ui("문구 수정 버튼으로 현재 자막을 고치고, 아래에서 모양을 조정하세요.")
+                  ? ui("현재 자막의 내용을 고치고, 아래에서 모양을 조정하세요.")
                   : <>{ui("자막의 위치·글꼴·크기·색상을 조정할 수 있습니다. 정확한 자막 구간이 저장되지 않은 영상에서는 문구 편집을 지원하지 않습니다.")}</>}
               </p>
               <div className="mb-6">
@@ -12133,6 +12139,18 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                   )}
                 />
               </label>
+              {selectedCommentPreview && <EditorTimingControls
+                range={selectedCommentPreview}
+                durationSeconds={previewDuration}
+                previousEndSeconds={orderedCommentsForPreview[selectedCommentPreviewIndex - 1]?.endSeconds ?? 0}
+                nextStartSeconds={orderedCommentsForPreview[selectedCommentPreviewIndex + 1]?.startSeconds ?? previewDuration}
+                onInteractionStart={beginEditorCommentTextInteraction}
+                onInteractionEnd={finishEditorCommentTextInteraction}
+                onChange={(range) => {
+                  updateCommentRange(selectedCommentPreview.id, range);
+                  seekCommentTimeline(range.startSeconds);
+                }}
+              />}
             </div>}
             <fieldset className="editor-comment-theme-setting">
               <legend>{ui("댓글 모드")}</legend>
@@ -12205,6 +12223,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                 />
               </label>
               <p className={`mt-1 text-xs text-white ${validTitle ? "opacity-60" : "opacity-100"}`}>{t("editor.titleLimit", { count: title.length })}</p>
+              {overlayPreviewEnabled && <p className="editor-fixed-timing-note">{ui("제목은 영상 전체에 표시됩니다.")}</p>}
             {overlayPreviewEnabled && <EditorFontPicker
               value={titleFontId}
               onChange={(fontId) => updateEditorFont("title", fontId)}

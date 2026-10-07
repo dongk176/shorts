@@ -5,6 +5,19 @@ type Phrase = readonly [ko: string, en: string, ja: string];
 // Legacy page copy is kept here while the product moves to semantic message keys.
 // User-provided and generated content is intentionally excluded from this table.
 const phrases: readonly Phrase[] = [
+  ["내용·시간", "Text · timing", "内容・時間"],
+  ["표시 시간", "Display timing", "表示時間"],
+  ["초", "seconds", "秒"],
+  ["시작 (초)", "Start (seconds)", "開始（秒）"],
+  ["종료 (초)", "End (seconds)", "終了（秒）"],
+  ["시작 0.1초 줄이기", "Start 0.1 seconds earlier", "開始を0.1秒早める"],
+  ["시작 0.1초 늘리기", "Start 0.1 seconds later", "開始を0.1秒遅らせる"],
+  ["종료 0.1초 줄이기", "End 0.1 seconds earlier", "終了を0.1秒早める"],
+  ["종료 0.1초 늘리기", "End 0.1 seconds later", "終了を0.1秒遅らせる"],
+  ["0.1초씩 조절하거나 시간을 직접 입력하세요.", "Adjust by 0.1 seconds or enter a time.", "0.1秒ずつ調整するか、時間を直接入力してください。"],
+  ["제목은 영상 전체에 표시됩니다.", "The title appears throughout the video.", "タイトルは動画全体に表示されます。"],
+  ["현재 자막 내용", "Current caption text", "現在の字幕の内容"],
+  ["현재 자막의 내용을 고치고, 아래에서 모양을 조정하세요.", "Edit this caption, then adjust its style below.", "現在の字幕を編集し、下でスタイルを調整できます。"],
   ["2MB 이하의 이미지를 선택해 주세요.", "Choose an image no larger than 2 MB.", "2MB以下の画像を選択してください。"],
   ["사진을 불러오지 못했습니다. JPG·PNG·WebP 파일을 선택해 주세요.", "Could not load the photo. Choose a JPG, PNG, or WebP file.", "画像を読み込めませんでした。JPG・PNG・WebPファイルを選択してください。"],
 

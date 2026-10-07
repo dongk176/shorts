@@ -27,7 +27,7 @@ describe("editor mobile layout", () => {
   });
 
   it("opens the bottom sheet only from explicit navigation or editing", () => {
-    expect(editorSource.match(/setMobileControlsOpen\(true\)/g)).toHaveLength(1);
+    expect(editorSource.match(/setMobileControlsOpen\(true\)/g)).toHaveLength(2);
     expect(editorSource).toContain("openMobileEditorControlsForSelection");
     expect(editorSource).toContain(
       'if (!window.matchMedia("(max-width: 640px)").matches) {',
@@ -37,16 +37,16 @@ describe("editor mobile layout", () => {
 
   it("keeps the portrait preview at a fixed 9 by 16 size", () => {
     expect(styles).toContain("@media (max-width: 640px) and (orientation: portrait)");
-    expect(styles).toContain("height: max(0px,calc(100% - 50px));");
+    expect(styles).toContain("height: max(0px,calc(100% - 72px));");
     expect(styles).toContain("max-width: min(58vw,244px);");
     expect(styles).toContain("aspect-ratio: 9/16;");
     expect(styles).toContain("grid-template-rows: minmax(0,1fr) clamp(168px,28dvh,260px);");
   });
 
   it("reserves action-row space when the mobile viewport gets shorter", () => {
-    expect(styles).toContain("max-height: max(0px,calc(100% - 50px));");
-    expect(styles).toContain("min-height: 42px;");
-    expect(styles).toContain("grid-template-rows: minmax(42px,1fr);");
+    expect(styles).toContain("max-height: max(0px,calc(100% - 72px));");
+    expect(styles).toContain("min-height: 64px;");
+    expect(styles).toContain("grid-template-rows: minmax(64px,1fr);");
   });
 
   it("keeps undo and redo available in the mobile header", () => {
@@ -77,7 +77,7 @@ describe("editor mobile layout", () => {
   it("centers the action row between preview and layout without overlaying video", () => {
     expect(editorSource).toContain('className="editor-preview-mobile-actions"');
     expect(styles).toContain(".editor-v2-root .editor-preview-mobile-actions {");
-    expect(styles).toContain("flex: 1 1 0;");
+    expect(styles).toContain("flex: 1 0 64px;");
     expect(styles).toContain(
       "grid-template-columns: minmax(0,1fr) auto minmax(0,1fr);",
     );
@@ -187,36 +187,35 @@ describe("editor mobile layout", () => {
   it("opens layout controls from a double click", () => {
     expect(editorSource).toContain("onDoubleClickCapture={(event) => {");
     expect(editorSource).toContain(
-      'openMobileEditorControlsForSelection("comment")',
+      'openEditorSelectionControls("comment")',
     );
     expect(textTimelineSource).toContain("onDoubleClick={(event) => {");
     expect(textTimelineSource).toContain("onEdit();");
   });
 
-  it("opens text and hooking-title sheets from a mobile double tap", () => {
-    expect(editorSource).toContain("mobileOverlayActivationRef");
-    expect(editorSource).toContain("openMobileEditorControlsFromDoubleTap");
+  it("opens text and hooking-title sheets from a stationary mobile tap", () => {
+    expect(editorSource).not.toContain("mobileOverlayActivationRef");
+    expect(editorSource).toContain("openMobileEditorControlsAfterTap");
     expect(editorSource).toContain(
       '|| layer === "channel"',
     );
     expect(editorSource).toContain("editorTextSelection(id),");
-    expect(textTimelineSource).toContain("lastTouchActivationRef");
-    expect(textTimelineSource).toContain('event.pointerType !== "mouse"');
-    expect(textTimelineSource).toContain("event.timeStamp - previousActivation <= 450");
+    expect(textTimelineSource).not.toContain("lastTouchActivationRef");
+    expect(textTimelineSource).toContain('if (active.adjustment === "move") onEdit();');
   });
 
-  it("opens the selected preview comment sheet from a mobile double tap", () => {
+  it("opens the selected preview comment sheet from a stationary mobile tap", () => {
     expect(editorSource).toContain(
       '|| (layer === "comment" && commentId)',
     );
     expect(editorSource).toContain("setSelectedTimelineCommentId(layer === \"comment\" ? commentId || null : null)");
-    expect(editorSource).toContain("openMobileEditorControlsFromDoubleTap(\n            layer,");
+    expect(editorSource).toContain("openMobileEditorControlsAfterTap(\n            layer,");
   });
 
-  it("opens channel controls from a preview double click or mobile double tap", () => {
+  it("opens channel controls from a preview double click or mobile tap", () => {
     expect(editorSource).toContain('layer === "channel"');
     expect(editorSource).toContain('|| layer === "channel"');
-    expect(editorSource).toContain("openMobileEditorControlsFromDoubleTap(\n            layer,");
+    expect(editorSource).toContain("openMobileEditorControlsAfterTap(\n            layer,");
   });
 
   it("replaces the mobile tool rail with edit and delete actions", () => {
@@ -228,9 +227,7 @@ describe("editor mobile layout", () => {
     expect(styles).toContain(
       "grid-template-columns: repeat(3,minmax(0,1fr));",
     );
-    expect(styles).toContain(
-      "grid-template-columns: repeat(4,minmax(0,1fr));",
-    );
+    expect(styles).not.toContain("editor-mobile-selection-actions.has-comment-edit");
     expect(styles).toContain(
       ".editor-v2-root .editor-tool-rail .editor-mobile-selection-actions button",
     );
@@ -239,12 +236,10 @@ describe("editor mobile layout", () => {
     );
   });
 
-  it("adds an equal-width comment content action for selected comments", () => {
-    expect(editorSource).toContain("editSelectedCommentContent");
-    expect(editorSource).toContain("댓글 내용 수정");
-    expect(editorSource).toContain(
-      "requestCommentTextEdit(selectedTimelineCommentId, false)",
-    );
+  it("uses one content-and-time action for selected comments", () => {
+    expect(editorSource).not.toContain("editSelectedCommentContent");
+    expect(editorSource).toContain("내용·시간");
+    expect(editorSource).toContain("<EditorTimingControls");
   });
 
   it("edits the double-clicked comment inside the comment bottom sheet", () => {

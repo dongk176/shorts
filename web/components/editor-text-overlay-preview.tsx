@@ -198,7 +198,6 @@ export function EditorTextTimeline({
   const panelRef = useRef<HTMLElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<ActiveTextRangeDrag | null>(null);
-  const lastTouchActivationRef = useRef<number | null>(null);
   const safeDuration = Math.max(0.3, durationSeconds);
   const startSeconds = Math.max(0, Math.min(safeDuration, textOverlay.startSeconds));
   const endSeconds = Math.max(
@@ -280,12 +279,10 @@ export function EditorTextTimeline({
       if (Math.max(Math.abs(distance), Math.abs(verticalDistance)) < 5) return;
       if (active.adjustment === "move" && event.pointerType !== "mouse") {
         dragRef.current = null;
-        lastTouchActivationRef.current = null;
         return;
       }
       if (Math.abs(verticalDistance) > Math.abs(distance)) {
         dragRef.current = null;
-        lastTouchActivationRef.current = null;
         return;
       }
       active.moved = true;
@@ -313,26 +310,10 @@ export function EditorTextTimeline({
       active.captureTarget.releasePointerCapture(event.pointerId);
     }
     if (active.interactionStarted) onInteractionEnd();
-    if (active.moved || event.type !== "pointerup") {
-      lastTouchActivationRef.current = null;
-      return;
-    }
-    if (event.pointerType !== "mouse") {
-      const previousActivation = lastTouchActivationRef.current;
-      if (
-        previousActivation !== null
-        && event.timeStamp - previousActivation <= 450
-      ) {
-        lastTouchActivationRef.current = null;
-        onEdit();
-        event.preventDefault();
-        event.stopPropagation();
-        return;
-      }
-      lastTouchActivationRef.current = event.timeStamp;
-    }
+    if (active.moved || event.type !== "pointerup") return;
     onSelect();
     onSeek(active.initialRange.startSeconds);
+    if (active.adjustment === "move") onEdit();
   };
 
   const adjustWithKeyboard = (
@@ -381,6 +362,13 @@ export function EditorTextTimeline({
               aria-label={ui("텍스트 노출 구간 이동")}
               onPointerDown={(event) => startDrag("move", event)}
               onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  onSelect();
+                  onEdit();
+                  event.preventDefault();
+                  event.stopPropagation();
+                  return;
+                }
                 if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
                 adjustWithKeyboard("move", event.key === "ArrowLeft" ? -1 : 1);
                 event.preventDefault();
