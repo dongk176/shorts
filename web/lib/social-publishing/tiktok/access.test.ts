@@ -7,6 +7,7 @@ import { canUseTikTokPublishing, requireTikTokAccountAccess, requireTikTokPublis
 const production = {
   NODE_ENV: "production", VERCEL_ENV: "production", VERCEL_PROJECT_ID: "prj_bQyHRVC3Pfzq2dvUnAqEDlw66GOw",
   DATABASE_URL: "postgres://postgres.mvcprswvfybudtopepuj:test@aws-1-ap-northeast-2.pooler.supabase.com/postgres",
+  TIKTOK_CLIENT_KEY: "aw0hf13lzubm6qu1",
   TIKTOK_PUBLISHING_MODE: "public", TIKTOK_DIRECT_POST_AUDIT_APPROVED: "true", TIKTOK_PUBLIC_ORIGIN: "https://www.easycut.co.kr",
 } as const;
 beforeEach(() => { state.paid = true; for (const [key, value] of Object.entries(production)) vi.stubEnv(key, value); });
@@ -14,7 +15,7 @@ afterEach(() => vi.unstubAllEnvs());
 describe("public TikTok release boundaries", () => {
   it("requires approval and exact production identities, leaving local/admin review private", () => {
     expect(tiktokConfig(production)).toMatchObject({ publicEnabled: true, auditApproved: true, hosted: true });
-    for (const override of [{ TIKTOK_DIRECT_POST_AUDIT_APPROVED: "" }, { VERCEL_ENV: "preview" }, { VERCEL_PROJECT_ID: "prj_OUjrCgwHONBUwrNMASKabA6n5hp0" }, { DATABASE_URL: "postgres://test@localhost/db" }, { TIKTOK_PUBLIC_ORIGIN: "https://easycut-lab.vercel.app" }]) expect(() => tiktokConfig({ ...production, ...override })).toThrow();
+    for (const override of [{ TIKTOK_CLIENT_KEY: "sbawd0xc4kip84qf9e" }, { TIKTOK_CLIENT_KEY: "" }, { TIKTOK_CLIENT_KEY: "other-production-app" }, { TIKTOK_DIRECT_POST_AUDIT_APPROVED: "" }, { VERCEL_ENV: "preview" }, { VERCEL_PROJECT_ID: "prj_OUjrCgwHONBUwrNMASKabA6n5hp0" }, { DATABASE_URL: "postgres://test@localhost/db" }, { TIKTOK_PUBLIC_ORIGIN: "https://easycut-lab.vercel.app" }]) expect(() => tiktokConfig({ ...production, ...override })).toThrow();
     expect(tiktokConfig({ ...production, TIKTOK_PUBLISHING_MODE: "admin-review" }).auditApproved).toBe(false);
   });
   it("allows active paid members to publish but rejects withdrawn and unpaid accounts", async () => {

@@ -30,6 +30,11 @@ export function tiktokConfig(env: NodeJS.ProcessEnv = process.env) {
   const origin = publicOrigin ? new URL(publicOrigin).origin : "http://localhost:3002";
   const clientKey = env.TIKTOK_CLIENT_KEY || "";
   const clientSecret = env.TIKTOK_CLIENT_SECRET || "";
+  // Verified in the Production / Live portal for app 7687459606926346258.
+  // A local audit flag must never promote a Sandbox API client to public use.
+  if (publicEnabled && clientKey !== "aw0hf13lzubm6qu1") {
+    throw new HttpError(503, "The approved production TikTok client is required.", "TIKTOK_SETUP_REQUIRED");
+  }
   return {
     hosted, publicEnabled, origin, publicOrigin, redirectUri, clientKey, clientSecret, allowedUsers,
     oauthReady: Boolean(redirectUri && clientKey && clientSecret),
