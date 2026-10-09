@@ -3,7 +3,11 @@ import { proposedCallback } from "../review-contract";
 import { uuid } from "./contracts";
 
 export function tiktokConfig(env: NodeJS.ProcessEnv = process.env) {
-  const hosted = env.TIKTOK_PUBLISHING_MODE === "admin-review";
+  const publicEnabled = env.TIKTOK_PUBLISHING_MODE === "public";
+  const hosted = publicEnabled || env.TIKTOK_PUBLISHING_MODE === "admin-review";
+  if (publicEnabled && env.TIKTOK_DIRECT_POST_AUDIT_APPROVED !== "true") {
+    throw new HttpError(503, "TikTok Direct Post approval is required.", "TIKTOK_SETUP_REQUIRED");
+  }
   if (!hosted && (env.TIKTOK_PUBLISHING_MODE !== "local" || env.NODE_ENV === "production" || env.VERCEL_ENV)) {
     throw new HttpError(404, "TikTok publishing is not enabled.", "TIKTOK_DISABLED");
   }
@@ -27,11 +31,11 @@ export function tiktokConfig(env: NodeJS.ProcessEnv = process.env) {
   const clientKey = env.TIKTOK_CLIENT_KEY || "";
   const clientSecret = env.TIKTOK_CLIENT_SECRET || "";
   return {
-    hosted, origin, publicOrigin, redirectUri, clientKey, clientSecret, allowedUsers,
+    hosted, publicEnabled, origin, publicOrigin, redirectUri, clientKey, clientSecret, allowedUsers,
     oauthReady: Boolean(redirectUri && clientKey && clientSecret),
     mediaVerified: env.TIKTOK_MEDIA_ORIGIN_VERIFIED === "true" && Boolean(publicOrigin),
-    // This review release deliberately cannot enable public posts via an env flag.
-    auditApproved: false as const,
+    // Public posting is enabled only in the verified production configuration.
+    auditApproved: publicEnabled && env.TIKTOK_DIRECT_POST_AUDIT_APPROVED === "true",
   };
 }
 export type TikTokConfig = ReturnType<typeof tiktokConfig>;

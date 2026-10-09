@@ -6,7 +6,7 @@ import { metaReviewerGrant } from "./meta/reviewer-access";
 // The rollout grants publishing, never site administration, to the client UI.
 // Every API independently rechecks this server-side role from the database.
 export async function canUseAdminPublishing(db: Sql, userId: string) {
-  if (process.env.TIKTOK_PUBLISHING_MODE !== "admin-review" && process.env.META_PUBLISHING_MODE !== "admin-review") return false;
+  if (process.env.TIKTOK_PUBLISHING_MODE !== "admin-review" && process.env.TIKTOK_PUBLISHING_MODE !== "public" && process.env.META_PUBLISHING_MODE !== "admin-review") return false;
   const rows = await db`select id from shorts_mvp.app_users where id=${userId} and is_admin=true and withdrawn_at is null limit 1`;
   return rows.length === 1;
 }

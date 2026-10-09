@@ -9,7 +9,7 @@ vi.mock("@/lib/i18n/provider", () => ({ useI18n: () => language }));
 let root: Root | undefined;
 afterEach(async () => { if (root) await act(async () => root!.unmount()); root = undefined; vi.unstubAllGlobals(); });
 
-async function render(connected: boolean, locale = "en", error = false) {
+async function render(connected: boolean, locale = "en", error = false, approved = false) {
   language.locale = locale;
   const { window, document } = parseHTML("<html><body><div id='app'></div></body></html>");
   Object.defineProperty(window, "location", { configurable: true, value: { href: "http://localhost:3002/en/projects/1", pathname: "/en/projects/1" } });
@@ -17,7 +17,7 @@ async function render(connected: boolean, locale = "en", error = false) {
   const calls: string[] = [];
   vi.stubGlobal("fetch", vi.fn(async (url: string) => {
     calls.push(url);
-    if (url.includes("/creator")) return error ? Response.json({ code: "TIKTOK_ACCESS_TOKEN_INVALID" }, { status: 502 }) : Response.json({ creator: { connectionId: "connection-a", nickname: "Fresh TikTok name", username: "owner", fetchedAtMs: Date.now(), privacyOptions: ["SELF_ONLY", "PUBLIC_TO_EVERYONE"], commentDisabled: true, duetDisabled: true, stitchDisabled: false, maxDurationSeconds: 60 }, durationSeconds: 15, auditApproved: false, mediaReady: true });
+    if (url.includes("/creator")) return error ? Response.json({ code: "TIKTOK_ACCESS_TOKEN_INVALID" }, { status: 502 }) : Response.json({ creator: { connectionId: "connection-a", nickname: "Fresh TikTok name", username: "owner", fetchedAtMs: Date.now(), privacyOptions: ["SELF_ONLY", "PUBLIC_TO_EVERYONE"], commentDisabled: true, duetDisabled: true, stitchDisabled: false, maxDurationSeconds: 60 }, durationSeconds: 15, auditApproved: approved, mediaReady: true });
     if (url.includes("/posts")) return Response.json({ posts: [] });
     return Response.json({ connections: connected ? [{ id: "connection-a", nickname: "Saved account name", username: "owner", status: "active" }] : [], oauthReady: connected, retryAfterSeconds: 0 });
   }));
@@ -39,6 +39,15 @@ describe("TikTok upload form from client API responses", () => {
     expect(container.querySelector('button[type="submit"]')?.hasAttribute("disabled")).toBe(true);
     expect(container.querySelector("video")?.getAttribute("src")).toContain("/api/social/tiktok/preview/short-a");
     expect(container.querySelector('a[href*="music-usage-confirmation"]')).not.toBeNull();
+    expect(calls.some(url => url.endsWith("/posts"))).toBe(false);
+  });
+  it("enables the approved public option without choosing privacy or consent for the user", async () => {
+    const { container, calls } = await render(true, "en", false, true);
+    const privacy = Array.from(container.querySelectorAll("select")).find(select => select.id.endsWith("-privacy"))!;
+    expect(privacy.querySelector('option[value="PUBLIC_TO_EVERYONE"]')?.hasAttribute("disabled")).toBe(false);
+    expect(privacy.querySelector("option[selected]")?.getAttribute("value")).toBe("");
+    expect(container.textContent).not.toContain("This test supports Only me");
+    expect(container.querySelector('button[type="submit"]')?.hasAttribute("disabled")).toBe(true);
     expect(calls.some(url => url.endsWith("/posts"))).toBe(false);
   });
   it.each(["en", "ja"])("renders %s text immediately and preserves authored titles", async locale => {

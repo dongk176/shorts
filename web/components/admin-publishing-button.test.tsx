@@ -46,8 +46,8 @@ describe('one shared publishing dialog',()=>{
   expect(document.querySelectorAll('dialog[open]').length).toBe(1);
   expect(fetcher).not.toHaveBeenCalled();
  });
- it('cannot bypass member maintenance with an OAuth callback or platform grants',async()=>{
-  const {document,fetcher}=await render({adminEnabled:false,youtubeEnabled:true,tiktokEnabled:true},"youtube");
+ it('cannot bypass YouTube maintenance with an OAuth callback',async()=>{
+  const {document,fetcher}=await render({adminEnabled:false,youtubeEnabled:true,tiktokEnabled:false},"youtube");
   expect(document.body.textContent).toContain('Uploads are temporarily unavailable');
   expect(document.querySelector('.publish-tabs')).toBeNull();
   expect(fetcher).not.toHaveBeenCalled();
@@ -59,6 +59,23 @@ describe('one shared publishing dialog',()=>{
   expect(document.querySelector('.publish-status-actions a')?.getAttribute('href')).toBe('/api/shorts/short-a/download');
   expect(document.body.textContent).toContain('Uploads are temporarily unavailable');
   expect(fetcher).not.toHaveBeenCalled();
+ });
+ it('opens TikTok for a granted member while keeping YouTube and Meta unavailable',async()=>{
+  const {document,click,fetcher}=await render({adminEnabled:false,tiktokEnabled:true,youtubeEnabled:true});
+  await click('.publish-trigger');
+  expect(document.querySelector('.publish-tabs .is-active')?.textContent).toBe('TikTok');
+  expect(document.querySelector('[data-platform="tiktok"]')).not.toBeNull();
+  await click('.publish-tabs button:nth-child(1)');
+  expect(document.querySelector('[data-platform="tiktok"]')).toBeNull();
+  expect(fetcher).not.toHaveBeenCalled();
+  expect(document.body.textContent).toContain('Uploads are temporarily unavailable');
+  await click('.publish-tabs button:nth-child(3)');
+  expect(document.body.textContent).toContain('This platform is coming soon.');
+ });
+ it('restores a member TikTok tab after OAuth only with the server grant',async()=>{
+  const {document}=await render({adminEnabled:false,tiktokEnabled:true},"tiktok");
+  expect(document.querySelector('[data-platform="tiktok"]')).not.toBeNull();
+  expect(document.querySelectorAll('dialog').length).toBe(1);
  });
  it('opens TikTok only with the explicit server-provided administrator flag',async()=>{
   const {document,click}=await render({youtubeEnabled:true,tiktokEnabled:true});

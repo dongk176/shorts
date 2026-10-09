@@ -13,6 +13,8 @@ import { ProjectPage } from "../../shorts-app";
 import { canUseYoutubePublishing, youtubeReviewerShortForProject } from "@/lib/youtube-accounts/review-access";
 import { canUseAdminPublishing, metaReviewerShortForProject } from "@/lib/social-publishing/access";
 
+import { canUseTikTokPublishing } from "@/lib/social-publishing/tiktok/access";
+
 export const dynamic = "force-dynamic";
 
 export async function generateMetadata({
@@ -63,16 +65,18 @@ export default async function ProjectNumberPage({
       && adminSubtitleLayoutEnabled;
   }
 
-  const [adminPublishingEnabled, metaReviewerShortId, youtubeReviewerShortId, youtubePublishingEnabled] = await Promise.all([
+  const [adminPublishingEnabled, metaReviewerShortId, youtubeReviewerShortId, youtubePublishingEnabled, tiktokPublishingEnabled] = await Promise.all([
     canUseAdminPublishing(db, projectAccess.appUserId),
     metaReviewerShortForProject(db, projectAccess.appUserId, projectNumber),
     youtubeReviewerShortForProject(db, projectAccess.appUserId, projectNumber),
     canUseYoutubePublishing(db, projectAccess.appUserId),
+    canUseTikTokPublishing(db, projectAccess.appUserId),
   ]);
 
   return <ProjectPage
     projectNumber={projectNumber}
     adminPublishingEnabled={adminPublishingEnabled}
+    tiktokPublishingEnabled={tiktokPublishingEnabled}
     metaReviewerShortId={metaReviewerShortId}
     youtubeReviewerShortId={youtubeReviewerShortId}
     youtubePublishingEnabled={youtubePublishingEnabled}

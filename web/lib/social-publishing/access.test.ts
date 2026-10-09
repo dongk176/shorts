@@ -17,7 +17,7 @@ const production = {
 beforeEach(() => {
   vi.clearAllMocks(); state.admin = false; state.signedIn = true;
   for (const [key, value] of Object.entries(production)) vi.stubEnv(key, value);
-  state.db.mockImplementation(async (strings: TemplateStringsArray) => strings.join("").includes("is_admin=true") && state.admin ? [{ id: "admin" }] : []);
+  state.db.mockImplementation(async (strings: TemplateStringsArray) => strings.join("").includes("app_users") && state.admin ? [{ id: "admin", isAdmin: true }] : []);
 });
 afterEach(() => vi.unstubAllEnvs());
 describe("administrator publishing rollout boundary", () => {
@@ -43,7 +43,7 @@ describe("administrator publishing rollout boundary", () => {
       () => postCheck(req, { params: Promise.resolve({ postId: "arbitrary" }) }),
       () => previewGet(req, { params: Promise.resolve({ shortId: "arbitrary" }) })];
     for (const call of calls) { const res = await call(); expect(res.status).toBe(403); expect(await res.json()).toEqual({ code: "TIKTOK_DISABLED" }); }
-    expect(state.db.mock.calls.every(([strings]) => strings.join("").includes("is_admin=true"))).toBe(true);
+    expect(state.db.mock.calls.every(([strings]) => strings.join("").includes("app_users"))).toBe(true);
   });
   it("requires authentication even if a caller knows a project or connection ID", async () => {
     state.signedIn = false;

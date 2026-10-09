@@ -67,6 +67,7 @@ beforeAll(async () => {
     create table shorts_mvp.generated_shorts(id uuid primary key,job_id uuid,user_id uuid,status text,deleted_at timestamptz,expires_at timestamptz,output_s3_key text,render_version integer);
     set app.tiktok_admin_review='true';`);
   await pg.exec(fs.readFileSync(path.resolve("../supabase/migrations/202609210001_tiktok_admin_publishing.sql"), "utf8"));
+  await pg.exec(fs.readFileSync(path.resolve("../supabase/migrations/20261009053238_tiktok_public_privacy.sql"), "utf8"));
   root = fs.mkdtempSync(path.join(os.tmpdir(), "easycut-tiktok-")); fs.mkdirSync(path.join(root, "outputs")); fs.writeFileSync(path.join(root, "outputs/owned.mp4"), Buffer.alloc(64, 1));
 }, 30_000);
 beforeEach(async () => {
@@ -74,6 +75,7 @@ beforeEach(async () => {
     insert into shorts_mvp.app_users values('${A.userId}',null),('${B.userId}',null);
     insert into shorts_mvp.video_jobs values('${jobA}','${A.userId}',1,'complete',false,null),('${jobB}','${B.userId}',2,'complete',false,null);
     insert into shorts_mvp.generated_shorts values('${shortId}','${jobA}','${A.userId}','ready',null,null,'outputs/owned.mp4',1),('${otherShort}','${jobB}','${B.userId}','ready',null,null,'outputs/other.mp4',1);`);
+  config.auditApproved = false;
   paid = true; partial = false; creatorPrivateOnly = false; status = "PROCESSING_DOWNLOAD"; initError = ""; creatorError = ""; loseInit = false; revokeFails = false;
   initCalls = 0; refreshCalls = 0; revokes = 0; creatorCalls = 0; lastUrl = "";
   fs.writeFileSync(path.join(root, "outputs/owned.mp4"), Buffer.alloc(64, 1));
@@ -123,6 +125,32 @@ describe("TikTok local publishing through PostgreSQL and provider protocol", () 
     }
     creatorError = "spam_risk_too_many_posts";
     await expect(service.create(A, intent(c.id))).rejects.toThrow(); expect(initCalls).toBe(0);
+  });
+  it("publishes the chosen public audience only after approval and preserves ownership and consent checks", async () => {
+    const c = await connect();
+    config.auditApproved = true;
+    expect((await service.creator(A, c.id, shortId)).auditApproved).toBe(true);
+    const publicIntent = { ...intent(c.id), privacy: "PUBLIC_TO_EVERYONE" };
+    await expect(service.create(B, publicIntent)).rejects.toThrow();
+    await expect(service.create(A, { ...publicIntent, sendToTikTokConfirmed: false })).rejects.toThrow();
+    creatorPrivateOnly = true;
+    await expect(service.create(A, publicIntent)).rejects.toThrow();
+    creatorPrivateOnly = false;
+    const posted = await service.create(A, publicIntent);
+    expect(posted).toMatchObject({ status: "processing", privacy: "PUBLIC_TO_EVERYONE" });
+    expect(lastInit).toMatchObject({ post_info: { privacy_level: "PUBLIC_TO_EVERYONE" } });
+    expect((await service.listPosts(A, shortId))[0].privacy).toBe("PUBLIC_TO_EVERYONE");
+    expect((await service.create(A, publicIntent)).id).toBe(posted.id);
+    expect(initCalls).toBe(1);
+  });
+  it("stores the new audience when retrying a pre-approval rejection after approval", async () => {
+    const c = await connect(); initError = "unaudited_client_can_only_post_to_private_accounts";
+    const failed = await service.create(A, intent(c.id));
+    initError = ""; config.auditApproved = true;
+    const posted = await service.create(A, { ...intent(c.id), privacy: "PUBLIC_TO_EVERYONE" });
+    expect(posted.id).not.toBe(failed.id);
+    expect(posted).toMatchObject({ privacy: "PUBLIC_TO_EVERYONE", status: "processing" });
+    expect(initCalls).toBe(2);
   });
   it("uses verified PULL_FROM_URL, stores consent, and never uploads twice for a render", async () => {
     const c = await connect(), before = creatorCalls;

@@ -79,7 +79,7 @@ export class TikTokPublishing {
   async creator(actor: Actor, connectionId: string, shortId: string) {
     const source = await this.source(actor, shortId), media = await this.media.inspect(source.outputS3Key);
     const creator = await this.access(actor, connectionId, (_tx, _link, token) => this.api.creator(token, connectionId));
-    return { creator, durationSeconds: media.duration, auditApproved: false, mediaReady: this.config.mediaVerified };
+    return { creator, durationSeconds: media.duration, auditApproved: this.config.auditApproved, mediaReady: this.config.mediaVerified };
   }
   async preview(actor: Actor, shortId: string) { return this.media.file((await this.source(actor, shortId)).outputS3Key); }
   async listPosts(actor: Actor, shortId: string) { await this.source(actor, shortId); return (await this.store.posts(actor.userId, shortId)).map(row => this.store.view(row)); }
@@ -92,7 +92,7 @@ export class TikTokPublishing {
       const live = await this.store.source(actor.userId, input.shortId, tx);
       if (live.renderVersion !== source.renderVersion || live.outputS3Key !== source.outputS3Key) throw new HttpError(409, "The finished video changed.", "TIKTOK_SOURCE_CHANGED");
       const creator = await this.api.creator(token, input.connectionId);
-      const issues = validateTikTokIntent(input, creator, { nowMs: Date.now(), durationSeconds: media.duration, auditApproved: false });
+      const issues = validateTikTokIntent(input, creator, { nowMs: Date.now(), durationSeconds: media.duration, auditApproved: this.config.auditApproved });
       if (issues.length) throw new HttpError(400, "Review the audience, permissions and consent before uploading.", "TIKTOK_INVALID_POST");
       const pending = await tx`select id from shorts_mvp.tiktok_posts where user_id=${actor.userId} and status in ('initiating','processing') and created_at>now()-interval '90 minutes'
         and not(short_id=${input.shortId} and render_version=${source.renderVersion} and connection_id=${input.connectionId})`;
@@ -100,7 +100,7 @@ export class TikTokPublishing {
       const rows = await tx`insert into shorts_mvp.tiktok_posts(id,user_id,connection_id,connection_version,short_id,render_version,title,privacy,consent_ciphertext,source_key,source_hash,media_hash,status)
         values(${id},${actor.userId},${input.connectionId},${link.version},${input.shortId},${source.renderVersion},${input.title},${input.privacy},${this.vault.seal(JSON.stringify({ input, creator, durationSeconds: media.duration, confirmedAt: new Date().toISOString() }), actor.userId, `consent:${id}`)},${source.outputS3Key},${media.hash},${hash(capability)},'initiating')
         on conflict(user_id,short_id,render_version,connection_id) do update set
-          id=excluded.id,connection_version=excluded.connection_version,title=excluded.title,
+          id=excluded.id,connection_version=excluded.connection_version,title=excluded.title,privacy=excluded.privacy,
           consent_ciphertext=excluded.consent_ciphertext,source_key=excluded.source_key,source_hash=excluded.source_hash,
           media_hash=excluded.media_hash,media_expires_at=excluded.media_expires_at,
           status='initiating',error_code=null,created_at=excluded.created_at,checked_at=null

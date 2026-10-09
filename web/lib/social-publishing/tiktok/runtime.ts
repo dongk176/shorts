@@ -1,8 +1,7 @@
 import "server-only";
 import { getDb } from "@/lib/db";
-import { requireAdminPublishing } from "../access";
+import { requireTikTokAccountAccess, requireTikTokPublishingAccess } from "./access";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
-import { HttpError } from "@/lib/http";
 import { tiktokConfig } from "./config";
 import { TikTokApi } from "./api";
 import { TikTokStore } from "./store";
@@ -21,14 +20,13 @@ export async function tiktokServices() {
   const store = new TikTokStore(db, config.clientKey);
   const media = new TikTokMedia();
   const service = new TikTokPublishing(store, vault, new TikTokApi(config), media, config, async userId => {
-    await requireAdminPublishing(db, userId);
+    await requireTikTokPublishingAccess(db, userId, config);
   });
   return { config, store, service };
 }
 export async function tiktokContext() {
   const config = tiktokConfig();
   const session = await requireAuthenticatedMvpSession({ allowPaymentMethodRemediation: true });
-  if (config.hosted) await requireAdminPublishing(getDb(), session.userId);
-  else if (!config.allowedUsers.has(session.userId)) throw new HttpError(403, "TikTok publishing is not available for this account.", "TIKTOK_DISABLED");
+  await requireTikTokAccountAccess(getDb(), session.userId, config);
   return { ...await tiktokServices(), actor: { userId: session.userId, sessionId: session.id } };
 }
