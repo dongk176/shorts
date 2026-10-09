@@ -148,6 +148,29 @@ describe("simple popular search UI",()=>{
 
 
 describe("compact popular filters", () => {
+  it("changes desktop category while preserving search and language, and synchronizes the filter dialog", async () => {
+    const page = await setup();
+    await page.select("popular-language", "영어"); await page.respond(1);
+    await page.type("football"); await page.submit(); await page.respond(2);
+    await page.select("popular-category", "스포츠");
+    expect(Object.fromEntries(page.requests[3].url.searchParams)).toMatchObject({q: "football", category: "sports", english: "true"});
+    expect(page.requests[3].url.searchParams.has("cursor")).toBe(false);
+    await page.respond(3);
+    await page.click(page.button("필터"));
+    expect(page.container.querySelector("#popular-draft-category-mobile")?.textContent).toContain("스포츠");
+    await page.select("popular-draft-category", "음악", true);
+    await page.click(page.button("적용"));
+    expect(page.container.querySelector("#popular-category")?.textContent).toContain("음악");
+    expect(page.requests[4].url.searchParams.get("category")).toBe("music");
+  });
+  it("requires filter access for the desktop category selector", async () => {
+    const page = await setup(false);
+    await page.select("popular-category", "스포츠");
+    expect(page.container.querySelector('[data-testid="existing-plan-guide"]')).not.toBeNull();
+    expect(page.requests).toHaveLength(1);
+    expect(page.container.querySelector("#popular-category")?.textContent).toContain("전체");
+  });
+
   it("applies category, language, period and length together; cancel discards drafts", async () => {
     const page = await setup();
     await page.click(page.button("필터"));

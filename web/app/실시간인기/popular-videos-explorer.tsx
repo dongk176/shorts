@@ -1034,6 +1034,9 @@ export function PopularVideosExplorer({
         <fieldset className="hidden min-w-0 max-w-full md:ml-auto md:block">
           <legend className="sr-only">{compactFilterCopy[locale].title}</legend>
           <div className="flex flex-wrap items-center justify-end gap-2">
+            <PopularFilterSelect id="popular-category" label={filterCopy.category} closeLabel={filterCopy.close}
+              value={category} options={categoryOptions.map(option => ({value: option.value, label: filterCopy.categories[option.value]}))} showLabel
+              onChange={next => applyFilter(() => setCategory(next))} className="min-w-44" />
             <PopularFilterSelect id="popular-language" label={compactFilterCopy[locale].language} closeLabel={filterCopy.close}
               value={language} options={languageOptions(locale, !response || japaneseEnabled || japaneseOnly)} showLabel
               onChange={next => applyFilter(() => setLanguage(next))} className="min-w-44" />
