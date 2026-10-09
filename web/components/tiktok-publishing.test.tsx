@@ -2,17 +2,18 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { parseHTML } from "linkedom";
-import { TikTokPublishingPanel } from "./tiktok-publishing";
+import { TikTokPublishingPanel, tiktokRequest } from "./tiktok-publishing";
 
 const language = vi.hoisted(() => ({ locale: "en" }));
 vi.mock("@/lib/i18n/provider", () => ({ useI18n: () => language }));
 let root: Root | undefined;
 afterEach(async () => { if (root) await act(async () => root!.unmount()); root = undefined; vi.unstubAllGlobals(); });
 
-async function render(connected: boolean, locale = "en", error = false, approved = false) {
+async function render(connected: boolean, locale = "en", error = false, approved = false, query = "") {
   language.locale = locale;
   const { window, document } = parseHTML("<html><body><div id='app'></div></body></html>");
-  Object.defineProperty(window, "location", { configurable: true, value: { href: "http://localhost:3002/en/projects/1", pathname: "/en/projects/1" } });
+  Object.defineProperty(window, "location", { configurable: true, value: { href: "http://localhost:3002/en/projects/1"+query, pathname: "/en/projects/1" } });
+  Object.defineProperty(window, "history", { configurable: true, value: { state: null, replaceState: vi.fn() } });
   vi.stubGlobal("window", window); vi.stubGlobal("document", document); vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const calls: string[] = [];
   vi.stubGlobal("fetch", vi.fn(async (url: string) => {
@@ -65,4 +66,29 @@ describe("TikTok upload form from client API responses", () => {
     expect(container.textContent).toContain("Reconnect required");
     expect(container.querySelector('button[type="submit"]')?.hasAttribute("disabled")).toBe(true);
   });
+  it("shows a prominent specific connection failure and safe reference after OAuth return", async () => {
+    const requestId = "11111111-1111-4111-8111-111111111111";
+    const { container, calls } = await render(false, "ko", false, true, `?tiktokAccount=failed&tiktokError=TIKTOK_ALREADY_LINKED&tiktokRequest=${requestId}`);
+    const alert = container.querySelector('[role="alert"]')!;
+    expect(alert.textContent).toContain("TikTok 연결을 완료하지 못했어요");
+    expect(alert.textContent).toContain("다른 이지컷 계정에 연결");
+    expect(alert.textContent).toContain(requestId);
+    expect(alert.className).toContain("publish-error-notice");
+    expect(calls.some(url => /oauth|posts$/.test(url))).toBe(false);
+    const cleanUrl = vi.mocked(window.history.replaceState).mock.calls[0][2];
+    expect(String(cleanUrl)).not.toMatch(/tiktokAccount|tiktokError|tiktokRequest/);
+  });
+  it("never displays arbitrary URL failure text and explains unconfirmed cleanup", async () => {
+    const { container } = await render(false, "en", false, true, "?tiktokAccount=revoke_required&tiktokError=private-token&tiktokRequest=secret");
+    expect(container.textContent).toContain("could not identify the exact cause");
+    expect(container.textContent).toContain("could not confirm revocation");
+    expect(container.textContent).not.toMatch(/private-token|secret/);
+  });
+  it("turns network and malformed responses into safe errors instead of invalid translation keys", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("private-network-details")));
+    await expect(tiktokRequest("/oauth/start", {})).rejects.toThrow("TIKTOK_NETWORK_ERROR");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("private-html", { status: 502 })));
+    await expect(tiktokRequest("/oauth/start", {})).rejects.toThrow("TIKTOK_INVALID_RESPONSE");
+  });
+
 });

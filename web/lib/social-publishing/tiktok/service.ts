@@ -5,6 +5,7 @@ import { HttpError } from "@/lib/http";
 import { validateTikTokIntent } from "../review-contract";
 import { postInput, returnPath, scopes, startInput, uuid, type Actor, type Tokens } from "./contracts";
 import { TikTokApi, TikTokApiError } from "./api";
+import { reportTikTokFailure } from "./diagnostics";
 import type { TikTokConfig } from "./config";
 import type { TikTokMediaAccess } from "./media";
 import { TikTokStore, type Link, type PostRow } from "./store";
@@ -28,26 +29,36 @@ export class TikTokPublishing {
     return this.api.authorization(state);
   }
   async callback(actor: Actor, query: URLSearchParams) {
-    this.actor(actor);
-    const state = query.get("state") || "";
-    if (!/^tt_[a-zA-Z0-9_-]{43}$/.test(state)) throw new HttpError(400, "Invalid connection request.", "TIKTOK_STATE_EXPIRED");
-    const pending = await this.store.consume(actor, state), path = returnPath.parse(pending.returnPath);
-    if (query.has("error")) return { returnPath: path, outcome: "cancelled" };
+    let path = "/publish/channels", stage = "oauth_state";
     let tokens: Tokens | undefined;
     try {
-      const code = query.get("code");
-      if (!code || code.length > 4096) throw new Error("Invalid authorization code");
+      this.actor(actor);
+      const state = query.get("state") || "";
+      if (!/^tt_[a-zA-Z0-9_-]{43}$/.test(state)) throw new HttpError(400, "Invalid connection request.", "TIKTOK_STATE_EXPIRED");
+      const pending = await this.store.consume(actor, state);
+      path = returnPath.parse(pending.returnPath);
+      if (query.get("error") === "access_denied") return { returnPath: path, outcome: "cancelled" };
+      if (query.has("error")) throw new TikTokApiError(query.get("error"));
+      stage = "oauth_source";
       if (pending.shortId) await this.source(actor, pending.shortId);
+      stage = "oauth_exchange";
+      const code = query.get("code");
+      if (!code || code.length > 4096) throw new HttpError(400, "Missing authorization code.", "TIKTOK_INVALID_GRANT");
       tokens = await this.api.exchange(code);
-      if (scopes.some(scope => !tokens!.scopes.includes(scope))) throw new Error("Partial permission grant");
+      stage = "oauth_permissions";
+      if (scopes.some(scope => !tokens!.scopes.includes(scope))) throw new HttpError(403, "Required permissions were not granted.", "TIKTOK_PARTIAL_PERMISSION");
+      stage = "oauth_creator";
       const creator = await this.api.creator(tokens.accessToken, "pending");
+      stage = "oauth_save";
       await this.store.finish(pending, { openId: tokens.openId, nickname: creator.nickname, username: creator.username, ciphertext: this.vault.seal(JSON.stringify(tokens), actor.userId, `connection:${tokens.openId}`) });
       return { returnPath: path, outcome: "connected" };
-    } catch {
+    } catch (error) {
+      const failure = reportTikTokFailure(stage, error, stage === "oauth_save" ? "TIKTOK_SAVE_FAILED" : "TIKTOK_UNAVAILABLE");
       const revoked = !tokens || await this.api.revoke(tokens.accessToken);
-      return { returnPath: path, outcome: revoked ? "failed" : "revoke_required" };
+      return { returnPath: path, outcome: revoked ? "failed" : "revoke_required", errorCode: failure.code, requestId: failure.requestId };
     }
   }
+
   private async access<T>(actor: Actor, connectionId: string, fn: (tx: TransactionSql, link: Link, token: string) => Promise<T>): Promise<T> {
     this.actor(actor); uuid.parse(connectionId);
     // Commit rotated tokens even when a subsequent provider request fails.

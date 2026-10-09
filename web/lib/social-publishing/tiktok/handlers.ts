@@ -5,13 +5,17 @@ import { HttpError } from "@/lib/http";
 import { mediaResponse } from "./media";
 import { tiktokContext, tiktokServices } from "./runtime";
 import { uuid } from "./contracts";
+import { safeTikTokErrorCode, safeTikTokRequestId } from "./errors";
+import { reportTikTokFailure } from "./diagnostics";
+import { tiktokConfig } from "./config";
 
 async function handle(fn: () => Promise<Response>) {
   let response: Response;
   try { response = await fn(); }
   catch (error) {
     const known = error instanceof HttpError;
-    response = NextResponse.json({ code: known ? error.code : error instanceof z.ZodError ? "TIKTOK_INVALID_POST" : "TIKTOK_UNAVAILABLE" }, { status: known ? error.status : error instanceof z.ZodError ? 400 : 503 });
+    const failure = reportTikTokFailure("http_request", error, error instanceof z.ZodError ? "TIKTOK_INVALID_POST" : "TIKTOK_UNAVAILABLE");
+    response = NextResponse.json({ code: known ? error.code : error instanceof z.ZodError ? "TIKTOK_INVALID_POST" : "TIKTOK_UNAVAILABLE", requestId: failure.requestId }, { status: known ? error.status : error instanceof z.ZodError ? 400 : 503 });
     if (known && error.retryAfterSeconds) response.headers.set("Retry-After", String(error.retryAfterSeconds));
   }
   response.headers.set("Cache-Control", "private, no-store"); response.headers.set("Referrer-Policy", "no-referrer");
@@ -46,10 +50,24 @@ export const oauthStart = (request: Request) => handle(async () => {
   return NextResponse.json({ authorizationUrl: await service.start(actor, await json(request)) });
 });
 export const oauthCallback = (request: Request) => handle(async () => {
-  const { service, actor, config } = await tiktokContext();
-  const outcome = await service.callback(actor, new URL(request.url).searchParams);
-  const url = new URL(outcome.returnPath, config.origin); url.searchParams.set("tiktokAccount", outcome.outcome);
-  return NextResponse.redirect(url, 303);
+  try {
+    const { service, actor, config } = await tiktokContext();
+    const outcome = await service.callback(actor, new URL(request.url).searchParams);
+    const url = new URL(outcome.returnPath, config.origin); url.searchParams.set("tiktokAccount", outcome.outcome);
+    if (outcome.errorCode) url.searchParams.set("tiktokError", safeTikTokErrorCode(outcome.errorCode));
+    const requestId = safeTikTokRequestId(outcome.requestId);
+    if (requestId) url.searchParams.set("tiktokRequest", requestId);
+    return NextResponse.redirect(url, 303);
+  } catch (error) {
+    // Even an expired EasyCut session must return to a page, not a raw JSON error.
+    // Use the validated configuration origin, never the incoming Host header.
+    const url = new URL("/publish/channels", tiktokConfig().origin);
+    const failure = reportTikTokFailure("oauth_context", error);
+    url.searchParams.set("tiktokAccount", "failed");
+    url.searchParams.set("tiktokError", error instanceof HttpError && error.status === 401 ? "TIKTOK_SIGN_IN" : failure.code);
+    url.searchParams.set("tiktokRequest", failure.requestId);
+    return NextResponse.redirect(url, 303);
+  }
 });
 export const creatorPost = (request: Request) => handle(async () => {
   const { service, actor, config } = await tiktokContext(); sameOrigin(request, config.origin);

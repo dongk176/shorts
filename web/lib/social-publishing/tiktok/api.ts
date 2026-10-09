@@ -5,7 +5,7 @@ import { scopes, type Creator, type PostInput, type Tokens } from "./contracts";
 
 const tokenResponse = z.object({ access_token: z.string().min(1), refresh_token: z.string().min(1), open_id: z.string().min(1).max(128), scope: z.string(), expires_in: z.number().positive(), refresh_expires_in: z.number().positive() });
 const creatorResponse = z.object({ creator_username: z.string().max(255), creator_nickname: z.string().min(1).max(255), privacy_level_options: z.array(z.string()).min(1), max_video_post_duration_sec: z.number().positive(), comment_disabled: z.boolean(), duet_disabled: z.boolean(), stitch_disabled: z.boolean() });
-const knownErrors = new Set(["access_token_invalid", "scope_not_authorized", "rate_limit_exceeded", "spam_risk_too_many_posts", "spam_risk_user_banned_from_posting", "reached_active_user_cap", "unaudited_client_can_only_post_to_private_accounts", "url_ownership_unverified", "privacy_level_option_mismatch", "invalid_grant", "auth_removed", "video_pull_failed", "duration_check_failed", "file_format_check_failed"]);
+const knownErrors = new Set(["access_token_invalid", "scope_not_authorized", "rate_limit_exceeded", "spam_risk_too_many_posts", "spam_risk_user_banned_from_posting", "reached_active_user_cap", "unaudited_client_can_only_post_to_private_accounts", "url_ownership_unverified", "privacy_level_option_mismatch", "invalid_grant", "auth_removed", "video_pull_failed", "duration_check_failed", "file_format_check_failed", "network_error", "invalid_response", "invalid_client", "unauthorized_client", "invalid_request", "invalid_scope", "access_denied", "server_error", "temporarily_unavailable"]);
 export const safeProviderCode = (code: unknown) => typeof code === "string" && knownErrors.has(code) ? code : "provider_error";
 export class TikTokApiError extends HttpError {
   constructor(code: unknown, public readonly ambiguous = false) { super(502, "TikTok could not complete this request.", `TIKTOK_${safeProviderCode(code).toUpperCase()}`); }
@@ -29,6 +29,7 @@ export class TikTokApi {
     } catch { throw new TikTokApiError("network_error", true); }
     let result;
     try { result = await response.json(); } catch { throw new TikTokApiError("invalid_response", true); }
+    if (!result || typeof result !== "object" || Array.isArray(result)) throw new TikTokApiError("invalid_response", true);
     const code = typeof result.error === "string" ? result.error : result.error?.code;
     if (!response.ok || (code && code !== "ok")) throw new TikTokApiError(code, response.status >= 500);
     return result;

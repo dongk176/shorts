@@ -65,3 +65,5 @@
 .publish-channel-actions>div{position:absolute;right:0;top:calc(100% + 6px);z-index:20;display:grid;min-width:140px;padding:6px;background:#18212d;border:1px solid #3a4759;border-radius:10px;box-shadow:0 12px 30px #0008}
 .publish-channel-actions>div .publish-text-button{min-height:44px;padding:8px 12px;text-align:left;font-size:14px!important;border-radius:6px}
 .publish-channel-actions>div .publish-text-button:hover{background:#ffffff0a}
+
+.publish-error-notice{border:1px solid #c56d3e;background:#33271f;color:#ffdfbf;padding:14px 16px;border-radius:8px;line-height:1.7;overflow-wrap:anywhere}.publish-error-notice strong{display:block;font-size:14px}.publish-error-notice p{margin:6px 0}.publish-error-notice small{display:block;margin-top:10px;color:#dbbfa7;font-size:11px}.publish-error-notice small span{display:block;font-variant-numeric:tabular-nums}

@@ -94,10 +94,10 @@ const capability = () => new URL(lastUrl).pathname.split("/").at(-1)!;
 describe("TikTok local publishing through PostgreSQL and provider protocol", () => {
   it("binds OAuth to the app user/session, rejects replay and keeps exact locale return", async () => {
     const state = await start();
-    await expect(service.callback(B, new URLSearchParams({ state, code: "wrong" }))).rejects.toThrow();
-    await expect(service.callback({ ...A, sessionId: "wrong-session" }, new URLSearchParams({ state, code: "wrong" }))).rejects.toThrow();
+    expect(await service.callback(B, new URLSearchParams({ state, code: "wrong" }))).toMatchObject({ outcome: "failed", errorCode: "TIKTOK_STATE_EXPIRED", returnPath: "/publish/channels" });
+    expect(await service.callback({ ...A, sessionId: "wrong-session" }, new URLSearchParams({ state, code: "wrong" }))).toMatchObject({ outcome: "failed", errorCode: "TIKTOK_STATE_EXPIRED" });
     expect(await service.callback(A, new URLSearchParams({ state, code: "right" }))).toEqual({ outcome: "connected", returnPath: "/en/publish/channels" });
-    await expect(service.callback(A, new URLSearchParams({ state, code: "replay" }))).rejects.toThrow();
+    expect(await service.callback(A, new URLSearchParams({ state, code: "replay" }))).toMatchObject({ outcome: "failed", errorCode: "TIKTOK_STATE_EXPIRED" });
     const raw = (await pg.query<{ token_ciphertext: string }>("select token_ciphertext from shorts_mvp.tiktok_connections")).rows[0].token_ciphertext;
     expect(raw).not.toMatch(/private-access|private-refresh/);
     expect(() => vault.open(raw, B.userId, "connection:owned-open-id")).toThrow();
@@ -107,13 +107,30 @@ describe("TikTok local publishing through PostgreSQL and provider protocol", () 
   });
   it("rejects partial grants, cancellations, expired states and arbitrary redirects", async () => {
     partial = true;
-    expect((await service.callback(A, new URLSearchParams({ state: await start(), code: "x" }))).outcome).toBe("failed");
+    expect(await service.callback(A, new URLSearchParams({ state: await start(), code: "x" }))).toMatchObject({ outcome: "failed", errorCode: "TIKTOK_PARTIAL_PERMISSION" });
     expect(revokes).toBe(1); expect((await service.list(A)).connections).toEqual([]);
     expect((await service.callback(A, new URLSearchParams({ state: await start(), error: "access_denied" }))).outcome).toBe("cancelled");
     const expired = await start(); await pg.exec("update shorts_mvp.tiktok_oauth set expires_at=now()-interval '1 second'");
-    await expect(service.callback(A, new URLSearchParams({ state: expired, code: "x" }))).rejects.toThrow();
+    expect(await service.callback(A, new URLSearchParams({ state: expired, code: "x" }))).toMatchObject({ outcome: "failed", errorCode: "TIKTOK_STATE_EXPIRED" });
     for (const returnPath of ["//evil.test", "https://evil.test", "/en/projects/1?next=x", "/settings#x"]) await expect(service.start(A, { returnPath })).rejects.toThrow();
     await expect(service.start(A, { returnPath: "/projects/2", shortId })).rejects.toThrow();
+  });
+  it("preserves the failure reason and a safe reference after TikTok authorization", async () => {
+    const log = vi.spyOn(console, "warn").mockImplementation(() => {});
+    creatorError = "scope_not_authorized";
+    const outcome = await service.callback(A, new URLSearchParams({ state: await start(), code: "private-auth-code" }));
+    expect(outcome).toMatchObject({ outcome: "failed", errorCode: "TIKTOK_SCOPE_NOT_AUTHORIZED", returnPath: "/en/publish/channels", requestId: expect.any(String) });
+    expect(log).toHaveBeenCalledWith("[tiktok] request failed", expect.objectContaining({ stage: "oauth_creator", code: outcome.errorCode, requestId: outcome.requestId }));
+    expect(JSON.stringify(log.mock.calls)).not.toMatch(/private-auth-code|private-access|private-provider-text|review-session/);
+    expect(revokes).toBe(1); expect(initCalls).toBe(0);
+    log.mockRestore();
+  });
+  it("explains an already linked account without reassigning its owner", async () => {
+    const connection = await connect();
+    const outcome = await service.callback(B, new URLSearchParams({ state: await start(B), code: "other-login" }));
+    expect(outcome).toMatchObject({ outcome: "failed", errorCode: "TIKTOK_ALREADY_LINKED" });
+    expect((await service.list(A)).connections[0].id).toBe(connection.id);
+    expect((await service.list(B)).connections).toEqual([]);
   });
   it("checks owner, paid access, current creator limits and explicit consent before any init", async () => {
     const c = await connect();
