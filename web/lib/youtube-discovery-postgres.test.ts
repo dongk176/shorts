@@ -222,14 +222,14 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
     await db?.end();
   });
 
-  it("filters English across counts, pages and current metadata; rejects another language cursor", async () => {
+  it("filters English across pages and current metadata; rejects another language cursor", async () => {
     const now = new Date();
     await saveCatalogPage(db, [
       ...Array.from({length:55}, (_,i)=>fixture(`eng${String(i).padStart(8,"0")}`, {isEnglish:true,isKorean:false,license:"creativeCommon"})),
       fixture("unknown0001", {isKorean:false}), fixture("korean00001"), fixture("japan000001", {isJapanese:true,isKorean:false}),
     ], {observedAt:now});
     const first=await getCatalogVideos(filters({english:true,reusable:true,longForm:true}),db,now);
-    expect(first.totalCount).toBe(55); expect(first.items).toHaveLength(48);
+    expect(first.totalCount).toBeUndefined(); expect(first.items).toHaveLength(48);
     const next=await getCatalogVideos(filters({english:true,reusable:true,longForm:true,cursor:first.nextCursor}),db,now);
     expect(next.items).toHaveLength(7);
     expect(next.items.every(item=>item.videoId.startsWith("eng"))).toBe(true);
@@ -269,7 +269,7 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
     expect(pending.metadata).toBeNull();
     expect(pending.metadataPendingAt).toBeTruthy();
     expect(new Date(pending.verifiedAt).toISOString()).toBe(old.toISOString());
-    expect((await getCatalogVideos(filters(), db)).totalCount).toBe(0);
+    expect((await getCatalogVideos(filters(), db)).items).toHaveLength(0);
     expect((await db`select count(*)::int n from shorts_mvp.youtube_trending_days`)[0].n).toBe(2);
     // A later import of stale API fields cannot revive the pending item.
     await saveCatalogPage(db, [fixture(id)], { observedAt: new Date(old.getTime() + DAY_MS) });
@@ -281,7 +281,7 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
     expect(recovered.metadataPendingAt).toBeNull();
     expect(recovered.metadata.license).toBe('creativeCommon');
     expect(new Date(recovered.firstDiscoveredAt).toISOString()).toBe(old.toISOString());
-    expect((await getCatalogVideos(filters({type:'reusable'}), db)).totalCount).toBe(1);
+    expect((await getCatalogVideos(filters({type:'reusable'}), db)).items).toHaveLength(1);
     expect((await db`select count(*)::int n from shorts_mvp.popular_video_items`)[0].n).toBe(2);
   });
 
@@ -391,7 +391,7 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
     await db`update shorts_mvp.youtube_catalog set refresh_after=now()-interval '1 minute'`;
     expect(await refreshCatalogBatch({db,fetchImpl})).toMatchObject({failed:false,pages:1});
     expect(await db`select id,first_discovered_at,last_trending_at from shorts_mvp.youtube_catalog order by id`).toEqual(before);
-    expect((await getCatalogVideos(filters({type:'reusable'}),db)).totalCount).toBe(3);
+    expect((await getCatalogVideos(filters({type:'reusable'}),db)).items).toHaveLength(3);
     await db`update shorts_mvp.youtube_catalog set refresh_after=now()-interval '1 minute'`;
     const incomplete=async()=>new Response(JSON.stringify({items:[{...youtubeItem(ids[0]),liveStreamingDetails:{actualStartTime:'2026-08-01T00:00:00Z'}}]}));
     expect(await refreshCatalogBatch({db,fetchImpl:incomplete,scheduledAt:new Date(Date.now()+900000)})).toMatchObject({failed:true});
@@ -612,6 +612,29 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
     ]);
   });
 
+  it.each(["views", "trending", "reusable"] as const)("fills %s pages across removed batches without counts or duplicate cards", async type => {
+    const now = new Date();
+    await saveCatalogPage(db, Array.from({length:300}, (_, i) => fixture(`slice${String(i).padStart(6,"0")}`, {
+      viewCount: 1000-i, categoryRank: i+1,
+      license: type === "reusable" ? "creativeCommon" : "youtube",
+    })), {observedAt:now, trending:true});
+    const scope = filters({type});
+    const first = await getCatalogVideos(scope,db,now);
+    expect(first.items).toHaveLength(48);
+    expect(first).not.toHaveProperty("totalCount");
+    expect(first).not.toHaveProperty("periodCounts");
+    expect(first.items[0].videoId).toBe("slice000000");
+    await db`update shorts_mvp.youtube_catalog set availability='unavailable' where video_id>='slice000048' and video_id<'slice000250'`;
+    const next = await getCatalogVideos({...scope,cursor:first.nextCursor},db,now);
+    expect(next.items).toHaveLength(48);
+    expect(next.items[0].videoId).toBe("slice000250");
+    expect(next.items[47].videoId).toBe("slice000297");
+    const last = await getCatalogVideos({...scope,cursor:next.nextCursor},db,now);
+    expect(last.items.map(v=>v.videoId)).toEqual(["slice000298","slice000299"]);
+    expect(last.nextCursor).toBeUndefined();
+    expect(new Set([...first.items,...next.items,...last.items].map(v=>v.videoId)).size).toBe(98);
+  });
+
   it("builds and reuses a list version for a 50000-video catalog", async () => {
     await db`insert into shorts_mvp.youtube_catalog(id,video_id,metadata,first_discovered_at,verified_at)
       select encode(sha256(convert_to(video_id,'UTF8')),'hex'),video_id,
@@ -624,7 +647,7 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
       "50000-video first page + cached page ms:",
       Math.round(performance.now() - started),
     );
-    expect(first.totalCount).toBe(50000);
+    expect(first).not.toHaveProperty("totalCount");
     expect(first.items).toHaveLength(48);
     expect(first.nextCursor).toBeDefined();
     expect(again.version).toBe(first.version);
@@ -751,33 +774,33 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
     const nextRun = await makeRun(nextSlot, "running", null);
     await saveCatalogPage(db, [video("newvideo001")], { runId: nextRun, observedAt: new Date("2026-09-11T08:11:00Z") });
     const early = await getCatalogVideos(scope, db, new Date("2026-09-11T08:19:59Z"));
-    expect(early.totalCount).toBe(50);
+    expect(early.items).toHaveLength(48);
     expect(early.collectionWindowStart).toBe(previousSlot.toISOString());
     expect(early.nextCursor).toBeTruthy();
     const pending = await getCatalogVideos(scope, db, new Date("2026-09-11T08:20:00Z"));
     expect(pending.version).toBe(early.version);
-    expect(pending.totalCount).toBe(50);
+    expect(pending.items).toHaveLength(48);
     await db`update shorts_mvp.youtube_collection_runs set status='failed',finished_at='2026-09-11T08:30:00Z' where id=${nextRun}`;
     expect((await getCatalogVideos(scope, db, new Date("2026-09-11T08:31:00Z"))).collectionWindowStart).toBe(previousSlot.toISOString());
     // A retried/delayed run must not switch the list until its success is visible.
     await db`update shorts_mvp.youtube_collection_runs set status='success',finished_at='2026-09-11T08:35:00Z' where id=${nextRun}`;
-    expect((await getCatalogVideos(scope, db, new Date("2026-09-11T08:34:59Z"))).totalCount).toBe(50);
+    expect((await getCatalogVideos(scope, db, new Date("2026-09-11T08:34:59Z"))).items).toHaveLength(48);
     const switched = await getCatalogVideos(scope, db, new Date("2026-09-11T08:35:00Z"));
     expect(switched.items.map(v => v.videoId)).toEqual(["newvideo001"]);
-    expect(switched.totalCount).toBe(1);
-    expect(switched.periodCounts).toEqual({ all: 50, today: 1, week: 50 });
+    expect(switched.items).toHaveLength(1);
+    expect(switched.periodCounts).toBeUndefined();
     expect(switched.collectionWindowStart).toBe(nextSlot.toISOString());
     await expect(getCatalogVideos({ ...scope, cursor: early.nextCursor }, db, new Date("2026-09-11T08:35:00Z"))).rejects.toBeInstanceOf(CatalogCursorExpiredError);
     // Even when the run finishes early, 17:20 itself changes generation/cache.
     await db`update shorts_mvp.youtube_collection_runs set finished_at='2026-09-11T08:15:00Z' where id=${nextRun}`;
     const before = await getCatalogVideos(scope, db, new Date("2026-09-11T08:19:59Z"));
     const after = await getCatalogVideos(scope, db, new Date("2026-09-11T08:20:00Z"));
-    expect(before.totalCount).toBe(50);
-    expect(after.totalCount).toBe(1);
+    expect(before.items).toHaveLength(48);
+    expect(after.items).toHaveLength(1);
     expect(before.generation).not.toBe(after.generation);
     expect((await catalogStatus(db, type, new Date("2026-09-11T08:20:00Z"))).generation).toBe(after.generation);
     const midnight = await getCatalogVideos(scope, db, new Date("2026-09-11T15:00:00Z"));
-    expect(midnight.totalCount).toBe(1);
+    expect(midnight.items).toHaveLength(1);
     expect(midnight.collectionWindowStart).toBe(after.collectionWindowStart);
     const morning = new Date("2026-09-11T20:10:00Z");
     const morningRun = await makeRun(morning, "success", new Date("2026-09-11T20:15:00Z"));
@@ -785,24 +808,24 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
     const combined = await getCatalogVideos(scope, db, new Date("2026-09-11T20:15:00Z"));
     expect(combined.items.map(v => v.videoId)).toEqual(["morning0001", "newvideo001"]);
     expect(combined.collectionWindowStart).toBe(after.collectionWindowStart);
-    expect((await getCatalogVideos({ ...scope, period: "all" }, db, new Date("2026-09-11T20:15:00Z"))).totalCount).toBe(51);
+    expect((await getCatalogVideos({ ...scope, period: "all" }, db, new Date("2026-09-11T20:15:00Z"))).items).toHaveLength(48);
     // A missing next afternoon run also retains this completed window.
-    expect((await getCatalogVideos(scope, db, new Date("2026-09-12T08:25:00Z"))).totalCount).toBe(2);
+    expect((await getCatalogVideos(scope, db, new Date("2026-09-12T08:25:00Z"))).items).toHaveLength(2);
   });
 
-  it("keeps seven-day counts aligned and preserves the catalog before the first successful afternoon", async () => {
+  it("keeps seven-day filtering aligned and preserves the catalog before the first successful afternoon", async () => {
     const now = new Date("2026-09-11T08:20:00Z");
     const scope = filters({ type: "views", periodBasis: "collected", period: "today" });
     const oldRun = await run(new Date("2026-09-05T08:09:59Z"));
     await saveCatalogPage(db, [fixture("beforeweek1")], { runId: oldRun, observedAt: new Date("2026-09-05T08:09:59Z"), verifiedAt: now });
     await saveCatalogPage(db, [fixture("weekedge001")], { runId: oldRun, observedAt: new Date("2026-09-05T08:10:00Z"), verifiedAt: now });
-    expect((await getCatalogVideos(scope, db, now)).totalCount).toBe(2);
+    expect((await getCatalogVideos(scope, db, now)).items).toHaveLength(2);
     const [r] = await db`insert into shorts_mvp.youtube_collection_runs(lane,scheduled_at,started_at,finished_at,status)
       values('views','2026-09-11T08:10:00Z','2026-09-11T08:10:00Z','2026-09-11T08:15:00Z','success') returning id`;
     await saveCatalogPage(db, [fixture("todayedge01")], { runId: String(r.id), observedAt: new Date("2026-09-11T08:10:00Z") });
     const weekly = await getCatalogVideos({ ...scope, period: "week" }, db, now);
     expect(weekly.items.map(v => v.videoId).sort()).toEqual(["todayedge01", "weekedge001"]);
-    expect(weekly.periodCounts).toEqual({ all: 3, today: 1, week: 2 });
+    expect(weekly.periodCounts).toBeUndefined();
   });
 
   it("shows cumulative collected periods, including every CC source, without confusing refreshes with collections", async () => {
@@ -823,11 +846,11 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
     await saveCatalogPage(db, [cc("oldtrend001")], {observedAt:now});
     const scope = filters({type:"trending",reusable:true,periodBasis:"collected"});
     const all = await getCatalogVideos(scope,db,now);
-    expect(all.totalCount).toBe(5);
+    expect(all.items).toHaveLength(5);
     expect(all.items[0]).toMatchObject({videoId:"nowtrend001",isCurrentTrending:true});
     const today = await getCatalogVideos({...scope,period:"today"},db,now);
     expect(today.items.map(v=>v.videoId).sort()).toEqual(["freeonly001","nowtrend001","repeated001"]);
-    expect(today.periodCounts).toEqual({all:5,today:3,week:4});
+    expect(today.periodCounts).toBeUndefined();
     const weekly = await getCatalogVideos({...scope,period:"week"},db,now);
     expect(weekly.items).toHaveLength(4);
     const [unchanged] = await db`select first_discovered_at from shorts_mvp.youtube_catalog where video_id='repeated001'`;
@@ -840,15 +863,17 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
     expect(plainTrending.items.some(v=>v.videoId==="oldplain001")).toBe(true);
     expect(plainTrending.items.some(v=>v.videoId==="freeonly001")).toBe(false);
     // API clients retaining the old contract and historical-date reads still work.
-    expect((await getCatalogVideos({...scope,periodBasis:undefined},db,now)).totalCount).toBe(1);
-    expect((await getCatalogVideos({...scope,date:"2026-09-01"},db,now)).totalCount).toBe(2);
+    expect((await getCatalogVideos({...scope,periodBasis:undefined},db,now)).items).toHaveLength(1);
+    expect((await getCatalogVideos({...scope,date:"2026-09-01"},db,now)).items).toHaveLength(2);
+    // Match the database clock to this historical fixture before crossing midnight.
+    await db`update shorts_mvp.youtube_list_versions set created_at=${now}`;
     const nextDay = new Date("2026-09-11T15:00:00Z");
-    expect((await getCatalogVideos({...scope,period:"today"},db,nextDay)).totalCount).toBe(0);
-    expect((await getCatalogVideos(scope,db,nextDay)).totalCount).toBe(5);
+    expect((await getCatalogVideos({...scope,period:"today"},db,nextDay)).items).toHaveLength(0);
+    expect((await getCatalogVideos(scope,db,nextDay)).items).toHaveLength(5);
     // Refresh writes with a run ID are also excluded from the collected clock.
     const [refreshRun] = await db`insert into shorts_mvp.youtube_collection_runs(lane,scheduled_at,started_at,status) values('refresh',${nextDay},${nextDay},'running') returning id`;
     await saveCatalogPage(db,[cc("oldtrend001")],{runId:String(refreshRun.id),observedAt:nextDay});
-    expect((await getCatalogVideos({...scope,period:"today"},db,nextDay)).totalCount).toBe(0);
+    expect((await getCatalogVideos({...scope,period:"today"},db,nextDay)).items).toHaveLength(0);
     expect((await db`select count(*)::int n from shorts_mvp.youtube_quota_attempts`)[0].n).toBe(0);
   });
 
@@ -1356,8 +1381,8 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
     const japanese=Array.from({length:55},(_,index)=>fixture(`jp${String(index).padStart(9,'0')}`,{isKorean:false,isJapanese:true,title:'楽しい動画',viewCount:1000-index}));
     await saveCatalogPage(db,[fixture('korean00001'),...japanese],{runId:jp.id,regionCode:'JP',trending:true,observedAt:now});
     const first=await getCatalogVideos(filters({type:'trending'}),db,now);
-    expect(first.totalCount).toBe(56); expect(first.items).toHaveLength(48);
-    const ja=await getCatalogVideos(filters({type:'trending',japanese:true}),db,now); expect(ja.totalCount).toBe(55);
+    expect(first.totalCount).toBeUndefined(); expect(first.items).toHaveLength(48);
+    const ja=await getCatalogVideos(filters({type:'trending',japanese:true}),db,now); expect(ja.items).toHaveLength(48);
     const ko=await getCatalogVideos(filters({type:'trending',korean:true}),db,now); expect(ko.items.map(item=>item.videoId)).toEqual(['korean00001']);
     const later = new Date(now.getTime()+1000);
     const [newRun]=await db`insert into shorts_mvp.youtube_collection_runs(lane,region_code,scheduled_at,status,finished_at) values('trending','JP',${later},'success',${later}) returning id`;
@@ -1442,9 +1467,9 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
       values('trending','JP',${now},'success',${now}) returning id`;
     await saveCatalogPage(db,[fixture("japan000001",{isKorean:false,isJapanese:true,viewCount:99999})],{runId:jp.id,regionCode:"JP",trending:true,observedAt:now});
     const second=await getCatalogVideos(filters({type:"trending",cursor:first.nextCursor}),db,now);
-    expect(second.items).toHaveLength(7); expect(second.totalCount).toBe(55);
+    expect(second.items).toHaveLength(7); expect(second.totalCount).toBeUndefined();
     expect(second.items.every(item=>item.videoId.startsWith("kr"))).toBe(true);
-    expect((await getCatalogVideos(filters({type:"trending"}),db,now)).totalCount).toBe(56);
+    expect((await getCatalogVideos(filters({type:"trending"}),db,now)).items).toHaveLength(48);
   });
   it("does not spend the Korean refresh allocation on Japanese-only history", async () => {
     await enableJapan(); const now=new Date();
@@ -1485,9 +1510,9 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
     expect(after.collectionWindowStart).toBe(moment(11,"17:10").toISOString());
     expect(after.collectionWindows?.JP).toBe(moment(11,"17:15").toISOString());
     expect(after.items.map(v=>v.videoId).sort()).toEqual(["jpnewvideo1","krnewvideo1","sharedvid01"].sort());
-    expect(after.totalCount).toBe(3); expect(after.periodCounts?.today).toBe(3);
+    expect(after.items).toHaveLength(3); expect(after.periodCounts).toBeUndefined();
     expect(after.collectionWindowKey).not.toBe(split.collectionWindowKey);
-    expect((await getCatalogVideos(scope,db,moment(12,"00:01")))).toMatchObject({totalCount:3,collectionWindowKey:after.collectionWindowKey});
+    expect((await getCatalogVideos(scope,db,moment(12,"00:01")))).toMatchObject({items:expect.arrayContaining([expect.objectContaining({videoId:"jpnewvideo1"}),expect.objectContaining({videoId:"krnewvideo1"}),expect.objectContaining({videoId:"sharedvid01"})]),collectionWindowKey:after.collectionWindowKey});
     await db`update shorts_mvp.youtube_collection_runs set status='failed' where region_code='JP' and scheduled_at=${moment(11,"17:15")}`;
     const failed = await getCatalogVideos(scope,db,moment(11,"17:25"));
     expect(failed.collectionWindows?.KR).toBe(moment(11,"17:10").toISOString());

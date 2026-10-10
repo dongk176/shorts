@@ -481,7 +481,7 @@ export async function getPopularVideos(
     reusableOnly || discoveryPeriod !== "all",
   );
   const offset = decodedCursor?.offset || 0;
-  if (discoveryPeriod !== "all" || !cursor) {
+  if (discoveryPeriod !== "all") {
     const rows = await db`
       with run_window as (
         select
@@ -534,21 +534,6 @@ export async function getPopularVideos(
             )
           )
       ),
-      period_counts as (
-        select
-          count(*) filter (
-            where first_seen_at > run_window.previous_completed_at
-          ) as today_count,
-          count(*) filter (
-            where first_seen_at >= (
-              date_trunc('day', run_window.current_completed_at at time zone 'Asia/Seoul')
-              at time zone 'Asia/Seoul'
-            ) - interval '6 days'
-          ) as week_count,
-          count(*) as all_count
-        from scoped
-        cross join run_window
-      ),
       paged as (
         select
           video_id, category, title, channel_name, thumbnail_url, duration_seconds,
@@ -587,24 +572,15 @@ export async function getPopularVideos(
         paged.video_id, paged.category, paged.title, paged.channel_name,
         paged.thumbnail_url, paged.duration_seconds, paged.view_count,
         paged.published_at, paged.license, paged.category_rank,
-        paged.last_seen_at, paged.first_seen_at,
-        period_counts.today_count, period_counts.week_count, period_counts.all_count
-      from period_counts
-      left join paged on true
+        paged.last_seen_at, paged.first_seen_at
+      from paged
       order by paged.page_rank asc nulls last
     `;
     const itemRows = rows.filter((row) => row.videoId !== null && row.videoId !== undefined);
-    const periodCounts = {
-      today: Number(rows[0]?.todayCount || 0),
-      week: Number(rows[0]?.weekCount || 0),
-      all: Number(rows[0]?.allCount || 0),
-    };
     const hasNext = itemRows.length > limit;
     return {
       items: itemRows.slice(0, limit).map((row) => rowToPopularVideo(row as Record<string, unknown>)),
       updatedAt: run.completedAt,
-      totalCount: periodCounts[discoveryPeriod],
-      periodCounts,
       ...(hasNext ? { nextCursor: encodeCursor(run.id, offset + limit) } : {}),
     };
   }
@@ -630,8 +606,7 @@ export async function getPopularVideos(
           and (${koreanOnly}=false or i.is_korean)
       )
       select video_id, category, title, channel_name, thumbnail_url, duration_seconds,
-        view_count, published_at, license, category_rank, last_seen_at,
-        count(*) over() as total_count
+        view_count, published_at, license, category_rank, last_seen_at
       from historical_candidates
       where duplicate_rank=1
       order by
@@ -661,7 +636,7 @@ export async function getPopularVideos(
           and (${koreanOnly}=false or is_korean)
       )
       select video_id, category, title, channel_name, thumbnail_url, duration_seconds,
-        view_count, published_at, license, category_rank, count(*) over() as total_count
+        view_count, published_at, license, category_rank
       from candidates
       where duplicate_rank=1
       order by
@@ -676,7 +651,6 @@ export async function getPopularVideos(
   return {
     items: rows.slice(0, limit).map((row) => rowToPopularVideo(row as Record<string, unknown>)),
     updatedAt: run.completedAt,
-    totalCount: rows[0] ? Number(rows[0].totalCount) : 0,
     ...(hasNext ? { nextCursor: encodeCursor(run.id, offset + limit) } : {}),
   };
 }

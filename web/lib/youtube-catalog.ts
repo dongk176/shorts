@@ -249,7 +249,7 @@ export type CatalogFilters = {
   cursor?: string;
   q?: string;
 };
-/** Keep the fuzzy threshold scoped to this transaction, including count and page queries. */
+/** Keep the fuzzy threshold scoped to this transaction, including list and page queries. */
 export async function searchCatalogVideos(
   filters: CatalogFilters & { q: string }, db: Sql = getDb(), now = new Date(),
 ): Promise<PopularVideoResponse> {
@@ -287,7 +287,7 @@ export async function getCatalogVideos(
       afternoonPeriod && filters.period !== "all" ? state.collectionWindowKey : null]) : legacyFilterKey;
   const baseFilterKey = filters.english ? JSON.stringify(["english-v1", regionalFilterKey]) : regionalFilterKey;
   const filterKey = search ? JSON.stringify(["text-search-v1", normalizePopularQuery(filters.q!), baseFilterKey]) : baseFilterKey;
-  let requestedVersion: { id: string; collectedAt: Date | null; currentRunIds: string[]; filterKey: string } | undefined;
+  let requestedVersion: { id: string; collectedAt: Date | null; currentRunIds: string[]; filterKey: string; listLength: number } | undefined;
   let cursorOffset = 0;
   if (filters.cursor) {
     let cursor: { id: string; offset: number };
@@ -296,7 +296,7 @@ export async function getCatalogVideos(
       if (typeof cursor.id !== "string" || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(cursor.id)
         || !Number.isSafeInteger(cursor.offset) || cursor.offset < 0) throw new Error();
     } catch { throw new CatalogCursorExpiredError(); }
-    const [version] = await db`select id,collected_at,current_run_ids,filter_key from shorts_mvp.youtube_list_versions
+    const [version] = await db`select id,collected_at,current_run_ids,filter_key,cardinality(catalog_ids) as list_length from shorts_mvp.youtube_list_versions
       where id=${cursor.id} and expires_at>${now} and (filter_key=${filterKey} or (${!search && !filters.japanese && !filters.english} and filter_key=${legacyFilterKey}))`;
     if (!version) throw new CatalogCursorExpiredError();
     requestedVersion = version as typeof requestedVersion;
@@ -345,17 +345,19 @@ export async function getCatalogVideos(
       )) or
       exists(select 1 from shorts_mvp.youtube_trending_days d where d.catalog_id=c.id and d.day=${filters.date || null}::date and (d.region_code='KR' or ${includeJapan})))`;
   let versionId: string;
+  let listLength: number;
   let offset = 0;
   let collectedAt = state.updatedAt;
   if (requestedVersion) {
     if (requestedVersion.currentRunIds.length) currentRunIds = requestedVersion.currentRunIds;
     versionId = requestedVersion.id;
+    listLength = Number(requestedVersion.listLength);
     offset = cursorOffset;
     collectedAt = requestedVersion.collectedAt ? new Date(requestedVersion.collectedAt).toISOString() : null;
   } else {
     // Only IDs and their order are frozen. API metadata is always read from the canonical row.
     const [cached] =
-      await db`select id,current_run_ids from shorts_mvp.youtube_list_versions where filter_key=${filterKey}
+      await db`select id,current_run_ids,cardinality(catalog_ids) as list_length from shorts_mvp.youtube_list_versions where filter_key=${filterKey}
       and generation=${state.generation} and expires_at>${now} and created_at>=${today}
       order by created_at desc limit 1`;
     const version =
@@ -374,20 +376,20 @@ export async function getCatalogVideos(
           case when ${Boolean(search)} then c.video_id else c.id end) as position
         from shorts_mvp.youtube_catalog c where ${base}
           and ${filters.type === "trending" && !collectedPeriod ? db`true` : periodMatch(filters.period)}
-      ) ranked returning id,current_run_ids`
+      ) ranked returning id,current_run_ids,cardinality(catalog_ids) as list_length`
       )[0];
     versionId = String(version.id);
+    listLength = Number(version.listLength);
     currentRunIds = version.currentRunIds;
   }
-  // Materialize IDs once. OFFSET 0 below preserves ID-first lookups even before
-  // ANALYZE has statistics; otherwise a 50k catalog can trigger quadratic rescans.
-  // Advance by the original ordinal, not the visible row count.
-  const [searchCount] = search ? await db`select cardinality(catalog_ids)::int as all_count from shorts_mvp.youtube_list_versions where id=${versionId}` : [];
-  const searchPageBatch = 192;
+  // Slice the frozen IDs before rechecking visibility. Unnesting the entire
+  // list makes even a 48-card page recheck and sort every matching catalog row.
+  // Array cardinality is only a scan bound, not a live result count for the UI.
+  const pageBatch = 192;
   const readPage = (batchOffset: number, limit: number) => db`with entries as materialized (
-      select entry.id,entry.ordinal+${search ? batchOffset : 0} as ordinal from shorts_mvp.youtube_list_versions v
-      cross join lateral unnest(${search ? db`v.catalog_ids[${batchOffset + 1}:${batchOffset + searchPageBatch}]` : db`v.catalog_ids`}) with ordinality entry(id,ordinal)
-      where v.id=${versionId} and (${Boolean(search)} or entry.ordinal>${batchOffset})
+      select entry.id,entry.ordinal+${batchOffset} as ordinal from shorts_mvp.youtube_list_versions v
+      cross join lateral unnest(v.catalog_ids[${batchOffset + 1}:${batchOffset + pageBatch}]) with ordinality entry(id,ordinal)
+      where v.id=${versionId}
     ) select c.metadata,c.verified_at,entry.ordinal,
     ${search ? db`(${search.tier}=3)` : db`false`} as similar_match,
     (${filters.type === "trending" && !filters.date} and exists(
@@ -397,26 +399,11 @@ export async function getCatalogVideos(
       select c.* from shorts_mvp.youtube_catalog c where c.id=entry.id and ${base} offset 0
     ) c order by entry.ordinal limit ${limit}`;
   const rows = await readPage(offset, 49);
-  if (search) {
-    // Small ID slices prevent common queries from rechecking tens of thousands
-    // of rows just to serve 48 cards. Scan further only if safety filters removed rows.
-    for (let batchOffset=offset+searchPageBatch; rows.length<49 && batchOffset<Number(searchCount.allCount); batchOffset+=searchPageBatch) {
-      rows.push(...await readPage(batchOffset,49-rows.length));
-    }
+  // Fill across removed/private/expired entries without skipping visible cards.
+  // The cursor retains the original ordinal so pages keep their frozen order.
+  for (let batchOffset=offset+pageBatch; rows.length<49 && batchOffset<listLength; batchOffset+=pageBatch) {
+    rows.push(...await readPage(batchOffset,49-rows.length));
   }
-  // Search counts belong to the frozen result set. Avoid re-running the entire
-  // fuzzy query on every page (and counting newly collected videos outside it).
-  const [counts] = search
-    ? [searchCount]
-    : await db`select count(*)::int as all_count,
-    count(*) filter(where ${periodMatch("today")})::int as today_count,
-    count(*) filter(where ${periodMatch("week")})::int as week_count
-    from shorts_mvp.youtube_catalog c where ${base}`;
-  const periodCounts = {
-    all: Number(counts.allCount),
-    today: Number(counts.todayCount),
-    week: Number(counts.weekCount),
-  };
   const calendar = filters.date
     ? await getTrendingCalendar(filters.date.slice(0, 7), db, now)
     : null;
@@ -439,9 +426,6 @@ export async function getCatalogVideos(
     collectionWindowKey: state.collectionWindowKey,
     collectionWindows: state.collectionWindows,
     date: filters.date || null,
-    ...(search ? {} : { periodCounts }),
-    totalCount: search ? Number(counts.allCount) :
-      periodCounts[filters.type === "trending" && !collectedPeriod ? "all" : filters.period],
     collectionStatus: day?.status,
     unavailableCount: day?.unavailableCount,
     ...(rows.length > 48

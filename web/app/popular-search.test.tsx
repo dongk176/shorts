@@ -91,6 +91,21 @@ describe("stable popular loading UI", () => {
 });
 
 describe("simple popular search UI",()=>{
+  it("shows cards and the next page without a total-count label", async () => {
+    const page=await setup(true,"ko",{deferInitial:true});
+    const video={videoId:"countless01",title:"빠른 목록 테스트",channelName:"채널",thumbnailUrl:"https://example.com/t.jpg",category:"gaming",durationSeconds:600,viewCount:100,publishedAt:"2026-10-01T00:00:00Z",license:"youtube"};
+    await page.respond(0,{items:[video],nextCursor:"page-two"});
+    expect(page.container.textContent).toContain("빠른 목록 테스트");
+    expect(page.container.textContent).not.toContain("영상 1개");
+    expect(page.container.textContent).not.toContain("개수 확인 중");
+    expect(page.button("더 보기")).toBeDefined();
+    await page.click(page.button("더 보기"));
+    expect(page.requests[1].url.searchParams.get("cursor")).toBe("page-two");
+    await page.respond(1,{items:[{...video,videoId:"countless02",title:"두 번째 영상"}]});
+    expect(page.container.textContent).toContain("두 번째 영상");
+    expect(page.button("더 보기")).toBeUndefined();
+  });
+
   it("submits explicitly, validates length, hides ranking and clears back to the previous list",async()=>{
     const page=await setup();
     await page.type("손");await page.submit();

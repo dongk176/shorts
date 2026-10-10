@@ -51,7 +51,7 @@ integration("popular search on isolated PostgreSQL", () => {
   it("keeps English search pagination isolated from the other languages", async () => {
     await seed([...Array.from({length:55},(_,i)=>fixture(`eng${String(i).padStart(8,"0")}`,"football",{isEnglish:true,isKorean:false})), fixture("spanish0001","football",{isKorean:false})]);
     const first=await search("football",{english:true});
-    expect(first.totalCount).toBe(55); expect(first.items).toHaveLength(48);
+    expect(first.totalCount).toBeUndefined(); expect(first.items).toHaveLength(48);
     expect((await search("football",{english:true,cursor:first.nextCursor})).items).toHaveLength(7);
     await expect(search("football",{cursor:first.nextCursor})).rejects.toBeInstanceOf(CatalogCursorExpiredError);
     expect((await search("football",{korean:true})).items).toHaveLength(0);
@@ -98,11 +98,11 @@ integration("popular search on isolated PostgreSQL", () => {
     await seed(Array.from({ length: 60 }, (_, i) => fixture(`page${String(i).padStart(7, "0")}`, "축구 실수", { viewCount: 1000-i })));
     const first = await search("축구 실수");
     expect(first.items).toHaveLength(48);
-    expect(first.totalCount).toBe(60);
+    expect(first.items).toHaveLength(48);
     await seed([fixture("page9999999", "축구 실수", { viewCount: 99999 })]);
     const next = await search("축구 실수", { cursor: first.nextCursor });
     expect(next.items).toHaveLength(12);
-    expect(next.totalCount).toBe(60);
+    expect(next.totalCount).toBeUndefined();
     expect(next.items.some(v => first.items.some(w => w.videoId === v.videoId))).toBe(false);
     await db`update shorts_mvp.youtube_catalog set availability='unavailable' where video_id=${next.items[0].videoId}`;
     expect((await search("축구 실수", { cursor: first.nextCursor })).items).toHaveLength(11);

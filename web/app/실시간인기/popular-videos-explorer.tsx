@@ -28,7 +28,6 @@ import type {
 } from "@/lib/youtube-popular";
 import type { SiteLocale } from "@/lib/i18n/config";
 import { formatLocale } from "@/lib/i18n/config";
-import { formatNumber } from "@/lib/i18n/format";
 import { useI18n } from "@/lib/i18n/provider";
 import { userFacingErrorMessage } from "@/lib/public-error";
 
@@ -166,7 +165,6 @@ const popularUiCopy: Record<SiteLocale, {
   longFormOnlyAria: string;
   reusableOnlyAria: string;
   categoryAria: (label: string) => string;
-  countLoading: string;
   loadFailed: string;
   retry: string;
   loadMore: string;
@@ -190,7 +188,7 @@ const popularUiCopy: Record<SiteLocale, {
     lastUpdated: "마지막 업데이트", filters: "필터", activePlanOnly: "활성 이용권 전용",
     englishOnly: "영어만", japaneseOnly: "일본어만", koreanOnly: "한국어만", longFormOnly: "롱폼만", reusableOnly: "재사용 허용만",
     longFormOnlyAria: "롱폼만 보기", reusableOnlyAria: "재사용 허용 영상만 보기",
-    categoryAria: (label) => `${label} 카테고리`, countLoading: "개수 확인 중",
+    categoryAria: (label) => `${label} 카테고리`,
     loadFailed: "인기 영상을 불러오지 못했습니다", retry: "다시 시도", loadMore: "더 보기",
     loadingMore: "추가 영상 불러오는 중...", loadMoreFailed: "추가 영상을 불러오지 못했습니다.", nextResults: "다음 결과 확인",
     noResults: "조건에 맞는 영상이 없습니다",
@@ -204,7 +202,7 @@ const popularUiCopy: Record<SiteLocale, {
     lastUpdated: "Last updated", filters: "Filters", activePlanOnly: "Active plan only",
     englishOnly: "English only", japaneseOnly: "Japanese only", koreanOnly: "Korean only", longFormOnly: "Long-form only", reusableOnly: "Reuse allowed only",
     longFormOnlyAria: "Show long-form videos only", reusableOnlyAria: "Show reusable videos only",
-    categoryAria: (label) => `${label} category`, countLoading: "Checking count",
+    categoryAria: (label) => `${label} category`,
     loadFailed: "Could not load trending videos", retry: "Try again", loadMore: "Show more",
     loadingMore: "Loading more videos...", loadMoreFailed: "Could not load more videos.", nextResults: "Check next results",
     noResults: "No videos match these filters",
@@ -218,7 +216,7 @@ const popularUiCopy: Record<SiteLocale, {
     lastUpdated: "最終更新", filters: "フィルター", activePlanOnly: "有効なプラン限定",
     englishOnly: "英語のみ", japaneseOnly: "日本語のみ", koreanOnly: "韓国語のみ", longFormOnly: "長尺のみ", reusableOnly: "再利用可能のみ",
     longFormOnlyAria: "長尺動画のみ表示", reusableOnlyAria: "再利用可能な動画のみ表示",
-    categoryAria: (label) => `${label}カテゴリー`, countLoading: "件数を確認中",
+    categoryAria: (label) => `${label}カテゴリー`,
     loadFailed: "人気動画を読み込めませんでした", retry: "もう一度試す", loadMore: "さらに表示",
     loadingMore: "さらに動画を読み込み中...", loadMoreFailed: "追加の動画を読み込めませんでした。", nextResults: "次の結果を確認",
     noResults: "条件に一致する動画がありません",
@@ -809,7 +807,7 @@ export function PopularVideosExplorer({
             if (!current) return current;
             const listDelayed = Boolean(current.delayed || delayed);
             const items = reconcileCatalogVisibility(current.items, statuses, {type:dataType,reusable:reusableOnly,date:null,delayed:listDelayed,periodBasis:"collected",searching});
-            return {...current, delayed:listDelayed, items, totalCount: current.totalCount === undefined ? undefined : Math.max(0,current.totalCount-current.items.length+items.length)};
+            return {...current, delayed:listDelayed, items};
           });
         }).catch(() => undefined).finally(() => { checking = false; });
     }, 60_000);
@@ -850,9 +848,6 @@ export function PopularVideosExplorer({
           ...current,
           items: Array.from(videos.values()),
           updatedAt: current.updatedAt,
-          totalCount: next.totalCount ?? current.totalCount,
-          periodCounts: next.periodCounts ?? current.periodCounts,
-          reusablePeriodCounts: next.reusablePeriodCounts ?? current.reusablePeriodCounts,
           includesSimilarResults: Boolean(current.includesSimilarResults || next.includesSimilarResults),
           nextCursor: next.nextCursor,
         };
@@ -964,8 +959,6 @@ export function PopularVideosExplorer({
     }
     void loadMore();
   };
-
-  const displayedTotalCount = response?.totalCount ?? response?.items.length;
 
   return (
     <main className="relative mx-auto w-full max-w-6xl px-4 pb-24 pt-5 sm:px-8 sm:pt-7">
@@ -1081,9 +1074,7 @@ export function PopularVideosExplorer({
         </div>}
       </div>
 
-      <div ref={listStart} className="mb-4 mt-4 scroll-mt-5">
-        <p className="text-xs font-medium tabular-nums text-neutral-400" aria-live="polite">{!loading && response && displayedTotalCount !== undefined ? (locale === "ko" ? `영상 ${formatNumber(displayedTotalCount, locale)}개` : locale === "en" ? `${formatNumber(displayedTotalCount, locale)} videos` : `動画 ${formatNumber(displayedTotalCount, locale)}件`) : error ? "—" : uiCopy.countLoading}</p>
-      </div>
+      <div ref={listStart} className="mt-4 scroll-mt-5" />
 
       {catalogEnabled && ((!searching && dataType === "trending" && response?.delayed) || cursorNotice || hasNewList) && <div className="mb-5 space-y-2 text-xs text-neutral-400" aria-live="polite">
         {!searching && dataType === "trending" && response?.delayed && <p className="text-amber-300">{discoveryCopy[locale].delayed}</p>}

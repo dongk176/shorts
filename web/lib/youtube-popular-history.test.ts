@@ -80,11 +80,11 @@ describe("accumulated reusable popular videos", () => {
       query as unknown as Sql,
     );
 
-    expect(result.periodCounts).toEqual({ today: 1, week: 1, all: 1 });
+    expect(result.periodCounts).toBeUndefined();
     const currentQuery = sqlText(query.mock.calls[1]);
-    expect(currentQuery).toContain("historical_candidates");
-    expect(currentQuery).toContain("from shorts_mvp.popular_video_items current_item");
-    expect(currentQuery).toContain("current_item.run_id=");
+    expect(currentQuery).not.toContain("historical_candidates");
+    expect(currentQuery).toContain("where run_id=");
+    expect(currentQuery).not.toContain("count(*)");
   });
 
   it("filters real-time trending videos by when they were first discovered", async () => {
@@ -109,8 +109,8 @@ describe("accumulated reusable popular videos", () => {
       query as unknown as Sql,
     );
 
-    expect(result.totalCount).toBe(7);
-    expect(result.periodCounts).toEqual({ today: 7, week: 31, all: 240 });
+    expect(result.totalCount).toBeUndefined();
+    expect(result.periodCounts).toBeUndefined();
     const periodQuery = sqlText(query.mock.calls[1]);
     expect(periodQuery).toContain("min(r.completed_at) over (partition by i.video_id) as first_seen_at");
     expect(periodQuery).toContain("from shorts_mvp.popular_video_items current_item");
@@ -143,7 +143,7 @@ describe("accumulated reusable popular videos", () => {
     );
 
     const fallbackQuery = sqlText(query.mock.calls[1]);
-    expect(fallbackQuery).toContain("or i.license <> 'creativeCommon'");
+    expect(fallbackQuery).toContain("or license <> 'creativeCommon'");
     expect(query.mock.calls[1].slice(1)).toContain("views");
   });
 
@@ -199,7 +199,7 @@ describe("accumulated reusable popular videos", () => {
     expect(historyQuery).toContain("partition by i.video_id");
     expect(historyQuery).toContain("i.license='creativeCommon'");
     expect(historyQuery).toContain("view_count desc, last_seen_at desc");
-    expect(historyQuery).toContain("where current_run.id=");
+    expect(historyQuery).toContain("select completed_at from shorts_mvp.popular_search_runs where id=");
     expect(query.mock.calls[1].slice(1)).toContain(run.id);
     expect(query.mock.calls[1].slice(1)).not.toContain(run.completedAt.toISOString());
   });
@@ -255,8 +255,8 @@ describe("accumulated reusable popular videos", () => {
       query as unknown as Sql,
     );
 
-    expect(result.totalCount).toBe(22);
-    expect(result.periodCounts).toEqual({ today: 5, week: 22, all: 180 });
+    expect(result.totalCount).toBeUndefined();
+    expect(result.periodCounts).toBeUndefined();
     const periodQuery = sqlText(query.mock.calls[1]);
     expect(periodQuery).toContain("join shorts_mvp.popular_search_runs");
     expect(periodQuery).toContain("min(r.completed_at) over (partition by i.video_id) as first_seen_at");
@@ -283,7 +283,7 @@ describe("accumulated reusable popular videos", () => {
     );
 
     expect(result.items).toHaveLength(1);
-    expect(result.reusablePeriodCounts).toEqual({ today: 1, week: 1, all: 1 });
+    expect(result.reusablePeriodCounts).toBeUndefined();
     const combinedQuery = sqlText(query.mock.calls[1]);
     expect(combinedQuery).toContain("from shorts_mvp.popular_search_items");
     expect(combinedQuery).toContain("join shorts_mvp.popular_search_runs");
@@ -299,7 +299,7 @@ describe("accumulated reusable popular videos", () => {
       "date_trunc('day', run_window.current_completed_at at time zone 'Asia/Seoul')",
     );
     expect(combinedQuery).not.toContain("date_trunc('day', now()");
-    expect(combinedQuery).toContain("count(*) as all_count");
+    expect(combinedQuery).not.toContain("count(*)");
     expect(combinedQuery).not.toContain("view_count >");
     expect(combinedQuery).toContain("case when");
     expect(combinedQuery).toContain("then first_seen_at end desc");
@@ -307,7 +307,7 @@ describe("accumulated reusable popular videos", () => {
     expect(query.mock.calls[1].slice(1)).not.toContain(run.completedAt.toISOString());
   });
 
-  it("returns period counts even when the selected reusable period is empty", async () => {
+  it("returns an empty page without aggregates when the selected reusable period is empty", async () => {
     const query = vi.fn()
       .mockResolvedValueOnce([run])
       .mockResolvedValueOnce([{
@@ -328,12 +328,8 @@ describe("accumulated reusable popular videos", () => {
     );
 
     expect(result.items).toEqual([]);
-    expect(result.totalCount).toBe(0);
-    expect(result.reusablePeriodCounts).toEqual({
-      today: 0,
-      week: 81,
-      all: 769,
-    });
+    expect(result.totalCount).toBeUndefined();
+    expect(result.reusablePeriodCounts).toBeUndefined();
     expect(result.nextCursor).toBeUndefined();
   });
 });
