@@ -14,7 +14,7 @@ function visibleLabel(element: Element) {
 }
 let root: Root | undefined;
 afterEach(async () => { if(root) await act(async () => root!.unmount());root=undefined;vi.unstubAllGlobals(); });
-async function render(props: Partial<ComponentProps<typeof AdminPublishingButton>> = {}, oauth: false | "youtube" | "tiktok" = false) {
+async function render(props: Partial<ComponentProps<typeof AdminPublishingButton>> = {}, oauth: false | "youtube" | "tiktok" | "instagram" | "threads" = false) {
   const {window,document}=parseHTML('<html><body><div id="app"></div></body></html>');
   const location=new URL(`https://www.easycut.co.kr/en/projects/1${oauth?`?${oauth}Account=connected`:''}`);
   Object.defineProperty(window,'location',{configurable:true,value:location});
@@ -134,5 +134,28 @@ describe('one shared publishing dialog',()=>{
   const {document,click}=await render({youtubeEnabled:true,metaOnly:true,metaEnabled:false});await click('.publish-trigger');
   expect(Array.from(document.querySelectorAll('.publish-tabs button')).map(x=>visibleLabel(x as unknown as Element))).toEqual(['YouTube','TikTok','Instagram','Threads']);
   expect(document.querySelectorAll('dialog').length).toBe(1);
+ });
+});
+
+describe('Meta administrator and reviewer restoration',()=>{
+ it('opens both Meta panels only with the explicit server grant',async()=>{
+  const {document,click}=await render({metaEnabled:true}); await click('.publish-trigger');
+  await click('.publish-tabs button:nth-child(3)'); expect(document.querySelector('[data-platform="instagram"]')).not.toBeNull();
+  await click('.publish-tabs button:nth-child(4)'); expect(document.querySelector('[data-platform="threads"]')).not.toBeNull();
+  expect(document.querySelector('[data-platform="instagram"]')).toBeNull();
+ });
+ it('allows a designated non-admin reviewer without enabling YouTube or TikTok',async()=>{
+  const {document,click,fetcher}=await render({adminEnabled:false,metaEnabled:true}); await click('.publish-trigger');
+  expect(document.querySelector('[data-platform="instagram"]')).not.toBeNull();
+  await click('.publish-tabs button:nth-child(1)'); expect(document.body.textContent).toContain('Uploads are temporarily unavailable');
+  await click('.publish-tabs button:nth-child(2)'); expect(document.querySelector('[data-platform="tiktok"]')).toBeNull(); expect(fetcher).not.toHaveBeenCalled();
+ });
+ it.each(['instagram','threads'] as const)('restores %s after OAuth for a granted reviewer',async platform=>{
+  const {document}=await render({adminEnabled:false,metaEnabled:true},platform);
+  expect(document.querySelector(`[data-platform="${platform}"]`)).not.toBeNull();
+ });
+ it.each(['instagram','threads'] as const)('does not grant %s through an OAuth URL',async platform=>{
+  const {document,fetcher}=await render({adminEnabled:false,tiktokEnabled:true,metaEnabled:false},platform);
+  expect(document.querySelector(`[data-platform="${platform}"]`)).toBeNull(); expect(fetcher).not.toHaveBeenCalled();
  });
 });

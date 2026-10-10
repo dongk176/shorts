@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useI18n } from "@/lib/i18n/provider";
+import { MetaPublishingPanel } from "./meta-publishing";
 import { TikTokPublishingPanel } from "./tiktok-publishing";
 import { YoutubeAccountConnections } from "./youtube-account-connections";
 import { PlatformIcon, UploadIcon } from "./publish-ui";
@@ -12,14 +13,14 @@ import { uploadMaintenanceText } from "@/lib/upload-maintenance";
 
 const available = ["YouTube", "TikTok", "Instagram", "Threads"] as const;
 
-export function AdminPublishingButton({ shortId, title, adminEnabled = false, tiktokEnabled = false, youtubeEnabled = false }: { shortId: string; title: string; adminEnabled?: boolean; metaOnly?: boolean; metaEnabled?: boolean; tiktokEnabled?: boolean; youtubeEnabled?: boolean }) {
+export function AdminPublishingButton({ shortId, title, adminEnabled = false, metaEnabled = false, tiktokEnabled = false, youtubeEnabled = false }: { shortId: string; title: string; adminEnabled?: boolean; metaOnly?: boolean; metaEnabled?: boolean; tiktokEnabled?: boolean; youtubeEnabled?: boolean }) {
   const { locale } = useI18n();
   const text = locale === "ko" ? { upload: "업로드", heading: "쇼츠 업로드", help: "완성한 영상을 내 채널에 바로 올리세요.", close: "업로드 창 닫기" }
     : locale === "en" ? { upload: "Upload", heading: "Upload short", help: "Upload your finished video directly to your channel.", close: "Close upload" }
       : { upload: "アップロード", heading: "ショート動画を投稿", help: "完成した動画をチャンネルに投稿しましょう。", close: "閉じる" };
   const maintenance = uploadMaintenanceText(locale);
-  const dialogEnabled = adminEnabled || tiktokEnabled;
-  const defaultPlatform = !adminEnabled && tiktokEnabled ? "TikTok" : "YouTube";
+  const dialogEnabled = adminEnabled || tiktokEnabled || metaEnabled;
+  const defaultPlatform = !adminEnabled && metaEnabled ? "Instagram" : !adminEnabled && tiktokEnabled ? "TikTok" : "YouTube";
   const [platform, setPlatform] = useState<typeof available[number]>(defaultPlatform);
   const selected = available.includes(platform) ? platform : available[0];
   const [open, setOpen] = useState(false);
@@ -55,6 +56,8 @@ export function AdminPublishingButton({ shortId, title, adminEnabled = false, ti
           ? <div className="publish-empty" role="status"><PlatformIcon name="YouTube"/><h3>{maintenance.heading}</h3><p>{maintenance.message}</p><p>{maintenance.alternative}</p><a className="publish-primary" href={`/api/shorts/${encodeURIComponent(shortId)}/download`} download>{maintenance.download}</a></div>
         : selected === "TikTok" && tiktokEnabled
           ? <TikTokPublishingPanel shortId={shortId} title={title}/>
+        : (selected === "Instagram" || selected === "Threads") && metaEnabled
+          ? <MetaPublishingPanel key={selected} platform={selected === "Instagram" ? "instagram" : "threads"} shortId={shortId} title={title}/>
         : <div className="publish-empty" role="status"><PlatformIcon name={selected}/><p>{locale === "ko" ? "해당 플랫폼은 서비스 준비중입니다." : locale === "en" ? "This platform is coming soon." : "このプラットフォームはサービス準備中です。"}</p></div>}</div>
     </dialog>, document.body)}
   </>;
