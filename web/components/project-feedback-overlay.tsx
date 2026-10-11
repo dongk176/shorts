@@ -39,8 +39,10 @@ async function responseBody<T>(response: Response): Promise<T> {
 export function ProjectFeedbackOverlay() {
   const { authenticated, accountId } = useUsageState();
   useEffect(() => {
-    if (!authenticated || !accountId) clearCompletedProjectViewedForFeedback();
-    else hasCompletedProjectViewedForFeedback(accountId);
+    // RootLayout knows sign-in before /api/mvp/usage resolves the account ID.
+    // Preserve the result-view marker across full-page navigation during that gap.
+    if (!authenticated) clearCompletedProjectViewedForFeedback();
+    else if (accountId) hasCompletedProjectViewedForFeedback(accountId);
   }, [accountId, authenticated]);
   if (!authenticated || !accountId) return null;
   return <AccountProjectFeedbackOverlay key={accountId} accountId={accountId} />;
