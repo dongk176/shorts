@@ -31,7 +31,7 @@ export async function japaneseQuotaVerified(db: Sql | TransactionSql = getDb()) 
     where project_id=${project} and key_fingerprint=${fingerprint}
       and search_daily_limit>=100 and general_daily_limit>=10000 and other_clients_reviewed
       and japan_activated_at is not null
-      and japan_verified_at>clock_timestamp()-interval '7 days' and length(japan_evidence)>0
+      and japan_verified_at is not null and length(japan_evidence)>0
       and accounting_ready_from<=(clock_timestamp() at time zone 'America/Los_Angeles')::date`;
   return rows[0] ? { searchEnabled: Number(rows[0].japanSearchDailyCeiling) >= 100 } : null;
 }

@@ -170,6 +170,7 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
         "202609110011_youtube_japan_quota.sql",
         "202609110012_youtube_japan_activation_constraints.sql",
         "202609280001_popular_english_filter.sql",
+        "20261011085148_youtube_japan_continuous_collection.sql",
       ]) {
         if (name === "202609110010_youtube_japan_discovery.sql") {
           await migrationDb`insert into shorts_mvp.youtube_catalog(id,video_id,metadata,first_discovered_at,verified_at,last_trending_at,trending_rank)
@@ -1419,7 +1420,7 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
   it("does not start Japan without current project evidence or after its deadline", async () => {
     await enableJapan();
     const fetchImpl=vi.fn(async()=>new Response(JSON.stringify({items:[]})));
-    await db`update shorts_mvp.youtube_quota_verifications set japan_verified_at=clock_timestamp()-interval '8 days'`;
+    await db`update shorts_mvp.youtube_quota_verifications set japan_verified_at=null`;
     expect(await collectJapanVideos({db,fetchImpl})).toMatchObject({skipped:true,reason:"japan_quota_unverified"});
     await enableJapan();
     vi.stubEnv("YOUTUBE_API_KEY","a-different-project-key");
@@ -1538,11 +1539,11 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
     expect(page.items).toHaveLength(7); expect(page.items.some(v=>v.videoId==="jpnew000001")).toBe(false);
   });
 
-  it.each(["expired", "off"])("preserves all 90 Korean searches after Japanese consumption when Japan is %s", async mode => {
+  it.each(["revoked", "off"])("preserves all 90 Korean searches after Japanese consumption when Japan is %s", async mode => {
     await enableJapan();
     for (const [lane,units] of [["reusable",7],["views",3]] as const)
       expect((await db`select shorts_mvp.reserve_youtube_japan_quota('test-project','search',${lane},${units}) id`)[0].id).toBeTruthy();
-    if(mode==="expired") await db`update shorts_mvp.youtube_quota_verifications set japan_verified_at=clock_timestamp()-interval '8 days'`;
+    if(mode==="revoked") await db`update shorts_mvp.youtube_quota_verifications set japan_verified_at=null`;
     else await db`update shorts_mvp.youtube_quota_verifications set japan_collection_enabled=false`;
     for(const [lane,units] of [["views",40],["reusable",20],["free",30]] as const)
       expect((await db`select shorts_mvp.reserve_youtube_quota('test-project','search',${lane},${units}) id`)[0].id).toBeTruthy();

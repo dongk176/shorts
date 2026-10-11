@@ -1,0 +1,15 @@
+# Feedback and Japan collection recovery — 2026-10-11
+
+Owner authorization: fix the stopped product-feedback prompts and Japanese popular-video collection, then deploy both to production and restore actual Japan collection.
+
+Baseline: promoted source `29b8906164d3ca162346dce4dadaa1b63a68569b`, deployment `dpl_8paZjrdGKZoVrKq9UJQD5JqGsPRv`. Isolated branch `codex/feedback-japan-collection-20261011`. Production project `prj_bQyHRVC3Pfzq2dvUnAqEDlw66GOw`, DB `mvcprswvfybudtopepuj` / `shorts_mvp`. No lab resources or worker changes. Existing publishing features, maintenance gates and runtime targets are retained.
+
+Feedback: the retired YouTube notice completed synchronously, then the parent mount effect overwrote that completion. The deployed JavaScript reproduced a queue stuck at youtube-launch. Start signed-in users at onboarding and reset queue state before rendering a changed identity, without remounting the page. Stale callbacks cannot advance another account's queue. Existing result-view eligibility, one response/reward per account and prior onboarding stages remain.
+
+Japan: latest regular successful run was September 24. September 17 quota evidence expired after seven days, while collection/read switches remained ON. Retain the verified project/key/evidence/activation and atomic quota limits but remove time-only expiration in the application and DB reservation function. Never rewrite verification dates or fabricate renewed evidence. Key mismatch, revoked evidence, OFF, accounting failure, Google quota errors and daily budget still stop collection. The database function is replaced without changing its signature, privileges, security mode or other behavior.
+
+Authenticated `catchUp=1` can recover only the most recent elapsed 17:15 slot. The same Pacific-day batch/deduplication and budget guards remain authoritative. Unverified enabled collection now returns HTTP 503 instead of reporting a successful skipped cron.
+
+Validation: 113 relevant tests passed, including actual feedback-dialog rendering, signed-in load/sign-in/account switch, PGlite execution of the real migration and KR 90/JP 10 search plus JP 17 general limits. No real feedback response or reward is created. Typecheck and focused lint pass. Local PostgreSQL server suite is not run because Docker is unavailable; the new quota integration runs real Postgres SQL in the existing local PGlite runtime. Hosted candidate checks and recovery receipts are retained in .local-review.
+
+Release: clean committed source, Linux hosted production candidate without aliases, route-manifest parity and five protected paths, unchanged job-admission fingerprint, bounded Japan recovery and list verification, then promote exactly that candidate without rebuilding. Before promotion reconfirm the production baseline. Estimated ordinary metered work: one hosted build and at most one existing daily Japan batch (10 search requests and 17 other API requests), within existing quotas; no new resources, idle capacity or recurring commitment.

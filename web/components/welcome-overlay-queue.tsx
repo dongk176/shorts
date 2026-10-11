@@ -5,7 +5,6 @@ import {
   type ReactNode,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
   useState,
 } from "react";
@@ -29,23 +28,24 @@ export function WelcomeOverlayQueueProvider({
   children: ReactNode;
 }) {
   const { accountId, authenticated } = useUsageState();
-  const [stage, setStage] = useState<WelcomeOverlayStage>(
-    "youtube-launch",
-  );
-
-  useEffect(() => {
-    setStage("youtube-launch");
-  }, [accountId, authenticated]);
+  // Start at an active stage. Resetting in a parent effect can overwrite a
+  // child's synchronous completion and strand every later announcement.
+  const identity = `${authenticated}:${accountId || "pending"}`;
+  const initialStage = authenticated ? nextWelcomeOverlayStage("youtube-launch") : "done";
+  const [queue, setQueue] = useState({ identity, stage: initialStage });
+  // Reset before children render without remounting the application subtree.
+  if (queue.identity !== identity) setQueue({ identity, stage: initialStage });
+  const stage = queue.identity === identity ? queue.stage : initialStage;
 
   const complete = useCallback(
     (completedStage: Exclude<WelcomeOverlayStage, "done">) => {
-      setStage((current) => (
-        current === completedStage
-          ? completedStage === "youtube-launch" && !authenticated ? "done" : nextWelcomeOverlayStage(completedStage)
+      setQueue((current) => (
+        current.identity === identity && current.stage === completedStage
+          ? { identity, stage: nextWelcomeOverlayStage(completedStage) }
           : current
       ));
     },
-    [authenticated],
+    [identity],
   );
 
   const value = useMemo(
