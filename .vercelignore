@@ -18,7 +18,7 @@ infra/aws/cdk.context.json
 .env
 .env.*
 .secrets/**
-.local-review/**
+**/.local-review/**
 test-tools/**
 web/test-tools/**
 **/node_modules/**
