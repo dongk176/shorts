@@ -57,6 +57,7 @@ function AccountProjectFeedbackOverlay({ accountId }: { accountId: string }) {
   const [disappointmentReason, setDisappointmentReason] =
     useState<ProjectFeedbackDisappointmentReason | null>(null);
   const [improvementText, setImprovementText] = useState("");
+  const showDetails = satisfactionRating !== null && satisfactionRating <= 3;
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState<FeedbackSubmissionResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -158,7 +159,7 @@ function AccountProjectFeedbackOverlay({ accountId }: { accountId: string }) {
 
   const submitFeedback = async (event: FormEvent) => {
     event.preventDefault();
-    if (submitting || satisfactionRating === null || disappointmentReason === null) return;
+    if (submitting || satisfactionRating === null || (showDetails && disappointmentReason === null)) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -169,8 +170,7 @@ function AccountProjectFeedbackOverlay({ accountId }: { accountId: string }) {
         body: JSON.stringify({
           requestId: crypto.randomUUID(),
           satisfactionRating,
-          disappointmentReason,
-          improvementText,
+          ...(showDetails ? { disappointmentReason, improvementText } : {}),
         }),
       });
       const result = await responseBody<FeedbackSubmissionResponse>(response);
@@ -257,7 +257,7 @@ function AccountProjectFeedbackOverlay({ accountId }: { accountId: string }) {
                 {ui("좋은 이야기보다 솔직한 의견이 더 도움이 됩니다. 제출 즉시 원본 영상 처리시간 30분을 드려요.")}</p>
             </header>
 
-            <div className="space-y-8 px-6 py-7 sm:px-9">
+            <div className="px-6 py-7 sm:px-9">
               <fieldset>
                 <legend className="text-base font-extrabold text-white">
                   {ui("완성된 결과물에 얼마나 만족하셨나요?")}</legend>
@@ -267,7 +267,18 @@ function AccountProjectFeedbackOverlay({ accountId }: { accountId: string }) {
                       key={rating}
                       type="button"
                       aria-pressed={satisfactionRating === rating}
-                      onClick={() => setSatisfactionRating(rating)}
+                      disabled={submitting}
+                      aria-label={`${rating} / 5`}
+                      aria-controls="project-feedback-details"
+                      aria-expanded={showDetails}
+                      onClick={() => {
+                        setSatisfactionRating(rating);
+                        setError(null);
+                        if (rating >= 4) {
+                          setDisappointmentReason(null);
+                          setImprovementText("");
+                        }
+                      }}
                       className={`min-h-12 rounded-xl border text-base font-black transition ${
                         satisfactionRating === rating
                           ? "border-[#ff8c7c] bg-[#ff8c7c] text-black"
@@ -284,53 +295,66 @@ function AccountProjectFeedbackOverlay({ accountId }: { accountId: string }) {
                 </div>
               </fieldset>
 
-              <fieldset>
-                <legend className="text-base font-extrabold text-white">
-                  {ui("가장 아쉬웠던 점은 무엇인가요?")}</legend>
-                <p className="mt-1 text-xs text-neutral-500">{ui("하나만 선택해 주세요.")}</p>
-                <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                  {projectFeedbackDisappointmentReasons.map((reason) => (
-                    <label
-                      key={reason}
-                      className={`flex min-h-12 cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-sm font-semibold transition ${
-                        disappointmentReason === reason
-                          ? "border-[#ff8c7c] bg-[#ff8c7c]/10 text-white"
-                          : "border-white/10 bg-white/[.025] text-neutral-300 hover:border-white/25"
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="disappointmentReason"
-                        value={reason}
-                        checked={disappointmentReason === reason}
-                        onChange={() => setDisappointmentReason(reason)}
-                        className="h-4 w-4 accent-[#ff8c7c]"
-                      />
-                      {projectFeedbackReasonLabels[reason]}
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
+              <div
+                id="project-feedback-details"
+                aria-hidden={!showDetails}
+                inert={!showDetails}
+                className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out motion-reduce:transition-none ${showDetails ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}
+              >
+                <div className="min-h-0 overflow-hidden">
+                  <div className="space-y-8 pt-8">
+                    <fieldset disabled={!showDetails || submitting}>
+                      <legend className="text-base font-extrabold text-white">
+                        {ui("가장 아쉬웠던 점은 무엇인가요?")}</legend>
+                      <p className="mt-1 text-xs text-neutral-500">{ui("하나만 선택해 주세요.")}</p>
+                      <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                        {projectFeedbackDisappointmentReasons.map((reason) => (
+                          <label
+                            key={reason}
+                            className={`flex min-h-12 cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-sm font-semibold transition ${
+                              disappointmentReason === reason
+                                ? "border-[#ff8c7c] bg-[#ff8c7c]/10 text-white"
+                                : "border-white/10 bg-white/[.025] text-neutral-300 hover:border-white/25"
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name="disappointmentReason"
+                              value={reason}
+                              checked={disappointmentReason === reason}
+                              onChange={() => setDisappointmentReason(reason)}
+                              className="h-4 w-4 accent-[#ff8c7c]"
+                            />
+                            {projectFeedbackReasonLabels[reason]}
+                          </label>
+                        ))}
+                      </div>
+                    </fieldset>
 
-              <label className="block">
-                <span className="text-base font-extrabold text-white">
-                  {ui("리뷰 한 마디")}</span>
-                <span className="ml-2 text-xs font-medium text-neutral-500">{ui("선택 사항")}</span>
-                <textarea
-                  value={improvementText}
-                  onChange={(event) => setImprovementText(event.target.value)}
-                  maxLength={1000}
-                  rows={4}
-                  placeholder={ui("자유롭게 적어주세요.")}
-                  className="mt-4 w-full resize-none rounded-xl border border-white/10 bg-black/20 p-4 text-sm leading-6 text-white outline-none placeholder:text-neutral-600 focus:border-[#ff8c7c]"
-                />
-                <span className="mt-1 block text-right text-xs text-neutral-600">
-                  {improvementText.length}/1000
-                </span>
-              </label>
+                    <label className="block">
+                      <span className="text-base font-extrabold text-white">
+                        {ui("리뷰 한 마디")}</span>
+                      <span className="ml-2 text-xs font-medium text-neutral-500">{ui("선택 사항")}</span>
+                      <textarea
+                        disabled={!showDetails || submitting}
+                        value={improvementText}
+                        onChange={(event) => setImprovementText(event.target.value)}
+                        maxLength={1000}
+                        rows={4}
+                        placeholder={ui("자유롭게 적어주세요.")}
+                        className="mt-4 w-full resize-none rounded-xl border border-white/10 bg-black/20 p-4 text-sm leading-6 text-white outline-none placeholder:text-neutral-600 focus:border-[#ff8c7c]"
+                      />
+                      <span className="mt-1 block text-right text-xs text-neutral-600">
+                        {improvementText.length}/1000
+                      </span>
+                    </label>
+
+                  </div>
+                </div>
+              </div>
 
               {error && (
-                <p role="alert" className="rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                <p role="alert" className="mt-8 rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
                   {ui(error)}
                 </p>
               )}
@@ -339,7 +363,7 @@ function AccountProjectFeedbackOverlay({ accountId }: { accountId: string }) {
             <footer className="space-y-2 border-t border-white/10 px-6 py-5 sm:px-9">
               <button
                 type="submit"
-                disabled={submitting || satisfactionRating === null || disappointmentReason === null}
+                disabled={submitting || satisfactionRating === null || (showDetails && disappointmentReason === null)}
                 className="min-h-12 w-full rounded-xl bg-white px-6 text-sm font-black text-black transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {ui(submitting ? "보내는 중..." : "피드백 보내고 30분 받기")}

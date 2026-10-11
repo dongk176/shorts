@@ -11,6 +11,7 @@ import type { WelcomeOverlayStage } from "@/lib/welcome-overlay-queue";
 const account = vi.hoisted(() => ({ authenticated: true, accountId: null as string | null }));
 vi.mock("@/components/usage-provider", () => ({ useUsageState: () => account }));
 vi.mock("@/lib/i18n/use-ui-text", () => ({ useUiText: () => (text: string) => text }));
+vi.mock("@/lib/usage-client", () => ({ publishUsageSnapshot: vi.fn() }));
 vi.mock("@/lib/i18n/navigation", () => ({ usePathname: () => "/" }));
 let root: Root;
 afterEach(async () => { if (root) await act(async () => root.unmount()); vi.unstubAllGlobals(); });
@@ -78,5 +79,33 @@ describe("welcome queue feedback reachability", () => {
     expect(fetcher).toHaveBeenCalledWith("/api/project-feedback", expect.objectContaining({ cache: "no-store" }));
     expect(document.querySelector('[role="dialog"]')).not.toBeNull();
     expect(document.querySelector("form")).not.toBeNull();
+    const details = document.getElementById("project-feedback-details")!;
+    const submit = document.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+    const chooseRating = async (rating: number) => {
+      await act(async () => document.querySelector<HTMLButtonElement>(`button[aria-label="${rating} / 5"]`)!.click());
+    };
+    expect(details.getAttribute("aria-hidden")).toBe("true");
+    expect(submit.disabled).toBe(true);
+    for (const rating of [1, 2, 3]) {
+      await chooseRating(rating);
+      expect(details.getAttribute("aria-hidden")).toBe("false");
+      expect(details.hasAttribute("inert")).toBe(false);
+      expect(submit.disabled).toBe(true);
+    }
+    for (const rating of [4, 5]) {
+      await chooseRating(rating);
+      expect(details.getAttribute("aria-hidden")).toBe("true");
+      expect(details.hasAttribute("inert")).toBe(true);
+      expect(submit.disabled).toBe(false);
+    }
+    fetcher.mockImplementation(async () => Response.json({ submitted: true, rewardSeconds: 1800, rewardValidityDays: 90, usage: {} }));
+    await act(async () => {
+      document.querySelector("form")!.dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
+    });
+    const request = fetcher.mock.calls.at(-1) as unknown as [string, RequestInit];
+    expect(JSON.parse(request[1].body as string)).toMatchObject({ satisfactionRating: 5 });
+    expect(JSON.parse(request[1].body as string)).not.toHaveProperty("disappointmentReason");
+    expect(document.body.textContent).toContain("처리시간 30분을 드렸어요");
+
   });
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  projectFeedbackSubmissionSchema,
   nextProjectFeedbackPromptThreshold,
   resolveProjectFeedbackPromptStatus,
 } from "@/lib/project-feedback";
@@ -54,5 +55,25 @@ describe("project feedback prompt schedule", () => {
       lastDeferredPromptCompletionCount: 12,
       submitted: false,
     })).toMatchObject({ eligible: false, permanentlyDismissed: true });
+  });
+});
+
+
+describe("rating-dependent feedback submission", () => {
+  const requestId = "4713d26c-ffcb-486b-9a30-e4cb08bc5c12";
+  it.each([4, 5])("accepts rating %s without a reason and stores unanswered details as null", (satisfactionRating) => {
+    expect(projectFeedbackSubmissionSchema.parse({ requestId, satisfactionRating })).toEqual({
+      requestId, satisfactionRating, disappointmentReason: null, improvementText: null,
+    });
+  });
+  it.each([1, 2, 3])("requires a reason for rating %s", (satisfactionRating) => {
+    expect(projectFeedbackSubmissionSchema.safeParse({ requestId, satisfactionRating }).success).toBe(false);
+    expect(projectFeedbackSubmissionSchema.safeParse({ requestId, satisfactionRating, disappointmentReason: "result_quality" }).success).toBe(true);
+  });
+  it("discards stale hidden details after switching to a high rating", () => {
+    expect(projectFeedbackSubmissionSchema.parse({ requestId, satisfactionRating: 4,
+      disappointmentReason: "result_quality", improvementText: "old answer" })).toMatchObject({
+      disappointmentReason: null, improvementText: null,
+    });
   });
 });

@@ -482,6 +482,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
   const feedbackReasonRows = tab === "feedback" ? await db`
       select disappointment_reason,count(*)::integer as count
       from shorts_mvp.project_feedback_responses
+      where disappointment_reason is not null
       group by disappointment_reason
       order by count desc,disappointment_reason
     ` : [];

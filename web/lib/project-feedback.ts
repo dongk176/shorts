@@ -32,9 +32,17 @@ export const projectFeedbackReasonLabels: Record<ProjectFeedbackDisappointmentRe
 export const projectFeedbackSubmissionSchema = z.object({
   requestId: z.string().uuid(),
   satisfactionRating: z.number().int().min(1).max(5),
-  disappointmentReason: z.enum(projectFeedbackDisappointmentReasons),
+  disappointmentReason: z.enum(projectFeedbackDisappointmentReasons).nullish(),
   improvementText: z.string().trim().max(1000).optional().transform((value) => value || null),
-});
+}).superRefine((input, context) => {
+  if (input.satisfactionRating <= 3 && !input.disappointmentReason) {
+    context.addIssue({ code: "custom", path: ["disappointmentReason"], message: "아쉬웠던 점을 하나 선택해 주세요." });
+  }
+}).transform((input) => ({
+  ...input,
+  disappointmentReason: input.satisfactionRating <= 3 ? input.disappointmentReason! : null,
+  improvementText: input.satisfactionRating <= 3 ? input.improvementText : null,
+}));
 
 export const projectFeedbackDeferralSchema = z.object({
   requestId: z.string().uuid(),

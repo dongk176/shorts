@@ -8,7 +8,7 @@ export type AdminProjectFeedback = {
   email: string;
   displayName: string | null;
   satisfactionRating: number;
-  disappointmentReason: ProjectFeedbackDisappointmentReason;
+  disappointmentReason: ProjectFeedbackDisappointmentReason | null;
   improvementText: string | null;
   promptCompletionCount: number;
   completedProjectCount: number;
@@ -118,7 +118,7 @@ export function AdminFeedbackDashboard({
                     <strong className="text-base text-[#ff9b8d]">{item.satisfactionRating} / 5</strong>
                   </td>
                   <td className="px-4 py-4 font-semibold text-neutral-200">
-                    {projectFeedbackReasonLabels[item.disappointmentReason]}
+                    {item.disappointmentReason ? projectFeedbackReasonLabels[item.disappointmentReason] : "별점만 제출"}
                   </td>
                   <td className="max-w-md px-4 py-4 leading-6 text-neutral-300">
                     {item.improvementText || <span className="text-neutral-600">작성 안 함</span>}
