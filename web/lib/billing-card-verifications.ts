@@ -141,6 +141,7 @@ export async function revokeOwnedBillingCardVerification(
 export async function cleanupExpiredBillingCardVerifications(
   db: Sql,
   limit = 100,
+  deadline = performance.now() + 30_000,
 ) {
   const boundedLimit = Math.max(1, Math.min(100, Math.floor(limit)));
   const candidates = await db`
@@ -153,7 +154,12 @@ export async function cleanupExpiredBillingCardVerifications(
   `;
   let revoked = 0;
   let failed = 0;
+  let visited = 0;
   for (const candidate of candidates) {
+    // Leave unclaimed rows eligible for the next cron instead of timing out
+    // with a card stranded in revoking after the provider's new request gap.
+    if (performance.now() >= deadline) break;
+    visited += 1;
     const claimedRows = await db`
       update shorts_mvp.billing_card_verifications
       set status='revoking'
@@ -172,5 +178,5 @@ export async function cleanupExpiredBillingCardVerifications(
       failed += 1;
     }
   }
-  return { selected: candidates.length, revoked, failed };
+  return { selected: candidates.length, revoked, failed, deferred: candidates.length - visited };
 }

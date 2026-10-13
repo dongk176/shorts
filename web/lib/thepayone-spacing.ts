@@ -31,6 +31,7 @@ export async function withThePayOneSpacing<T>(operation: () => Promise<T>): Prom
     connection: { application_name: "shorts-thepayone-spacing" },
   });
   let expired = false;
+  const admissionDeadline = performance.now() + ADMISSION_TIMEOUT_MS;
   let dispatched = false;
   let outcome: { ok: true; value: T } | { ok: false; error: unknown } | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -44,14 +45,14 @@ export async function withThePayOneSpacing<T>(operation: () => Promise<T>): Prom
   try {
     await Promise.race([
       db.begin(async (tx) => {
-        if (expired) throw new ThePayOneSpacingError();
+        if (expired || performance.now() >= admissionDeadline) throw new ThePayOneSpacingError();
         await tx`set local statement_timeout = '23s'`;
         await tx`set local lock_timeout = '20s'`;
         // The provider request/body has a 15-second abort deadline.
         await tx`set local idle_in_transaction_session_timeout = '25s'`;
         await tx`select pg_advisory_xact_lock(1936224116, 1953525615)`;
         await tx`select pg_sleep(${THEPAYONE_REQUEST_GAP_SECONDS})`;
-        if (expired) throw new ThePayOneSpacingError();
+        if (expired || performance.now() >= admissionDeadline) throw new ThePayOneSpacingError();
         dispatched = true;
         clearTimeout(timer);
         try {

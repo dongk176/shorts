@@ -292,6 +292,9 @@ async function reconcileStaleRemediationAttempt(
 }
 
 export async function processBillingRenewals(db: Sql) {
+  // Reserve time for the other billing engines in the same 300-second cron.
+  // Finish the current item; leave subsequent provider work eligible next run.
+  const providerWorkDeadline = performance.now() + 90_000;
   const expiredCardVerifications = await cleanupExpiredBillingCardVerifications(db);
   const expiredCheckouts = await db`
     update shorts_mvp.billing_orders set status='expired',failure_code='CHECKOUT_EXPIRED'
@@ -311,6 +314,7 @@ export async function processBillingRenewals(db: Sql) {
     returning id
   `;
   let staleRemediationAttempts = 0;
+  let deferredRemediationAttempts = 0;
   if (await legacyCardReconciliationEnabled(db)) {
     const staleRows = await db`
       select a.*,r.legacy_payment_method_id,
@@ -327,7 +331,9 @@ export async function processBillingRenewals(db: Sql) {
       limit 100
     `;
     for (const stale of staleRows) {
+      if (performance.now() >= providerWorkDeadline) break;
       await reconcileStaleRemediationAttempt(db, stale);
+      staleRemediationAttempts += 1;
     }
     await db`
       update shorts_mvp.billing_payment_method_remediations
@@ -336,7 +342,7 @@ export async function processBillingRenewals(db: Sql) {
         and (original_next_charge_at at time zone 'Asia/Seoul')::date
           <= (clock_timestamp() at time zone 'Asia/Seoul')::date
     `;
-    staleRemediationAttempts = staleRows.length;
+    deferredRemediationAttempts = staleRows.length - staleRemediationAttempts;
   }
   const expiredPackageRows = await db`
     update shorts_mvp.user_subscriptions
@@ -395,6 +401,7 @@ export async function processBillingRenewals(db: Sql) {
   `;
   const results: Record<string, string> = {};
   for (const subscription of dueRows) {
+    if (performance.now() >= providerWorkDeadline) break;
     results[subscription.id] = await closeDueSubscription(db, subscription);
   }
   return {
@@ -402,9 +409,11 @@ export async function processBillingRenewals(db: Sql) {
     expiredCheckouts: expiredCheckouts.length,
     interruptedForManualReview: interrupted.length,
     staleRemediationAttempts,
+    deferredRemediationAttempts,
     expiredPackages: expiredPackageRows.length,
     quotasCreated,
-    processed: dueRows.length,
+    processed: Object.keys(results).length,
+    deferred: dueRows.length - Object.keys(results).length,
     results,
   };
 }
