@@ -1,3 +1,4 @@
+import { ThePayOneSpacingError, withThePayOneSpacing } from "./thepayone-spacing";
 import {
   createCipheriv,
   createDecipheriv,
@@ -574,25 +575,38 @@ async function thePayOnePost(
   scope: ThePayOneCredentialScope,
 ) {
   const config = getThePayOneConfig(scope);
-  let response: Response;
   try {
-    response = await fetch(new URL(path, config.apiBaseUrl), {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        Authorization: config.payKey,
-        "Content-Type": "application/json; charset=utf-8",
-      },
-      body: JSON.stringify(payload),
-      cache: "no-store",
-      redirect: "error",
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    return await withThePayOneSpacing(async () => {
+      let response: Response;
+      try {
+        response = await fetch(new URL(path, config.apiBaseUrl), {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            Authorization: config.payKey,
+            "Content-Type": "application/json; charset=utf-8",
+          },
+          body: JSON.stringify(payload),
+          cache: "no-store",
+          redirect: "error",
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        });
+      } catch {
+        throw new ThePayOneError("더페이원 서버에 연결하지 못했습니다.", "NETWORK_ERROR", null, true);
+      }
+      return parseResponse(response);
     });
   } catch (error) {
-    if (error instanceof PaymentConfigurationError || error instanceof ThePayOneError) throw error;
-    throw new ThePayOneError("더페이원 서버에 연결하지 못했습니다.", "NETWORK_ERROR", null, true);
+    if (error instanceof ThePayOneSpacingError) {
+      throw new ThePayOneError(
+        "결제 요청 대기가 지연되고 있습니다. 잠시 후 다시 시도해 주세요.",
+        "REQUEST_SPACING_UNAVAILABLE",
+        null,
+        error.dispatched,
+      );
+    }
+    throw error;
   }
-  return parseResponse(response);
 }
 
 export async function registerThePayOneCard(

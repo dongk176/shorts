@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ThePayOneSpacingError, withThePayOneSpacing } from "./thepayone-spacing";
 import {
   cardTokenHash,
   chargeThePayOneCard,
@@ -23,6 +24,11 @@ import {
   ThePayOneError,
 } from "./thepayone";
 
+vi.mock("./thepayone-spacing", async (importOriginal) => ({
+  ...await importOriginal<typeof import("./thepayone-spacing")>(),
+  withThePayOneSpacing: vi.fn(async (operation: () => Promise<unknown>) => operation()),
+}));
+
 const encryptionKey = Buffer.alloc(32, 7).toString("base64");
 
 beforeEach(() => {
@@ -42,6 +48,24 @@ afterEach(() => {
 });
 
 describe("ThePayOne client", () => {
+  it("does not contact the provider when distributed admission fails", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    vi.mocked(withThePayOneSpacing).mockRejectedValueOnce(new ThePayOneSpacingError());
+    await expect(revokeThePayOneCard("fixture-card", "fixture-track"))
+      .rejects.toMatchObject({ resultCode: "REQUEST_SPACING_UNAVAILABLE", outcomeUnknown: false });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("marks a lost lock after dispatch as uncertain without retrying", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    vi.mocked(withThePayOneSpacing).mockRejectedValueOnce(new ThePayOneSpacingError(true));
+    await expect(revokeThePayOneCard("fixture-card", "fixture-track"))
+      .rejects.toMatchObject({ resultCode: "REQUEST_SPACING_UNAVAILABLE", outcomeUnknown: true });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("keeps track IDs within the recurring payment limit after the provider suffix", () => {
     expect(createPaymentTrackId("AUTH")).toHaveLength(31);
     for (const prefix of ["AUTH", "AUDT", "PAY", "REFUND"] as const) {
