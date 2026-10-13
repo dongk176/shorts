@@ -1,3 +1,4 @@
+import { contentTextFont, hasUnsupportedCjkFont } from "@/lib/content-language";
 import { COMMUNITY_EDITOR_RELEASE_ID } from "@/lib/community-template-contract";
 import { SNS_EDITOR_RELEASE_ID, snsEditedSnapshotSchema, type SnsLanguage } from "@/lib/sns-editor-contract";
 import type { VideoAspectRatio } from "@/lib/contracts";
@@ -30,7 +31,6 @@ import {
 } from "@/lib/editor-document-contract";
 import { resolveBuiltInSubtitleTemplateSnapshot } from "@/lib/editor-built-in-subtitle-template";
 import type { EditorDocumentJsonObject } from "@/lib/editor-document-snapshot";
-import { EDITOR_TIMELINE_METADATA_TOLERANCE_SECONDS } from "@/lib/editor-timeline-sync";
 import {
   createEditorRenderSpec,
   EDITOR_RENDER_SPEC_LEGACY_VERSION,
@@ -178,7 +178,7 @@ function editorSnapshotHash(document: ValidatedEditorDocumentSnapshot) {
 }
 
 function sameTimelineSecond(left: number, right: number) {
-  return Math.abs(left - right) <= EDITOR_TIMELINE_METADATA_TOLERANCE_SECONDS;
+  return Math.abs(left - right) <= 0.001;
 }
 
 function editorDocumentFontIds(
@@ -229,6 +229,9 @@ async function applyEditorDocument({
       "편집기가 업데이트되었습니다. 화면을 새로 연 뒤 다시 저장해 주세요.",
       "EDITOR_RELEASE_VERSION_CONFLICT",
     );
+  }
+  if (hasUnsupportedCjkFont(requestedDocument)) {
+    throw new HttpError(400, "일본어·한자에는 Noto 글꼴을 선택해 주세요.", "EDITOR_FONT_GLYPHS_UNSUPPORTED");
   }
   const fontIds = editorDocumentFontIds(requestedDocument);
   const candidateOnlyFontRequested = fontIds.some((fontId) => fontId != null && !isStableEditorFontId(fontId));
@@ -412,6 +415,18 @@ async function applyEditorDocument({
   const captionRenderSpec = storedCaptionRenderSpec
     ? captionRenderSpecForEditor(storedCaptionRenderSpec)
     : null;
+  const subtitleFont = requestedDocument.version === 3 && "subtitles" in requestedDocument.renderSpec
+    ? requestedDocument.renderSpec.subtitles?.fontId ?? captionRenderSpec?.font.fontId
+    : captionRenderSpec?.font.fontId;
+  const subtitleCopy = [
+    ...requestedDocument.subtitles.segments.map((segment) => segment.text),
+    ...(captionRenderSpec?.cues.flatMap((cue) => cue.words.map((word) => word.text)) ?? []),
+    JSON.stringify(cueEdits),
+  ].join(" ");
+  if (requestedDocument.subtitles.enabled && subtitleFont
+    && contentTextFont(subtitleCopy, subtitleFont, true) !== subtitleFont) {
+    throw new HttpError(400, "일본어·한자 자막에는 Noto 글꼴을 선택해 주세요.", "EDITOR_FONT_GLYPHS_UNSUPPORTED");
+  }
   if (existing.subtitleTemplateId && !captionRenderSpec && requestedDocument.subtitles.enabled) {
     throw new HttpError(
       409,

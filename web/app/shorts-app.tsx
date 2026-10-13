@@ -196,7 +196,7 @@ import {
   COMMENT_LIKE_COUNT_MIN,
   randomCommentLikeCount,
 } from "@/lib/comment-overlay";
-import { commentActionLabels, commentAgeLabel, commentFontFamily, contentLanguages, contentTitleFont } from "@/lib/content-language";
+import { commentActionLabels, commentAgeLabel, commentFontFamily, contentLanguages, contentTextFont, contentTitleFont } from "@/lib/content-language";
 import { outputLanguageName } from "@/lib/i18n/product";
 import { selectRandomFallbackCommentTexts } from "@/lib/fallback-comments";
 import {
@@ -297,6 +297,7 @@ import {
 import {
   editorDocumentMatchesTimeline,
   synchronizeEditorDocumentTimeline,
+  canonicalizeEditorDocumentTimelineForSave,
 } from "@/lib/editor-timeline-sync";
 import {
   editorDocumentSemanticFingerprint,
@@ -4497,6 +4498,20 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
       : sanitizeEditorOverlayFontsForStable(initialLayout);
   });
   const overlayLayoutRef = useRef(overlayLayout);
+  useEffect(() => {
+    const next = {
+      ...overlayLayout,
+      fonts: { ...overlayLayout.fonts,
+        channel: contentTextFont(channel, overlayLayout.fonts.channel, japaneseFontEnabled) },
+      textOverlays: overlayLayout.textOverlays.map((overlay) => ({ ...overlay,
+        fontId: contentTextFont(overlay.text, overlay.fontId, japaneseFontEnabled) })),
+    };
+    if (JSON.stringify(next) !== JSON.stringify(overlayLayout)) {
+      overlayLayoutRef.current = next;
+      setOverlayLayout(next);
+    }
+  }, [channel, japaneseFontEnabled, overlayLayout]);
+
   const [backgroundAssetBusy, setBackgroundAssetBusy] = useState(false);
   const overlayHistoryRef = useRef<EditorOverlayHistory>({
     past: [],
@@ -5111,9 +5126,14 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
     },
     overlays: {
       ...overlayLayout,
+      textOverlays: overlayLayout.textOverlays.map((overlay) => ({
+        ...overlay,
+        fontId: contentTextFont(overlay.text, overlay.fontId, japaneseFontEnabled),
+      })),
       fonts: {
         ...overlayLayout.fonts,
         title: contentTitleFont(title, overlayLayout.fonts?.title || DEFAULT_EDITOR_FONT_ID, japaneseFontEnabled),
+        channel: contentTextFont(channel, overlayLayout.fonts?.channel || DEFAULT_EDITOR_FONT_ID, japaneseFontEnabled),
       },
     },
     video: {
@@ -5478,6 +5498,15 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
     : editorDocumentSnapshot.channel.thumbnailUrl;
   const renderVideoClips = editorDocumentSnapshot.video.clips;
   const subtitleCueEditsSignature = JSON.stringify(editorDocumentSubtitleLayout.cueEdits || []);
+  const captionFontText = [...segments.map((segment) => segment.text),
+    ...(captionTemplateEditorSpec?.cues.flatMap((cue) => cue.words.map((word) => word.text)) || []),
+    JSON.stringify(editorDocumentSubtitleLayout.cueEdits || [])].join(" ");
+  useEffect(() => {
+    const text = captionFontText;
+    const current = subtitleLayout.fontId || captionTemplateEditorSpec?.font.fontId || DEFAULT_EDITOR_FONT_ID;
+    const next = contentTextFont(text, current, japaneseFontEnabled);
+    if (next !== current) setSubtitleLayout((layout) => ({ ...layout, fontId: next }));
+  }, [captionFontText, captionTemplateEditorSpec, subtitleLayout.fontId, japaneseFontEnabled]);
   const activeCaptionFontId = subtitleLayout.fontId
     || captionTemplateEditorSpec?.font.fontId
     || DEFAULT_EDITOR_FONT_ID;
@@ -10019,7 +10048,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
         const latestTimeline = await requestJson<EditTimeline>(
           `/api/shorts/${item.id}/edit-timeline`,
         );
-        const synchronizedEditorDocument = synchronizeEditorDocumentTimeline(
+        const synchronizedEditorDocument = canonicalizeEditorDocumentTimelineForSave(
           editorDocumentSnapshot,
           latestTimeline,
         );
@@ -10066,61 +10095,65 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
               .join(" ") || "자막 Aa 123",
           );
         }
-        let document = finalizeEditorDocumentForSave(
-          synchronizedEditorDocument,
-        );
-        const preserveInitialRenderSpec =
-          shouldPreserveInitialEditorRenderSpec(
-            document,
-            initialRenderSpec,
-            initialRenderSemanticBaselineRef.current,
-            adminSubtitleEditingEnabled ? editorDocumentSubtitleLayout : undefined,
+        const compileDocumentForSave = async (source: EditorDocumentSnapshot) => {
+          const document = finalizeEditorDocumentForSave(
+            source,
           );
-        if (document.version === 3) {
-          if (editorRenderSpecVersion === EDITOR_RENDER_SPEC_V4_VERSION) {
-            if (
-              preserveInitialRenderSpec
-              && document.renderSpec.version === EDITOR_RENDER_SPEC_V4_VERSION
-            ) {
-              await Promise.all([
-                ensureEditorFontFaceV4Loaded(
-                  document.renderSpec.title.font,
-                  document.title.text,
-                ),
-                ensureEditorFontFaceV4Loaded(
-                  document.renderSpec.channel.font,
-                  document.channel.displayName,
-                ),
-                ...document.renderSpec.textOverlays.map((overlay, index) => (
-                  ensureEditorFontFaceV4Loaded(
-                    overlay.font,
-                    document.overlays.textOverlays[index]?.text || "텍스트",
-                  )
-                )),
-              ]);
-            } else {
-              const compiledRenderSpec = await createEditorRenderSpecV4(
-                document,
-                adminSubtitleEditingEnabled
-                  ? editorDocumentSubtitleLayout
-                  : undefined,
-                captionCompositionRect(captionTemplateEditorSpec, "title"),
-              );
-              document.renderSpec = preserveUnchangedInitialRenderSpecLayers(
-                compiledRenderSpec,
-                document,
-                initialRenderSpec,
-                initialRenderSemanticLayerBaselineRef.current,
-              );
-            }
-          } else if (document.renderSpec.version === EDITOR_RENDER_SPEC_V4_VERSION) {
-            throw new Error(
-              "현재 편집기 릴리스에서는 이 영상의 렌더 사양을 변경할 수 없습니다.",
+          const preserveInitialRenderSpec =
+            shouldPreserveInitialEditorRenderSpec(
+              document,
+              initialRenderSpec,
+              initialRenderSemanticBaselineRef.current,
+              adminSubtitleEditingEnabled ? editorDocumentSubtitleLayout : undefined,
             );
-          } else {
-            document.renderSpec = createEditorRenderSpec(document);
+          if (document.version === 3) {
+            if (editorRenderSpecVersion === EDITOR_RENDER_SPEC_V4_VERSION) {
+              if (
+                preserveInitialRenderSpec
+                && document.renderSpec.version === EDITOR_RENDER_SPEC_V4_VERSION
+              ) {
+                await Promise.all([
+                  ensureEditorFontFaceV4Loaded(
+                    document.renderSpec.title.font,
+                    document.title.text,
+                  ),
+                  ensureEditorFontFaceV4Loaded(
+                    document.renderSpec.channel.font,
+                    document.channel.displayName,
+                  ),
+                  ...document.renderSpec.textOverlays.map((overlay, index) => (
+                    ensureEditorFontFaceV4Loaded(
+                      overlay.font,
+                      document.overlays.textOverlays[index]?.text || "텍스트",
+                    )
+                  )),
+                ]);
+              } else {
+                const compiledRenderSpec = await createEditorRenderSpecV4(
+                  document,
+                  adminSubtitleEditingEnabled
+                    ? editorDocumentSubtitleLayout
+                    : undefined,
+                  captionCompositionRect(captionTemplateEditorSpec, "title"),
+                );
+                document.renderSpec = preserveUnchangedInitialRenderSpecLayers(
+                  compiledRenderSpec,
+                  document,
+                  initialRenderSpec,
+                  initialRenderSemanticLayerBaselineRef.current,
+                );
+              }
+            } else if (document.renderSpec.version === EDITOR_RENDER_SPEC_V4_VERSION) {
+              throw new Error(
+                "현재 편집기 릴리스에서는 이 영상의 렌더 사양을 변경할 수 없습니다.",
+              );
+            } else {
+              document.renderSpec = createEditorRenderSpec(document);
+            }
           }
-        }
+          return document;
+        };
+        let document = await compileDocumentForSave(synchronizedEditorDocument);
         const validatedDocument = editorDocumentSnapshotSchema.safeParse(
           document,
         );
@@ -10180,24 +10213,18 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
           const refreshedTimeline = await requestJson<EditTimeline>(
             `/api/shorts/${item.id}/edit-timeline`,
           );
-          document = synchronizeEditorDocumentTimeline(
-            document,
-            refreshedTimeline,
+          // Recompile every timed layer after rebasing, not only source bounds.
+          document = await compileDocumentForSave(
+            canonicalizeEditorDocumentTimelineForSave(editorDocumentSnapshot, refreshedTimeline),
           );
-          const refreshedDocument = editorDocumentSnapshotSchema.safeParse(
-            document,
-          );
-          if (!refreshedDocument.success) {
-            throw new Error("영상 구간을 다시 확인해 주세요.");
-          }
+          const refreshedDocument = editorDocumentSnapshotSchema.safeParse(document);
+          if (!refreshedDocument.success) throw new Error("영상 구간을 다시 확인해 주세요.");
           const refreshedEditorDocument = refreshedDocument.data;
           editorSaveRequestRef.current = {
             requestId,
-            fingerprint: JSON.stringify({
-              release: releaseRequest,
+            fingerprint: JSON.stringify({ release: releaseRequest,
               templateSelectionTouched: templateSelectionChangedForSave,
-              document: refreshedEditorDocument,
-            }),
+              document: refreshedEditorDocument }),
           };
           await submitDocument(refreshedTimeline, refreshedEditorDocument);
         }
@@ -10391,7 +10418,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
     onInteractionStart={beginEditorOverlayHistoryInteraction}
     onInteractionEnd={finishEditorOverlayHistoryInteraction}
     onDelete={deleteSelectedEditorOverlay}
-    fontOptions={availableEditorFontOptions}
+    fontOptions={availableEditorFontOptions.filter((font) => contentTextFont(selectedTextOverlay?.text || "", font.id, japaneseFontEnabled) === font.id)}
   /> : null;
   const editorTimelineZoomStyle: CSSProperties | undefined = overlayPreviewEnabled
     ? { width: `${editorTimelineZoom * 100}%` }
@@ -11718,7 +11745,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
               <div className="mb-6">
                 <EditorFontPicker
                   value={activeCaptionFontId}
-                  options={availableEditorFontOptions}
+                  options={availableEditorFontOptions.filter((font) => contentTextFont(captionFontText, font.id, japaneseFontEnabled) === font.id)}
                   onChange={(fontId) => {
                     beginEditorCopyInteraction();
                     updateCaptionTemplateSubtitleLayout({
@@ -12095,7 +12122,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
               <EditorFontPicker
                 value={channelFontId}
                 onChange={(fontId) => updateEditorFont("channel", fontId)}
-                options={availableEditorFontOptions}
+                options={availableEditorFontOptions.filter((font) => contentTextFont(channel, font.id, japaneseFontEnabled) === font.id)}
               />
             </div>
           </section>}

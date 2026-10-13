@@ -120,7 +120,8 @@ describe("editor v2 resilience", () => {
     expect(saveSource).toContain(
       "const latestTimeline = await requestJson<EditTimeline>",
     );
-    expect(saveSource).toContain("synchronizeEditorDocumentTimeline(");
+    expect(saveSource).toContain("canonicalizeEditorDocumentTimelineForSave(");
+    expect(saveSource).toContain("document = await compileDocumentForSave(");
     expect(saveSource).toContain("timelineVersion: timeline.version");
     expect(saveSource).toContain("EDITOR_TIMELINE_VERSION_CONFLICT");
     expect(saveSource).toContain("const refreshedTimeline = await requestJson<EditTimeline>");

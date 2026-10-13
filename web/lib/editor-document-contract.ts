@@ -510,6 +510,12 @@ function validateEditorDocumentSnapshot(
   context: z.RefinementCtx,
   timedOverlaysMustFitOutput: boolean,
 ) {
+  if (document.overlays.visible.title && wrapPreviewTitle(document.title.text).some(
+    (line) => !line.replace(/[\p{White_Space}\p{Cf}\p{M}]/gu, ""),
+  )) {
+    context.addIssue({ code: "custom", path: ["title", "text"],
+      message: "제목에 화면에 표시되는 글자를 입력해 주세요." });
+  }
   const titleLength = Array.from(document.title.text).length;
   const titleStyles = [...document.title.textStyles]
     .sort((left, right) => left.start - right.start);
@@ -649,7 +655,7 @@ function validateEditorDocumentSnapshot(
     });
   }
   if (timedOverlaysMustFitOutput && orderedComments.some(
-    (comment) => comment.endSeconds > outputDuration + 0.001,
+    (comment) => comment.endSeconds > Math.floor((outputDuration + 1e-9) * 1_000) / 1_000 + 0.001,
   )) {
     context.addIssue({
       code: "custom",
@@ -691,7 +697,7 @@ function validateEditorDocumentSnapshot(
     });
   }
   if (timedOverlaysMustFitOutput && document.overlays.textOverlays.some(
-    (overlay) => overlay.endSeconds > outputDuration + 0.001,
+    (overlay) => overlay.endSeconds > Math.floor((outputDuration + 1e-9) * 1_000) / 1_000 + 0.001,
   )) {
     context.addIssue({
       code: "custom",
@@ -817,10 +823,10 @@ export type ValidatedEditorDocumentSnapshot = z.infer<
 export function editorDocumentOutputDuration(
   document: Pick<ValidatedEditorDocumentSnapshot, "video">,
 ) {
-  return Math.round(document.video.clips.reduce(
+  return Math.floor((document.video.clips.reduce(
     (duration, clip) => (
       duration + clip.sourceEndSeconds - clip.sourceStartSeconds
     ),
     0,
-  ) * 1_000) / 1_000;
+  ) + 1e-9) * 1_000) / 1_000;
 }

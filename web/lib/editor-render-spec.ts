@@ -506,6 +506,7 @@ export function compileEditorRenderTitleSpecV4(
     if (candidateMeasurements.some((item) => (
       !Number.isFinite(item.width)
       || item.width < 0
+      || (document.overlays.visible.title && item.width === 0)
     ))) {
       throw new Error("Exact title font metrics are unavailable.");
     }

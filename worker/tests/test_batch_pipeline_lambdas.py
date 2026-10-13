@@ -5377,3 +5377,39 @@ def test_sns_public_editor_accepts_only_existing_account_with_proof(known_user, 
         else [{"details": proof, "completed_at": "now"}]
     )
     assert module._sns_editor_compatible(parent, release) is known_user
+
+
+@pytest.mark.parametrize('invalid', [None, 'digest', 'revision', 'git', 'id', 'proof'])
+def test_sns_dedicated_editor_requires_exact_registered_release(invalid):
+    module, _ = _load_lambda('batch_submitter')
+    generation = 'b871796a-f83a-4aed-8d56-bf039de1cdbf'
+    parent = {'language_test_release_id': generation, 'user_id': 'ordinary',
+              'template_snapshot': {'snsTemplateVersion': 1}}
+    release = {
+        'id': '4fbfeeaa-e210-4143-aece-c17029d962a0',
+        'status': 'canary_ready', 'staging_verified_at': 'now',
+        'git_sha': 'e5ac690a53bb8685ca55562603e1c922b05488e0',
+        'worker_image_digest': (
+            'sha256:25e3346738337b408cfde99a31d650f95c0b2e02ff4aef7cead678ac233f9e34'),
+        'font_manifest_sha256': 'c' * 64,
+        'render_spec_version': 4, 'caption_render_spec_version': 4,
+        'production_job_definition_arn': (
+            'arn:aws:batch:ap-northeast-2:181651591905:job-definition/'
+            'shorts-mvp-editor-release-language-test-sns-edit-e5ac690a53bb-dedicated:1'),
+    }
+    if invalid == 'digest':
+        release['worker_image_digest'] = 'sha256:' + 'a' * 64
+    elif invalid == 'revision':
+        release['production_job_definition_arn'] = (
+            release['production_job_definition_arn'][:-1] + '2')
+    elif invalid == 'git':
+        release['git_sha'] = 'a' * 40
+    elif invalid == 'id':
+        release['id'] = '77d3b2de-12a4-4b7d-a134-87170b1d3ecf'
+    proof = {'generationReleaseIds': [generation], 'sourceGitSha': release['git_sha'],
+             'imageDigest': release['worker_image_digest'],
+             'fontManifestSha256': release['font_manifest_sha256']}
+    module.rest = MagicMock(side_effect=lambda table, **kwargs:
+        [{'id': 'ordinary', 'is_admin': False}] if table == 'app_users'
+        else [] if invalid == 'proof' else [{'details': proof, 'completed_at': 'now'}])
+    assert module._sns_editor_compatible(parent, release) is (invalid is None)

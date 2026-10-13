@@ -1046,11 +1046,23 @@ def _sns_editor_compatible(parent_job: dict[str, Any], release: dict[str, Any]) 
         and details.get("sourceGitSha") == release.get("git_sha")
         and details.get("imageDigest") == release.get("worker_image_digest")
         and details.get("fontManifestSha256") == release.get("font_manifest_sha256")
-        and bool(re.fullmatch(
-            r"arn:aws:batch:ap-northeast-2:181651591905:job-definition/"
-            r"shorts-mvp-editor-release-language-test-sns-edit-[a-f0-9]{12}:[1-9][0-9]*",
-            str(release.get("production_job_definition_arn") or ""),
-        ))
+        and (
+            bool(re.fullmatch(
+                r"arn:aws:batch:ap-northeast-2:181651591905:job-definition/"
+                r"shorts-mvp-editor-release-language-test-sns-edit-[a-f0-9]{12}:[1-9][0-9]*",
+                str(release.get("production_job_definition_arn") or ""),
+            ))
+            or (
+                release.get("id") == "4fbfeeaa-e210-4143-aece-c17029d962a0"
+                and release.get("git_sha") == "e5ac690a53bb8685ca55562603e1c922b05488e0"
+                and release.get("worker_image_digest")
+                == "sha256:25e3346738337b408cfde99a31d650f95c0b2e02ff4aef7cead678ac233f9e34"
+                and release.get("production_job_definition_arn") == (
+                    "arn:aws:batch:ap-northeast-2:181651591905:job-definition/"
+                    "shorts-mvp-editor-release-language-test-sns-edit-e5ac690a53bb-dedicated:1"
+                )
+            )
+        )
     )
 
 

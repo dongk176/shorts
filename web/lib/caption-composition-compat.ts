@@ -34,24 +34,39 @@ function trimTranslatedCaptionPadding(spec: CompiledSpec): CompiledSpec {
   return { ...spec, safeArea: rect, layout: { ...spec.layout, caption: { ...rect } } };
 }
 
+/** V4 cues have absolute positions. Legacy composition metadata must fit the
+ * video even for the built-in 5:4 preset whose caption extends into the footer.
+ * Intersect only that known metadata box; never change actual caption geometry.
+ */
+function normalizeLegacyCaptionMetadata(spec: CompiledSpec): CompiledSpec {
+  const video = spec.layout?.video;
+  const caption = spec.layout?.caption;
+  if (!video || typeof video !== "object" || Array.isArray(video)
+    || !caption || typeof caption !== "object" || Array.isArray(caption)
+    || video.x !== 0 || video.y !== 528 || video.width !== 1080 || video.height !== 864
+    || caption.x !== 90 || caption.y !== 1340 || caption.width !== 900 || caption.height !== 140
+    || spec.cues.some((cue) => !Number.isFinite(cue.centerX) || !Number.isFinite(cue.centerY))) return spec;
+  return { ...spec, layout: { ...spec.layout, caption: { ...caption, height: 52 } } };
+}
+
 export function normalizeStoredCaptionComposition(value: unknown): CaptionRenderSpec | null {
   const parsed = parseCaptionRenderSpec(value);
   if (!parsed || parsed.schemaVersion !== 4) return null;
-  const normalized = trimTranslatedCaptionPadding(parsed);
+  const normalized = normalizeLegacyCaptionMetadata(trimTranslatedCaptionPadding(parsed));
   const source = parsed.editorSource;
-  const normalizedSource = source ? trimTranslatedCaptionPadding(source.spec) : null;
+  const normalizedSource = source ? normalizeLegacyCaptionMetadata(trimTranslatedCaptionPadding(source.spec)) : null;
   if (normalized === parsed && (!source || normalizedSource === source.spec)) return null;
   // Parsing validates the contract but strips auxiliary word provenance. Patch
   // only the two rectangles on the original JSON so all other metadata survives.
   const preserved = structuredClone(value) as CaptionRenderSpecV4;
   if (normalized !== parsed) {
     preserved.safeArea = normalized.safeArea;
-    preserved.layout = { ...preserved.layout, caption: { ...normalized.safeArea } };
+    preserved.layout = { ...preserved.layout, caption: normalized.layout!.caption };
   }
   if (source && normalizedSource !== source.spec && preserved.editorSource) {
     preserved.editorSource.spec.safeArea = normalizedSource!.safeArea;
     preserved.editorSource.spec.layout = {
-      ...preserved.editorSource.spec.layout, caption: { ...normalizedSource!.safeArea },
+      ...preserved.editorSource.spec.layout, caption: normalizedSource!.layout!.caption,
     };
   }
   return preserved;

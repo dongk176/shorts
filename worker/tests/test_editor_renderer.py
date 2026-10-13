@@ -2133,7 +2133,7 @@ def test_v4_editor_renders_stored_v3_pop_caption_with_canonical_font_and_gap(
     shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
     reason="ffmpeg and ffprobe are required",
 )
-@pytest.mark.parametrize("translated_five_four", [False, True])
+@pytest.mark.parametrize("translated_five_four", [False, True, "legacy-metadata"])
 def test_v4_caption_off_preserves_non_caption_composition(
     tmp_path: Path, translated_five_four: bool,
 ) -> None:
@@ -2166,6 +2166,13 @@ def test_v4_caption_off_preserves_non_caption_composition(
         with pytest.raises(RenderError, match="안전영역"):
             editor_video_frame(_document_v3(), fixture["stored"])
         caption_spec = fixture["normalized"]
+        if translated_five_four == "legacy-metadata":
+            caption_spec = json.loads(json.dumps(fixture["stored"]))
+            caption_spec.pop("translation", None)
+            caption_spec["layout"]["caption"] = {
+                "x": 90, "y": 1340, "width": 900, "height": 52,
+            }
+
     enabled_document = _document_v4_with_contiguous_caption_clip(
         caption_spec,
         clip_start_seconds=0,

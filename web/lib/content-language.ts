@@ -52,3 +52,22 @@ export function commentActionLabels(likeCount: number, language: OutputLanguage 
   else likes = String(likeCount).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   return { likes, reply: catalog[language].reply };
 }
+
+/** Only full CJK faces are selectable for CJK copy: browser fallback glyphs
+ * are not reproduced by the pinned Pillow workers. */
+export function contentTextFont<T extends string>(text: string, fontId: T, japaneseEnabled = false): T | "noto-sans-kr" | "noto-sans-jp" {
+  if (!/[\u3040-\u30ff\u3400-\u9fff\uff66-\uff9f]/u.test(text)) return fontId;
+  if (fontId === "noto-sans-kr" || fontId === "noto-serif-kr"
+    || (fontId === "noto-sans-jp" && japaneseEnabled)) return fontId;
+  return japaneseEnabled ? "noto-sans-jp" : "noto-sans-kr";
+}
+
+export function hasUnsupportedCjkFont(document: {
+  channel: { displayName: string };
+  overlays: { fonts: { channel: string }; visible: { channel: boolean };
+    textOverlays: Array<{ text: string; fontId: string }> };
+}) {
+  return (document.overlays.visible.channel
+    && contentTextFont(document.channel.displayName, document.overlays.fonts.channel, true) !== document.overlays.fonts.channel)
+    || document.overlays.textOverlays.some((overlay) => contentTextFont(overlay.text, overlay.fontId, true) !== overlay.fontId);
+}
