@@ -11,7 +11,7 @@ export type YoutubePurpose =
   | "reusable"
   | "free"
   | "refresh";
-export type YoutubeRegion = "KR" | "JP";
+export type YoutubeRegion = "KR" | "JP" | "US" | "GB";
 type RequestContext = { purpose: YoutubePurpose; db: Sql; region?: YoutubeRegion; deadline?: number; stopped?: boolean };
 const context = new AsyncLocalStorage<RequestContext>();
 export const discoveryEnabled = () =>
@@ -73,7 +73,9 @@ export async function youtubeRequest(
     try {
       const rows = current?.region === "JP"
         ? await db`select shorts_mvp.reserve_youtube_japan_quota(${project},${bucket},${effectivePurpose},1) as id`
-        : await db`select shorts_mvp.reserve_youtube_quota(${project},${bucket},${effectivePurpose},1) as id`;
+        : current?.region === "US" || current?.region === "GB"
+          ? await db`select shorts_mvp.reserve_youtube_region_quota(${project},${bucket},${effectivePurpose},1,${current.region}) as id`
+          : await db`select shorts_mvp.reserve_youtube_quota(${project},${bucket},${effectivePurpose},1) as id`;
       if (!rows[0]?.id) throw new YoutubeQuotaError();
     } catch (error) {
       if (!background) throw error;

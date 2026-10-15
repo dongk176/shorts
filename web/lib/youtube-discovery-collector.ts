@@ -86,11 +86,11 @@ export async function claimRun(
   lane: DiscoveryLane | "refresh",
   scheduledAt: Date,
   legacy: boolean,
-  regionCode: "KR" | "JP" = "KR",
+  regionCode: "KR" | "JP" | "US" | "GB" = "KR",
 ) {
   return db.begin(async (tx) => {
     // Keep Korea's lock identity compatible with the previous deployment.
-    await tx`select pg_advisory_xact_lock(hashtextextended(${"youtube-collector:" + (regionCode === "KR" ? lane : "JP")},0))`;
+    await tx`select pg_advisory_xact_lock(hashtextextended(${"youtube-collector:" + (regionCode === "KR" ? lane : regionCode)},0))`;
     await tx`update shorts_mvp.youtube_collection_runs
       set status=case when page_count>0 then 'partial' else 'failed' end,finished_at=clock_timestamp(),failed_pages=failed_pages+1
       where (lane=${lane} or ${regionCode}='JP') and region_code=${regionCode} and status='running' and started_at<clock_timestamp()-interval '10 minutes'`;

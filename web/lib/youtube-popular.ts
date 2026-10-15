@@ -209,7 +209,7 @@ export async function requestPopularPage(
   category: (typeof popularVideoSourceCategories)[number],
   pageToken: string | undefined,
   fetchImpl: typeof fetch,
-  regionCode: "KR" | "JP" = "KR",
+  regionCode: "KR" | "JP" | "US" | "GB" = "KR",
 ) {
   const apiKey = process.env.YOUTUBE_API_KEY;
   if (!apiKey) throw new YoutubePopularApiError("YOUTUBE_API_KEY가 설정되지 않아 인기 영상을 수집할 수 없습니다.");

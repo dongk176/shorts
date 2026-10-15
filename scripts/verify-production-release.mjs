@@ -42,6 +42,8 @@ export const PROTECTED_APP_ROUTES = [
 // These routes are the only intentional additions relative to the currently
 // promoted production manifest. Everything else must still fail closed.
 export const ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE = [
+  // User-approved US/GB trending collector, 4-hour cadence (2026-10-15).
+  "/api/cron/youtube-english/route",
   // User-approved update content management (2026-10-01).
   "/api/admin/updates/route",
   "/api/admin/updates/assets/route",

@@ -1,3 +1,4 @@
+import { collectEnglishVideos, englishCollectionSlot } from "./youtube-english-collector";
 import { getJapanSettings, updateJapanSettings } from "./youtube-japan-settings";
 import { collectJapanVideos } from "./youtube-japan-collector";
 import { readFileSync } from "node:fs";
@@ -171,6 +172,7 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
         "202609110012_youtube_japan_activation_constraints.sql",
         "202609280001_popular_english_filter.sql",
         "20261011085148_youtube_japan_continuous_collection.sql",
+        "20261015061904_youtube_english_trending.sql",
       ]) {
         if (name === "202609110010_youtube_japan_discovery.sql") {
           await migrationDb`insert into shorts_mvp.youtube_catalog(id,video_id,metadata,first_discovered_at,verified_at,last_trending_at,trending_rank)
@@ -1614,6 +1616,94 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
       ('test-project',(clock_timestamp() at time zone 'America/Los_Angeles')::date-1,'search','views',3,'JP')`;
     expect((await db`select shorts_mvp.reserve_youtube_quota('test-project','search','views',40) id`)[0].id).toBeTruthy();
     expect((await db`select shorts_mvp.reserve_youtube_japan_quota('test-project','search','views',3) id`)[0].id).toBeTruthy();
+  });
+
+  async function enableEnglish() {
+    vi.stubEnv("YOUTUBE_EN_COLLECTION_ENABLED", "true");
+    vi.stubEnv("YOUTUBE_EN_DISCOVERY_ENABLED", "true");
+    await db`update shorts_mvp.youtube_quota_verifications set
+      key_fingerprint=${createHash("sha256").update("test-api-key").digest("hex")},
+      other_clients_reviewed=true,english_collection_enabled=true,english_discovery_enabled=true`;
+  }
+  it("collects US/GB with two pages per category, no search, and no duplicate concurrent slot", async () => {
+    await enableEnglish();
+    const fetchImpl=vi.fn(async (input: URL | RequestInfo) => {
+      const url=new URL(String(input));
+      expect(url.pathname).toBe("/youtube/v3/videos");
+      expect(url.searchParams.get("chart")).toBe("mostPopular");
+      expect(["US","GB"]).toContain(url.searchParams.get("regionCode"));
+      const item=youtubeItem("english0001");
+      Object.assign(item.snippet,{title:"An English video about science",channelTitle:"English Channel",defaultAudioLanguage:"en"});
+      return new Response(JSON.stringify({items:[item],nextPageToken:url.searchParams.get("pageToken") ? "third" : "second"}));
+    });
+    const results=await Promise.all([collectEnglishVideos({db,fetchImpl}),collectEnglishVideos({db,fetchImpl})]);
+    expect(results.every(r=>!("failed" in r) || !r.failed)).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledTimes(28);
+    expect((await db`select region_code,count(*)::int n from shorts_mvp.youtube_quota_attempts group by region_code order by region_code`))
+      .toEqual([{regionCode:"GB",n:14},{regionCode:"US",n:14}]);
+    expect((await db`select count(*)::int n from shorts_mvp.youtube_catalog`)[0].n).toBe(1);
+    expect((await db`select count(*)::int n from shorts_mvp.youtube_catalog_regions`)[0].n).toBe(2);
+    expect((await getCatalogVideos(filters({type:"trending",english:true}),db)).items).toHaveLength(1);
+    expect((await getCatalogVisibility(["english0001"],db))[0]).toMatchObject({available:true,currentTrending:true});
+    await collectEnglishVideos({db,fetchImpl});
+    expect(fetchImpl).toHaveBeenCalledTimes(28);
+  });
+  it("keeps the full KR and JP allocations after both English budgets are exhausted", async () => {
+    await enableJapan(); await enableEnglish();
+    for (const region of ["US","GB"]) {
+      const reservations=await Promise.all(Array.from({length:90},()=>db`select shorts_mvp.reserve_youtube_region_quota('test-project','general','trending',1,${region}) id`));
+      expect(reservations.filter(r=>r[0].id)).toHaveLength(84);
+      await expect(db`select shorts_mvp.reserve_youtube_region_quota('test-project','search','views',1,${region})`).rejects.toThrow("INVALID_YOUTUBE_QUOTA_RESERVATION");
+    }
+    // Consume each original budget right up to the boundary using existing entry points.
+    for (let i=0;i<30;i++) expect((await db`select shorts_mvp.reserve_youtube_quota('test-project','general','refresh',100) id`)[0].id).toBeTruthy();
+    expect((await db`select shorts_mvp.reserve_youtube_quota('test-project','general','refresh',1) id`)[0].id).toBeNull();
+    for (let i=0;i<60;i++) expect((await db`select shorts_mvp.reserve_youtube_quota('test-project','general','analysis',100) id`)[0].id).toBeTruthy();
+    for (const [lane,units] of [["trending",7],["reusable",7],["views",3]] as const)
+      expect((await db`select shorts_mvp.reserve_youtube_japan_quota('test-project','general',${lane},${units}) id`)[0].id).toBeTruthy();
+    expect((await db`select sum(units)::int n from shorts_mvp.youtube_quota_attempts where bucket='general'`)[0].n).toBe(9185);
+    for (const [lane,units] of [["views",40],["reusable",20],["free",30]] as const)
+      expect((await db`select shorts_mvp.reserve_youtube_quota('test-project','search',${lane},${units}) id`)[0].id).toBeTruthy();
+    expect((await db`select shorts_mvp.reserve_youtube_japan_quota('test-project','search','views',3) id`)[0].id).toBeTruthy();
+    expect((await db`select shorts_mvp.reserve_youtube_japan_quota('test-project','search','reusable',7) id`)[0].id).toBeTruthy();
+  });
+  it("requires verified keys and immediate English OFF switches", async () => {
+    await enableEnglish();
+    const fetchImpl=vi.fn(async()=>new Response(JSON.stringify({items:[]})));
+    vi.stubEnv("YOUTUBE_API_KEY","different-key");
+    expect(await collectEnglishVideos({db,fetchImpl})).toMatchObject({reason:"english_quota_unverified"});
+    expect(fetchImpl).not.toHaveBeenCalled();
+    await db`update shorts_mvp.youtube_quota_verifications set english_collection_enabled=false`;
+    expect((await db`select shorts_mvp.reserve_youtube_region_quota('test-project','general','trending',1,'US') id`)[0].id).toBeNull();
+    vi.stubEnv("YOUTUBE_EN_COLLECTION_ENABLED","false");
+    expect(await collectEnglishVideos()).toMatchObject({reason:"disabled"});
+  });
+  it("keeps the previous US list after a quota failure and never fails over to search", async () => {
+    await enableEnglish();
+    const earlier=new Date(englishCollectionSlot().getTime()-4*3600000);
+    const [r]=await db`insert into shorts_mvp.youtube_collection_runs(lane,region_code,scheduled_at,status,finished_at)
+      values('trending','US',${earlier},'success',${earlier}) returning id`;
+    await saveCatalogPage(db,[fixture("english0001",{isEnglish:true,isKorean:false})],{runId:r.id,regionCode:"US",trending:true,observedAt:earlier});
+    const fetchImpl=vi.fn(async()=>new Response(JSON.stringify({error:{errors:[{reason:"quotaExceeded"}]}}),{status:403}));
+    expect(await collectEnglishVideos({db,fetchImpl})).toMatchObject({failed:true});
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect((await getCatalogVideos(filters({type:"trending",english:true}),db)).items.map(i=>i.videoId)).toEqual(["english0001"]);
+    expect((await db`select count(*)::int n from shorts_mvp.youtube_quota_attempts where bucket='search'`)[0].n).toBe(0);
+  });
+  it("does not expose English-only regions through Japan's ON switch and honors dates and language", async () => {
+    await enableJapan(); await enableEnglish();
+    const now=new Date();
+    for (const region of ["US","GB"] as const) {
+      const [r]=await db`insert into shorts_mvp.youtube_collection_runs(lane,region_code,scheduled_at,status,finished_at)
+        values('trending',${region},${now},'success',${now}) returning id`;
+      await saveCatalogPage(db,[fixture("english0001",{isEnglish:true,isKorean:false}),fixture("unknown0001",{isKorean:false})],{runId:r.id,regionCode:region,trending:true,observedAt:now});
+    }
+    const result=await getCatalogVideos(filters({type:"trending",english:true,date:kstDate(now)}),db,now);
+    expect(result.items.map(i=>i.videoId)).toEqual(["english0001"]);
+    expect((await getTrendingCalendar(kstDate(now).slice(0,7),db,now)).days.at(-1)?.totalCount).toBe(2);
+    await db`update shorts_mvp.youtube_quota_verifications set english_discovery_enabled=false`;
+    expect((await getCatalogVideos(filters({type:"trending"}),db,now)).items).toHaveLength(0);
+    expect((await getCatalogVisibility(["english0001"],db,now))[0].available).toBe(false);
   });
 
 });

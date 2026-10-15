@@ -52,6 +52,10 @@
     {
       "path": "/api/cron/admin-mobile",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/youtube-english",
+      "schedule": "25 */4 * * *"
     }
   ]
 }
