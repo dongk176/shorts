@@ -40,6 +40,7 @@ import type { TimelineZoomAnchor } from "@/lib/editor-timeline-gestures";
 import { EditorTimelineRuler } from "@/components/editor-timeline-ruler";
 import { formatEditorTimelineTime } from "@/lib/editor-timeline-ruler";
 import { EditorTimelineResizer } from "@/components/editor-timeline-resizer";
+import { captionSearchRows, planCaptionReplacement, type CaptionReplaceRequest } from "@/lib/editor-caption-find-replace";
 import { EditorSubtitleContent } from "@/components/editor-subtitle-content";
 import { DesktopEditorGuide } from "@/components/desktop-editor-guide";
 import { EditorApplyFailureNotice } from "@/components/editor-apply-failure-notice";
@@ -7134,6 +7135,19 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
     finishPendingEditorInteractions,
   ]);
 
+  const replaceEditorCaptionText = useCallback((request: CaptionReplaceRequest) => {
+    if (!captionTextEditingEnabled || !editableCaptionSourceSpec || captionTextDraft) return 0;
+    const currentEdits = subtitleLayoutRef.current.cueEdits || [];
+    const rows = captionSearchRows(editableCaptionSourceSpec, captionTemplatePreviewSpec, currentEdits);
+    const result = planCaptionReplacement(rows, currentEdits, request);
+    if (result.error || !result.count) return 0;
+    finishPendingEditorInteractions();
+    const before = currentEditorCopySnapshot();
+    updateCaptionTemplateSubtitleLayout({ ...subtitleLayoutRef.current, cueEdits: result.edits });
+    recordEditorCopyChange(before, currentEditorCopySnapshot());
+    return result.count;
+  }, [captionTextEditingEnabled, editableCaptionSourceSpec, captionTextDraft, captionTemplatePreviewSpec, finishPendingEditorInteractions, currentEditorCopySnapshot, updateCaptionTemplateSubtitleLayout, recordEditorCopyChange]);
+
   const clearEditorOverlaySelection = useCallback(() => {
     finishPendingEditorInteractionsIncludingCaption();
     setSelectedOverlay(null);
@@ -11794,6 +11808,9 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
                   cueEdits={subtitleLayout.cueEdits || []}
                   draft={captionEditingInSidebar ? captionTextDraft : null}
                   enabled={subtitlesEnabled}
+                  searchBlocked={Boolean(captionTextDraft)}
+                  onSeek={(seconds) => { videoRef.current?.pause(); seekEditorVideoSequence(seconds); }}
+                  onReplace={replaceEditorCaptionText}
                   onSelect={(cueIndex, seconds) => { if (hasInvalidCaptionTextDraft) return; finishPendingEditorInteractionsIncludingCaption(); seekEditorVideoSequence(seconds); beginEditorCaptionTextEdit(cueIndex, true); }}
                   onChange={(text) => {
                     if (hasInvalidCaptionTextDraft && text.trim()) setError(null);

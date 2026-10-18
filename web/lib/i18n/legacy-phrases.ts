@@ -5,6 +5,24 @@ type Phrase = readonly [ko: string, en: string, ja: string];
 // Legacy page copy is kept here while the product moves to semantic message keys.
 // User-provided and generated content is intentionally excluded from this table.
 const phrases: readonly Phrase[] = [
+  ["자막 찾기·바꾸기", "Find and replace captions", "字幕の検索と置換"],
+  ["현재 쇼츠의 자막만 검색합니다.", "Search captions in this short only.", "このショート動画の字幕のみを検索します。"],
+  ["찾을 말", "Find", "検索する文字"],
+  ["바꿀 말", "Replace with", "置換後の文字"],
+  ["찾을 단어 입력", "Enter text to find", "検索する文字を入力"],
+  ["이전 검색 결과", "Previous match", "前の検索結果"],
+  ["다음 검색 결과", "Next match", "次の検索結果"],
+  ["대소문자 구분", "Match case", "大文字と小文字を区別"],
+  ["일치하는 자막이 없습니다.", "No matching captions.", "一致する字幕がありません。"],
+  ["찾을 단어를 입력해 주세요.", "Enter text to find.", "検索する文字を入力してください。"],
+  ["하나 바꾸기", "Replace one", "1件置換"],
+  ["모두 바꾸기", "Replace all", "すべて置換"],
+  ["바꾼 항목", "Replacements", "置換件数"],
+  ["상단 되돌리기로 취소할 수 있습니다.", "Use Undo at the top to revert.", "上部の「元に戻す」で取り消せます。"],
+  ["수정 중인 자막을 완료하거나 취소한 뒤 바꿔 주세요.", "Finish or cancel the caption edit before replacing.", "編集中の字幕を確定またはキャンセルしてから置換してください。"],
+  ["자막 전체를 빈 내용으로 바꿀 수 없습니다.", "A caption cannot be replaced with empty text.", "字幕全体を空にすることはできません。"],
+  ["바꾼 자막이 200자를 넘습니다. 더 짧게 입력해 주세요.", "The replacement makes a caption longer than 200 characters. Use shorter text.", "置換後の字幕が200文字を超えます。短い文字列を入力してください。"],
+
   ["적용 요청됨", "Apply requested", "適用をリクエスト済み"],
   ["편집 내용을 전달하고 있습니다.", "Submitting your edits.", "編集内容を送信しています。"],
   ["변경사항 적용 필요", "Changes need to be applied", "変更を適用してください"],
