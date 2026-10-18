@@ -100,7 +100,7 @@ describe("editor v2 text tool", () => {
       "setDesktopSidebarOpen((current) => !current)",
     );
     expect(editorSource).toContain(
-      "activeEditorSidebarTool === tool.id\n                && desktopSidebarOpen",
+      "const active = desktopSidebarOpen && (selectedOverlay === \"video\"",
     );
   });
 
