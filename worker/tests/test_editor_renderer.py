@@ -2133,7 +2133,9 @@ def test_v4_editor_renders_stored_v3_pop_caption_with_canonical_font_and_gap(
     shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
     reason="ffmpeg and ffprobe are required",
 )
-@pytest.mark.parametrize("translated_five_four", [False, True, "legacy-metadata", "highlight-metadata"])
+@pytest.mark.parametrize(
+    "translated_five_four", [False, True, "legacy-metadata", "highlight-metadata"]
+)
 def test_v4_caption_off_preserves_non_caption_composition(
     tmp_path: Path, translated_five_four: bool,
 ) -> None:

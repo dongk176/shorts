@@ -3,6 +3,7 @@
 import { useUiText } from "@/lib/i18n/use-ui-text";
 import { useI18n } from "@/lib/i18n/provider";
 
+import { EditorPreviewVideo, type EditorPreviewPlayback } from "./editor-preview-video";
 import { CommunityTemplatePreview } from "./community-template-preview";
 import { useEffect, useId, useState } from "react";
 import { loadSnsFonts, snsFontFamily } from "@/lib/sns-editor-fonts";
@@ -15,7 +16,7 @@ export const snsVideoFrames: Record<VideoAspectRatio, [number, number, number, n
   "1:1": [60, 690, 960, 960], "4:5": [60, 582, 960, 1200], "9:16": [180, 582, 720, 1280],
 };
 
-export function SnsTemplatePreview({ community = false, ratio, brandColor, channelName, channelThumbnailUrl, thumbnailUrl, content, videoUrl, videoStart = 0, videoEnd, language: contentLanguage }: {
+export function SnsTemplatePreview({ community = false, ratio, brandColor, channelName, channelThumbnailUrl, thumbnailUrl, content, videoUrl, videoStart = 0, videoEnd, language: contentLanguage, ...playback }: EditorPreviewPlayback & {
   community?: boolean;
   language?: SnsLanguage;
   ratio: VideoAspectRatio;
@@ -45,7 +46,7 @@ export function SnsTemplatePreview({ community = false, ratio, brandColor, chann
   const tall = ratio === "9:16";
   const textX = tall ? 180 : 60;
   const offsetY = portrait ? 0 : 150;
-  if (community) return <CommunityTemplatePreview {...{ ratio, brandColor, channelName, channelThumbnailUrl, thumbnailUrl, content, videoUrl, videoStart, videoEnd, language }} />;
+  if (community) return <CommunityTemplatePreview {...playback} {...{ ratio, brandColor, channelName, channelThumbnailUrl, thumbnailUrl, content, videoUrl, videoStart, videoEnd, language }} />;
   return (
       <svg data-i18n-content="" viewBox="0 0 1080 1920" role="img" aria-label={ui(`${ratio} SNS 템플릿 예시`)}
         className="aspect-[9/16] w-full overflow-hidden rounded-lg" style={{ fontFamily: snsFontFamily(language, 700) }}>
@@ -72,12 +73,9 @@ export function SnsTemplatePreview({ community = false, ratio, brandColor, chann
         {(ratio === "16:9" || ratio === "5:4") && <text style={{ fontFamily: snsFontFamily(language, 400) }} x="60" y="730" fontSize="47" fontWeight="400" fill="#537398">{content?.hashtags.join("  ") ?? sample.hashtags}</text>}
         <rect x={x} y={y} width={width} height={height} fill="#ddd" rx={30} />
         {videoUrl ? <foreignObject x={x} y={y} width={width} height={height} clipPath={`url(#${clipId})`}>
-          <video key={videoUrl} src={videoUrl} controls playsInline preload="metadata"
-            aria-label={ui("SNS 편집 영상 미리보기")} style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 30 }}
-            onLoadedMetadata={event => { event.currentTarget.currentTime = videoStart; }}
-            onPlay={event => { if (event.currentTarget.currentTime < videoStart || (videoEnd && event.currentTarget.currentTime >= videoEnd)) event.currentTarget.currentTime = videoStart; }}
-            onTimeUpdate={event => { if (videoEnd && event.currentTarget.currentTime >= videoEnd) { event.currentTarget.pause(); event.currentTarget.currentTime = videoStart; } }} />
-        </foreignObject> : <image href={thumbnailUrl} x={x} y={y} width={width} height={height}
+          <EditorPreviewVideo key={videoUrl} src={videoUrl} start={videoStart} end={videoEnd}
+            label={ui("SNS 편집 영상 미리보기")} {...playback} />
+        </foreignObject> : <image href={thumbnailUrl || undefined} x={x} y={y} width={width} height={height}
           preserveAspectRatio="xMidYMid slice" clipPath={`url(#${clipId})`} /> }
         <g pointerEvents="none" transform={`translate(${x+width-88} ${y+height-88})`}>
           <circle cx="35" cy="35" r="35" fill="#0009" stroke="#ffffffaa" />

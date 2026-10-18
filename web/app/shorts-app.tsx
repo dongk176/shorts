@@ -321,6 +321,7 @@ import {
   editorDocumentSnapshotSchema,
   editorDocumentOutputDuration,
 } from "@/lib/editor-document-contract";
+import { EditorStudioTopbar, EditorStudioBackButton, EditorViewportZoomControl } from "@/components/editor-studio-chrome";
 import { SnsShortEditor } from "@/components/sns-short-editor";
 import {
   createEditorRenderSpec,
@@ -3511,55 +3512,6 @@ const EDITOR_TIMELINE_ZOOM_MAX = 3;
 const EDITOR_TIMELINE_ZOOM_STEP = 0.5;
 const EDITOR_TIMELINE_MOBILE_DEFAULT_ZOOM = 2;
 
-function EditorViewportZoomControl({
-  label,
-  value,
-  min,
-  max,
-  step,
-  className,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  className: string;
-  onChange: (value: number) => void;
-}) {
-  const ui = useUiText();
-  const update = (direction: -1 | 1) => {
-    const next = Math.min(max, Math.max(min, value + direction * step));
-    onChange(Math.round(next * 100) / 100);
-  };
-  return <div
-    className={`editor-viewport-zoom-control ${className}`}
-    aria-label={ui(`${label} 확대`)}
-    onPointerDown={(event) => event.stopPropagation()}
-  >
-    <span>{ui(label)}</span>
-    <button
-      type="button"
-      aria-label={ui(`${label} 축소`)}
-      disabled={value <= min}
-      onClick={() => update(-1)}
-    >
-      −
-    </button>
-    <output aria-label={ui(`${label} 확대 비율`)}>
-      {Math.round(value * 100)}%
-    </output>
-    <button
-      type="button"
-      aria-label={ui(`${label} 확대`)}
-      disabled={value >= max}
-      onClick={() => update(1)}
-    >
-      +
-    </button>
-  </div>;
-}
 
 const EDITOR_VIDEO_RESIZE_HANDLES: ReadonlyArray<{
   handle: EditorVideoResizeHandle;
@@ -10581,18 +10533,8 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
         action="edit"
         open={standalone && paidAccessBlocked}
       />
-      {standalone && <header className="editor-topbar">
-        <div className="editor-topbar-inner">
-          {overlayPreviewEnabled && <button
-            type="button"
-            className="editor-studio-back"
-            aria-label={ui("프로젝트로 돌아가기")}
-            onPointerDown={preserveInvalidCaptionTextFocus}
-            onClick={closeEditorAfterSavingCaptionDraft}
-          >
-            <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m11.5 5-5 5 5 5M7 10h9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
-            <span>Easy<span className="editor-studio-brand-accent">Cut</span></span>
-          </button>}
+      {standalone && <EditorStudioTopbar>
+          {overlayPreviewEnabled && <EditorStudioBackButton onPointerDown={preserveInvalidCaptionTextFocus} onClick={closeEditorAfterSavingCaptionDraft} />}
           <div className="editor-header-project">
             <span className="editor-header-project-number">{ui(projectNumber ? `프로젝트 #${projectNumber}` : "영상 편집")}</span>
             <div className="editor-header-title-row">
@@ -10712,8 +10654,7 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
                     </>}
             </button>
           </div>
-        </div>
-      </header>}
+      </EditorStudioTopbar>}
       <div ref={editorWorkspaceRef} className={standalone
         ? `editor-page-body${mobileControlsOpen ? " has-mobile-controls-open" : ""}${overlayPreviewEnabled ? " has-editor-tool-sidebar" : ""}${desktopSidebarOpen ? "" : overlayPreviewEnabled ? " is-tool-panel-closed" : " is-sidebar-collapsed"}`
         : `editor-dialog-body grid max-h-[95vh] w-full max-w-6xl overflow-y-auto rounded-t-2xl border border-white/10 bg-[#151517] sm:rounded-2xl${overlayPreviewEnabled ? " has-editor-tool-sidebar" : ""}${desktopSidebarOpen ? "" : overlayPreviewEnabled ? " is-tool-panel-closed" : " is-sidebar-collapsed"}`}
@@ -13223,7 +13164,7 @@ export function ShortEditorPage({ projectNumber, shortId, rangeEditingEnabled = 
   if (!project) return <main className="editor-page grid place-items-center text-sm text-neutral-400">{ui("편집기를 준비하고 있습니다…")}</main>;
   if (!item || project.isExample) return <main className="editor-page grid place-items-center p-6 text-center"><div><h1 className="text-lg font-bold">{ui("편집할 수 없는 쇼츠입니다.")}</h1><Link href={`/projects/${projectNumber}`} prefetch={false} className="mt-6 inline-flex rounded-xl bg-white px-5 py-3 text-sm font-bold text-black">{ui("프로젝트로 돌아가기")}</Link></div></main>;
 
-  if (item.templateSnapshot?.snsTemplateVersion === 1) return <SnsShortEditor
+  if (item.templateSnapshot?.snsTemplateVersion === 1) return <SnsShortEditor key={item.id}
     item={item} projectNumber={project.projectNumber} channelThumbnailUrl={project.channelThumbnailUrl}
     release={editorRelease} canEdit={Boolean(access?.canEdit)} onChanged={loadProject} />;
   return <Editor item={item} outputLanguage={project.outputLanguage} commentOutputLanguage={project.sourceLanguage ? project.outputLanguage : "ko"} channelThumbnailUrl={project.channelThumbnailUrl} standalone projectLabel={item.hookTitle} projectNumber={project.projectNumber} onClose={closeEditor} onChanged={loadProject} rangeEditingEnabled={rangeEditingEnabled} overlayPreviewEnabled={overlayPreviewEnabled} editorSaveEnabled={editorSaveEnabled} editorRelease={editorRelease} unifiedTemplateSubtitleCanaryEnabled={unifiedTemplateSubtitleCanaryEnabled} customTemplateDesignEnabled={customTemplateDesignEnabled} wordTimedSubtitlesAvailable={item.wordTimedSubtitlesAvailable} paidAccessBlocked={!access?.canEdit} />;

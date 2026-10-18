@@ -5,6 +5,21 @@ type Phrase = readonly [ko: string, en: string, ja: string];
 // Legacy page copy is kept here while the product moves to semantic message keys.
 // User-provided and generated content is intentionally excluded from this table.
 const phrases: readonly Phrase[] = [
+  ["적용 요청됨", "Apply requested", "適用をリクエスト済み"],
+  ["편집 내용을 전달하고 있습니다.", "Submitting your edits.", "編集内容を送信しています。"],
+  ["변경사항 적용 필요", "Changes need to be applied", "変更を適用してください"],
+  ["이 템플릿은 배치가 고정되어 있습니다. 아래 타임라인에서 영상 구간을 조절할 수 있습니다.", "This template has a fixed layout. Adjust the video range in the timeline below.", "このテンプレートの配置は固定です。下のタイムラインで動画の区間を調整できます。"],
+  ["반영하지 않은 변경사항이 있습니다. 편집기를 나가시겠습니까?", "You have unapplied changes. Leave the editor?", "未適用の変更があります。編集画面を閉じますか？"],
+  ["편집 요청이 접수되었습니다. 프로젝트에서 결과를 확인해 주세요.", "Your edit was submitted. Check the result in your project.", "編集を受け付けました。プロジェクトで結果を確認してください。"],
+  ["편집 요청은 접수되었지만 진행 상황을 확인하지 못했습니다. 프로젝트에서 확인해 주세요.", "Your edit was submitted, but progress could not be loaded. Check your project.", "編集を受け付けましたが、進捗を取得できませんでした。プロジェクトをご確認ください。"],
+  ["진행 상황을 확인하지 못했습니다. 잠시 후 다시 시도합니다.", "Could not load progress. Retrying shortly.", "進捗を取得できませんでした。しばらくしてから再試行します。"],
+  ["영상을 불러오지 못했습니다. 새로고침 후 다시 시도해 주세요.", "Could not load the video. Refresh and try again.", "動画を読み込めませんでした。ページを更新して再試行してください。"],
+  ["영상을 재생하지 못했습니다. 다시 시도해 주세요.", "Could not play the video. Please try again.", "動画を再生できませんでした。再試行してください。"],
+  ["타임라인을 불러오지 못했습니다.", "Could not load the timeline.", "タイムラインを読み込めませんでした。"],
+  ["타임라인 불러오는 중…", "Loading timeline…", "タイムラインを読み込み中…"],
+  ["재생 위치", "Playback position", "再生位置"],
+  ["영상 시작 구간 조절", "Adjust video start", "動画の開始位置を調整"],
+  ["영상 끝 구간 조절", "Adjust video end", "動画の終了位置を調整"],
   ["타임라인 확대", "Zoom in timeline", "タイムラインを拡大"],
   ["타임라인 축소", "Zoom out timeline", "タイムラインを縮小"],
   ["타임라인 확대 비율", "Timeline zoom level", "タイムラインの拡大率"],

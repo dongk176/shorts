@@ -3,6 +3,7 @@
 import { useUiText } from "@/lib/i18n/use-ui-text";
 import { useI18n } from "@/lib/i18n/provider";
 
+import { EditorPreviewVideo } from "./editor-preview-video";
 import { useId, useState } from "react";
 import { communityVideoFrames, communityHeadingColor, communityLegacyHeading } from "@/lib/community-template-contract";
 import { snsFontFamily } from "@/lib/sns-editor-fonts";
@@ -10,7 +11,7 @@ import type { ComponentProps } from "react";
 import type { SnsTemplatePreview } from "./sns-template-preview";
 
 export function CommunityTemplatePreview({ ratio, brandColor, channelName, channelThumbnailUrl,
-  thumbnailUrl, content, videoUrl, videoStart = 0, videoEnd, language: contentLanguage,
+  thumbnailUrl, content, videoUrl, videoStart = 0, videoEnd, language: contentLanguage, ...playback
 }: ComponentProps<typeof SnsTemplatePreview>) {
   const ui = useUiText();
   const { locale } = useI18n();
@@ -42,11 +43,8 @@ export function CommunityTemplatePreview({ ratio, brandColor, channelName, chann
     <text x="60" y="646" fontSize="46" fontWeight="600" letterSpacing="-1" fill="#222" style={{ fontFamily: snsFontFamily(language, 600) }}>{content?.body[0] ?? sample.body}</text>
     <rect x={x} y={y} width={width} height={height} fill="#eee" />
     {videoUrl ? <foreignObject x={x} y={y} width={width} height={height}>
-      <video key={videoUrl} src={videoUrl} controls playsInline preload="metadata" aria-label={ui("커뮤니티 편집 영상 미리보기")}
-        style={{ width: "100%", height: "100%", objectFit: "cover" }}
-        onLoadedMetadata={e => { e.currentTarget.currentTime = videoStart; }}
-        onPlay={e => { if (e.currentTarget.currentTime < videoStart || (videoEnd && e.currentTarget.currentTime >= videoEnd)) e.currentTarget.currentTime = videoStart; }}
-        onTimeUpdate={e => { if (videoEnd && e.currentTarget.currentTime >= videoEnd) { e.currentTarget.pause(); e.currentTarget.currentTime = videoStart; } }} />
-    </foreignObject> : thumbnailUrl && <image href={thumbnailUrl} x={x} y={y} width={width} height={height} preserveAspectRatio="xMidYMid slice" />}
+      <EditorPreviewVideo key={videoUrl} src={videoUrl} start={videoStart} end={videoEnd}
+        label={ui("커뮤니티 편집 영상 미리보기")} {...playback} />
+    </foreignObject> : thumbnailUrl && <image href={thumbnailUrl || undefined} x={x} y={y} width={width} height={height} preserveAspectRatio="xMidYMid slice" />}
   </svg>;
 }
