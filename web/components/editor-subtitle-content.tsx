@@ -1,22 +1,18 @@
 "use client";
-import { useUiText } from "@/lib/i18n/use-ui-text";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { useUiText } from "@/lib/i18n/use-ui-text";
 import type { CaptionRenderSpec } from "@/lib/caption-render-spec";
-import {
-  type EditorCaptionTextDraft,
-} from "@/lib/editor-caption-preview";
-import { captionSearchRows, findCaptionMatches, planCaptionReplacement, type CaptionMatch, type CaptionReplaceRequest } from "@/lib/editor-caption-find-replace";
+import type { EditorCaptionTextDraft } from "@/lib/editor-caption-preview";
+import { captionSearchRows, findCaptionMatches, planCaptionReplacement, type CaptionReplaceRequest } from "@/lib/editor-caption-find-replace";
 import type { EditorSubtitleCueEdit } from "@/lib/editor-render-spec";
 
 function timestamp(seconds: number) {
-  const minutes = Math.floor(seconds / 60);
-  const remaining = Math.floor(seconds % 60);
-  return `${String(minutes).padStart(2, "0")}:${String(remaining).padStart(2, "0")}`;
+  return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
 }
 
-/** A view onto existing cue edits, rather than a second editable transcript. */
-export function EditorSubtitleContent({ sourceSpec, previewSpec, cueEdits, draft, enabled, onSelect, onChange, onCommit, onCancel, searchBlocked, onSeek, onReplace }: {
+/** Uses the existing caption draft, save contract and editor history. */
+export function EditorSubtitleContent({ sourceSpec, previewSpec, cueEdits, draft, enabled, onSelect, onChange, onCommit, onCancel, searchBlocked, onSeek, onReplace, canUndoReplacement, onUndoReplacement }: {
   sourceSpec: CaptionRenderSpec;
   previewSpec: CaptionRenderSpec | null;
   cueEdits: EditorSubtitleCueEdit[];
@@ -29,88 +25,79 @@ export function EditorSubtitleContent({ sourceSpec, previewSpec, cueEdits, draft
   searchBlocked: boolean;
   onSeek: (seconds: number) => void;
   onReplace: (request: CaptionReplaceRequest) => number;
+  canUndoReplacement: boolean;
+  onUndoReplacement: () => void;
 }) {
   const ui = useUiText();
+  const searchInput = useRef<HTMLInputElement>(null);
   const rows = useMemo(() => captionSearchRows(sourceSpec, previewSpec, cueEdits), [sourceSpec, previewSpec, cueEdits]);
-  const [searchOpen, setSearchOpen] = useState(false);
+  const [replaceOpen, setReplaceOpen] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [replacement, setReplacement] = useState("");
   const [matchCase, setMatchCase] = useState(false);
-  const [selected, setSelected] = useState<CaptionMatch | null>(null);
-  const [replacedCount, setReplacedCount] = useState<{ count: number; signature: string } | null>(null);
-  const matches = useMemo(() => findCaptionMatches(rows, searchOpen ? query : "", matchCase), [rows, searchOpen, query, matchCase]);
-  const selectedIndex = Math.max(0, matches.findIndex(match => match.cueIndex === selected?.cueIndex && match.start === selected.start));
-  const active = matches[selectedIndex];
-  const activeRow = rows.find(row => row.id === active?.cueIndex);
+  const [replaced, setReplaced] = useState<{ count: number; signature: string } | null>(null);
+  const matches = useMemo(() => findCaptionMatches(rows, query, matchCase), [rows, query, matchCase]);
+  const matchesByCue = useMemo(() => {
+    const grouped = new Map<number, typeof matches>();
+    for (const match of matches) grouped.set(match.cueIndex, [...(grouped.get(match.cueIndex) || []), match]);
+    return grouped;
+  }, [matches]);
+  // Keep a draft visible even when its new wording no longer matches the filter.
+  const visibleRows = query.trim() ? rows.filter(row => matchesByCue.has(row.id) || row.id === draft?.sourceCueIndex) : rows;
   const request = { query, replacement, matchCase };
-  const allPlan = planCaptionReplacement(rows, cueEdits, request);
-  const onePlan = active ? planCaptionReplacement(rows, cueEdits, { ...request, target: active }) : null;
-  const visit = (match: CaptionMatch | undefined) => {
-    if (!match || searchBlocked) return;
-    setSelected(match);
-    const row = rows.find(row => row.id === match.cueIndex);
-    if (row) onSeek(row.seconds);
+  const plan = planCaptionReplacement(rows, cueEdits, request);
+  const invalidDraft = Boolean(draft && !draft.text.trim());
+  const replaceAll = () => {
+    if (searchBlocked || plan.error || !plan.count) return;
+    const count = onReplace(request);
+    if (count) setReplaced({ count, signature: JSON.stringify(plan.edits) });
   };
-  const replace = (all: boolean) => {
-    if (searchBlocked || !active) return;
-    const count = onReplace({ ...request, ...(all ? {} : { target: active }) });
-    if (!count) return;
-    setReplacedCount({ count, signature: JSON.stringify((all ? allPlan : onePlan)!.edits) });
-    if (!all && onePlan) {
-      const edits = new Map(onePlan.edits.map(edit => [edit.cueIndex, edit.text]));
-      const remaining = findCaptionMatches(rows.map(row => ({ ...row, text: edits.get(row.id) ?? row.originalText })), query, matchCase);
-      const rowIndex = rows.findIndex(row => row.id === active.cueIndex);
-      const next = remaining.find(match => {
-        const index = rows.findIndex(row => row.id === match.cueIndex);
-        return index > rowIndex || (index === rowIndex && match.start >= active.start + replacement.length);
-      }) || remaining[0];
-      visit(next);
-    }
-  };
+  const clearSearch = () => { setQuery(""); searchInput.current?.focus(); };
   const highlightedText = (id: number, text: string) => {
-    const found = matches.filter(match => match.cueIndex === id);
     let cursor = 0;
-    const parts = found.flatMap(match => {
+    const parts = (matchesByCue.get(id) || []).flatMap(match => {
       const prefix = text.slice(cursor, match.start);
       cursor = match.end;
-      return [prefix, <mark key={match.start} className={active === match ? "is-current" : undefined}>{text.slice(match.start, match.end)}</mark>];
+      return [prefix, <mark key={match.start}>{text.slice(match.start, match.end)}</mark>];
     });
     return [...parts, text.slice(cursor)];
   };
-  const invalidDraft = Boolean(draft && !draft.text.trim());
+  const replacementVisible = replaced && replaced.signature === JSON.stringify(cueEdits);
+
   return <div className="editor-studio-subtitle-content">
-    <button type="button" className="editor-caption-search-toggle" aria-expanded={searchOpen} aria-controls="editor-caption-search" onClick={() => { setSearchOpen(!searchOpen); setReplacedCount(null); }}>{ui("자막 찾기·바꾸기")}</button>
-    {searchOpen && <section id="editor-caption-search" className="editor-caption-search" aria-label={ui("자막 찾기·바꾸기")}>
-      <p className="editor-studio-help">{ui("현재 쇼츠의 자막만 검색합니다.")}</p>
-      <label>{ui("찾을 말")}<input type="text" value={query} maxLength={200} placeholder={ui("찾을 단어 입력")} onChange={event => { setQuery(event.target.value); setSelected(null); setReplacedCount(null); }} onKeyDown={event => {
-        if (event.nativeEvent.isComposing || event.key !== "Enter") return;
-        event.preventDefault(); visit(matches[(selectedIndex + (event.shiftKey ? matches.length - 1 : 1)) % matches.length]);
-      }} /></label>
-      <div className="editor-caption-search-navigation">
-        <span role="status" aria-live="polite">{matches.length ? `${selectedIndex + 1} / ${matches.length}` : ui(query.trim() ? "일치하는 자막이 없습니다." : "찾을 단어를 입력해 주세요.")}</span>
-        <button type="button" aria-label={ui("이전 검색 결과")} disabled={!matches.length || searchBlocked} onClick={() => visit(matches[(selectedIndex + matches.length - 1) % matches.length])}>↑</button>
-        <button type="button" aria-label={ui("다음 검색 결과")} disabled={!matches.length || searchBlocked} onClick={() => visit(matches[(selectedIndex + 1) % matches.length])}>↓</button>
+    <section className="editor-caption-search" aria-label={ui("자막 찾기·바꾸기")}>
+      <div className="editor-caption-search-bar">
+        <div className="editor-caption-search-field">
+          <input ref={searchInput} type="text" aria-label={ui("자막 검색")} placeholder={ui("자막 검색…")} value={query} maxLength={200}
+            onChange={event => setQuery(event.target.value)}
+            onKeyDown={event => {
+              if (event.nativeEvent.isComposing) return;
+              if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); clearSearch(); }
+            }} />
+          {query && <button type="button" className="editor-caption-clear" aria-label={ui("검색 지우기")} onClick={clearSearch}>×</button>}
+        </div>
+        <button type="button" className="editor-caption-replace-toggle" aria-expanded={replaceOpen} aria-controls="editor-caption-replace" onClick={() => setReplaceOpen(!replaceOpen)}>{ui("바꾸기")}</button>
+        <button type="button" className="editor-caption-options-toggle" aria-label={ui("검색 옵션")} aria-expanded={optionsOpen} aria-controls="editor-caption-options" onClick={() => setOptionsOpen(!optionsOpen)}>⋯</button>
       </div>
-      {activeRow && <p className="editor-caption-search-preview"><time>{timestamp(activeRow.seconds)}</time> {highlightedText(activeRow.id, activeRow.text)}</p>}
-      <label className="editor-caption-search-case"><input type="checkbox" checked={matchCase} onChange={event => { setMatchCase(event.target.checked); setSelected(null); setReplacedCount(null); }} />{ui("대소문자 구분")}</label>
-      <label>{ui("바꿀 말")}<input type="text" value={replacement} maxLength={200} onChange={event => { setReplacement(event.target.value); setReplacedCount(null); }} /></label>
-      <div className="editor-caption-search-actions">
-        <button type="button" disabled={searchBlocked || !onePlan?.count || Boolean(onePlan.error)} onClick={() => replace(false)}>{ui("하나 바꾸기")}</button>
-        <button type="button" disabled={searchBlocked || !allPlan.count || Boolean(allPlan.error)} onClick={() => replace(true)}>{ui("모두 바꾸기")}{allPlan.count > 0 ? ` (${allPlan.count})` : ""}</button>
-      </div>
-      {searchBlocked && <p className="editor-studio-help">{ui("수정 중인 자막을 완료하거나 취소한 뒤 바꿔 주세요.")}</p>}
-      {allPlan.error && <p role="alert" className="editor-studio-field-error">{ui(allPlan.error === "empty" ? "자막 전체를 빈 내용으로 바꿀 수 없습니다." : "바꾼 자막이 200자를 넘습니다. 더 짧게 입력해 주세요.")}</p>}
-      {replacedCount !== null && replacedCount.signature === JSON.stringify(cueEdits) && <p role="status" className="editor-studio-help">{ui("바꾼 항목")}: {replacedCount.count} · {ui("상단 되돌리기로 취소할 수 있습니다.")}</p>}
-    </section>}
-    <div className="editor-studio-subtitle-summary"><span>{ui("자막")} {rows.length}</span><span>{ui("선택하여 수정")}</span></div>
+      {replaceOpen && <div id="editor-caption-replace" className="editor-caption-replace-row">
+        <input type="text" aria-label={ui("바꿀 말")} placeholder={ui("바꿀 말")} value={replacement} maxLength={200} onChange={event => setReplacement(event.target.value)} />
+        <button type="button" disabled={searchBlocked || !plan.count || Boolean(plan.error)} onClick={replaceAll}>{ui("모두 수정")}</button>
+      </div>}
+      {optionsOpen && <label id="editor-caption-options" className="editor-caption-search-case"><input type="checkbox" checked={matchCase} onChange={event => setMatchCase(event.target.checked)} />{ui("대소문자 구분")}</label>}
+      {query.trim() && <div className="editor-caption-match-count" role="status">{ui("{count}곳 일치").replace("{count}", String(matches.length))}{matchCase && !optionsOpen ? ` · ${ui("대소문자 구분")}` : ""}</div>}
+      {replaceOpen && searchBlocked && <p className="editor-studio-help">{ui("수정 중인 자막을 완료하거나 취소한 뒤 바꿔 주세요.")}</p>}
+      {replaceOpen && plan.error && <p role="alert" className="editor-studio-field-error">{ui(plan.error === "empty" ? "자막 전체를 빈 내용으로 바꿀 수 없습니다." : "바꾼 자막이 200자를 넘습니다. 더 짧게 입력해 주세요.")}</p>}
+      {replacementVisible && <div className="editor-caption-replaced" role="status"><span>{ui("{count}곳 수정됨").replace("{count}", String(replaced.count))}</span>{canUndoReplacement && !searchBlocked && <button type="button" onClick={() => { onUndoReplacement(); setReplaced(null); }}>{ui("되돌리기")}</button>}</div>}
+    </section>
     {!enabled && <p className="editor-studio-help">{ui("영상에서 자막이 숨겨져 있습니다. 문구는 그대로 편집할 수 있어요.")}</p>}
     <div className="editor-studio-cue-list">
-      {rows.map((row, index) => <div key={row.id} className={`editor-studio-cue${draft?.sourceCueIndex === row.id ? " is-editing" : ""}`}>
-        <div className="editor-studio-cue-meta"><span>{String(index + 1).padStart(2, "0")}</span><time>{timestamp(row.seconds)}</time></div>
+      {visibleRows.map(row => <div key={row.id} className={`editor-studio-cue${draft?.sourceCueIndex === row.id ? " is-editing" : ""}`}>
+        <div className="editor-studio-cue-meta"><button type="button" aria-label={`${ui("해당 장면으로 이동")} ${timestamp(row.seconds)}`} disabled={searchBlocked} onClick={() => onSeek(row.seconds)}><time>{timestamp(row.seconds)}</time></button></div>
         {draft?.sourceCueIndex === row.id ? <>
-          <textarea autoFocus aria-label={`${ui("자막")} ${index + 1}`} value={draft.text} maxLength={200} rows={3}
-            onChange={(event) => onChange(event.target.value)}
-            onKeyDown={(event) => {
+          <textarea autoFocus aria-label={`${ui("자막")} ${rows.findIndex(value => value.id === row.id) + 1}`} value={draft.text} maxLength={200} rows={3}
+            onChange={event => onChange(event.target.value)}
+            onKeyDown={event => {
               if (event.nativeEvent.isComposing) return;
               if (event.key === "Escape") { event.preventDefault(); onCancel(); }
               if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && !invalidDraft) { event.preventDefault(); onCommit(); }
@@ -120,6 +107,6 @@ export function EditorSubtitleContent({ sourceSpec, previewSpec, cueEdits, draft
         </> : <button type="button" className="editor-studio-cue-text" disabled={invalidDraft} onClick={() => onSelect(row.id, row.seconds)}>{highlightedText(row.id, row.text)}</button>}
       </div>)}
     </div>
-    {rows.length === 0 && <p className="editor-studio-help">{ui("현재 영상 구간에 표시할 자막이 없습니다.")}</p>}
+    {visibleRows.length === 0 && <p className="editor-studio-help">{ui(query.trim() ? "일치하는 자막이 없습니다." : "현재 영상 구간에 표시할 자막이 없습니다.")}</p>}
   </div>;
 }

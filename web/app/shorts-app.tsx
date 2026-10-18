@@ -4490,6 +4490,7 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
     past: [],
     future: [],
   });
+  const captionReplacementHistoryRef = useRef<EditorCopyHistory["past"][number] | null>(null);
   const copyHistoryRef = useRef<EditorCopyHistory>({
     past: [],
     future: [],
@@ -7145,6 +7146,7 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
     const before = currentEditorCopySnapshot();
     updateCaptionTemplateSubtitleLayout({ ...subtitleLayoutRef.current, cueEdits: result.edits });
     recordEditorCopyChange(before, currentEditorCopySnapshot());
+    captionReplacementHistoryRef.current = copyHistoryRef.current.past.at(-1) || null;
     return result.count;
   }, [captionTextEditingEnabled, editableCaptionSourceSpec, captionTextDraft, captionTemplatePreviewSpec, finishPendingEditorInteractions, currentEditorCopySnapshot, updateCaptionTemplateSubtitleLayout, recordEditorCopyChange]);
 
@@ -11811,6 +11813,16 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
                   searchBlocked={Boolean(captionTextDraft)}
                   onSeek={(seconds) => { videoRef.current?.pause(); seekEditorVideoSequence(seconds); }}
                   onReplace={replaceEditorCaptionText}
+                  canUndoReplacement={Boolean(captionReplacementHistoryRef.current
+                    && editorHistoryOrderRef.current.past.at(-1) === "copy"
+                    && copyHistoryRef.current.past.at(-1) === captionReplacementHistoryRef.current)}
+                  onUndoReplacement={() => {
+                    if (captionTextDraft) return;
+                    finishPendingEditorInteractions();
+                    if (captionReplacementHistoryRef.current
+                      && editorHistoryOrderRef.current.past.at(-1) === "copy"
+                      && copyHistoryRef.current.past.at(-1) === captionReplacementHistoryRef.current) undoEditorEdit();
+                  }}
                   onSelect={(cueIndex, seconds) => { if (hasInvalidCaptionTextDraft) return; finishPendingEditorInteractionsIncludingCaption(); seekEditorVideoSequence(seconds); beginEditorCaptionTextEdit(cueIndex, true); }}
                   onChange={(text) => {
                     if (hasInvalidCaptionTextDraft && text.trim()) setError(null);

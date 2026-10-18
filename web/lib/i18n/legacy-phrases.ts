@@ -5,6 +5,16 @@ type Phrase = readonly [ko: string, en: string, ja: string];
 // Legacy page copy is kept here while the product moves to semantic message keys.
 // User-provided and generated content is intentionally excluded from this table.
 const phrases: readonly Phrase[] = [
+  ["자막 검색", "Search captions", "字幕を検索"],
+  ["자막 검색…", "Search captions…", "字幕を検索…"],
+  ["검색 지우기", "Clear search", "検索をクリア"],
+  ["바꾸기", "Replace", "置換"],
+  ["검색 옵션", "Search options", "検索オプション"],
+  ["모두 수정", "Replace all", "すべて置換"],
+  ["{count}곳 일치", "{count} matches", "{count}件一致"],
+  ["{count}곳 수정됨", "{count} replaced", "{count}件を置換しました"],
+  ["해당 장면으로 이동", "Go to scene", "該当シーンに移動"],
+
   ["자막 찾기·바꾸기", "Find and replace captions", "字幕の検索と置換"],
   ["현재 쇼츠의 자막만 검색합니다.", "Search captions in this short only.", "このショート動画の字幕のみを検索します。"],
   ["찾을 말", "Find", "検索する文字"],

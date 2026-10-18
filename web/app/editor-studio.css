@@ -448,28 +448,28 @@ body:has(.editor-v2-root.editor-studio) [aria-labelledby="apply-edit-confirm-tit
 
 .editor-template-studio .template-editor-status button { position: absolute; top: 6px; right: 6px; width: 32px; height: 32px; }
 
-/* Search stays inside the scrolling inspector on desktop and mobile. */
-.editor-v2-root.editor-studio .editor-caption-search-toggle { width: 100%; min-height: 44px; margin-bottom: 12px; border: 1px solid var(--studio-line); border-radius: 10px; color: var(--studio-accent-text); text-align: left; padding: 10px 12px; font-size: 14px; font-weight: 650; }
-.editor-v2-root.editor-studio .editor-caption-search { min-width: 0; padding: 12px; margin-bottom: 16px; border: 1px solid var(--studio-line); border-radius: 10px; background: var(--studio-panel); }
-.editor-v2-root.editor-studio .editor-caption-search > label { display: block; margin-top: 12px; color: var(--studio-text); font-size: 14px; }
-.editor-v2-root.editor-studio .editor-caption-search input[type="text"] { display: block; width: 100%; min-width: 0; min-height: 44px; margin-top: 6px; font-size: 16px; }
-.editor-v2-root.editor-studio .editor-caption-search-navigation { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
-.editor-v2-root.editor-studio .editor-caption-search-navigation > span { flex: 1; min-width: 0; font-size: 13px; color: var(--studio-muted); }
-.editor-v2-root.editor-studio .editor-caption-search-navigation button { min-width: 44px; }
-.editor-v2-root.editor-studio .editor-caption-search .editor-caption-search-case { display: flex; align-items: center; gap: 8px; min-height: 36px; }
+/* Keep the compact search above the filtered results while the inspector scrolls. */
+.editor-v2-root.editor-studio .editor-caption-search { position: sticky; top: 0; z-index: 2; padding: 0 0 10px; margin-bottom: 8px; background: var(--studio-panel); }
+.editor-v2-root.editor-studio .editor-caption-search-bar,
+.editor-v2-root.editor-studio .editor-caption-replace-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.editor-v2-root.editor-studio .editor-caption-search-field { position: relative; flex: 1; min-width: 0; }
+.editor-v2-root.editor-studio .editor-caption-search input[type="text"] { width: 100%; min-width: 0; min-height: 44px; padding: 8px 10px; font-size: 16px; }
+.editor-v2-root.editor-studio .editor-caption-search-field input[type="text"] { padding-right: 36px; }
+.editor-v2-root.editor-studio .editor-caption-search button { flex-shrink: 0; min-height: 44px; border-radius: 8px; padding: 6px 10px; font-size: 14px; color: var(--studio-accent-text); }
+.editor-v2-root.editor-studio .editor-caption-search .editor-caption-clear { position: absolute; right: 0; top: 0; width: 36px; padding: 0; color: var(--studio-muted); font-size: 22px; }
+.editor-v2-root.editor-studio .editor-caption-search .editor-caption-options-toggle { min-width: 36px; padding: 0; font-size: 20px; }
+.editor-v2-root.editor-studio .editor-caption-search button[aria-expanded="true"] { background: var(--studio-accent-soft); }
+.editor-v2-root.editor-studio .editor-caption-replace-row { margin-top: 6px; }
+.editor-v2-root.editor-studio .editor-caption-replace-row input { flex: 1; }
+.editor-v2-root.editor-studio .editor-caption-replace-row button { background: var(--studio-accent); color: var(--studio-on-accent); font-weight: 650; }
+.editor-v2-root.editor-studio .editor-caption-search-case { display: flex; align-items: center; gap: 8px; min-height: 44px; font-size: 14px; }
 .editor-v2-root.editor-studio .editor-caption-search-case input { width: 18px; height: 18px; accent-color: var(--studio-accent); }
-.editor-v2-root.editor-studio .editor-caption-search-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
-.editor-v2-root.editor-studio .editor-caption-search button { min-height: 44px; border: 1px solid var(--studio-line); border-radius: 8px; padding: 8px 12px; font-size: 14px; }
-.editor-v2-root.editor-studio .editor-caption-search-actions button { flex: 1; }
-.editor-v2-root.editor-studio .editor-caption-search-actions button:last-child { background: var(--studio-accent); border-color: var(--studio-accent); color: var(--studio-on-accent); font-weight: 650; }
+.editor-v2-root.editor-studio .editor-caption-match-count { margin-top: 6px; color: var(--studio-muted); font-size: 13px; }
+.editor-v2-root.editor-studio .editor-caption-replaced { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--studio-accent-text); font-size: 14px; }
+.editor-v2-root.editor-studio .editor-caption-replaced button { text-decoration: underline; }
 .editor-v2-root.editor-studio .editor-caption-search button:disabled { opacity: .4; cursor: not-allowed; }
 .editor-v2-root.editor-studio .editor-caption-search button:focus-visible,
-.editor-v2-root.editor-studio .editor-caption-search-toggle:focus-visible { outline: 2px solid var(--studio-accent); outline-offset: 2px; }
+.editor-v2-root.editor-studio .editor-studio-cue-meta button:focus-visible { outline: 2px solid var(--studio-accent); outline-offset: 2px; }
 .editor-v2-root.editor-studio .editor-studio-cue-text { overflow-wrap: anywhere; }
-.editor-v2-root.editor-studio .editor-caption-search-preview mark,
 .editor-v2-root.editor-studio .editor-studio-cue-text mark { background: var(--studio-accent-soft); color: var(--studio-accent-text); border-radius: 2px; }
-.editor-v2-root.editor-studio .editor-caption-search-preview mark.is-current,
-.editor-v2-root.editor-studio .editor-studio-cue-text mark.is-current { background: var(--studio-accent); color: var(--studio-on-accent); }
-
-.editor-v2-root.editor-studio .editor-caption-search-preview { margin-top: 8px; font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; color: var(--studio-text); }
-.editor-v2-root.editor-studio .editor-caption-search-preview time { color: var(--studio-muted); font-variant-numeric: tabular-nums; margin-right: 6px; }
+.editor-v2-root.editor-studio .editor-studio-cue-meta button { min-height: 28px; padding: 0 4px; font: inherit; color: inherit; }
