@@ -8,9 +8,12 @@ import { updateAssetIds, updateDraftSchema, publicationIssues, type AdminUpdate,
 import type { SiteLocale } from "./i18n/config";
 import { localizeUpdate } from "./update-localization";
 import { translateUpdate } from "./update-translation-server";
-export const publishedUpdates = cache(async (locale: SiteLocale = "ko"): Promise<UpdateContent[]> => {
+const publishedUpdateSources = cache(async (): Promise<UpdateContent[]> => {
  const rows = await getDb()`select published from shorts_mvp.update_posts where visible = true and published is not null order by published->>'date' desc, sort_order asc, id asc`;
- return rows.map(row => localizeUpdate(updateDraftSchema.parse(row.published), locale)).filter((post): post is UpdateContent => post !== null);
+ return rows.map(row => updateDraftSchema.parse(row.published));
+});
+export const publishedUpdates = cache(async (locale: SiteLocale = "ko"): Promise<UpdateContent[]> => {
+ return (await publishedUpdateSources()).map(post => localizeUpdate(post, locale)).filter((post): post is UpdateContent => post !== null);
 });
 export async function listAdminUpdates(): Promise<AdminUpdate[]> {
  const rows = await getDb()`select id, draft, version, visible, first_published_at, updated_at, (published is null or draft <> published) as has_changes from shorts_mvp.update_posts order by draft->>'date' desc, sort_order asc, id asc`;

@@ -17,5 +17,8 @@ export default async function UpdateArticle({ params }: Props) {
  const locale = await getRequestLocale();
  const slug = (await params).slug; const updates = await publishedUpdates(locale); const post = updates.find(p => p.slug === slug);
  if (!post) notFound();
- return <main><UpdateArticleView post={post} locale={locale} related={updates.filter(p => p.slug !== slug && p.topic === post.topic).slice(0, 2)}/></main>;
+ const sources = locale === "ko" ? updates : await publishedUpdates();
+ const sourceTopic = sources.find(p => p.slug === slug)?.topic;
+ const relatedSlugs = new Set(sources.filter(p => p.slug !== slug && p.topic === sourceTopic).slice(0, 2).map(p => p.slug));
+ return <main><UpdateArticleView post={post} locale={locale} related={updates.filter(p => relatedSlugs.has(p.slug))}/></main>;
 }
