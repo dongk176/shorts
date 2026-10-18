@@ -1,0 +1,256 @@
+{
+  "stored": {
+    "schemaVersion": 4,
+    "templateId": "highlight",
+    "captionPlacement": "lower",
+    "fps": 30,
+    "clipStartSeconds": 0,
+    "clipEndSeconds": 1,
+    "timingLeadFrames": 7,
+    "layout": {
+      "canvas": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 1920
+      },
+      "video": {
+        "x": 0,
+        "y": 528,
+        "width": 1080,
+        "height": 864
+      },
+      "title": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 528
+      },
+      "channel": {
+        "x": 0,
+        "y": 1710,
+        "width": 1080,
+        "height": 160
+      },
+      "caption": {
+        "x": 120,
+        "y": 1333,
+        "width": 840,
+        "height": 140
+      }
+    },
+    "safeArea": {
+      "x": 120,
+      "y": 1333,
+      "width": 840,
+      "height": 140
+    },
+    "font": {
+      "fontId": "pretendard",
+      "fileId": "Pretendard-Bold.woff2",
+      "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+      "family": "\"Editor V4 Pretendard\"",
+      "weight": 700,
+      "metrics": {
+        "revision": "editor-font-metrics-v2",
+        "cssToAssScale": 0.838314,
+        "cssToAssBaselineOffsetEm": -0.000205
+      }
+    },
+    "style": {
+      "fontSize": 72,
+      "textColor": "#FFFFFF",
+      "accentColor": "#35E6E3",
+      "outlineColor": "#080808",
+      "outlineWidth": 7,
+      "shadow": 0,
+      "background": null,
+      "maxLines": 1
+    },
+    "cues": [
+      {
+        "startFrame": 0,
+        "endFrame": 30,
+        "fontSize": 72,
+        "scaleX": 100,
+        "centerX": 540,
+        "centerY": 1403,
+        "words": [
+          {
+            "text": "안내자막",
+            "startFrame": 0,
+            "endFrame": 18,
+            "spaceBefore": false,
+            "sourceWordIndexes": [
+              0,
+              1
+            ],
+            "speechStartFrame": 0,
+            "speechEndFrame": 18
+          },
+          {
+            "text": "확인",
+            "startFrame": 11,
+            "endFrame": 30,
+            "spaceBefore": false,
+            "sourceWordIndexes": [
+              2
+            ],
+            "speechStartFrame": 18,
+            "speechEndFrame": 30
+          }
+        ],
+        "lines": [
+          [
+            0,
+            1
+          ]
+        ],
+        "wordSeparator": " ",
+        "separatorAdvanceWidth": 13.911,
+        "events": [
+          {
+            "startFrame": 0,
+            "endFrame": 11,
+            "activeWordIndex": 0
+          },
+          {
+            "startFrame": 11,
+            "endFrame": 30,
+            "activeWordIndex": 1
+          }
+        ]
+      }
+    ],
+    "layoutMode": "absolute-word-positions-v1",
+    "wordGapPx": 6,
+    "joinedWordGapPx": 0
+  },
+  "normalized": {
+    "schemaVersion": 4,
+    "templateId": "highlight",
+    "captionPlacement": "lower",
+    "fps": 30,
+    "clipStartSeconds": 0,
+    "clipEndSeconds": 1,
+    "timingLeadFrames": 7,
+    "layout": {
+      "canvas": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 1920
+      },
+      "video": {
+        "x": 0,
+        "y": 528,
+        "width": 1080,
+        "height": 864
+      },
+      "title": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 528
+      },
+      "channel": {
+        "x": 0,
+        "y": 1710,
+        "width": 1080,
+        "height": 160
+      },
+      "caption": {
+        "x": 120,
+        "y": 1333,
+        "width": 840,
+        "height": 59
+      }
+    },
+    "safeArea": {
+      "x": 120,
+      "y": 1333,
+      "width": 840,
+      "height": 140
+    },
+    "font": {
+      "fontId": "pretendard",
+      "fileId": "Pretendard-Bold.woff2",
+      "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+      "family": "\"Editor V4 Pretendard\"",
+      "weight": 700,
+      "metrics": {
+        "revision": "editor-font-metrics-v2",
+        "cssToAssScale": 0.838314,
+        "cssToAssBaselineOffsetEm": -0.000205
+      }
+    },
+    "style": {
+      "fontSize": 72,
+      "textColor": "#FFFFFF",
+      "accentColor": "#35E6E3",
+      "outlineColor": "#080808",
+      "outlineWidth": 7,
+      "shadow": 0,
+      "background": null,
+      "maxLines": 1
+    },
+    "cues": [
+      {
+        "startFrame": 0,
+        "endFrame": 30,
+        "fontSize": 72,
+        "scaleX": 100,
+        "centerX": 540,
+        "centerY": 1403,
+        "words": [
+          {
+            "text": "안내자막",
+            "startFrame": 0,
+            "endFrame": 18,
+            "spaceBefore": false,
+            "sourceWordIndexes": [
+              0,
+              1
+            ],
+            "speechStartFrame": 0,
+            "speechEndFrame": 18
+          },
+          {
+            "text": "확인",
+            "startFrame": 11,
+            "endFrame": 30,
+            "spaceBefore": false,
+            "sourceWordIndexes": [
+              2
+            ],
+            "speechStartFrame": 18,
+            "speechEndFrame": 30
+          }
+        ],
+        "lines": [
+          [
+            0,
+            1
+          ]
+        ],
+        "wordSeparator": " ",
+        "separatorAdvanceWidth": 13.911,
+        "events": [
+          {
+            "startFrame": 0,
+            "endFrame": 11,
+            "activeWordIndex": 0
+          },
+          {
+            "startFrame": 11,
+            "endFrame": 30,
+            "activeWordIndex": 1
+          }
+        ]
+      }
+    ],
+    "layoutMode": "absolute-word-positions-v1",
+    "wordGapPx": 6,
+    "joinedWordGapPx": 0
+  }
+}

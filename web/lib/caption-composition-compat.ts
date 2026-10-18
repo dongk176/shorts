@@ -44,9 +44,22 @@ function normalizeLegacyCaptionMetadata(spec: CompiledSpec): CompiledSpec {
   if (!video || typeof video !== "object" || Array.isArray(video)
     || !caption || typeof caption !== "object" || Array.isArray(caption)
     || video.x !== 0 || video.y !== 528 || video.width !== 1080 || video.height !== 864
-    || caption.x !== 90 || caption.y !== 1340 || caption.width !== 900 || caption.height !== 140
     || spec.cues.some((cue) => !Number.isFinite(cue.centerX) || !Number.isFinite(cue.centerY))) return spec;
-  return { ...spec, layout: { ...spec.layout, caption: { ...caption, height: 52 } } };
+  const legacyDefaultBox = caption.x === 90 && caption.y === 1340
+    && caption.width === 900 && caption.height === 140;
+  // Older lower-position highlight captions used a different fixed box. V4
+  // renders from safeArea and absolute cue positions, not this composition box.
+  // Preserve those coordinates even when captions are currently switched off.
+  const legacyHighlightBox = spec.templateId === "highlight"
+    && spec.layoutMode === "absolute-word-positions-v1"
+    && caption.x === 120 && caption.y === 1333
+    && caption.width === 840 && caption.height === 140
+    && caption.x === spec.safeArea.x && caption.y === spec.safeArea.y
+    && caption.width === spec.safeArea.width && caption.height === spec.safeArea.height;
+  if (!legacyDefaultBox && !legacyHighlightBox) return spec;
+  return { ...spec, layout: { ...spec.layout, caption: {
+    ...caption, height: legacyDefaultBox ? 52 : 59,
+  } } };
 }
 
 export function normalizeStoredCaptionComposition(value: unknown): CaptionRenderSpec | null {

@@ -2133,7 +2133,7 @@ def test_v4_editor_renders_stored_v3_pop_caption_with_canonical_font_and_gap(
     shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
     reason="ffmpeg and ffprobe are required",
 )
-@pytest.mark.parametrize("translated_five_four", [False, True, "legacy-metadata"])
+@pytest.mark.parametrize("translated_five_four", [False, True, "legacy-metadata", "highlight-metadata"])
 def test_v4_caption_off_preserves_non_caption_composition(
     tmp_path: Path, translated_five_four: bool,
 ) -> None:
@@ -2162,10 +2162,23 @@ def test_v4_caption_off_preserves_non_caption_composition(
         schema_version=4,
     )
     if translated_five_four:
-        fixture = json.loads((FIXTURE.parent / "caption-composition-5x4.json").read_text())
+        fixture_name = (
+            "caption-composition-highlight-5x4.json"
+            if translated_five_four == "highlight-metadata"
+            else "caption-composition-5x4.json"
+        )
+        fixture = json.loads((FIXTURE.parent / fixture_name).read_text())
         with pytest.raises(RenderError, match="안전영역"):
             editor_video_frame(_document_v3(), fixture["stored"])
         caption_spec = fixture["normalized"]
+        if translated_five_four == "highlight-metadata":
+            # Composition metadata repair must not move, resize or recolor any
+            # actual subtitle glyphs, even when captions are switched back on.
+            assert create_caption_ass(
+                fixture["stored"], tmp_path / "stored.ass",
+            ).read_bytes() == create_caption_ass(
+                caption_spec, tmp_path / "normalized.ass",
+            ).read_bytes()
         if translated_five_four == "legacy-metadata":
             caption_spec = json.loads(json.dumps(fixture["stored"]))
             caption_spec.pop("translation", None)
@@ -2218,6 +2231,15 @@ def test_v4_caption_off_preserves_non_caption_composition(
     disabled_assets = tmp_path / "caption-disabled-render" / "editor-assets"
     assert enabled_output.stat().st_size > 10_000
     assert disabled_output.stat().st_size > 10_000
+    for output in (enabled_output, disabled_output):
+        probe = json.loads(_run([
+            "ffprobe", "-v", "error", "-show_streams", "-show_format",
+            "-of", "json", str(output),
+        ]).stdout)
+        video = next(s for s in probe["streams"] if s["codec_type"] == "video")
+        assert (video["width"], video["height"]) == (1080, 1920)
+        assert abs(float(probe["format"]["duration"]) - 1) < 0.12
+        _run(["ffmpeg", "-v", "error", "-i", str(output), "-f", "null", "-"])
     assert (enabled_assets / "subtitles.ass").is_file()
     assert not (disabled_assets / "subtitles.ass").exists()
     for asset_name in ("background.png", "title.png", "channel.png"):

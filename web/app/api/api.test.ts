@@ -1194,8 +1194,11 @@ describe("subtitle template edit isolation", () => {
     expect(mocks.wakeDispatcher).not.toHaveBeenCalled();
   });
 
-  it.each([[false, false], [true, false], [true, true]])("queues v4 with caption repair=%s and concurrent change=%s", async (repairCaption, concurrentChange) => {
-    const captionFixture = JSON.parse(readFileSync(new URL("../../../test-fixtures/caption-composition-5x4.json", import.meta.url), "utf8"));
+  it.each([[false, false], [true, false], [true, true], ["highlight", false], ["highlight", true]])("queues v4 with caption repair=%s and concurrent change=%s", async (repairCaption, concurrentChange) => {
+    const fixturePath = repairCaption === "highlight"
+      ? "../../../test-fixtures/caption-composition-highlight-5x4.json"
+      : "../../../test-fixtures/caption-composition-5x4.json";
+    const captionFixture = JSON.parse(readFileSync(new URL(fixturePath, import.meta.url), "utf8"));
     process.env.EDITOR_RENDERING_V2_ENABLED = "true";
     process.env.EDITOR_RENDERING_V2_GLOBAL_ENABLED = "true";
     const stableReleaseId = "b0cd2a6b-5019-4b5c-87cb-57e2d0bdb4c0";
