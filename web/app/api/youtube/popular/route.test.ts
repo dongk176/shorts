@@ -428,6 +428,13 @@ describe("catalog calendar API access", () => {
 });
 
 describe("Japanese filter API", () => {
+  it("never falls through to an unfiltered legacy list when catalog reads are off", async () => {
+    mocks.japanReadsEnabled.mockResolvedValue(true);
+    const response = await GET(new Request("https://example.com/api/youtube/popular?type=trending&japanese=true"));
+    expect(response.status).toBe(503);
+    expect(mocks.getPopularVideos).not.toHaveBeenCalled();
+    expect(mocks.getPopularSearchVideos).not.toHaveBeenCalled();
+  });
   it("rejects simultaneous Korean and Japanese filters before reading data", async () => {
     const response = await GET(new Request("https://example.com/api/youtube/popular?type=trending&korean=true&japanese=true"));
     expect(response.status).toBe(400);

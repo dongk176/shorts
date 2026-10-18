@@ -97,6 +97,9 @@ export async function GET(request: Request) {
     if (query.data.english && !catalogReadsEnabled()) {
       return NextResponse.json({ detail: "영어 영상 목록을 준비 중입니다.", code: "ENGLISH_DISCOVERY_UNAVAILABLE" }, { status: 503 });
     }
+    if (query.data.japanese && !catalogReadsEnabled()) {
+      return NextResponse.json({ detail: "일본어 영상 목록을 준비 중입니다.", code: "JAPANESE_DISCOVERY_DISABLED" }, { status: 503 });
+    }
     const japaneseEnabled = await japanReadsEnabled(db);
     if (query.data.japanese && !japaneseEnabled) {
       return NextResponse.json({ detail: "일본어 영상 목록을 준비 중입니다.", code: "JAPANESE_DISCOVERY_DISABLED" }, { status: 503 });

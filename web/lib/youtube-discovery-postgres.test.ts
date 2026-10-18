@@ -1,4 +1,5 @@
 import { collectEnglishVideos, englishCollectionSlot } from "./youtube-english-collector";
+import { hasConflictingLanguageTitle } from "./youtube-language";
 import { getJapanSettings, updateJapanSettings } from "./youtube-japan-settings";
 import { collectJapanVideos } from "./youtube-japan-collector";
 import { readFileSync } from "node:fs";
@@ -170,6 +171,7 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
         "202609110010_youtube_japan_discovery.sql",
         "202609110011_youtube_japan_quota.sql",
         "202609110012_youtube_japan_activation_constraints.sql",
+        "202609230001_popular_text_search.sql",
         "202609280001_popular_english_filter.sql",
         "20261011085148_youtube_japan_continuous_collection.sql",
         "20261015061904_youtube_english_trending.sql",
@@ -228,7 +230,7 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
   it("filters English across pages and current metadata; rejects another language cursor", async () => {
     const now = new Date();
     await saveCatalogPage(db, [
-      ...Array.from({length:55}, (_,i)=>fixture(`eng${String(i).padStart(8,"0")}`, {isEnglish:true,isKorean:false,license:"creativeCommon"})),
+      ...Array.from({length:55}, (_,i)=>fixture(`eng${String(i).padStart(8,"0")}`, {title:"English video",isEnglish:true,isKorean:false,license:"creativeCommon"})),
       fixture("unknown0001", {isKorean:false}), fixture("korean00001"), fixture("japan000001", {isJapanese:true,isKorean:false}),
     ], {observedAt:now});
     const first=await getCatalogVideos(filters({english:true,reusable:true,longForm:true}),db,now);
@@ -241,6 +243,39 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
     expect((await getCatalogVideos(filters({english:true,reusable:true,longForm:true,cursor:first.nextCursor}),db,now)).items).toHaveLength(6);
     const [column]=await db`select column_default,is_nullable from information_schema.columns where table_schema='shorts_mvp' and table_name='popular_filter_usage_events' and column_name='english_only'`;
     expect(column).toMatchObject({columnDefault:"false",isNullable:"NO"});
+  });
+  it.each(["ja", "en"] as const)("rechecks old %s flags across cached pages, search, dates and reuse filters", async language => {
+    await enableJapan();
+    const now = new Date();
+    const runId = await run(now);
+    const scope = { japanese: language === "ja", english: language === "en" };
+    const title = language === "ja" ? "楽しい動画" : "English video #fypシ";
+    const items = Array.from({length:55}, (_,i)=>fixture(`valid${String(i).padStart(6,"0")}`, {
+      title,channelName:"Language regression",isKorean:false,isJapanese:language==="ja",isEnglish:language==="en",viewCount:1000-i,
+    }));
+    await saveCatalogPage(db,items,{runId,trending:true,observedAt:now});
+    const first = await getCatalogVideos(filters({...scope,type:"trending"}),db,now);
+    expect(first.items).toHaveLength(48);
+    // Simulate stale language flags, including IDs in an already cached list.
+    const badTitles = ["대왕 키캡으로 돈 벌 수 있을까?", "한국어 제목", language === "en" ? "ｶﾀｶﾅ動画" : "복권\n토론"];
+    for (const [index,badTitle] of badTitles.entries()) {
+      await db`update shorts_mvp.youtube_catalog set metadata=jsonb_set(metadata,'{title}',${db.json(badTitle)}) where video_id=${items[index===0?0:48+index].videoId}`;
+    }
+    const page = await getCatalogVideos(filters({...scope,type:"trending"}),db,now);
+    const next = await getCatalogVideos(filters({...scope,type:"trending",cursor:page.nextCursor}),db,now);
+    expect([...page.items,...next.items]).toHaveLength(52);
+    expect([...page.items,...next.items].every(item=>!hasConflictingLanguageTitle(item.title,language))).toBe(true);
+    const oldNext = await getCatalogVideos(filters({...scope,type:"trending",cursor:first.nextCursor}),db,now);
+    expect(oldNext.items).toHaveLength(5);
+    for (const extra of [{type:"views" as const},{type:"trending" as const,date:kstDate(now)},{q:"Language regression"}]) {
+      const result = await getCatalogVideos(filters({...scope,...extra}),db,now);
+      expect(result.items).toHaveLength(48);
+      expect(result.items.every(item=>!hasConflictingLanguageTitle(item.title,language))).toBe(true);
+    }
+    await db`update shorts_mvp.youtube_catalog set metadata=jsonb_set(metadata,'{license}','"creativeCommon"')`;
+    const reused = await getCatalogVideos(filters({...scope,type:"reusable"}),db,now);
+    expect(reused.items).toHaveLength(48);
+    expect(reused.items.every(item=>!hasConflictingLanguageTitle(item.title,language))).toBe(true);
   });
   async function run(at: Date, status = "success", legacy = false) {
     const [r] =
@@ -1400,7 +1435,7 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
   it("keeps a previous Japanese success visible when a later collection hits quota errors", async () => {
     await enableJapan(); const now=new Date();
     const [run]=await db`insert into shorts_mvp.youtube_collection_runs(lane,region_code,scheduled_at,status,finished_at) values('trending','JP',${new Date(now.getTime()-1000)},'success',${now}) returning id`;
-    await saveCatalogPage(db,[fixture('oldjapan001',{isKorean:false,isJapanese:true})],{runId:run.id,regionCode:'JP',trending:true,observedAt:now});
+    await saveCatalogPage(db,[fixture('oldjapan001',{title:'楽しい動画',isKorean:false,isJapanese:true})],{runId:run.id,regionCode:'JP',trending:true,observedAt:now});
     const fetchImpl=vi.fn(async()=>new Response(JSON.stringify({error:{errors:[{reason:'quotaExceeded'}]}}),{status:403}));
     expect(await collectJapanVideos({db,fetchImpl,scheduledAt:now})).toMatchObject({failed:true});
     expect(fetchImpl).toHaveBeenCalledTimes(1);
@@ -1495,7 +1530,7 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
       const at = moment(day, done);
       const [run] = await db`insert into shorts_mvp.youtube_collection_runs(lane,region_code,scheduled_at,status,finished_at)
         values(${lane},${region},${scheduled},'success',${at}) returning id`;
-      await saveCatalogPage(db, ids.map(id=>fixture(id,{isKorean:false,isJapanese:true,license:lane==="reusable"?"creativeCommon":"youtube"})),
+      await saveCatalogPage(db, ids.map(id=>fixture(id,{title:'楽しい動画',isKorean:false,isJapanese:true,license:lane==="reusable"?"creativeCommon":"youtube"})),
         {runId:run.id,regionCode:region,observedAt:at});
     };
     await add("KR",10,"17:11",["krprevious1"]);
@@ -1683,7 +1718,7 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
     const earlier=new Date(englishCollectionSlot().getTime()-4*3600000);
     const [r]=await db`insert into shorts_mvp.youtube_collection_runs(lane,region_code,scheduled_at,status,finished_at)
       values('trending','US',${earlier},'success',${earlier}) returning id`;
-    await saveCatalogPage(db,[fixture("english0001",{isEnglish:true,isKorean:false})],{runId:r.id,regionCode:"US",trending:true,observedAt:earlier});
+    await saveCatalogPage(db,[fixture("english0001",{title:"English video",isEnglish:true,isKorean:false})],{runId:r.id,regionCode:"US",trending:true,observedAt:earlier});
     const fetchImpl=vi.fn(async()=>new Response(JSON.stringify({error:{errors:[{reason:"quotaExceeded"}]}}),{status:403}));
     expect(await collectEnglishVideos({db,fetchImpl})).toMatchObject({failed:true});
     expect(fetchImpl).toHaveBeenCalledTimes(1);
@@ -1696,7 +1731,7 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
     for (const region of ["US","GB"] as const) {
       const [r]=await db`insert into shorts_mvp.youtube_collection_runs(lane,region_code,scheduled_at,status,finished_at)
         values('trending',${region},${now},'success',${now}) returning id`;
-      await saveCatalogPage(db,[fixture("english0001",{isEnglish:true,isKorean:false}),fixture("unknown0001",{isKorean:false})],{runId:r.id,regionCode:region,trending:true,observedAt:now});
+      await saveCatalogPage(db,[fixture("english0001",{title:"English video",isEnglish:true,isKorean:false}),fixture("unknown0001",{isKorean:false})],{runId:r.id,regionCode:region,trending:true,observedAt:now});
     }
     const result=await getCatalogVideos(filters({type:"trending",english:true,date:kstDate(now)}),db,now);
     expect(result.items.map(i=>i.videoId)).toEqual(["english0001"]);

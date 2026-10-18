@@ -1,4 +1,5 @@
 import { normalizePopularQuery, popularSearchSql } from "@/lib/popular-text-search";
+import { JAPANESE_TITLE_PATTERN, KOREAN_TITLE_PATTERN } from "@/lib/youtube-language";
 import { createHash } from "node:crypto";
 import type { Sql, TransactionSql } from "postgres";
 import type { CatalogVisibility } from "@/lib/youtube-catalog-visibility";
@@ -72,7 +73,7 @@ export async function saveCatalogPage(
       isKorean: item.isKorean,
       isJapanese: item.isJapanese ?? false,
       isEnglish: item.isEnglish ?? false,
-      englishLanguageVersion: 4,
+      englishLanguageVersion: 5,
     },
   }));
   await db`insert into shorts_mvp.youtube_catalog
@@ -344,8 +345,11 @@ export async function getCatalogVideos(
   const base = db`${search?.match ?? db`true`} and ${regionMembership} and c.availability='public' and c.metadata is not null and c.video_id is not null
     and c.verified_at>${new Date(now.getTime() - 30 * DAY_MS)}
     and (${filters.category}='all' or c.metadata->>'category'=${filters.category})
-    and (${filters.japanese ?? false}=false or coalesce((c.metadata->>'isJapanese')::boolean,false))
-    and (${filters.english ?? false}=false or coalesce((c.metadata->>'isEnglish')::boolean,false))
+    and (${filters.japanese ?? false}=false or (coalesce((c.metadata->>'isJapanese')::boolean,false)
+      and normalize(c.metadata->>'title', NFKC) !~ ${KOREAN_TITLE_PATTERN}))
+    and (${filters.english ?? false}=false or (coalesce((c.metadata->>'isEnglish')::boolean,false)
+      and normalize(c.metadata->>'title', NFKC) !~ ${KOREAN_TITLE_PATTERN}
+      and normalize(c.metadata->>'title', NFKC) !~ ${JAPANESE_TITLE_PATTERN}))
     and (${filters.korean}=false or (c.metadata->>'isKorean')::boolean)
     and (${filters.longForm}=false or (c.metadata->>'durationSeconds')::int>=240)
     and (${reusable}=false or c.metadata->>'license'='creativeCommon')

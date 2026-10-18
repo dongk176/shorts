@@ -26,6 +26,18 @@ describe("YouTube Korean-language detection", () => {
 });
 
 describe("Japanese language detection", () => {
+  it.each([
+    { title: "대왕 키캡으로 돈 벌 수 있을까?(에버랜드편)", defaultAudioLanguage: "ja" },
+    { title: "복권 토론", defaultLanguage: "ja-JP" },
+    { title: "English title", defaultAudioLanguage: "ja", defaultLanguage: "ko-KR" },
+    { title: "日本語 한국어", defaultAudioLanguage: "ja" },
+    { title: "한국어", defaultAudioLanguage: "ja" },
+  ])("rejects contradictory Korean signals: $title", metadata => {
+    expect(isJapaneseVideo(metadata)).toBe(false);
+  });
+  it("does not exclude Japanese audio for a translated description", () => {
+    expect(isJapaneseVideo({ title: "楽しい動画", defaultAudioLanguage: "ja", description: "한국어로 번역한 설명입니다." })).toBe(true);
+  });
   it("gives audio language priority over default language and title", () => {
     expect(isJapaneseVideo({ title: "日本語の動画", defaultAudioLanguage: "ko-KR", defaultLanguage: "ja" })).toBe(false);
     expect(isJapaneseVideo({ title: "English title", defaultAudioLanguage: "ja-JP", defaultLanguage: "en" })).toBe(true);
@@ -42,6 +54,16 @@ describe("Japanese language detection", () => {
 });
 
 describe("English language detection", () => {
+  it.each([
+    { title: "【緊急速報】中日・井上監督が電撃辞任！緊急でお伝えします", defaultAudioLanguage: "en" },
+    { title: "ｶﾀｶﾅ動画", defaultLanguage: "en" },
+    { title: "English display title", defaultAudioLanguage: "en-US", defaultLanguage: "ja-JP" },
+  ])("rejects contradictory Japanese signals: $title", metadata => {
+    expect(isEnglishVideo(metadata)).toBe(false);
+  });
+  it("keeps English videos with a single decorative kana in a hashtag", () => {
+    expect(isEnglishVideo({ title: "Ai vs Artist #painting #fypシ", defaultAudioLanguage: "en" })).toBe(true);
+  });
   it.each(["en", "en-US", "en_GB", " EN-au "])("accepts explicit English language %s", code => {
     expect(isEnglishVideo({title:"English video", defaultAudioLanguage:code})).toBe(true);
   });
