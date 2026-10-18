@@ -11585,9 +11585,9 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
               tool.id !== "subtitle"
               || subtitleToolVisible
             )).map((tool) => {
-              const active = activeEditorSidebarTool === tool.id
-                && desktopSidebarOpen
-                && selectedOverlay !== "video";
+              const active = desktopSidebarOpen && (selectedOverlay === "video"
+                ? tool.id === "layout"
+                : activeEditorSidebarTool === tool.id);
               return (
                 <button
                   key={tool.id}
