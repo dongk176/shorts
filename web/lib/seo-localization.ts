@@ -86,6 +86,7 @@ export function searchLocalesForPath(path: string): readonly SiteLocale[] {
   // These originals are readable at localized URLs, but their actual content is Korean.
   // Do not advertise them as translated alternatives or change the visible page.
   if (pathname.includes("/versions/")) return [];
+  if (pathname === "/updates" || pathname.startsWith("/updates/")) return siteLocales;
   if (pathname === "/blog" || pathname.startsWith("/blog/") || pathname === "/guidebook"
     || pathname === "/enterprise/purchase-terms" || pathname === "/enterprise/refund-policy") return ["ko"];
   return translatedSearchPaths.has(pathname) ? siteLocales : [];

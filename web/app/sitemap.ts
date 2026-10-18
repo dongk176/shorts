@@ -45,7 +45,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency,
       priority,
     })));
-  return [...pages, { url: absoluteUrl("/updates"), lastModified: UPDATES_REVISED_AT, changeFrequency: "weekly" as const, priority: 0.7 }, ...updates.map((post) => ({ url: absoluteUrl(`/updates/${post.slug}`), lastModified: post.date, changeFrequency: "monthly" as const, priority: 0.6 })), ...publishedBlogPosts().map((post) => ({
+  const updatePages = [{ path: "/updates", date: UPDATES_REVISED_AT }, ...updates.map(post => ({ path: `/updates/${post.slug}`, date: post.date }))].flatMap(({ path, date }) => (["ko", "en", "ja"] as const).map(locale => ({
+    url: absoluteUrl(localizedHref(path, locale)), lastModified: date, changeFrequency: "weekly" as const, priority: 0.6,
+    alternates: { languages: Object.fromEntries((["ko", "en", "ja"] as const).map(language => [language, absoluteUrl(localizedHref(path, language))])) },
+  })));
+  return [...pages, ...updatePages, ...publishedBlogPosts().map((post) => ({
     url: absoluteUrl(`/blog/${post.slug}`),
     lastModified: post.updatedAt,
     changeFrequency: "monthly" as const,

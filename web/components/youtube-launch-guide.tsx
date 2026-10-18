@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import type { SiteLocale } from "@/lib/i18n/config";
+import { youtubeLaunchCopy } from "./youtube-launch-copy";
 import Image from "next/image";
 import "./youtube-launch-guide.css";
 
@@ -31,7 +33,8 @@ const steps = [
 ] as const;
 
 /** Public, browser-scoped announcement. Preview never reads or writes completion. */
-export function YoutubeLaunchGuide({ preview = false, onDismiss }: { preview?: boolean; onDismiss?: () => void }) {
+export function YoutubeLaunchGuide({ preview = false, onDismiss, locale = "ko" }: { preview?: boolean; onDismiss?: () => void; locale?: SiteLocale }) {
+  const c = youtubeLaunchCopy(locale);
   const [visible, setVisible] = useState(false);
   const [step, setStep] = useState(0);
   const dialog = useRef<HTMLDialogElement>(null);
@@ -77,37 +80,38 @@ export function YoutubeLaunchGuide({ preview = false, onDismiss }: { preview?: b
   }
 
   if (!visible) return null;
-  const current = steps[step];
+  const current = { ...steps[step], title: c.steps[step][0], description: c.steps[step][1], alt: c.steps[step][2] };
   return <dialog ref={dialog} className="yt-launch" aria-labelledby={titleId} aria-describedby={descriptionId}
     onCancel={(event) => { event.preventDefault(); dismiss(); }}>
     <div className="yt-launch-handle" aria-hidden="true" />
     <header className="yt-launch-header">
-      <h2 id={titleId}><svg className="yt-launch-sparkle" aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="m12 3 2.3 6.7L21 12l-6.7 2.3L12 21l-2.3-6.7L3 12l6.7-2.3L12 3Z" fill="currentColor"/></svg><span>이지컷에 새로운 기능이 생겼어요!</span></h2>
-      <button type="button" className="yt-launch-close" aria-label="안내 닫기" onClick={() => dismiss()}>×</button>
+      <h2 id={titleId}><svg className="yt-launch-sparkle" aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="m12 3 2.3 6.7L21 12l-6.7 2.3L12 21l-2.3-6.7L3 12l6.7-2.3L12 3Z" fill="currentColor"/></svg><span>{c.title}</span></h2>
+      <button type="button" className="yt-launch-close" aria-label={c.close} onClick={() => dismiss()}>×</button>
     </header>
-    <section className="yt-launch-content" aria-label={`${step + 1}단계`}>
+    <section className="yt-launch-content" aria-label={`${c.step} ${step + 1}`}>
       <div className="yt-launch-copy" aria-live="polite" aria-atomic="true"><h3 ref={heading} tabIndex={-1}><span className="yt-launch-step-number" data-step={step + 1}><span>{step + 1}</span></span>{current.title}</h3><p id={descriptionId}>{current.description}</p></div>
       <div className={`yt-launch-shot${step === 0 ? " yt-launch-flow" : ""}`}>
         {step === 0 && <>
-          <Image className="yt-launch-project-actions" src="/updates/youtube-launch/project-actions.png" width={900} height={270} alt="프로젝트에서 편집하기·다운로드 버튼 아래에 있는 업로드 버튼" priority unoptimized />
+          <Image className="yt-launch-project-actions" src="/updates/youtube-launch/project-actions.png" width={900} height={270} alt={c.actionAlt} priority unoptimized />
           <svg className="yt-launch-flow-arrow" aria-hidden="true" width="22" height="24" viewBox="0 0 22 24" fill="none"><path d="M11 3v17m-6-6 6 6 6-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
         </>}
         <Image className={step === 0 ? "yt-launch-connect-image" : undefined} src={`/updates/youtube-launch/${current.image}`} width={current.width} height={current.height} alt={current.alt} priority unoptimized />
       </div>
     </section>
     <footer className="yt-launch-footer">
-      <span className="yt-launch-counter" aria-label={`${step + 1} / 3단계`}>{step + 1} <span>/ 3</span></span>
-      <div>{step > 0 && <button type="button" className="yt-launch-back" onClick={() => changeStep(step - 1)}>이전</button>}
-        <button type="button" className="yt-launch-next" onClick={() => step === 2 ? dismiss() : changeStep(step + 1)}>{step === 2 ? "확인했어요" : "다음"}</button></div>
+      <span className="yt-launch-counter" aria-label={`${c.step} ${step + 1} / 3`}>{step + 1} <span>/ 3</span></span>
+      <div>{step > 0 && <button type="button" className="yt-launch-back" onClick={() => changeStep(step - 1)}>{c.previous}</button>}
+        <button type="button" className="yt-launch-next" onClick={() => step === 2 ? dismiss() : changeStep(step + 1)}>{step === 2 ? c.done : c.next}</button></div>
     </footer>
   </dialog>;
 }
 
 
-export function YoutubeLaunchGuideReplay() {
+export function YoutubeLaunchGuideReplay({ locale = "ko" }: { locale?: SiteLocale }) {
+  const c = youtubeLaunchCopy(locale);
   const [open, setOpen] = useState(false);
   return <>
-    <button type="button" className="yt-launch-next" onClick={() => setOpen(true)}>업로드 안내 다시 보기</button>
-    {open ? <YoutubeLaunchGuide preview onDismiss={() => setOpen(false)} /> : null}
+    <button type="button" className="yt-launch-next" onClick={() => setOpen(true)}>{c.replay}</button>
+    {open ? <YoutubeLaunchGuide preview locale={locale} onDismiss={() => setOpen(false)} /> : null}
   </>;
 }

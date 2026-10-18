@@ -12,6 +12,13 @@ vi.mock("@/lib/supabase/middleware", () => ({
 import { middleware } from "./middleware";
 
 describe("canonical URL middleware", () => {
+  it.each([["/en/updates", "en"], ["/jp/updates/example", "ja"]])("preserves the URL language for %s without rewriting through Korean", async (path, locale) => {
+    mocks.refreshSession.mockResolvedValue(NextResponse.next());
+    await middleware(new NextRequest(`https://www.easycut.co.kr${path}`, { headers: { "x-easycut-site-locale": "ko" } }));
+    const [, rewrite, headers] = mocks.refreshSession.mock.calls.at(-1)!;
+    expect(rewrite).toBeUndefined();
+    expect(headers.get("x-easycut-site-locale")).toBe(locale);
+  });
   beforeEach(() => {
     mocks.refreshSession.mockReset();
     mocks.refreshSession.mockImplementation(async (request: NextRequest) => NextResponse.next({ request }));

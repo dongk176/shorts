@@ -1,4 +1,6 @@
 "use client";
+import { localizeUpdate, missingUpdateTexts, updateSourceTexts } from "@/lib/update-localization";
+import type { SiteLocale } from "@/lib/i18n/config";
 import { useEffect, useRef, useState } from "react";
 import { UpdateArticleView } from "@/app/updates/article-view";
 import { UpdateCover } from "@/app/updates/update-cover";
@@ -48,17 +50,19 @@ function PhotoEditor({ shot, onChange, onBusy }: { shot?: UpdateShot; onChange: 
 }
 export function AdminUpdates({ initialPosts }: { initialPosts: AdminUpdate[] }) {
  const [posts, setPosts] = useState(initialPosts); const [selected, setSelected] = useState<AdminUpdate | null>(null); const [saved, setSaved] = useState(""); const [preview, setPreview] = useState(false); const [query, setQuery] = useState(""); const [status, setStatus] = useState("전체"); const [busy, setBusy] = useState(false); const [uploads, setUploads] = useState(0); const [message, setMessage] = useState(""); const [error, setError] = useState("");
+ const [previewLocale, setPreviewLocale] = useState<SiteLocale>("ko");
+ const [editLocale, setEditLocale] = useState<"en" | "ja">("en");
  const dirty = selected !== null && JSON.stringify(selected.draft) !== saved;
  useEffect(() => { if (!dirty) return; const guard = (e: BeforeUnloadEvent) => { e.preventDefault(); }; window.addEventListener("beforeunload", guard); return () => window.removeEventListener("beforeunload", guard); }, [dirty]);
  const patch = (change: Partial<UpdateContent>) => setSelected(p => p ? { ...p, draft: { ...p.draft, ...change } } : p);
- const select = (post: AdminUpdate) => { setSelected(structuredClone(post)); setSaved(post.version ? JSON.stringify(post.draft) : ""); setPreview(false); setMessage(""); setError(""); };
- const save = async (action: "save" | "publish" | "hide") => {
+ const select = (post: AdminUpdate) => { setSelected(structuredClone(post)); setSaved(post.version ? JSON.stringify(post.draft) : ""); setPreview(false); setPreviewLocale("ko"); setMessage(""); setError(""); };
+ const save = async (action: "save" | "publish" | "hide" | "translate") => {
   if (!selected || busy || uploads) return;
   if (action === "publish") { const issues = publicationIssues(selected.draft); if (issues.length) { setError(issues.join(" ")); return; } }
   if (action === "hide" && dirty) { setError("변경 내용을 먼저 초안으로 저장한 뒤 숨겨 주세요."); return; }
   if (action === "hide" && !window.confirm("이 글을 업데이트 페이지에서 숨길까요? 글과 사진은 보관됩니다.")) return;
   setBusy(true); setError(""); setMessage("");
-  try { const result = await request<AdminUpdate>("/api/admin/updates", { id: selected.id, version: selected.version, action, draft: selected.draft }); setSelected(result); setSaved(JSON.stringify(result.draft)); setPosts(p => [result, ...p.filter(x => x.id !== result.id)].sort((a,b) => b.draft.date.localeCompare(a.draft.date))); setMessage(action === "publish" ? "게시했습니다. 업데이트 페이지에 반영됐어요." : action === "hide" ? "글을 숨겼습니다." : "초안을 저장했습니다. 게시 중인 내용은 그대로입니다."); }
+  try { const result = await request<AdminUpdate>("/api/admin/updates", { id: selected.id, version: selected.version, action, draft: selected.draft }); setSelected(result); setSaved(JSON.stringify(result.draft)); setPosts(p => [result, ...p.filter(x => x.id !== result.id)].sort((a,b) => b.draft.date.localeCompare(a.draft.date))); setMessage(action === "publish" ? "한국어·영어·일본어로 게시했습니다. 업데이트 페이지에 반영됐어요." : action === "hide" ? "글을 숨겼습니다." : action === "translate" ? "번역을 준비하고 초안을 저장했습니다. 언어별 미리보기에서 확인해 주세요." : "초안을 저장했습니다. 게시 중인 내용은 그대로입니다."); }
   catch(e) { setError(e instanceof Error ? e.message : "저장하지 못했습니다."); } finally { setBusy(false); }
  };
  const onUpload = (working: boolean) => setUploads(n => n + (working ? 1 : -1));
@@ -72,10 +76,12 @@ export function AdminUpdates({ initialPosts }: { initialPosts: AdminUpdate[] }) 
   <div className={styles.postList}>{posts.filter(p => `${p.draft.title} ${p.draft.topic}`.includes(query) && (status === "전체" || (p.visible ? "게시 중" : p.firstPublishedAt ? "숨김" : "초안") === status)).map(p => <button className={styles.postRow} key={p.id} onClick={() => select(p)}><span className={styles.thumb}>{p.draft.shot ? <UpdateCover post={p.draft}/> : <span>사진 없음</span>}</span><span><span className={styles.state}>{p.visible ? "게시 중" : p.firstPublishedAt ? "숨김" : "초안"}{p.visible && p.hasChanges ? " · 수정 초안 있음" : ""}</span><strong>{p.draft.title || "제목 없는 업데이트"}</strong><small>{p.draft.date} · {p.draft.kind} · {p.draft.topic}</small></span><span>수정 →</span></button>)}</div>
  </section>;
  const post = selected.draft;
+ const previewPost = localizeUpdate(post, previewLocale);
  return <section className={styles.manager}>
   <div className={styles.editorToolbar}><button disabled={busy || uploads > 0} onClick={() => { if (!dirty || window.confirm("저장하지 않은 변경 내용이 있습니다. 목록으로 돌아갈까요?")) setSelected(null); }}>← 목록</button><span className={styles.state}>{dirty ? "저장하지 않은 변경" : selected.visible ? selected.hasChanges ? "수정 초안 저장됨" : "게시 중" : "초안"}</span><div className={styles.actions}><button aria-pressed={preview} onClick={() => setPreview(p => !p)}>{preview ? "편집으로 돌아가기" : "미리보기"}</button><button disabled={busy || uploads > 0} onClick={() => void save("save")}>초안 저장</button><button className={styles.primary} disabled={busy || uploads > 0} onClick={() => void save("publish")}>{busy ? "처리 중…" : "게시하기"}</button></div></div>
   {error && <p role="alert" className={styles.error}>{error}</p>}{message && <p role="status" className={styles.success}>{message}</p>}
-  {preview ? <div className={styles.preview}><p className={styles.previewNote}>미리보기 · 아직 게시되지 않은 변경 내용도 표시됩니다.</p>{post.shot ? <UpdateArticleView post={post}/> : <p>표지 사진을 올리면 실제 화면으로 미리 볼 수 있습니다.</p>}</div> : <fieldset className={styles.editorFields} disabled={busy || uploads > 0}>
+  {preview ? <div className={styles.preview}><p className={styles.previewNote}>미리보기 · 아직 게시되지 않은 변경 내용도 표시됩니다.</p><label>미리보기 언어 <select value={previewLocale} onChange={e => setPreviewLocale(e.target.value as SiteLocale)}><option value="ko">한국어</option><option value="en">English</option><option value="ja">日本語</option></select></label>{post.shot ? previewPost ? <UpdateArticleView post={previewPost} locale={previewLocale}/> : <p>편집 화면에서 번역을 준비하면 이 언어로 미리 볼 수 있습니다.</p> : <p>표지 사진을 올리면 실제 화면으로 미리 볼 수 있습니다.</p>}</div> : <fieldset className={styles.editorFields} disabled={busy || uploads > 0}>
+   <section className={styles.panel}><h2>영어·일본어 번역</h2><p>게시하면 한국어 원문과 영어·일본어 번역이 함께 공개됩니다. 원문을 수정하면 바뀐 문장을 다시 번역합니다.</p><button type="button" onClick={() => void save("translate")}>번역 준비 · 초안 저장</button><p>영어 {missingUpdateTexts(post, "en").length ? "번역 필요" : "준비됨"} · 일본어 {missingUpdateTexts(post, "ja").length ? "번역 필요" : "준비됨"}</p><details><summary>번역 확인·수정</summary><label>수정할 언어 <select value={editLocale} onChange={e => setEditLocale(e.target.value as "en" | "ja")}><option value="en">English</option><option value="ja">日本語</option></select></label>{updateSourceTexts(post).map(source => <Field key={`${editLocale}:${source}`} label={source} multiline value={post.translations?.[editLocale]?.[source] ?? ""} onChange={value => patch({ translations: { en: { ...post.translations?.en }, ja: { ...post.translations?.ja }, [editLocale]: { ...post.translations?.[editLocale], [source]: value } } })}/>)}</details></section>
    <div className={styles.editorGrid}><div>
     <section className={styles.panel}><h2>기본 정보</h2><Field label="제목" value={post.title} onChange={title => patch({ title })}/><Field label="짧은 소개" multiline value={post.summary} onChange={summary => patch({ summary })}/><div className={styles.twoColumns}><Field label="게시 날짜" type="date" value={post.date} onChange={date => patch({ date })}/><label className={styles.field}><span>분류</span><select value={post.kind} onChange={e => patch({ kind: e.target.value as UpdateContent["kind"] })}>{["새 기능", "개선", "오류 수정"].map(k => <option key={k}>{k}</option>)}</select></label></div><Field label="주제 (예: 커뮤니티 템플릿)" value={post.topic} onChange={topic => patch({ topic })}/><details><summary>글 주소 · 읽기 시간</summary><Field label="글 주소 /updates/" disabled={Boolean(selected.firstPublishedAt)} value={post.slug} onChange={slug => patch({ slug })}/><Field label="읽기 시간 (분)" type="number" value={String(post.readingMinutes)} onChange={n => patch({ readingMinutes: Math.max(1, Math.min(60, Number(n))) })}/></details></section>
     <section className={styles.panel}><h2>표지</h2><Field label="표지 문구 (줄바꿈 가능)" multiline value={post.cover} onChange={cover => patch({ cover })}/><PhotoEditor shot={post.shot} onChange={shot => patch({ shot })} onBusy={onUpload}/></section>

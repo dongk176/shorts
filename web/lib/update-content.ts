@@ -15,6 +15,7 @@ export const blockSchema = z.discriminatedUnion("type", [
  z.object({ type: z.literal("youtube-guide") }),
 ]);
 export type UpdateBlock = z.infer<typeof blockSchema>;
+const translationDictionary = z.record(z.string().max(5000), z.string().max(15000)).refine(value => Object.keys(value).length <= 2000);
 export const updateDraftSchema = z.object({
  slug: z.string().min(1).max(100).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/), date,
  kind: z.enum(["새 기능", "개선", "오류 수정"]), topic: z.string().max(100), title: z.string().max(160), summary: z.string().max(500),
@@ -22,6 +23,7 @@ export const updateDraftSchema = z.object({
  href: z.string().max(300).regex(/^\/(?!\/)[a-zA-Z0-9/?=&%_#.-]*$/),
  changes: z.array(z.string().max(5000)).max(30), steps: z.array(z.string().max(1000)).max(30), readingMinutes: z.number().int().min(1).max(60),
  shot: shotSchema.optional(), blocks: z.array(blockSchema).max(40).optional(),
+ translations: z.object({ en: translationDictionary, ja: translationDictionary }).optional(),
 });
 export type UpdateContent = z.infer<typeof updateDraftSchema>;
 export function publicationIssues(post: UpdateContent, today = new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10)) {

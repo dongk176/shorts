@@ -5,17 +5,21 @@ import { RECENT_UPDATES_TAG } from "./recent-updates";
 import { getDb } from "@/lib/db";
 import { HttpError } from "@/lib/http";
 import { updateAssetIds, updateDraftSchema, publicationIssues, type AdminUpdate, type UpdateContent } from "./update-content";
-export const publishedUpdates = cache(async (): Promise<UpdateContent[]> => {
+import type { SiteLocale } from "./i18n/config";
+import { localizeUpdate } from "./update-localization";
+import { translateUpdate } from "./update-translation-server";
+export const publishedUpdates = cache(async (locale: SiteLocale = "ko"): Promise<UpdateContent[]> => {
  const rows = await getDb()`select published from shorts_mvp.update_posts where visible = true and published is not null order by published->>'date' desc, sort_order asc, id asc`;
- return rows.map(row => updateDraftSchema.parse(row.published));
+ return rows.map(row => localizeUpdate(updateDraftSchema.parse(row.published), locale)).filter((post): post is UpdateContent => post !== null);
 });
 export async function listAdminUpdates(): Promise<AdminUpdate[]> {
  const rows = await getDb()`select id, draft, version, visible, first_published_at, updated_at, (published is null or draft <> published) as has_changes from shorts_mvp.update_posts order by draft->>'date' desc, sort_order asc, id asc`;
  return rows.map(row => ({ id: row.id, draft: updateDraftSchema.parse(row.draft), version: row.version, visible: row.visible, firstPublishedAt: row.firstPublishedAt?.toISOString() ?? null, updatedAt: row.updatedAt.toISOString(), hasChanges: row.hasChanges }));
 }
-export async function saveUpdate(input: { id: string; version: number; action: "save" | "publish" | "hide"; draft: UpdateContent }, adminId: string) {
- const post = updateDraftSchema.parse(input.draft);
+export async function saveUpdate(input: { id: string; version: number; action: "save" | "publish" | "hide" | "translate"; draft: UpdateContent }, adminId: string) {
+ let post = updateDraftSchema.parse(input.draft);
  if (input.action === "publish") { const issues = publicationIssues(post); if (issues.length) throw new HttpError(400, issues.join(" ")); }
+ if (input.action === "publish" || input.action === "translate") post = await translateUpdate(post);
  const sql = getDb();
  await sql.begin(async tx => {
   const [existing] = await tx`select version, draft, first_published_at from shorts_mvp.update_posts where id=${input.id}::uuid for update`;
