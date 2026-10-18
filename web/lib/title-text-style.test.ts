@@ -4,6 +4,7 @@ import {
   applyTitleTextStyle,
   codePointOffset,
   defaultTemplateTitleTextStyles,
+  materializeTitleTextColors,
   ensureTitleTextBackground,
   rebaseTitleTextStyles,
 } from "./title-text-style";
@@ -163,4 +164,46 @@ describe("title text selection styles", () => {
       title = nextTitle;
     }
   });
+});
+
+
+describe("saved title preview colors", () => {
+  it("preserves a yellow brand accent instead of allowing the worker's cyan default", () => {
+    expect(materializeTitleTextColors("첫 줄\n둘째 줄", ["첫 줄", "둘째 줄"], [], "#FFFFFF", "#FFD84D")).toEqual([
+      { start: 0, end: 3, color: "#FFFFFF" },
+      { start: 4, end: 8, color: "#FFD84D" },
+    ]);
+  });
+
+  it("retains selected colors and backgrounds and does not mutate existing styles", () => {
+    const styles = [{ start: 0, end: 1, color: "#FF0000" }, { start: 3, end: 4, backgroundColor: "#111111" }];
+    const original = structuredClone(styles);
+    expect(materializeTitleTextColors("AB\nCD", ["AB", "CD"], styles, "#FFFFFF", "#FFD84D")).toEqual([
+      { start: 0, end: 1, color: "#FF0000" },
+      { start: 1, end: 2, color: "#FFFFFF" },
+      { start: 3, end: 4, color: "#FFD84D", backgroundColor: "#111111" },
+      { start: 4, end: 5, color: "#FFD84D" },
+    ]);
+    expect(styles).toEqual(original);
+  });
+
+  it("uses compiled line breaks and Unicode character offsets", () => {
+    expect(materializeTitleTextColors("A😀 BC", ["A😀", "BC"], [], "#FFFFFF", "#FFD84D")).toEqual([
+      { start: 0, end: 2, color: "#FFFFFF" },
+      { start: 3, end: 5, color: "#FFD84D" },
+    ]);
+  });
+
+  it("is idempotent when a saved document is reopened and saved again", () => {
+    const styles = materializeTitleTextColors("AB\nCD", ["AB", "CD"], [], "#FFFFFF", "#FFD84D");
+    expect(materializeTitleTextColors("AB\nCD", ["AB", "CD"], styles, "#FFFFFF", "#FFD84D")).toEqual(styles);
+  });
+});
+
+
+it("keeps the preview's first matching range for overlapping stored styles", () => {
+  expect(materializeTitleTextColors("AB", ["AB"], [
+    { start: 0, end: 2, color: "#FF0000" },
+    { start: 1, end: 2, color: "#0000FF" },
+  ], "#FFFFFF", "#FFD84D")).toEqual([{ start: 0, end: 2, color: "#FF0000" }]);
 });

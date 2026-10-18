@@ -167,6 +167,7 @@ import {
   applyTitleTextStyle,
   codePointOffset,
   defaultTemplateTitleTextStyles,
+  materializeTitleTextColors,
   rebaseTitleTextStyles,
 } from "@/lib/title-text-style";
 import { brandedTitleLinePresentation, wrapPreviewTitle } from "@/lib/title-preview";
@@ -10197,6 +10198,24 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
             } else {
               document.renderSpec = createEditorRenderSpec(document);
             }
+          }
+          if (presetBrandColor && !activeCustomTemplate) {
+            const isV4 = document.version === 3
+              && document.renderSpec.version === EDITOR_RENDER_SPEC_V4_VERSION;
+            const overlayTitle = !isV4 && (
+              captionTemplatePreviewSnapshot
+                ? captionTemplatePreviewSnapshot.layout.title.y > 0
+                : !commentNeedsVerticalFit && originalAspectRatio === "9:16"
+            );
+            document.title.textStyles = materializeTitleTextColors(
+              document.title.text,
+              document.version === 3
+                ? document.renderSpec.title.lines
+                : wrapPreviewTitle(document.title.text),
+              document.title.textStyles,
+              overlayTitle && template.id !== "paper" ? presetBrandColor : template.primary,
+              presetBrandColor,
+            );
           }
           return document;
         };

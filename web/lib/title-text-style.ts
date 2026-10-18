@@ -239,3 +239,22 @@ export function defaultTemplateTitleTextStyles(
     ...(brandColor ? { color: contrastingTitleTextColor(brandColor) } : {}),
   }];
 }
+
+/** Freeze preview defaults into the document so older workers cannot substitute their palette. */
+export function materializeTitleTextColors(
+  title: string,
+  lines: string[],
+  styles: TitleTextStyle[],
+  primaryColor: string,
+  accentColor: string,
+): TitleTextStyle[] {
+  // The preview chooses the first matching range when stored styles overlap.
+  const characters = expandTitleTextStyles([...styles].reverse(), Array.from(title).length);
+  titleLineCharacterIndices(title, lines).forEach((indices, lineIndex) => {
+    indices.forEach((index) => {
+      if (index === null || !characters[index] || characters[index].color) return;
+      characters[index].color = lineIndex > 0 ? accentColor : primaryColor;
+    });
+  });
+  return compactTitleTextStyles(characters);
+}
