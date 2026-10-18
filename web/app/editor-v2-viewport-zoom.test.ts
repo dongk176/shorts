@@ -100,10 +100,10 @@ describe("editor v2 viewport zoom", () => {
       "const editorTimelineScrollAreaRef = useRef<HTMLDivElement>(null)",
     );
     expect(editorSource).toContain(
-      "scrollArea.scrollLeft + scrollArea.clientWidth / 2",
+      "scrollArea.scrollLeft + viewportX",
     );
     expect(editorSource).toContain(
-      "center * scrollArea.scrollWidth - scrollArea.clientWidth / 2",
+      "center.ratio * scrollArea.scrollWidth - center.viewportX",
     );
     expect(editorSource).toContain("onChange={updateEditorTimelineZoom}");
     expect(editorSource).toContain(

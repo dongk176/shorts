@@ -16,7 +16,7 @@ import { browserLocalizedHref } from "@/lib/i18n/routing";
 import reviewStyles from "./customer-reviews.module.css";
 import { customerReviews, customerReviewDisplayName } from "@/lib/i18n/customer-reviews";
 import { sourceLanguages, type SourceLanguage } from "@/lib/language-context";
-import { Fragment, FormEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, FormEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useId } from "react";
 import type {
   ChangeEvent,
   CSSProperties,
@@ -35,6 +35,12 @@ import { BrandColorPicker } from "@/components/brand-color-picker";
 import { ContentLanguageSelect } from "@/components/content-language-select";
 import { CustomTemplateCanvasPreview } from "@/components/custom-template-canvas-preview";
 import { CustomTemplateTitlePreview } from "@/components/custom-template-title-preview";
+import { useEditorTimelineGestures } from "@/lib/use-editor-timeline-gestures";
+import type { TimelineZoomAnchor } from "@/lib/editor-timeline-gestures";
+import { EditorTimelineRuler } from "@/components/editor-timeline-ruler";
+import { formatEditorTimelineTime } from "@/lib/editor-timeline-ruler";
+import { EditorTimelineResizer } from "@/components/editor-timeline-resizer";
+import { EditorSubtitleContent } from "@/components/editor-subtitle-content";
 import { DesktopEditorGuide } from "@/components/desktop-editor-guide";
 import { EditorApplyFailureNotice } from "@/components/editor-apply-failure-notice";
 import { EditorFontPicker } from "@/components/editor-font-picker";
@@ -706,8 +712,7 @@ function formatPreciseTimestamp(seconds: number) {
 }
 
 function formatTimelineOffset(seconds: number) {
-  const prefix = seconds < -0.05 ? "−" : seconds > 0.05 ? "+" : "";
-  return `${prefix}${formatPreciseTimestamp(Math.abs(seconds))}`;
+  return formatEditorTimelineTime(seconds);
 }
 
 function isProjectExpired(job: VideoJob) {
@@ -3407,6 +3412,7 @@ const EDITOR_TEXT_OVERLAY_LIMIT = 20;
 type EditorOverlaySelection = EditorOverlayOrderItem | null;
 type EditorFontApplySource = "title" | "channel" | `text:${string}`;
 type EditorSidebarTool =
+  | "layout"
   | "title"
   | "text"
   | "subtitle"
@@ -3492,6 +3498,7 @@ const EDITOR_SIDEBAR_TOOLS = [
   { id: "title", label: "제목" },
   { id: "text", label: "텍스트" },
   { id: "subtitle", label: "자막" },
+  { id: "layout", label: "레이아웃" },
   { id: "comment", label: "댓글" },
   { id: "channel", label: "채널명" },
   { id: "background", label: "배경" },
@@ -4114,7 +4121,7 @@ function CommentTimelineEditor({
   </section>;
 }
 
-function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThumbnailUrl, onClose, onChanged, standalone = false, projectLabel, projectNumber, rangeEditingEnabled = false, overlayPreviewEnabled = false, editorSaveEnabled = false, editorRelease, unifiedTemplateSubtitleCanaryEnabled = false, customTemplateDesignEnabled = false, wordTimedSubtitlesAvailable = false, paidAccessBlocked = false }: { item: GeneratedShort; outputLanguage: OutputLanguage; commentOutputLanguage?: OutputLanguage; channelThumbnailUrl: string | null; onClose: () => void; onChanged: () => Promise<void>; standalone?: boolean; projectLabel?: string; projectNumber?: number; rangeEditingEnabled?: boolean; overlayPreviewEnabled?: boolean; editorSaveEnabled?: boolean; editorRelease: EditorReleaseAssignment; unifiedTemplateSubtitleCanaryEnabled?: boolean; customTemplateDesignEnabled?: boolean; wordTimedSubtitlesAvailable?: boolean; paidAccessBlocked?: boolean }) {
+export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThumbnailUrl, onClose, onChanged, standalone = false, projectLabel, projectNumber, rangeEditingEnabled = false, overlayPreviewEnabled = false, editorSaveEnabled = false, editorRelease, unifiedTemplateSubtitleCanaryEnabled = false, customTemplateDesignEnabled = false, wordTimedSubtitlesAvailable = false, paidAccessBlocked = false }: { item: GeneratedShort; outputLanguage: OutputLanguage; commentOutputLanguage?: OutputLanguage; channelThumbnailUrl: string | null; onClose: () => void; onChanged: () => Promise<void>; standalone?: boolean; projectLabel?: string; projectNumber?: number; rangeEditingEnabled?: boolean; overlayPreviewEnabled?: boolean; editorSaveEnabled?: boolean; editorRelease: EditorReleaseAssignment; unifiedTemplateSubtitleCanaryEnabled?: boolean; customTemplateDesignEnabled?: boolean; wordTimedSubtitlesAvailable?: boolean; paidAccessBlocked?: boolean }) {
   const ui = useUiText();
   const { locale: editorLocale, t } = useI18n();
   const translationUnavailable = item.subtitleTranslation?.status === "unavailable";
@@ -4449,7 +4456,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
   const editorTimelineScrollAreaRef = useRef<HTMLDivElement>(null);
   const restoreMobileTimelineFocusRef = useRef(false);
   const mobileSelectionEditButtonRef = useRef<HTMLButtonElement>(null);
-  const editorTimelineZoomCenterRef = useRef<number | null>(null);
+  const editorTimelineZoomCenterRef = useRef<TimelineZoomAnchor | null>(null);
   const activeRangeHandleRef = useRef<"start" | "end" | null>(null);
   const rangeInteractionStartClipsRef = useRef<EditorVideoClip[] | null>(null);
   const timelineScrubbingRef = useRef(false);
@@ -4643,29 +4650,34 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
   const commentRegenerationContextRef = useRef("");
   const commentRegenerationInFlightRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
-  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(
-    () => !overlayPreviewEnabled,
-  );
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(!overlayPreviewEnabled);
+  const [subtitlePanelTab, setSubtitlePanelTab] = useState<"content" | "style">("content");
   const [activeEditorSidebarTool, setActiveEditorSidebarTool] = useState<
     EditorSidebarTool
   >("title");
+  const editorControlsScrollRef = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    if (editorControlsScrollRef.current) editorControlsScrollRef.current.scrollTop = 0;
+  }, [activeEditorSidebarTool, error]);
   const [editorFontApplySuggestion, setEditorFontApplySuggestion] = useState<{
     source: EditorFontApplySource;
     fontId: EditorFontId;
   } | null>(null);
+  const editorWorkspaceRef = useRef<HTMLDivElement | null>(null);
+  const editorTimelineId = useId();
   const [editorTimelineZoom, setEditorTimelineZoom] = useState(1);
   useEffect(() => {
     if (!window.matchMedia("(max-width: 640px)").matches) return;
     setEditorTimelineZoom(EDITOR_TIMELINE_MOBILE_DEFAULT_ZOOM);
   }, []);
-  const updateEditorTimelineZoom = useCallback((nextZoom: number) => {
+  const updateEditorTimelineZoom = useCallback((nextZoom: number, anchor?: TimelineZoomAnchor) => {
     const scrollArea = editorTimelineScrollAreaRef.current;
     if (scrollArea && scrollArea.scrollWidth > 0) {
-      editorTimelineZoomCenterRef.current = (
-        scrollArea.scrollLeft + scrollArea.clientWidth / 2
-      ) / scrollArea.scrollWidth;
-    } else {
-      editorTimelineZoomCenterRef.current = 0.5;
+      const viewportX = scrollArea.clientWidth / 2;
+      editorTimelineZoomCenterRef.current = anchor ?? {
+        ratio: (scrollArea.scrollLeft + viewportX) / scrollArea.scrollWidth,
+        viewportX,
+      };
     }
     setEditorTimelineZoom(nextZoom);
   }, []);
@@ -4682,11 +4694,19 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
       0,
       Math.min(
         maximumScrollLeft,
-        center * scrollArea.scrollWidth - scrollArea.clientWidth / 2,
+        center.ratio * scrollArea.scrollWidth - center.viewportX,
       ),
     );
   }, [editorTimelineZoom]);
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
+  useEffect(() => {
+    if (!overlayPreviewEnabled) return;
+    const desktop = window.matchMedia("(min-width: 641px)");
+    const syncSidebar = () => setDesktopSidebarOpen(desktop.matches || mobileControlsOpen);
+    syncSidebar();
+    desktop.addEventListener("change", syncSidebar);
+    return () => desktop.removeEventListener("change", syncSidebar);
+  }, [overlayPreviewEnabled, mobileControlsOpen]);
   const [mobileEditorLayout, setMobileEditorLayout] = useState(false);
   const [editorGuideReady, setEditorGuideReady] = useState(false);
   useEffect(() => {
@@ -4966,6 +4986,14 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
   const toggleEditorSidebarTool = (
     tool: EditorSidebarTool,
   ) => {
+    if (rejectInvalidCaptionTextDraft()) {
+      // Keep the invalid field reachable after a resize or a collapsed sheet.
+      setActiveEditorSidebarTool("subtitle");
+      setSubtitlePanelTab("content");
+      setDesktopSidebarOpen(true);
+      if (captionEditingInSidebar) setMobileControlsOpen(true);
+      return;
+    }
     const openTextLibrary = tool === "text" && isEditorTextSelection(selectedOverlay);
     const leaveVideoSelection = selectedOverlay === "video";
     if (openTextLibrary || leaveVideoSelection) {
@@ -4977,7 +5005,10 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
         && mobileControlsOpen
         && !openTextLibrary
         && !leaveVideoSelection;
-      if (tool === "channel" && overlayLayoutRef.current.visible.channel) {
+      if (tool === "layout") {
+        setInlineEditingOverlay(null);
+        setSelectedOverlay("video");
+      } else if (tool === "channel" && overlayLayoutRef.current.visible.channel) {
         setInlineEditingOverlay(null);
         setSelectedOverlay("channel");
       } else if (isEditorTextSelection(selectedOverlay) && tool !== "text") {
@@ -4989,9 +5020,16 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
       setMobileControlsOpen(!toolAlreadyOpen);
       return;
     }
+    if (tool === "layout") {
+      setInlineEditingOverlay(null);
+      setSelectedOverlay("video");
+      setActiveEditorSidebarTool(tool);
+      setDesktopSidebarOpen(true);
+      return;
+    }
     if (tool === "text") {
       if (activeEditorSidebarTool === tool && !openTextLibrary && !leaveVideoSelection) {
-        setDesktopSidebarOpen((current) => !current);
+        setDesktopSidebarOpen(true);
         return;
       }
       setActiveEditorSidebarTool(tool);
@@ -5014,7 +5052,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
       setSelectedOverlay("channel");
     }
     if (activeEditorSidebarTool === tool && !leaveVideoSelection) {
-      setDesktopSidebarOpen((current) => !current);
+      setDesktopSidebarOpen(true);
       return;
     }
     setActiveEditorSidebarTool(tool);
@@ -7087,6 +7125,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
     setActiveEditorSidebarTool("subtitle");
     setDesktopSidebarOpen(true);
     setCaptionEditingInSidebar(inSidebar);
+    if (inSidebar) setSubtitlePanelTab("content");
     setCaptionTextDraft({
       sourceCueIndex,
       initialText: target.currentText,
@@ -7550,7 +7589,6 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
       RANGE_EDIT_MIN_SECONDS,
     );
     if (!result) return;
-    videoRef.current?.pause();
     recordEditorVideoStep(clipsBeforeDelete, result.clips);
     videoClipsRef.current = result.clips;
     setVideoClips(result.clips);
@@ -7561,7 +7599,6 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
       editTimeline.timelineStartSeconds + result.clips[result.clips.length - 1].sourceEndSeconds,
     );
     setSelectedVideoClipId(result.selectedClipId);
-    setVideoRippleRevision((current) => current + 1);
     const nextDuration = editorVideoDuration(result.clips);
     seekEditorVideoSequence(Math.min(
       result.removedOutputStartSeconds,
@@ -7943,6 +7980,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
   useEffect(() => {
     if (!overlayPreviewEnabled) return;
     const handleEditorDraftShortcut = (event: KeyboardEvent) => {
+      if (applyConfirmationOpen || saving) return;
       if (
         event.repeat
         || event.altKey
@@ -7966,10 +8004,12 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
       true,
     );
   }, [
+    applyConfirmationOpen,
     finishPendingEditorInteractionsIncludingCaption,
     overlayPreviewEnabled,
     rejectInvalidCaptionTextDraft,
     saveEditorDraftNow,
+    saving,
   ]);
 
   const closeEditorAfterSavingCaptionDraft = useCallback(() => {
@@ -8923,7 +8963,9 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
     if (!overlayPreviewEnabled) return;
     const handleOverlayKeyboard = (event: KeyboardEvent) => {
       if (
-        commentRegenerationConfirmationOpen
+        applyConfirmationOpen
+        || saving
+        || commentRegenerationConfirmationOpen
         || commentRegenerationComparison
         || editorFontApplySuggestion
       ) return;
@@ -9007,6 +9049,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
     window.addEventListener("keydown", handleOverlayKeyboard);
     return () => window.removeEventListener("keydown", handleOverlayKeyboard);
   }, [
+    applyConfirmationOpen,
     clearEditorOverlaySelection,
     captionTextDraft,
     commentRegenerationComparison,
@@ -9023,6 +9066,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
     redoEditorEdit,
     selectedOverlay,
     selectedVideoClipId,
+    saving,
     undoEditorEdit,
   ]);
 
@@ -10009,7 +10053,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
   useEffect(() => {
     if (!standalone) return;
     const handleDesktopPlaybackShortcut = (event: KeyboardEvent) => {
-      if (commentRegenerationConfirmationOpen || editorFontApplySuggestion) return;
+      if (applyConfirmationOpen || saving || commentRegenerationConfirmationOpen || editorFontApplySuggestion) return;
       if (event.code !== "Space" || event.repeat || !window.matchMedia("(min-width: 921px)").matches) return;
       const target = event.target;
       if (
@@ -10024,13 +10068,16 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
     window.addEventListener("keydown", handleDesktopPlaybackShortcut);
     return () => window.removeEventListener("keydown", handleDesktopPlaybackShortcut);
   }, [
+    applyConfirmationOpen,
     commentRegenerationConfirmationOpen,
     editorFontApplySuggestion,
+    saving,
     standalone,
     togglePreviewPlayback,
   ]);
 
   const save = async () => {
+    if (saving) return;
     if (backgroundAssetBusy) {
       setError("배경 이미지 확인이 끝난 뒤 다시 적용해 주세요.");
       return;
@@ -10333,7 +10380,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
       }
       setError(userFacingErrorMessage(cause, "저장하지 못했습니다."));
     }
-    finally { setSaving(false); }
+    finally { setSaving(false); setApplyConfirmationOpen(false); }
   };
 
   const commentTimeline = editorCommentOverlayEnabled
@@ -10423,6 +10470,14 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
   const editorTimelineZoomStyle: CSSProperties | undefined = overlayPreviewEnabled
     ? { width: `${editorTimelineZoom * 100}%` }
     : undefined;
+  useEditorTimelineGestures(
+    editorTimelineScrollAreaRef,
+    overlayPreviewEnabled ? editTimeline ? "video" : (commentTimeline || textTimelines) ? "overlay" : null : null,
+    editorTimelineZoom,
+    updateEditorTimelineZoom,
+    EDITOR_TIMELINE_ZOOM_MIN,
+    EDITOR_TIMELINE_ZOOM_MAX,
+  );
   const selectedTimelineComment = selectedTimelineCommentId
     ? comments.find((comment) => comment.id === selectedTimelineCommentId) || null
     : null;
@@ -10438,7 +10493,6 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
         saving={saving}
         onCancel={() => setApplyConfirmationOpen(false)}
         onConfirm={() => {
-          setApplyConfirmationOpen(false);
           void save();
         }}
       />
@@ -10510,6 +10564,16 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
       />
       {standalone && <header className="editor-topbar">
         <div className="editor-topbar-inner">
+          {overlayPreviewEnabled && <button
+            type="button"
+            className="editor-studio-back"
+            aria-label={ui("프로젝트로 돌아가기")}
+            onPointerDown={preserveInvalidCaptionTextFocus}
+            onClick={closeEditorAfterSavingCaptionDraft}
+          >
+            <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m11.5 5-5 5 5 5M7 10h9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            <span>Easy<span className="editor-studio-brand-accent">Cut</span></span>
+          </button>}
           <div className="editor-header-project">
             <span className="editor-header-project-number">{ui(projectNumber ? `프로젝트 #${projectNumber}` : "영상 편집")}</span>
             <div className="editor-header-title-row">
@@ -10517,7 +10581,53 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
             </div>
             <SubtitleTranslationNotice outcome={item.subtitleTranslation} locale={editorLocale} />
           </div>
+        {standalone && overlayPreviewEnabled && <div
+          className="editor-history-controls"
+          aria-label={ui("편집 기록")}
+          data-editor-guide="editor-history"
+        >
+          <button
+            type="button"
+            aria-label={ui("되돌리기")}
+            title={ui("되돌리기 (Ctrl/⌘ + Z)")}
+            disabled={!canUndoEditorEdit}
+            onPointerDown={(event) => {
+              if (event.button !== 0) return;
+              event.preventDefault();
+              if (!finishPendingEditorInteractionsForHistory()) return;
+              undoEditorEdit();
+            }}
+            onClick={(event) => {
+              if (event.detail !== 0) return;
+              if (!finishPendingEditorInteractionsForHistory()) return;
+              undoEditorEdit();
+            }}
+          >
+            <span aria-hidden="true">↶</span>
+            {ui("되돌리기")}</button>
+          <button
+            type="button"
+            aria-label={ui("앞으로 가기")}
+            title={ui("앞으로 가기 (Ctrl/⌘ + Shift + Z)")}
+            disabled={!canRedoEditorEdit}
+            onPointerDown={(event) => {
+              if (event.button !== 0) return;
+              event.preventDefault();
+              if (!finishPendingEditorInteractionsForHistory()) return;
+              redoEditorEdit();
+            }}
+            onClick={(event) => {
+              if (event.detail !== 0) return;
+              if (!finishPendingEditorInteractionsForHistory()) return;
+              redoEditorEdit();
+            }}
+          >
+            <span aria-hidden="true">↷</span>
+            {ui("앞으로 가기")}</button>
+        </div>}
           <div className="editor-header-actions">
+            {overlayPreviewEnabled && <button type="button" className="editor-studio-template-button" onClick={() => toggleEditorSidebarTool("template")}>
+              <EditorSidebarSectionIcon section="template" />{ui("템플릿")}</button>}
             {overlayPreviewEnabled && <div
               className="editor-mobile-history-actions"
               aria-label={ui("편집 기록")}
@@ -10585,7 +10695,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
           </div>
         </div>
       </header>}
-      <div className={standalone
+      <div ref={editorWorkspaceRef} className={standalone
         ? `editor-page-body${mobileControlsOpen ? " has-mobile-controls-open" : ""}${overlayPreviewEnabled ? " has-editor-tool-sidebar" : ""}${desktopSidebarOpen ? "" : overlayPreviewEnabled ? " is-tool-panel-closed" : " is-sidebar-collapsed"}`
         : `editor-dialog-body grid max-h-[95vh] w-full max-w-6xl overflow-y-auto rounded-t-2xl border border-white/10 bg-[#151517] sm:rounded-2xl${overlayPreviewEnabled ? " has-editor-tool-sidebar" : ""}${desktopSidebarOpen ? "" : overlayPreviewEnabled ? " is-tool-panel-closed" : " is-sidebar-collapsed"}`}
         aria-busy={!paidAccessBlocked && !editorGuideReady}
@@ -10602,50 +10712,6 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
             <p>{ui("영상과 타임라인을 불러오는 중입니다.")}</p>
           </div>
         </section>}
-        {standalone && overlayPreviewEnabled && <div
-          className="editor-history-controls"
-          aria-label={ui("편집 기록")}
-          data-editor-guide="editor-history"
-        >
-          <button
-            type="button"
-            aria-label={ui("되돌리기")}
-            title={ui("되돌리기 (Ctrl/⌘ + Z)")}
-            disabled={!canUndoEditorEdit}
-            onPointerDown={(event) => {
-              if (event.button !== 0) return;
-              event.preventDefault();
-              if (!finishPendingEditorInteractionsForHistory()) return;
-              undoEditorEdit();
-            }}
-            onClick={(event) => {
-              if (event.detail !== 0) return;
-              if (!finishPendingEditorInteractionsForHistory()) return;
-              undoEditorEdit();
-            }}
-          >
-            <span aria-hidden="true">↶</span>
-            {ui("되돌리기")}</button>
-          <button
-            type="button"
-            aria-label={ui("앞으로 가기")}
-            title={ui("앞으로 가기 (Ctrl/⌘ + Shift + Z)")}
-            disabled={!canRedoEditorEdit}
-            onPointerDown={(event) => {
-              if (event.button !== 0) return;
-              event.preventDefault();
-              if (!finishPendingEditorInteractionsForHistory()) return;
-              redoEditorEdit();
-            }}
-            onClick={(event) => {
-              if (event.detail !== 0) return;
-              if (!finishPendingEditorInteractionsForHistory()) return;
-              redoEditorEdit();
-            }}
-          >
-            <span aria-hidden="true">↷</span>
-            {ui("앞으로 가기")}</button>
-        </div>}
         <button
           type="button"
           className={`editor-sidebar-rail-toggle${overlayPreviewEnabled ? " editor-overlay-panel-toggle" : ""}`}
@@ -10666,6 +10732,10 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
             : undefined}
         >
         {error && <p role="alert" className="editor-apply-error">{ui(error)}</p>}
+        {overlayPreviewEnabled && <div className="editor-studio-canvas-heading">
+          <span>{ui("미리보기")}<span className="editor-studio-live-dot" /></span>
+          <span>9:16 <i /> 1080 × 1920</span>
+        </div>}
         <div
           data-editor-preview-canvas-wrap=""
           className={standalone ? "editor-preview-canvas-wrap" : "sticky top-0 mx-auto w-full max-w-[320px]"}
@@ -11488,7 +11558,6 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
             {ui("구간 삭제")}</button>}
           <button
             type="button"
-            data-editor-guide="video-split"
             disabled={!canSplitCurrentVideoClip}
             onClick={splitCurrentEditorVideo}
           >
@@ -11501,6 +11570,9 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
           ? `editor-controls-pane${mobileControlsOpen ? " is-mobile-open" : ""}${overlayPreviewEnabled ? " has-editor-tool-rail" : ""}`
           : `editor-dialog-controls${overlayPreviewEnabled ? " has-editor-tool-rail" : ""}`}
         >
+          {overlayPreviewEnabled && <div className="editor-studio-inspector-heading">
+            <h2>{ui("영상 편집")}</h2>
+          </div>}
           {overlayPreviewEnabled && <nav
             className={`editor-tool-rail${selectedMobileLayoutTool ? " has-mobile-selection" : ""}`}
             aria-label={ui("편집 도구")}
@@ -11614,7 +11686,26 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
             >{ui("완료")}</button>}
             {!standalone && <button onClick={onClose} className="editor-dialog-close-button rounded-lg px-3 py-2 text-sm text-white hover:bg-white/10">{ui("닫기")}</button>}
           </div>
-          <div id="editor-controls-scroll" className={`editor-controls-scroll${overlayPreviewEnabled && selectedOverlay === "video" ? " is-video-selected" : ""}`}>
+          <div ref={editorControlsScrollRef} id="editor-controls-scroll" className={`editor-controls-scroll${overlayPreviewEnabled && selectedOverlay === "video" ? " is-video-selected" : ""}`}>
+          {error && <p role="alert" className="editor-studio-error mb-4 text-sm font-semibold text-white">{error}</p>}
+          {overlayPreviewEnabled && <section className={`editor-sidebar-tool-panel editor-studio-layout-panel${(activeEditorSidebarTool === "layout" || selectedOverlay === "video") ? " is-active" : ""}`} aria-label={ui("영상 레이아웃 설정")}>
+            <header className="editor-tool-panel-header"><strong>{ui("레이아웃")}</strong><span className="editor-studio-small-label">{ui("영상 배치")}</span></header>
+            <p className="editor-studio-help">{ui("영상의 위치와 크기를 조절하세요. 미리보기에서도 직접 드래그할 수 있습니다.")}</p>
+            <div className="editor-studio-info-row"><span>{ui("영상 영역 비율")}</span><strong>{item.videoAspectRatio || "1:1"}</strong></div>
+            <label className="editor-studio-field">
+              <span>{ui("영상 크기")}<output>{Math.round(videoScale * 100)}%</output></span>
+              <input type="range" min={EDITOR_VIDEO_MIN_SCALE} max={EDITOR_VIDEO_MAX_SCALE} step={0.01} value={videoScale} aria-label={ui("영상 크기 조절")}
+                onPointerDown={beginEditorOverlayHistoryInteraction} onPointerUp={finishEditorOverlayHistoryInteraction} onPointerCancel={finishEditorOverlayHistoryInteraction}
+                onKeyDown={beginEditorOverlayHistoryInteraction} onKeyUp={finishEditorOverlayHistoryInteraction} onBlur={finishEditorOverlayHistoryInteraction}
+                onChange={(event) => updateEditorOverlayLayout((current) => ({ ...current, scales: { ...current.scales, video: Number(event.target.value) } }))} />
+            </label>
+            <div className="editor-studio-button-grid">
+              <button type="button" onClick={() => commitEditorOverlayLayoutChange((current) => ({ ...current, offsets: { ...current.offsets, video: { x: 0, y: 0 } } }))}>{ui("위치 초기화")}</button>
+              <button type="button" onClick={() => commitEditorOverlayLayoutChange((current) => ({ ...current, scales: { ...current.scales, video: 1 } }))}>{ui("크기 초기화")}</button>
+            </div>
+            <div className="editor-studio-tip"><strong>{ui("화면에서 바로 편집")}</strong><p>{ui("영상을 드래그해 이동하고, 모서리를 잡아 원하는 크기로 맞춰 보세요.")}</p></div>
+          </section>}
+
           {overlayPreviewEnabled && <section
             className={`editor-sidebar-tool-panel editor-v2-text-tool-panel${activeEditorSidebarTool === "text" ? " is-active" : ""}`}
             aria-label={ui("텍스트 설정")}
@@ -11696,7 +11787,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                   {ui(subtitlesEnabled ? "켜짐" : "꺼짐")}
                 </button>
               </header>
-              {subtitlesEnabled && captionTextEditingEnabled && <div className="editor-caption-text-entry">
+              {!editableCaptionSourceSpec && subtitlesEnabled && captionTextEditingEnabled && <div className="editor-caption-text-entry">
                 {activeCaptionTextTarget || (!editableCaptionSourceSpec && activeSubtitle)
                   ? <label>
                     <span>{ui("현재 자막")}</span>
@@ -11732,6 +11823,30 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                   </label>
                   : <p>{ui("자막이 나오는 구간에서 일시정지해 주세요.")}</p>}
               </div>}
+              {editableCaptionSourceSpec && captionTextEditingEnabled && <div className="editor-studio-subtabs" role="tablist" aria-label={ui("자막 설정 종류")}>
+                <button type="button" role="tab" id="editor-subtitle-content-tab" aria-controls="editor-subtitle-content" aria-selected={subtitlePanelTab === "content"} onClick={() => setSubtitlePanelTab("content")}>{ui("텍스트 수정")}</button>
+                <button type="button" role="tab" id="editor-subtitle-style-tab" aria-controls="editor-subtitle-style" aria-selected={subtitlePanelTab === "style"} onClick={() => { if (hasInvalidCaptionTextDraft) return; finishPendingEditorInteractionsIncludingCaption(); setSubtitlePanelTab("style"); }}>{ui("스타일")}</button>
+              </div>}
+              {editableCaptionSourceSpec && captionTextEditingEnabled && subtitlePanelTab === "content" && <div id="editor-subtitle-content" role="tabpanel" aria-labelledby="editor-subtitle-content-tab">
+                <EditorSubtitleContent
+                  sourceSpec={editableCaptionSourceSpec}
+                  previewSpec={captionTemplatePreviewSpec}
+                  cueEdits={subtitleLayout.cueEdits || []}
+                  draft={captionEditingInSidebar ? captionTextDraft : null}
+                  enabled={subtitlesEnabled}
+                  onSelect={(cueIndex, seconds) => { if (hasInvalidCaptionTextDraft) return; finishPendingEditorInteractionsIncludingCaption(); seekEditorVideoSequence(seconds); beginEditorCaptionTextEdit(cueIndex, true); }}
+                  onChange={(text) => {
+                    if (hasInvalidCaptionTextDraft && text.trim()) setError(null);
+                    setCaptionTextDraft((current) => current ? { ...current, text } : null);
+                  }}
+                  onCommit={commitEditorCaptionTextEdit}
+                  onCancel={() => {
+                    if (hasInvalidCaptionTextDraft) setError(null);
+                    cancelEditorCaptionTextEdit();
+                  }}
+                />
+              </div>}
+              <div id="editor-subtitle-style" role="tabpanel" aria-labelledby="editor-subtitle-style-tab" hidden={Boolean(editableCaptionSourceSpec) && captionTextEditingEnabled && subtitlePanelTab !== "style"}>
               {subtitlesEnabled
                 ? editableCaptionSourceSpec
                   ? <>
@@ -11948,6 +12063,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                         : "미리보기와 실제 렌더 영상에서 자막이 모두 숨겨집니다. 다시 켜면 기존 전사 자막이 그대로 복원됩니다.")}
                   </p>
                 </div>}
+              </div>
             </section>}
           {overlayPreviewEnabled && <section
             className={`editor-sidebar-tool-panel${!selectedTextOverlay && activeEditorSidebarTool === "channel" ? " is-active" : ""}`}
@@ -12408,7 +12524,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
                     positionedWordsV4Enabled={positionedWordsV4Enabled}
                   />
                   <span className="mt-2 block truncate text-center text-xs font-semibold">{availableCustomTemplate.name}</span>
-                  <span className="mt-1 block text-center text-[10px] font-bold text-white/80">{ui("적용 중인 내 템플릿")}</span>
+                  <span className="mt-1 block text-center text-[10px] font-bold text-white/80">{ui(activeCustomTemplate?.id === availableCustomTemplate.id ? "적용 중인 내 템플릿" : "내 템플릿 적용")}</span>
                 </button>}
                 {templates.map((value) => {
                   const selected = !activeCustomTemplate && templateId === value.id;
@@ -12467,12 +12583,23 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
           </div>
         </section>
         {editTimeline && <section
+          id={editorTimelineId}
           className="editor-range-panel editor-workspace-timeline"
           aria-label={ui("영상 및 댓글 구간 선택")}
           data-editor-guide={overlayPreviewEnabled ? "editor-timeline" : undefined}
         >
+          {standalone && overlayPreviewEnabled && <EditorTimelineResizer workspaceRef={editorWorkspaceRef} timelineId={editorTimelineId} />}
+          {overlayPreviewEnabled && <div className="editor-studio-timeline-toolbar">
+            <div className="editor-studio-timeline-tools">
+              <strong>{ui("타임라인")}</strong><span className="editor-studio-divider" />
+              {videoCuttingEnabled && <><button type="button" data-editor-guide="video-split" disabled={!canSplitCurrentVideoClip} onClick={splitCurrentEditorVideo} title={ui("재생 위치에서 영상 분할")}><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="5" cy="5" r="2" stroke="currentColor" strokeWidth="1.5"/><circle cx="5" cy="15" r="2" stroke="currentColor" strokeWidth="1.5"/><path d="m7 6 9 10M7 14l9-10" stroke="currentColor" strokeWidth="1.5"/></svg>{ui("분할")}</button>
+              <button type="button" disabled={!selectedVideoClipId || renderVideoClips.length < 2} onClick={deleteSelectedEditorVideoClip}>{ui("구간 삭제")}</button></>}
+              <button type="button" onClick={() => setResetConfirmationOpen(true)} title={ui("영상 구간을 처음 상태로 복원")}>{ui("구간 초기화")}</button>
+            </div>
+            <span className="editor-studio-duration">{ui("쇼츠 길이")}<strong>{formatPreciseTimestamp(previewDuration)}</strong></span>
+          </div>}
           {overlayPreviewEnabled && <EditorViewportZoomControl
-            label="오버레이"
+            label="타임라인"
             value={editorTimelineZoom}
             min={EDITOR_TIMELINE_ZOOM_MIN}
             max={EDITOR_TIMELINE_ZOOM_MAX}
@@ -12486,6 +12613,10 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
             style={editorTimelineZoomStyle}
           >
           <div className="editor-filmstrip-wrap">
+            {overlayPreviewEnabled && <EditorTimelineRuler
+              start={editTimeline.timelineStartSeconds - selectionStart}
+              duration={timelineDuration}
+            />}
             <div
               ref={filmstripRef}
               className="editor-filmstrip"
@@ -12642,7 +12773,7 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
               {videoCuttingEnabled
                 ? <>
                     <span>{formatTimelineOffset(editTimeline.timelineStartSeconds - selectionStart)}</span>
-                    <span>{formatTimelineOffset(editTimeline.timelineEndSeconds - selectionEnd)}</span>
+                    <span>{formatTimelineOffset(editTimeline.timelineEndSeconds - selectionStart)}</span>
                   </>
                 : <>
                     <span>{formatTimelineOffset(editTimeline.timelineStartSeconds - selectionStart)}</span>
@@ -12666,9 +12797,11 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
           {!validSelection && <p className="editor-range-error">{ui("최종 영상은 1초 이상이어야 합니다.")}</p>}
         </section>}
         {!editTimeline && (commentTimeline || textTimelines) && <section
+          id={editorTimelineId}
           className="editor-range-panel editor-workspace-timeline editor-comment-only-panel"
           data-editor-guide={overlayPreviewEnabled ? "editor-timeline" : undefined}
         >
+          {standalone && overlayPreviewEnabled && <EditorTimelineResizer workspaceRef={editorWorkspaceRef} timelineId={editorTimelineId} />}
           {overlayPreviewEnabled && <EditorViewportZoomControl
             label="오버레이"
             value={editorTimelineZoom}
@@ -12698,13 +12831,14 @@ function Editor({ item, outputLanguage, commentOutputLanguage = "ko", channelThu
   );
 
   if (standalone) return <main
-    className={`editor-page${overlayPreviewEnabled ? " editor-v2-root" : ""}`}
+    className={`editor-page${overlayPreviewEnabled ? " editor-v2-root editor-studio" : ""}`}
+    inert={applyConfirmationOpen || saving}
     data-editor-release-channel={
       overlayPreviewEnabled ? editorRelease.channel : undefined
     }
     aria-labelledby="editor-title"
   >{editorContent}</main>;
-  return <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 sm:items-center sm:p-6" role="dialog" aria-modal="true" aria-labelledby="editor-title">{editorContent}</div>;
+  return <div inert={applyConfirmationOpen || saving} className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 sm:items-center sm:p-6" role="dialog" aria-modal="true" aria-labelledby="editor-title">{editorContent}</div>;
 }
 
 function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = false, unifiedTemplateSubtitleCanaryEnabled = false, adminPublishingEnabled = false, tiktokPublishingEnabled = false, metaReviewerShortId = null, youtubeReviewerShortId = null, youtubePublishingEnabled = false }: { job: VideoJob; access: ProjectActionAccess; onBack: () => void; adminSubtitleLayoutEnabled?: boolean; unifiedTemplateSubtitleCanaryEnabled?: boolean; adminPublishingEnabled?: boolean; tiktokPublishingEnabled?: boolean; metaReviewerShortId?: string | null; youtubeReviewerShortId?: string | null; youtubePublishingEnabled?: boolean }) {

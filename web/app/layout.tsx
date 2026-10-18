@@ -24,6 +24,7 @@ import { RecentUpdatesProvider } from "@/components/recent-updates-provider";
 import "./globals.css";
 import "./site-sidebar.css";
 import "./editor-v2.css";
+import "./editor-studio.css";
 import "./payment-checkout.css";
 
 const baseMetadata: Metadata = {

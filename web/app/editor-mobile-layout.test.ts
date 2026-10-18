@@ -27,7 +27,7 @@ describe("editor mobile layout", () => {
   });
 
   it("opens the bottom sheet only from explicit navigation or editing", () => {
-    expect(editorSource.match(/setMobileControlsOpen\(true\)/g)).toHaveLength(2);
+    expect(editorSource.match(/setMobileControlsOpen\(true\)/g)).toHaveLength(3);
     expect(editorSource).toContain("openMobileEditorControlsForSelection");
     expect(editorSource).toContain(
       'if (!window.matchMedia("(max-width: 640px)").matches) {',

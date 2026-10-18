@@ -1108,7 +1108,7 @@
  * The portrait mobile editor keeps the 9:16 composition stable while the
  * timeline and tool sheet move independently around it.
  */
-@media (max-width: 640px) and (orientation: portrait) {
+@media (max-width: 640px) {
   .editor-v2-root {
     --editor-mobile-tool-height: calc(64px + env(safe-area-inset-bottom,0px));
     --editor-mobile-topbar-height: calc(58px + env(safe-area-inset-top,0px));

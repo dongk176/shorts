@@ -1,0 +1,98 @@
+{
+  "slug": "editor-studio-20261018",
+  "date": "2026-10-18",
+  "kind": "개선",
+  "topic": "자막·편집",
+  "title": "더 넓고 편해진 쇼츠 편집기",
+  "summary": "커진 글씨와 정리된 설정, 높이를 바꿀 수 있는 타임라인. 모바일 두 손가락과 Mac 트랙패드로 타임라인을 확대·축소해 보세요.",
+  "cover": "더 넓게 보고\n더 편하게 편집",
+  "image": "",
+  "commit": "",
+  "href": "/projects",
+  "changes": [],
+  "steps": [],
+  "readingMinutes": 2,
+  "shot": {
+    "src": "/updates/editor-studio-20261018.jpg",
+    "width": 1440,
+    "height": 900,
+    "cropX": 0,
+    "cropY": 0,
+    "sourceWidth": 1440,
+    "sourceHeight": 900,
+    "capturedAt": "2026-10-18",
+    "alt": "오른쪽 설정과 하단 타임라인을 함께 볼 수 있는 새로운 EasyCut 편집 화면.",
+    "annotations": []
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "heading": "새로운 편집 화면",
+      "eyebrow": "변경 내용",
+      "paragraphs": [
+        "EasyCut의 짙은 배경과 코랄색 버튼으로 편집 화면을 정리했습니다. 글씨와 조작 버튼도 키워 PC와 모바일에서 더 편하게 읽고 누를 수 있어요.",
+        "PC에서는 미리보기 오른쪽에서 제목·텍스트·자막·레이아웃·댓글·채널명·배경·템플릿을 선택할 수 있습니다. 레이아웃에서 영상의 크기와 위치를 조절하고 초기화해 보세요."
+      ],
+      "strongFirst": true
+    },
+    {
+      "type": "text",
+      "heading": "타임라인을 내 작업에 맞게",
+      "eyebrow": "",
+      "paragraphs": [
+        "PC 하단 타임라인을 넓혀 여러 레이어를 함께 보기 쉽게 했습니다. 위쪽 경계선을 위아래로 끌어 높이를 바꾸고, 두 번 클릭하면 기본 높이로 돌아갑니다. 화면 높이에 따라 보이는 레이어 수는 달라질 수 있어요.",
+        "모바일에서는 타임라인 위에서 두 손가락을 벌리거나 오므려 확대·축소할 수 있습니다. Mac의 Chrome에서도 트랙패드 핀치 동작을 사용할 수 있어요. 기존 +·− 버튼도 그대로 사용할 수 있습니다.",
+        "좁은 화면에서는 시간 눈금을 줄여 숫자가 겹치지 않도록 했습니다. 확대하면 더 촘촘한 시간 눈금으로 구간을 조절할 수 있어요."
+      ],
+      "strongFirst": false
+    },
+    {
+      "type": "text",
+      "heading": "자막은 목록에서 바로 수정",
+      "eyebrow": "",
+      "paragraphs": [
+        "문구 편집을 지원하는 영상에서는 자막의 ‘텍스트 수정’ 탭에서 해당 문장을 선택해 고칠 수 있습니다. ‘스타일’ 탭에서는 글꼴·색상·크기를 조정하세요.",
+        "모바일에서 ‘완료’를 누르면 타임라인으로 돌아옵니다. 편집 결과를 최종 영상에 반영하려면 ‘영상에 적용’을 눌러 주세요."
+      ],
+      "strongFirst": false
+    }
+  ],
+  "translations": {
+    "en": {
+      "더 넓고 편해진 쇼츠 편집기": "A roomier, easier Shorts editor",
+      "커진 글씨와 정리된 설정, 높이를 바꿀 수 있는 타임라인. 모바일 두 손가락과 Mac 트랙패드로 타임라인을 확대·축소해 보세요.": "Larger text, organized controls and a resizable timeline. Zoom the timeline with two fingers on mobile or a Mac trackpad.",
+      "자막·편집": "Subtitles & Editing",
+      "더 넓게 보고\n더 편하게 편집": "More room to see\nMore control to edit",
+      "새로운 편집 화면": "The refreshed editor",
+      "변경 내용": "What changed",
+      "EasyCut의 짙은 배경과 코랄색 버튼으로 편집 화면을 정리했습니다. 글씨와 조작 버튼도 키워 PC와 모바일에서 더 편하게 읽고 누를 수 있어요.": "The editor now uses EasyCut’s dark background and coral buttons. Larger text and controls make it easier to read and use on desktop and mobile.",
+      "PC에서는 미리보기 오른쪽에서 제목·텍스트·자막·레이아웃·댓글·채널명·배경·템플릿을 선택할 수 있습니다. 레이아웃에서 영상의 크기와 위치를 조절하고 초기화해 보세요.": "On desktop, select Title, Text, Subtitles, Layout, Comments, Channel name, Background or Template to the right of the preview. Use Layout to adjust or reset the video’s size and position.",
+      "타임라인을 내 작업에 맞게": "A timeline that fits your work",
+      "PC 하단 타임라인을 넓혀 여러 레이어를 함께 보기 쉽게 했습니다. 위쪽 경계선을 위아래로 끌어 높이를 바꾸고, 두 번 클릭하면 기본 높이로 돌아갑니다. 화면 높이에 따라 보이는 레이어 수는 달라질 수 있어요.": "The desktop timeline is taller so you can view several layers together. Drag its upper divider up or down to resize it, or double-click to restore the default height. The number of visible layers depends on your screen height.",
+      "모바일에서는 타임라인 위에서 두 손가락을 벌리거나 오므려 확대·축소할 수 있습니다. Mac의 Chrome에서도 트랙패드 핀치 동작을 사용할 수 있어요. 기존 +·− 버튼도 그대로 사용할 수 있습니다.": "On mobile, spread or pinch two fingers over the timeline to zoom. In Chrome on Mac, you can use the same pinch gesture on your trackpad. The existing + and − buttons remain available.",
+      "좁은 화면에서는 시간 눈금을 줄여 숫자가 겹치지 않도록 했습니다. 확대하면 더 촘촘한 시간 눈금으로 구간을 조절할 수 있어요.": "Time labels are spaced out on narrow screens to prevent overlap. Zoom in to see more detailed timing marks.",
+      "자막은 목록에서 바로 수정": "Edit subtitles from the list",
+      "문구 편집을 지원하는 영상에서는 자막의 ‘텍스트 수정’ 탭에서 해당 문장을 선택해 고칠 수 있습니다. ‘스타일’ 탭에서는 글꼴·색상·크기를 조정하세요.": "For videos that support subtitle text editing, choose a line in the Subtitles “Edit text” tab to change it. Use the “Style” tab to adjust fonts, colors and size.",
+      "모바일에서 ‘완료’를 누르면 타임라인으로 돌아옵니다. 편집 결과를 최종 영상에 반영하려면 ‘영상에 적용’을 눌러 주세요.": "On mobile, tap “Done” to return to the timeline. To apply your edits to the final video, select “Apply to video”.",
+      "오른쪽 설정과 하단 타임라인을 함께 볼 수 있는 새로운 EasyCut 편집 화면.": "The refreshed EasyCut editor with settings on the right and the timeline below."
+    },
+    "ja": {
+      "더 넓고 편해진 쇼츠 편집기": "より広く、使いやすくなったショート動画エディター",
+      "커진 글씨와 정리된 설정, 높이를 바꿀 수 있는 타임라인. 모바일 두 손가락과 Mac 트랙패드로 타임라인을 확대·축소해 보세요.": "大きくなった文字、整理された設定、高さを変えられるタイムライン。モバイルの2本指操作やMacのトラックパッドでタイムラインを拡大・縮小できます。",
+      "자막·편집": "字幕・編集",
+      "더 넓게 보고\n더 편하게 편집": "広く見て\n快適に編集",
+      "새로운 편집 화면": "新しくなった編集画面",
+      "변경 내용": "変更内容",
+      "EasyCut의 짙은 배경과 코랄색 버튼으로 편집 화면을 정리했습니다. 글씨와 조작 버튼도 키워 PC와 모바일에서 더 편하게 읽고 누를 수 있어요.": "EasyCutのダークな背景とコーラル色のボタンで編集画面を整理しました。文字や操作ボタンも大きくなり、PCでもモバイルでも見やすく操作しやすくなりました。",
+      "PC에서는 미리보기 오른쪽에서 제목·텍스트·자막·레이아웃·댓글·채널명·배경·템플릿을 선택할 수 있습니다. 레이아웃에서 영상의 크기와 위치를 조절하고 초기화해 보세요.": "PCではプレビュー右側からタイトル・テキスト・字幕・レイアウト・コメント・チャンネル名・背景・テンプレートを選べます。レイアウトで動画のサイズや位置を調整・リセットできます。",
+      "타임라인을 내 작업에 맞게": "作業に合わせてタイムラインを調整",
+      "PC 하단 타임라인을 넓혀 여러 레이어를 함께 보기 쉽게 했습니다. 위쪽 경계선을 위아래로 끌어 높이를 바꾸고, 두 번 클릭하면 기본 높이로 돌아갑니다. 화면 높이에 따라 보이는 레이어 수는 달라질 수 있어요.": "PC下部のタイムラインを広げ、複数のレイヤーを見やすくしました。上端の境界線を上下にドラッグして高さを変え、ダブルクリックで元の高さに戻せます。表示できるレイヤー数は画面の高さによって異なります。",
+      "모바일에서는 타임라인 위에서 두 손가락을 벌리거나 오므려 확대·축소할 수 있습니다. Mac의 Chrome에서도 트랙패드 핀치 동작을 사용할 수 있어요. 기존 +·− 버튼도 그대로 사용할 수 있습니다.": "モバイルではタイムライン上で2本指を広げたり閉じたりして拡大・縮小できます。MacのChromeでもトラックパッドのピンチ操作を使えます。従来の＋・−ボタンも利用できます。",
+      "좁은 화면에서는 시간 눈금을 줄여 숫자가 겹치지 않도록 했습니다. 확대하면 더 촘촘한 시간 눈금으로 구간을 조절할 수 있어요.": "狭い画面では時間目盛りを間引き、数字が重ならないようにしました。拡大すると、より細かな目盛りで区間を調整できます。",
+      "자막은 목록에서 바로 수정": "字幕を一覧から直接編集",
+      "문구 편집을 지원하는 영상에서는 자막의 ‘텍스트 수정’ 탭에서 해당 문장을 선택해 고칠 수 있습니다. ‘스타일’ 탭에서는 글꼴·색상·크기를 조정하세요.": "字幕テキストの編集に対応した動画では、字幕の「テキスト編集」タブから文章を選んで修正できます。「スタイル」タブではフォント・色・サイズを調整できます。",
+      "모바일에서 ‘완료’를 누르면 타임라인으로 돌아옵니다. 편집 결과를 최종 영상에 반영하려면 ‘영상에 적용’을 눌러 주세요.": "モバイルでは「完了」を押すとタイムラインに戻ります。編集内容を最終動画に反映するには「動画に適用」を押してください。",
+      "오른쪽 설정과 하단 타임라인을 함께 볼 수 있는 새로운 EasyCut 편집 화면.": "右側の設定と下部のタイムラインを同時に確認できる新しいEasyCut編集画面。"
+    }
+  }
+}
