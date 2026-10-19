@@ -32,14 +32,16 @@ export async function loadMvpState(
   authenticatedUser?: User | null,
   signal?: AbortSignal,
   locale: SiteLocale = "ko",
+  options: { includeRecentJobs?: boolean } = {},
 ): Promise<MvpState> {
-  return withReadRequest("mvp_state", (stage) => readMvpState(stage, authenticatedUser, locale), signal);
+  return withReadRequest("mvp_state", (stage) => readMvpState(stage, authenticatedUser, locale, options.includeRecentJobs !== false), signal);
 }
 
 async function readMvpState(
   stage: ReadStage,
   authenticatedUser?: User | null,
   locale: SiteLocale = "ko",
+  includeRecentJobs = true,
 ): Promise<MvpState> {
   const db = getDb();
   const [{ plans, generatedShortCount, reusableViewCounter }, user] = await Promise.all([
@@ -59,7 +61,7 @@ async function readMvpState(
     const { start, next } = currentKstPeriod();
     const [billing, recentJobs] = await Promise.all([
       stage("billing", () => getBillingSummary(db, null)),
-      stage("examples", () => getPublicExampleJobs(db, locale)),
+      includeRecentJobs ? stage("examples", () => getPublicExampleJobs(db, locale)) : Promise.resolve([]),
     ]);
 
     return {
@@ -95,6 +97,7 @@ async function readMvpState(
       },
       hasUsedSubtitleTemplates: false,
       recentJobs,
+      recentJobsLoaded: includeRecentJobs,
       enterpriseAccess: { accountType: "personal", allowed: true },
     };
   }
@@ -116,7 +119,7 @@ async function readMvpState(
     customTemplateDesignAccess,
   ] = await Promise.all([
     stage("usage", () => getUsageSnapshot(db, session)),
-    stage("jobs", () => getRecentJobs(db, session, undefined, locale)),
+    includeRecentJobs ? stage("jobs", () => getRecentJobs(db, session, undefined, locale)) : Promise.resolve([]),
     stage("billing", () => getBillingSummary(db, session.userId)),
     stage("payment_method_action", () => getPaymentMethodAction(db, session.userId)),
     stage("subtitle_usage", () => getSubtitleTemplateUsage(db, session.userId)),
@@ -161,6 +164,27 @@ async function readMvpState(
     },
     hasUsedSubtitleTemplates,
     recentJobs,
+    recentJobsLoaded: includeRecentJobs,
     enterpriseAccess,
   };
+}
+
+/** Project reads have their own deadline: a slow list cannot discard account state. */
+export async function loadMvpRecentJobs(signal?: AbortSignal, locale: SiteLocale = "ko") {
+  return withReadRequest("mvp_recent_jobs", async (stage) => {
+    const db = getDb();
+    const user = await stage("auth", () => getAuthenticatedUser());
+    if (!user) {
+      return { userId: null, recentJobs: await stage("examples", () => getPublicExampleJobs(db, locale)) };
+    }
+    const session = await stage("session", () => requireMvpSession(user, { createIfMissing: false, readOnly: true }));
+    if (session.isEnterprise) {
+      const access = await stage("enterprise_access", () => getEnterpriseAccessState(db, session.userId!));
+      if (!access.allowed) return { userId: session.user?.id ?? null, recentJobs: [] };
+    }
+    return {
+      userId: session.user?.id ?? null,
+      recentJobs: await stage("jobs", () => getRecentJobs(db, session, undefined, locale)),
+    };
+  }, signal);
 }

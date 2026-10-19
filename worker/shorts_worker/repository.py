@@ -1925,7 +1925,9 @@ class WorkerRepository:
                         update shorts_mvp.video_jobs j
                         set ready_short_count=least(j.planned_short_count,(
                               select count(*)::integer from shorts_mvp.generated_shorts s
-                              where s.job_id=j.id and s.status='ready' and s.deleted_at is null
+                              where s.job_id=j.id and s.deleted_at is null
+                                and (s.status='ready' or (s.status='rerendering'
+                                  and nullif(s.output_s3_key,'') is not null))
                             )),
                             progress=greatest(j.progress,65),heartbeat_at=now()
                         where j.id=%s and j.pipeline_version=2

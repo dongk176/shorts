@@ -1333,6 +1333,7 @@ def _upload_postgres_container():
           create table shorts_mvp.generated_shorts(
             id uuid primary key,job_id uuid,status text,deleted_at timestamptz,
             render_progress integer,render_error_code text,render_error_message text,
+            output_s3_key text,
             expires_at timestamptz default now()+interval '30 days'
           );
           create table shorts_mvp.usage_reservations(
@@ -1354,6 +1355,10 @@ def _upload_postgres_container():
             "create or replace function shorts_mvp.finalize_project_job", 1,
         )[1].split("grant execute", 1)[0]
         connection.execute(finalizer, parse=False)
+        completion_fix = next((Path(__file__).parents[2] / "supabase/migrations").glob(
+            "*_preserve_initial_outputs_during_editor_render.sql"
+        )).read_text()
+        connection.execute(completion_fix, parse=False)
     finally:
         connection.close()
     return container
@@ -1828,3 +1833,107 @@ def test_postgres_upload_no_body_claim_cannot_retire_token_claimed_after_listing
     outcome = _upload_postgres_outcome(upload_postgres)
     assert outcome["session_status"] == "claimed" and outcome["source_deleted"] == "f"
     assert outcome["reservation_status"] == "reserved" and outcome["event_count"] == "0"
+
+@pytest.mark.parametrize("ready_count,editing_count", [(3, 4), (0, 7), (7, 0)])
+def test_project_completion_preserves_outputs_being_edited(
+    upload_postgres, ready_count, editing_count,
+):
+    job_id, _ = _seed_upload_postgres(upload_postgres)
+    with upload_postgres.connect() as connection:
+        connection.execute("""
+          delete from shorts_mvp.project_output_attempts;
+          delete from shorts_mvp.generated_shorts;
+          update shorts_mvp.video_jobs set planned_short_count=8 where id=%s;
+        """, (job_id,), parse=False)
+        for index in range(ready_count + editing_count):
+            short_id = str(uuid4())
+            status = "ready" if index < ready_count else "rerendering"
+            connection.execute("""
+              insert into shorts_mvp.generated_shorts(id,job_id,status,output_s3_key)
+              values(%s,%s,%s,'existing-output.mp4');
+              insert into shorts_mvp.project_output_attempts(
+                job_id,selected_at,status,generated_short_id,ready_at
+              ) values(%s,clock_timestamp(),'ready',%s,clock_timestamp());
+            """, (short_id, job_id, status, job_id, short_id), parse=False)
+    first = upload_postgres.finalize_project_job(job_id)
+    assert first["final_status"] == "completed"
+    assert first["ready_count"] == "7"
+    assert first["failed_count"] == "0"
+    assert first["transitioned"] == "t"
+    second = upload_postgres.finalize_project_job(job_id)
+    assert second["transitioned"] == "f"
+    with upload_postgres.connect() as connection:
+        outcome = connection.execute("""
+          select
+            (select count(*) from shorts_mvp.generated_shorts
+              where status='rerendering') as editing,
+            (select count(*) from shorts_mvp.project_output_attempts
+              where status='ready') as outputs,
+            (select count(*) from shorts_mvp.usage_events
+              where event_type='source_consumed') as charges,
+            (select count(*) from shorts_mvp.usage_events
+              where event_type='reservation_released') as releases,
+            (select count(*) from shorts_mvp.job_events) as events,
+            (select expires_at is not null from shorts_mvp.video_jobs where id=%s) as has_expiry
+        """, (job_id,)).fetchone()
+    assert outcome == {
+        "editing": str(editing_count), "outputs": "7", "charges": "1",
+        "releases": "0", "events": "1", "has_expiry": "t",
+    }
+
+
+@pytest.mark.parametrize("status,output_key,deleted", [
+    ("rendering", "uncommitted.mp4", False),
+    ("rerendering", None, False),
+    ("rerendering", "", False),
+    ("rerendering", "existing.mp4", True),
+    ("failed", "existing.mp4", False),
+])
+def test_project_completion_rejects_unavailable_outputs(
+    upload_postgres, status, output_key, deleted,
+):
+    job_id, _ = _seed_upload_postgres(upload_postgres, ready=False)
+    with upload_postgres.connect() as connection:
+        connection.execute("""
+          update shorts_mvp.generated_shorts set status=%s,output_s3_key=%s,
+            deleted_at=case when %s then clock_timestamp() else null end;
+        """, (status, output_key, deleted), parse=False)
+    outcome = upload_postgres.finalize_project_job(job_id)
+    assert outcome["final_status"] == "failed"
+    assert outcome["ready_count"] == "0"
+
+
+def test_concurrent_project_finalizers_do_not_double_charge_edited_outputs(upload_postgres):
+    job_id, _ = _seed_upload_postgres(upload_postgres)
+    with upload_postgres.connect() as connection:
+        connection.execute("""
+          update shorts_mvp.generated_shorts
+          set status='rerendering',output_s3_key='published.mp4';
+        """, parse=False)
+    barrier = threading.Barrier(2)
+    results = []
+    errors = []
+
+    def finish():
+        try:
+            barrier.wait(timeout=5)
+            results.append(upload_postgres.finalize_project_job(job_id))
+        except Exception as error:
+            errors.append(error)
+
+    threads = [threading.Thread(target=finish) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=15)
+    assert not any(thread.is_alive() for thread in threads)
+    assert not errors
+    assert len(results) == 2
+    assert all(result["final_status"] == "completed" for result in results)
+    assert sorted(result["transitioned"] for result in results) == ["f", "t"]
+    with upload_postgres.connect() as connection:
+        row = connection.execute("""
+          select (select count(*) from shorts_mvp.usage_events) as usage_events,
+            (select count(*) from shorts_mvp.job_events) as job_events
+        """).fetchone()
+    assert row == {"usage_events": "1", "job_events": "1"}

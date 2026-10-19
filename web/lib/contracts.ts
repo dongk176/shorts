@@ -331,6 +331,7 @@ export type MvpState = {
   };
   hasUsedSubtitleTemplates: boolean;
   recentJobs: VideoJob[];
+  recentJobsLoaded?: boolean;
   enterpriseAccess: {
     accountType: "personal" | "enterprise";
     allowed: boolean;

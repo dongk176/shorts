@@ -1,5 +1,8 @@
 "use client";
 
+import { EnterpriseServiceGate } from "@/components/enterprise-service-gate";
+import { useHomeProjects } from "@/lib/use-home-projects";
+import { mergeHomeCore } from "@/lib/home-projects-state";
 import { SnsTemplatePreview } from "@/components/sns-template-preview";
 import { createTemplateRefresher } from "@/lib/template-refresher";
 import { presetChannelCenterY } from "@/lib/preset-channel-position";
@@ -13477,6 +13480,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
   const [resumedDraft] = useState(() => readCreationDraft<LocaleCreationDraft>(initialState?.user?.id ?? null, locale));
   useEffect(() => { clearCreationDraft(); }, []);
   const [state, setState] = useState<MvpState | null>(initialState);
+  const homeProjects = useHomeProjects(state, setState, locale);
   const [showExamples, setShowExamples] = useState(false);
   const [stateLoadStatus, setStateLoadStatus] = useState<"loading" | "ready" | "error">(
     initialState ? "ready" : "loading",
@@ -13570,7 +13574,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
   const [error, setError] = useState<string | null>(null);
   const [conversionMaintenanceOpen, setConversionMaintenanceOpen] = useState(false);
   const loginOpenTimer = useRef<number | null>(null);
-  const stateLoadInFlight = useRef<Promise<void> | null>(null);
+  const stateLoadInFlight = useRef<{ locale: SiteLocale; task: Promise<void>; controller: AbortController } | null>(null);
   const analysisSectionRef = useRef<HTMLElement>(null);
   const rightsConfirmationRef = useRef<HTMLLabelElement>(null);
   const rightsCheckboxRef = useRef<HTMLInputElement>(null);
@@ -13879,19 +13883,24 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
   ]);
 
   const loadState = useCallback(async () => {
-    if (stateLoadInFlight.current) return stateLoadInFlight.current;
+    if (stateLoadInFlight.current?.locale === locale && !stateLoadInFlight.current.controller.signal.aborted) {
+      return stateLoadInFlight.current.task;
+    }
+    stateLoadInFlight.current?.controller.abort();
+    const controller = new AbortController();
     const task = (async () => {
-      const value = await requestJson<MvpState>(`/api/mvp/state?locale=${locale}`, undefined, STATE_REQUEST_TIMEOUT_MS);
-      setState(value);
+      const value = await requestJson<MvpState>(`/api/mvp/state?locale=${locale}&view=core`, { signal: controller.signal }, STATE_REQUEST_TIMEOUT_MS);
+      if (controller.signal.aborted) return;
+      setState(current => mergeHomeCore(current, value));
       publishUsageSnapshot(value.usage);
       setStateLoadStatus("ready");
       setStateLoadError(null);
     })();
-    stateLoadInFlight.current = task;
+    stateLoadInFlight.current = { locale, task, controller };
     try {
       await task;
     } finally {
-      if (stateLoadInFlight.current === task) stateLoadInFlight.current = null;
+      if (stateLoadInFlight.current?.task === task) stateLoadInFlight.current = null;
     }
   }, [locale]);
 
@@ -13976,6 +13985,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
     return () => {
       stopped = true;
       if (timer !== undefined) window.clearTimeout(timer);
+      if (stateLoadInFlight.current?.locale === locale) stateLoadInFlight.current.controller.abort();
     };
   }, [initialState, initialLocale, initialStateLoadedAt, locale, loadState]);
 
@@ -14701,6 +14711,10 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
     finally { setBusy(false); }
   };
 
+  if (state?.enterpriseAccess.accountType === "enterprise" && !state.enterpriseAccess.allowed) {
+    return <EnterpriseServiceGate access={state.enterpriseAccess} />;
+  }
+
   return (
     <div className="app-shell site-chrome desktop-sidebar-layout home-desktop-sidebar flex min-h-screen flex-col text-neutral-100">
       <div className="ambient ambient-coral" aria-hidden="true" />
@@ -15008,6 +15022,10 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
         </div>
         <ProjectCollection projects={state.recentJobs} authenticated={Boolean(state.user)} />
       </section> : null}
+      {state && homeProjects.status !== "ready" ? <div role={homeProjects.status === "error" ? "alert" : "status"} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 p-4 text-sm text-neutral-300">
+        <p>{t(homeProjects.status === "error" ? "home.projectsLoadError" : "home.projectsLoading")}</p>
+        {homeProjects.status === "error" ? <button type="button" onClick={homeProjects.retry} className="min-h-11 rounded-lg border border-white/20 px-4 font-semibold">{t("common.retry")}</button> : null}
+      </div> : null}
       {!state?.user && stateLoadStatus === "ready" ? <BackgroundShowcase /> : null}
       {error && <div role="alert" className="rounded-xl border border-red-900 bg-red-950/50 p-4 text-sm text-red-200">{ui(error)}</div>}
       {stateLoadStatus === "error" && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-900 bg-amber-950/40 p-4 text-sm text-amber-100"><div><p>{t("home.serviceLoadError")}</p>{stateLoadError && <p className="mt-1 text-xs text-amber-300">{stateLoadError}</p>}</div><button type="button" onClick={retryStateLoad} className="rounded-lg border border-amber-300/30 px-3 py-2 font-semibold">{t("common.retry")}</button></div>}

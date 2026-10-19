@@ -13,7 +13,9 @@ export async function GET(request: Request) {
     const requestedLocale = new URL(request.url).searchParams.get("locale");
     const locale = isSiteLocale(requestedLocale) ? requestedLocale : await getRequestLocale();
     const response = NextResponse.json(
-      await loadMvpState(undefined, request.signal, locale),
+      await loadMvpState(undefined, request.signal, locale, {
+        includeRecentJobs: new URL(request.url).searchParams.get("view") !== "core",
+      }),
       { headers: { "x-request-id": requestId } },
     );
     response.headers.set("Cache-Control", "private, no-store");
