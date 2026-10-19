@@ -330,16 +330,21 @@ export async function refreshCatalogBatch(
   await withYoutubePurpose("refresh", db, async () => {
     for (let page = 0; page < Math.min(options.maxPages || 8, 25) && Date.now() < deadline; page++) {
       const batch = await db.begin(async (tx) => {
+        // Bound sort memory to this batch transaction, not the whole 1 GB DB.
+        await tx`set local work_mem='16MB'`;
         const rows =
-          await tx`select id,video_id,first_discovered_at::text as first_discovered_at from shorts_mvp.youtube_catalog c
-          where video_id is not null and refresh_after<=clock_timestamp()
+          await tx`with picked as materialized (
+          select c.id from shorts_mvp.youtube_catalog c
+          where video_id is not null and refresh_after<=now()
             and (exists(select 1 from shorts_mvp.youtube_catalog_regions r where r.catalog_id=c.id and r.region_code='KR')
               or not exists(select 1 from shorts_mvp.youtube_catalog_regions r where r.catalog_id=c.id))
-            and (refresh_lease_until is null or refresh_lease_until<clock_timestamp())
-          order by (verified_at<clock_timestamp()-interval '25 days') desc,
-            (last_used_at>clock_timestamp()-interval '1 day') desc nulls last,
+            and (refresh_lease_until is null or refresh_lease_until<now())
+          order by (verified_at<now()-interval '25 days') desc,
+            (last_used_at>now()-interval '1 day') desc nulls last,
             (coalesce((metadata->>'viewCount')::bigint,0)>=1000000) desc,verified_at,id
-          for update skip locked limit 50`;
+          for update skip locked limit 50
+          ) select c.id,c.video_id,c.first_discovered_at::text as first_discovered_at
+          from picked join shorts_mvp.youtube_catalog c on c.id=picked.id`;
         if (rows.length)
           await tx`update shorts_mvp.youtube_catalog set refresh_lease_until=clock_timestamp()+interval '5 minutes' where id in ${tx(rows.map((r) => r.id))}`;
         return rows;

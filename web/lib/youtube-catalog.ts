@@ -540,8 +540,8 @@ export async function purgeExpiredCatalog(db: Sql = getDb(), now = new Date()) {
         .savepoint((counterDb) => refreshCatalogViewCounter(counterDb, now))
         .catch(() => console.error("youtube_catalog_counter_refresh_failed"));
     }
-    await tx`update shorts_mvp.youtube_catalog_regions set trending_rank=null where last_trending_at<${new Date(now.getTime() - DAY_MS)}`;
-    await tx`update shorts_mvp.youtube_catalog set trending_rank=null where last_trending_at<${new Date(now.getTime() - DAY_MS)}`;
+    await tx`update shorts_mvp.youtube_catalog_regions set trending_rank=null where trending_rank is not null and last_trending_at<${new Date(now.getTime() - DAY_MS)}`;
+    await tx`update shorts_mvp.youtube_catalog set trending_rank=null where trending_rank is not null and last_trending_at<${new Date(now.getTime() - DAY_MS)}`;
     await tx`update shorts_mvp.youtube_search_positions set page_token=null where updated_at<${new Date(now.getTime() - 25 * DAY_MS)}`;
     await tx`delete from shorts_mvp.youtube_list_versions where expires_at<=${now}`;
     await tx`delete from shorts_mvp.youtube_trending_run_items where run_id in (

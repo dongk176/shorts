@@ -17,6 +17,7 @@ import {
 } from "vitest";
 vi.mock("server-only", () => ({}));
 import {
+  catalogId,
   saveCatalogPage,
   catalogStatus,
   markCatalogMetadataPending,
@@ -1123,6 +1124,68 @@ integration("YouTube discovery with isolated PostgreSQL", () => {
         await db`select metadata,availability from shorts_mvp.youtube_catalog`
       )[0],
     ).toMatchObject({ metadata: null, availability: "unavailable" });
+  });
+  it("keeps refresh priorities and skips locked, leased, future and foreign-region rows", async () => {
+    const now = new Date();
+    await saveCatalogPage(db, Array.from({ length: 60 }, (_, i) =>
+      fixture(`io${String(i).padStart(9, "0")}`, { viewCount: i % 2 ? 2_000_000 : 100 }),
+    ), { observedAt: now });
+    await db`update shorts_mvp.youtube_catalog set refresh_after=now()-interval '1 hour',
+      verified_at=now()-interval '26 days',last_used_at=null`;
+    await db`update shorts_mvp.youtube_catalog set last_used_at=now() where (metadata->>'viewCount')::bigint>1000000`;
+    await db`update shorts_mvp.youtube_catalog set refresh_lease_until=now()+interval '1 hour' where video_id='io000000000'`;
+    await db`update shorts_mvp.youtube_catalog set refresh_after=now()+interval '1 hour' where video_id='io000000001'`;
+    await db`update shorts_mvp.youtube_catalog_regions set region_code='JP' where catalog_id=${catalogId("io000000002")}`;
+    const lock = await db.reserve();
+    try {
+      await lock`begin`;
+      await lock`select id from shorts_mvp.youtube_catalog where video_id='io000000003' for update`;
+      const expected = await db`select video_id from shorts_mvp.youtube_catalog c
+        where video_id not in ('io000000000','io000000001','io000000002','io000000003')
+        order by (verified_at<now()-interval '25 days') desc,
+          (last_used_at>now()-interval '1 day') desc nulls last,
+          (coalesce((metadata->>'viewCount')::bigint,0)>=1000000) desc,verified_at,id limit 50`;
+      const requested: string[] = [];
+      const memoryBefore = (await db`show work_mem`)[0].workMem;
+      const result = await refreshCatalogBatch({ db, maxPages: 1, scheduledAt: now,
+        fetchImpl: async (input) => {
+          const ids = new URL(String(input)).searchParams.get("id")!.split(",");
+          requested.push(...ids);
+          return new Response(JSON.stringify({ items: ids.map((id) => youtubeItem(id)) }));
+        },
+      });
+      expect(result).toMatchObject({ pages: 1, failed: false });
+      expect(requested.sort()).toEqual(expected.map((row) => String(row.videoId)).sort());
+      expect((await db`show work_mem`)[0].workMem).toBe(memoryBefore);
+    } finally {
+      await lock`rollback`;
+      lock.release();
+    }
+  });
+  it("does not rewrite ranks that are already null on repeated catalog cleanup", async () => {
+    const now = new Date();
+    await saveCatalogPage(db, [fixture("ranknull001"), fixture("rankstale01"), fixture("rankrecent1")], { observedAt: now, trending: true });
+    await db`update shorts_mvp.youtube_catalog set last_trending_at=now()-interval '2 days',trending_rank=null where video_id='ranknull001'`;
+    await db`update shorts_mvp.youtube_catalog set last_trending_at=now()-interval '2 days' where video_id='rankstale01'`;
+    await db`update shorts_mvp.youtube_catalog_regions set last_trending_at=now()-interval '2 days',trending_rank=null where catalog_id=${catalogId("ranknull001")}`;
+    await db`update shorts_mvp.youtube_catalog_regions set last_trending_at=now()-interval '2 days' where catalog_id=${catalogId("rankstale01")}`;
+    await db.unsafe(`create table shorts_mvp.io_rank_touches(source text,id text);
+      create function shorts_mvp.io_rank_touch() returns trigger language plpgsql as $$ begin
+        insert into shorts_mvp.io_rank_touches values(TG_TABLE_NAME,case when TG_TABLE_NAME='youtube_catalog' then to_jsonb(NEW)->>'id' else to_jsonb(NEW)->>'catalog_id' end); return NEW; end $$;
+      create trigger io_rank_touch before update of trending_rank on shorts_mvp.youtube_catalog for each row execute function shorts_mvp.io_rank_touch();
+      create trigger io_rank_touch before update of trending_rank on shorts_mvp.youtube_catalog_regions for each row execute function shorts_mvp.io_rank_touch();`);
+    try {
+      await purgeExpiredCatalog(db, now);
+      await purgeExpiredCatalog(db, now);
+      const touches = await db`select source,id from shorts_mvp.io_rank_touches order by source`;
+      expect(touches).toHaveLength(2);
+      expect(touches.every((row) => row.id === catalogId("rankstale01"))).toBe(true);
+      expect((await db`select trending_rank from shorts_mvp.youtube_catalog where video_id='rankrecent1'`)[0].trendingRank).not.toBeNull();
+    } finally {
+      await db.unsafe(`drop trigger io_rank_touch on shorts_mvp.youtube_catalog;
+        drop trigger io_rank_touch on shorts_mvp.youtube_catalog_regions;
+        drop function shorts_mvp.io_rank_touch();drop table shorts_mvp.io_rank_touches;`);
+    }
   });
   it("invalidates expired CC tokens without searching again in the same run", async () => {
     const scheduledAt = new Date();
