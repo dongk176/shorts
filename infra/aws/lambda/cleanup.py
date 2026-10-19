@@ -64,7 +64,7 @@ def expire_shorts() -> tuple[int, int]:
     query = (
         "select=id,job_id,mvp_session_id,output_s3_key,clean_clip_s3_key,"
         "edit_timeline_s3_key,thumbnail_s3_key"
-        f"&expires_at=lte.{now}&deleted_at=is.null&limit=200"
+        f"&expires_at=lte.{now}&deleted_at=is.null&order=expires_at.asc&limit=200"
     )
     items = rest("generated_shorts", query=query) or []
     deleted_objects = 0
