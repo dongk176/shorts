@@ -480,7 +480,12 @@ export function PaddlePricing({
               <article key={p.code}
                 className={`pricing-card ${i === 1 ? "pricing-card-popular" : i === 2 ? "pricing-card-pro" : ""} ${styles.planCard} ${styles.localPlanCard} ${styles.paddlePlanCard} ${i === 1 ? styles.mobilePlanStarter : i === 2 ? styles.mobilePlanExpert : styles.mobilePlanPro}`}>
                 {i === 1 && (months === 6 || months === 12) && (
-                  <span className={`pricing-badge ${styles.localReasonableBadge} ${styles.paddleBadge}`}>{discount ? `${discount.percent}%${language === "ja" ? "OFF" : " off"}` : months === 12 ? t.maximumSaving : t.recommend}</span>
+                  <span className={`pricing-badge ${styles.localReasonableBadge} ${styles.paddleBadge}`}>{months === 12 ? t.maximumSaving : t.recommend}</span>
+                )}
+                {discount && discount.percent > 0 && (
+                  <span className={`${styles.planEyebrow} ${styles.discountEyebrow} ${i === 2 ? styles.discountEyebrowViolet : ""}`}>
+                    {discount.percent}%{language === "ja" ? "OFF" : " off"}
+                  </span>
                 )}
                 <div className="pricing-plan-name"><h2>{t.names[i]}</h2></div>
                 <p className={styles.localPlanDescription}>{t.descriptions[i]}</p>
