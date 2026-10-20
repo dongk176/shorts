@@ -476,6 +476,7 @@ export function PaddlePricing({
           <section id="pricing-plans" className={`pricing-grid ${styles.localPlanGrid} ${styles.paddlePlanGrid}`} aria-label={t.title}>
             {displayedPlans.map((p, i) => {
               const discount=paddleDiscount(p.code,currency);
+              const discountPercent=discount ? Math.ceil(discount.percent) : 0;
               return (
               <article key={p.code}
                 className={`pricing-card ${i === 1 ? "pricing-card-popular" : i === 2 ? "pricing-card-pro" : ""} ${styles.planCard} ${styles.localPlanCard} ${styles.paddlePlanCard} ${i === 1 ? styles.mobilePlanStarter : i === 2 ? styles.mobilePlanExpert : styles.mobilePlanPro}`}>
@@ -484,14 +485,14 @@ export function PaddlePricing({
                 )}
                 {discount && discount.percent > 0 && (
                   <span className={`${styles.planEyebrow} ${styles.discountEyebrow} ${i === 2 ? styles.discountEyebrowViolet : ""}`}>
-                    {discount.percent}%{language === "ja" ? "OFF" : " off"}
+                    {discountPercent}%{language === "ja" ? "OFF" : " off"}
                   </span>
                 )}
                 <div className="pricing-plan-name"><h2>{t.names[i]}</h2></div>
                 <p className={styles.localPlanDescription}>{t.descriptions[i]}</p>
-                <div className={styles.paddleDiscount}>
-                  {discount && <><span>{t.discount(discount.percent)}</span><del>{formatPaddlePrice(discount.baseline,currency,true)} {t.month}</del></>}
-                </div>
+                {months !== 3 && <div className={styles.paddleDiscount}>
+                  {discount && <><span>{t.discount(discountPercent)}</span><del>{formatPaddlePrice(discount.baseline,currency,true)} {t.month}</del></>}
+                </div>}
                 <div className={`pricing-price ${styles.localPlanPrice}`}>
                   <strong>{formatPaddlePrice(p.code, currency, true)}</strong><span>{p.billingMonths === 1 ? t.month : t.equivalent}</span>
                 </div>
