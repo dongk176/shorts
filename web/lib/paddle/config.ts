@@ -1,5 +1,5 @@
 import { HttpError } from "@/lib/http";
-import { paddlePlans, type PaddleCurrency } from "./catalog";
+import { paddlePlans, isNewJpyPlan, type PaddleCurrency } from "./catalog";
 export function paddleConfigured() {
   return ["sandbox", "live"].includes(process.env.PADDLE_ENVIRONMENT || "");
 }
@@ -28,6 +28,7 @@ export function assertPaddleEnabled() {
     );
 }
 export function paddlePriceId(code: string, currency: PaddleCurrency) {
+  if (isNewJpyPlan(code) && currency !== "JPY") throw new Error("JPY price cannot be used with another currency");
   const value =
     process.env[
       `PADDLE_PRICE_${code.replace("paddle_", "").toUpperCase()}_${currency}`
@@ -37,7 +38,7 @@ export function paddlePriceId(code: string, currency: PaddleCurrency) {
   return value;
 }
 export function paddlePriceMatch(priceId: string, currency: PaddleCurrency) {
-  return paddlePlans.find((p) => paddlePriceId(p.code, currency) === priceId);
+  return paddlePlans.find((p) => (!isNewJpyPlan(p.code) || currency === "JPY") && paddlePriceId(p.code, currency) === priceId);
 }
 export function paddleApiKey() {
   const key = process.env.PADDLE_API_KEY || "";

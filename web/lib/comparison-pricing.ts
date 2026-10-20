@@ -1,5 +1,5 @@
 import type { SiteLocale } from "./i18n/config";
-import { formatPaddlePrice, paddlePlan, paddlePackageTerms } from "./paddle/catalog";
+import { formatPaddlePrice, paddlePlan, paddlePackageTerms, newPaddlePlanCode } from "./paddle/catalog";
 import { tossPlan } from "./toss-subscription";
 
 export function comparisonPricing(locale: SiteLocale, internationalEnabled: boolean) {
@@ -18,9 +18,9 @@ export function comparisonPricing(locale: SiteLocale, internationalEnabled: bool
     const code = tier === "pro" ? "paddle_lite" : tier === "starter" ? "paddle_creator" : "paddle_pro";
     const plan = paddlePlan(code);
     const priceLines = tier === "pro"
-      ? [locale === "ja" ? `月額 ${formatPaddlePrice(code, currency)}・毎月のお支払い` : `${formatPaddlePrice(code, currency)}/month, billed monthly`]
+      ? [locale === "ja" ? `月額 ${formatPaddlePrice(newPaddlePlanCode(code, currency), currency)}・毎月のお支払い` : `${formatPaddlePrice(newPaddlePlanCode(code, currency), currency)}/month, billed monthly`]
       : paddlePackageTerms.map(months => {
-        const packCode = `${code}_${months}m`;
+        const packCode = newPaddlePlanCode(`${code}_${months}m`, currency);
         const total = formatPaddlePrice(packCode, currency);
         const monthly = formatPaddlePrice(packCode, currency, true);
         return locale === "ja" ? `${months}か月合計 ${total}（月額換算 ${monthly}）` : `${total} for ${months} months (${monthly}/month equivalent)`;

@@ -3,7 +3,7 @@ import { getDb } from '@/lib/db';
 import { HttpError } from '@/lib/http';
 import { paddleRequest } from './api';
 import { assertPaddleEnabled, paddleEnvironment, paddlePriceId } from './config';
-import { paddlePlan, type PaddleCurrency } from './catalog';
+import { paddlePlan, isNewJpyPlan, type PaddleCurrency } from './catalog';
 import { changeTiming, changePayload, assertUpgradeAmount } from './change-policy';
 import type { PaddleSubscription, PaddleTransaction } from './models';
 
@@ -60,6 +60,7 @@ export async function quotePaddleChange(userId:string,to:string,db=getDb()) {
    const [paid]=await tx`select currency from shorts_mvp.paddle_payments where paddle_subscription_id=${row.paddleId} order by period_end desc,created_at desc limit 1`;
    if(!paid || !['USD','JPY'].includes(paid.currency)) throw conflict();
    const currency=paid.currency as PaddleCurrency;
+   if (currency === "JPY" && isNewJpyPlan(row.planCode) !== isNewJpyPlan(to)) throw conflict();
    const sub=await paddleRequest<PaddleSubscription>(`/subscriptions/${row.paddleId}`);
    checkSub(sub,row as Parameters<typeof checkSub>[1],currency);
    const preview=await previewChange(row.paddleId,row.planCode,to,currency,new Date(row.currentPeriodEnd));

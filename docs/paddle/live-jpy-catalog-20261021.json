@@ -1,0 +1,54 @@
+{
+  "vendorId": "427481",
+  "environment": "live",
+  "currency": "JPY",
+  "taxMode": "internal",
+  "quantity": 1,
+  "trial": null,
+  "version": "20261021",
+  "legacyPricesUnchanged": true,
+  "plans": {
+    "paddle_lite_jpy_20261021": {
+      "productId": "pro_01m3ctkbn1nwhjjge7bskzacqr",
+      "priceId": "pri_01m5cz3z0935cyezhrctw6jxvs",
+      "amountMinor": 750,
+      "billingMonths": 1
+    },
+    "paddle_creator_3m_jpy_20261021": {
+      "productId": "pro_01m3cv2wqq3zd1v979t7rkrmd3",
+      "priceId": "pri_01m5cz6gshjhqff486ddxdvs45",
+      "amountMinor": 6870,
+      "billingMonths": 3
+    },
+    "paddle_creator_6m_jpy_20261021": {
+      "productId": "pro_01m3cv2wqq3zd1v979t7rkrmd3",
+      "priceId": "pri_01m5cz7nrws3g98nzxdwsq33ad",
+      "amountMinor": 11340,
+      "billingMonths": 6
+    },
+    "paddle_creator_12m_jpy_20261021": {
+      "productId": "pro_01m3cv2wqq3zd1v979t7rkrmd3",
+      "priceId": "pri_01m5cz84gghwz0zp7ba1v89ekc",
+      "amountMinor": 17880,
+      "billingMonths": 12
+    },
+    "paddle_pro_3m_jpy_20261021": {
+      "productId": "pro_01m3cvkkpt2754xseqccnpcsb2",
+      "priceId": "pri_01m5cz8hvt5a7cz8z414kcvdhx",
+      "amountMinor": 16470,
+      "billingMonths": 3
+    },
+    "paddle_pro_6m_jpy_20261021": {
+      "productId": "pro_01m3cvkkpt2754xseqccnpcsb2",
+      "priceId": "pri_01m5cz8ms1sv9g24hfw5p1td97",
+      "amountMinor": 29940,
+      "billingMonths": 6
+    },
+    "paddle_pro_12m_jpy_20261021": {
+      "productId": "pro_01m3cvkkpt2754xseqccnpcsb2",
+      "priceId": "pri_01m5cz8qna8z30n00etr1503vt",
+      "amountMinor": 47880,
+      "billingMonths": 12
+    }
+  }
+}

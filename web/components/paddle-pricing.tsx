@@ -210,7 +210,7 @@ export function PaddlePricing({
   const t = copy[language];
   const currency = initial?.currency || (language === "ja" ? "JPY" : "USD");
   const [months, setMonths] = useState<(typeof paddlePackageTerms)[number]>(() => paddleInitialTerm(initial?.providerStatus !== "canceled" ? initial?.planCode : undefined));
-  const displayedPlans = paddleDisplayPlans(months);
+  const displayedPlans = paddleDisplayPlans(months, currency, initial?.providerStatus !== "canceled" ? initial?.planCode : undefined);
   const [scriptReady, setScriptReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [actionPlan, setActionPlan] = useState<string | null>(null);
@@ -334,7 +334,7 @@ export function PaddlePricing({
   function planName(code: string) {
     const p=paddlePlans.find(p=>p.code===code);
     if(!p) return code;
-    const label=code==='paddle_lite'?t.names[0]:code.startsWith('paddle_creator')?t.names[1]:t.names[2];
+    const label=code.startsWith('paddle_lite')?t.names[0]:code.startsWith('paddle_creator')?t.names[1]:t.names[2];
     return `${label} · ${p.billingMonths===1?(language==='ja'?'月額':'Monthly'):t.duration(p.billingMonths)}`;
   }
   const displayDate=(value:string)=>new Date(value).toLocaleDateString(language==='ja'?'ja-JP':'en-US');

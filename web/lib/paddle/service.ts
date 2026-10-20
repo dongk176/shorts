@@ -5,7 +5,7 @@ import type { Sql, TransactionSql } from "postgres";
 import { getDb } from "@/lib/db";
 import { HttpError } from "@/lib/http";
 import { paddleRequest } from "./api";
-import { paddleAmount, paddlePlan, type PaddleCurrency } from "./catalog";
+import { paddleAmount, paddlePlan, isNewCheckoutPlan, type PaddleCurrency } from "./catalog";
 import {
   assertPaddleEnabled,
   paddleEnvironment,
@@ -92,6 +92,7 @@ export async function preparePaddleCheckout(
 ) {
   assertPaddleEnabled();
   paddlePlan(code);
+  if (!isNewCheckoutPlan(code, currency)) throw new HttpError(409, "This price is no longer available for new subscriptions.", "PRICE_CHANGED");
   const environment = paddleEnvironment();
   const priceId = paddlePriceId(code, currency);
   const checkout = await db.begin(async (tx) => {

@@ -16,6 +16,7 @@ export function formatAdminCurrency(amountMinor: number, currency: string = "KRW
 }
 
 export function paddleAdminProduct(code: string) {
+  code = code.replace(/_jpy_20261021$/, "");
   if (code === "paddle_lite") return "이지컷 프로 · 월간";
   if (code === "paddle_creator") return "스타터 · 월간 (이전 요금제)";
   if (code === "paddle_pro") return "전문가 · 월간 (이전 요금제)";

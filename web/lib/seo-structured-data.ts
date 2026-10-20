@@ -28,7 +28,7 @@ export function publicMonthlyOffer(locale: SiteLocale, internationalPricing: boo
   // Match the anonymous pricing page; account-specific contracts are not public offers.
   if (locale !== "ko") {
     if (!internationalPricing) return undefined;
-    const plan = paddlePlan("paddle_lite");
+    const plan = paddlePlan(locale === "ja" ? "paddle_lite_jpy_20261021" : "paddle_lite");
     return {
       "@type": "Offer", name: "EasyCut Pro",
       description: locale === "ja" ? "月額プラン・毎月のお支払い" : "Monthly subscription, billed every month",

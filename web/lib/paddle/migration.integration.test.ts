@@ -43,6 +43,11 @@ it("applies twice to observed production billing constraints without validating 
         )
       ).rows,
     ).toHaveLength(1);
+    const before = await pg.query("select * from shorts_mvp.plans order by code");
+    const repricing = fs.readFileSync(path.resolve("../supabase/migrations/20261020152718_paddle_jpy_new_subscriptions.sql"), "utf8");
+    await pg.exec(repricing); await pg.exec(repricing);
+    expect((await pg.query("select * from shorts_mvp.plans where code not like '%_jpy_20261021' order by code")).rows).toEqual(before.rows);
+    expect((await pg.query("select code from shorts_mvp.plans where code like '%_jpy_20261021'")).rows).toHaveLength(7);
     const states = await pg.query<{ convalidated: boolean }>(
       "select convalidated from pg_constraint where conname in ('plans_code_check','user_subscriptions_payment_provider_check')",
     );

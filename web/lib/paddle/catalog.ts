@@ -1,4 +1,4 @@
-export const paddlePlans = [
+const legacyPaddlePlans = [
   {
     code: "paddle_lite",
     name: "Lite",
@@ -33,6 +33,27 @@ export const paddlePlans = [
   { code: "paddle_pro_6m", name: "Expert", billingMonths: 6, minutes: 600, jobs: 3, usd: 20994, jpy: 29940 },
   { code: "paddle_pro_12m", name: "Expert", billingMonths: 12, minutes: 600, jobs: 3, usd: 31188, jpy: 45480 },
 ] as const;
+// Keep legacy plan codes and provider prices immutable for existing contracts.
+export const jpyPriceVersion = "_jpy_20261021";
+export const newJpyPaddlePlans = [
+  { ...legacyPaddlePlans[0], code: "paddle_lite_jpy_20261021", jpy: 750 },
+  { ...legacyPaddlePlans[3], code: "paddle_creator_3m_jpy_20261021", jpy: 6870 },
+  { ...legacyPaddlePlans[4], code: "paddle_creator_6m_jpy_20261021", jpy: 11340 },
+  { ...legacyPaddlePlans[5], code: "paddle_creator_12m_jpy_20261021", jpy: 17880 },
+  { ...legacyPaddlePlans[6], code: "paddle_pro_3m_jpy_20261021", jpy: 16470 },
+  { ...legacyPaddlePlans[7], code: "paddle_pro_6m_jpy_20261021", jpy: 29940 },
+  { ...legacyPaddlePlans[8], code: "paddle_pro_12m_jpy_20261021", jpy: 47880 },
+] as const;
+export const paddlePlans = [...legacyPaddlePlans, ...newJpyPaddlePlans] as const;
+export function isNewJpyPlan(code: string) {
+  return newJpyPaddlePlans.some(plan => plan.code === code);
+}
+export function newPaddlePlanCode(code: string, currency: PaddleCurrency) {
+  return currency === "JPY" ? `${code}${jpyPriceVersion}` : code;
+}
+export function isNewCheckoutPlan(code: string, currency: PaddleCurrency) {
+  return currency === "JPY" ? isNewJpyPlan(code) : !isNewJpyPlan(code);
+}
 export type PaddlePlanCode = (typeof paddlePlans)[number]["code"];
 export type PaddleCurrency = "USD" | "JPY";
 export function paddlePlan(code: string) {
@@ -53,8 +74,10 @@ export function formatPaddlePrice(code: string, currency: PaddleCurrency, monthl
 }
 
 export const paddlePackageTerms = [3, 6, 12] as const;
-export function paddleDisplayPlans(months: (typeof paddlePackageTerms)[number]) {
-  return [paddlePlan("paddle_lite"), paddlePlan(`paddle_creator_${months}m`), paddlePlan(`paddle_pro_${months}m`)];
+export function paddleDisplayPlans(months: (typeof paddlePackageTerms)[number], currency: PaddleCurrency = "USD", currentCode?: string) {
+  // Existing subscribers keep their original catalog, including management previews.
+  const suffix = currency === "JPY" && (!currentCode || isNewJpyPlan(currentCode)) ? jpyPriceVersion : "";
+  return [paddlePlan(`paddle_lite${suffix}`), paddlePlan(`paddle_creator_${months}m${suffix}`), paddlePlan(`paddle_pro_${months}m${suffix}`)];
 }
 
 export function paddleInitialTerm(code?: string) {
@@ -64,7 +87,7 @@ export function paddleInitialTerm(code?: string) {
 export function paddleDiscount(code:string,currency:PaddleCurrency) {
  const plan=paddlePlan(code);
  if(plan.billingMonths<=3) return null;
- const baseline=paddlePlan(code.replace(/_(6|12)m$/, '_3m'));
+ const baseline=paddlePlan(code.replace(/_(6|12)m(?=_jpy_20261021$|$)/, '_3m'));
  const savings=1-paddleAmount(code,currency)*baseline.billingMonths/(paddleAmount(baseline.code,currency)*plan.billingMonths);
  return {percent:Math.floor(savings*1000)/10,baseline:baseline.code};
 }
