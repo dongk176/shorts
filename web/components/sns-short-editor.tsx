@@ -202,7 +202,7 @@ export function SnsShortEditor({ item, projectNumber, channelThumbnailUrl, relea
           </fieldset>
         </div>
       </section>
-      {timeline ? <EditorTemplateTimeline workspaceRef={workspaceRef} id={timelineId} min={timeline.timelineStartSeconds} max={timeline.timelineEndSeconds} start={start} end={end} time={currentTime} disabled={blocked}
+      {timeline ? <EditorTemplateTimeline workspaceRef={workspaceRef} id={timelineId} videoUrl={timeline.url} min={timeline.timelineStartSeconds} max={timeline.timelineEndSeconds} start={start} end={end} time={currentTime} disabled={blocked}
         onSeek={seek} onRangeChange={(edge, value) => edit({ [edge]: value }, `range-${edge}`)} onCheckpoint={() => dispatch({ type: "checkpoint" })}
         layers={[{ label: title || ui("후킹 제목"), selected: tool === "title", onSelect: () => selectTool("title") }, { label: body.join(" · ") || ui("본문"), selected: tool === "content", onSelect: () => selectTool("content") }, { label: channel || ui("채널명"), selected: tool === "channel", onSelect: () => selectTool("channel") }]} />
         : <section className="editor-workspace-timeline template-timeline-loading" role="status">{ui(error ? "타임라인을 불러오지 못했습니다." : "타임라인 불러오는 중…")}</section>}

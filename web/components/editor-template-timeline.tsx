@@ -5,18 +5,21 @@ import { attachTimelineZoomGestures, type TimelineZoomAnchor } from "@/lib/edito
 import { EditorTimelineResizer } from "./editor-timeline-resizer";
 import { EditorTimelineRuler } from "./editor-timeline-ruler";
 import { EditorViewportZoomControl } from "./editor-studio-chrome";
+import { timelineThumbnailCount, useTimelineThumbnails } from "@/lib/use-timeline-thumbnails";
 
 export function templateEditorTime(seconds: number) {
   const value = Math.max(0, seconds);
   return `${Math.floor(value / 60)}:${(value % 60).toFixed(1).padStart(4, "0")}`;
 }
-export function EditorTemplateTimeline({ workspaceRef, id, min, max, start, end, time, disabled, onSeek, onRangeChange, onCheckpoint, layers }: {
+export function EditorTemplateTimeline({ workspaceRef, id, videoUrl, min, max, start, end, time, disabled, onSeek, onRangeChange, onCheckpoint, layers }: {
   workspaceRef: RefObject<HTMLDivElement | null>; id: string; min: number; max: number;
+  videoUrl: string;
   start: number; end: number; time: number; disabled: boolean;
   onSeek: (time: number) => void; onRangeChange: (edge: "start" | "end", value: number) => void; onCheckpoint: () => void;
   layers: { label: string; selected: boolean; onSelect: () => void }[];
 }) {
   const ui = useUiText();
+  const thumbnails = useTimelineThumbnails(videoUrl);
   const area = useRef<HTMLDivElement>(null);
   const track = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(1);
@@ -52,8 +55,13 @@ export function EditorTemplateTimeline({ workspaceRef, id, min, max, start, end,
         <div ref={track} className="template-timeline-track">
           <EditorTimelineRuler start={min} duration={duration} />
           <input className="template-playhead" aria-label={ui("재생 위치")} type="range" min={min} max={max} step="0.1" value={Math.max(min, Math.min(max, time))} onChange={e => onSeek(Number(e.target.value))} />
+          <div className="template-video-frames" aria-hidden="true">
+            {Array.from({ length: timelineThumbnailCount }, (_, index) => <span key={index} style={thumbnails[index] ? { backgroundImage: `url(${thumbnails[index]})` } : undefined} />)}
+          </div>
+          <div className="template-video-shade" aria-hidden="true" style={{ left: 0, width: `${left}%` }} />
+          <div className="template-video-shade" aria-hidden="true" style={{ left: `${left + width}%`, right: 0 }} />
           <div className="template-video-range" style={{ left: `${left}%`, width: `${width}%` }}>
-            <span>{ui("영상")}</span>
+            {!thumbnails.length && <span>{ui("영상")}</span>}
             {(["start", "end"] as const).map(edge => <button key={edge} type="button" role="slider" className={`template-trim template-trim-${edge}`} disabled={disabled}
               aria-label={ui(edge === "start" ? "영상 시작 구간 조절" : "영상 끝 구간 조절")} aria-valuemin={edge === "start" ? min : start + 3} aria-valuemax={edge === "start" ? end - 3 : max}
               aria-valuenow={edge === "start" ? start : end} aria-valuetext={templateEditorTime(edge === "start" ? start : end)}
