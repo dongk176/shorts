@@ -1800,3 +1800,14 @@
  .paddleDiscount:empty { display: none; }
  .paddleDialog { padding: 22px; }
 }
+
+/* Keep recommendation and discount tags separate on narrow phones. */
+@media (max-width: 380px) {
+  .paddlePlanGrid .paddleBadge {
+    left: 12px;
+    min-width: 0;
+    padding-inline: 12px;
+    font-size: 13px;
+    transform: none;
+  }
+}

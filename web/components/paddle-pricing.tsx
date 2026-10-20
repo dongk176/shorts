@@ -48,7 +48,7 @@ const copy = {
     month: "/ month",
     tax: "Tax included · Billed monthly",
     recommend: "Best value",
-    maximumSaving: "Biggest savings",
+    maximumSaving: "Best deal",
     equivalent: "/ month",
     monthlyEquivalent: "Monthly equivalent",
     discount: (n:number) => `${n}% off vs. the 3-month plan`,
