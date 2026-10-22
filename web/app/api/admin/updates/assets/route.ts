@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import sharp from "sharp";
+import sharp, { type OutputInfo } from "sharp";
 import { z } from "zod";
 import { requireAdminUser } from "@/lib/admin";
 import { assertSameOriginJsonRequest } from "@/lib/same-origin";
@@ -12,7 +12,7 @@ export async function POST(request: Request) {
   const { image } = z.object({ image: z.string().max(4_200_000).regex(/^[A-Za-z0-9+/]+={0,2}$/) }).parse(await readCreatorJson(request, 4_210_000));
   const bytes = Buffer.from(image, "base64");
   if (bytes.length > 3 * 1024 * 1024) throw new HttpError(413, "사진은 3MB 이하로 선택해 주세요.");
-  let output: { data: Buffer; info: sharp.OutputInfo };
+  let output: { data: Buffer; info: OutputInfo };
   try {
    const source = sharp(bytes, { limitInputPixels: 24_000_000, animated: false }); const meta = await source.metadata();
    if (!["jpeg", "png", "webp"].includes(meta.format ?? "") || (meta.pages ?? 1) > 1) throw new Error("unsupported");
