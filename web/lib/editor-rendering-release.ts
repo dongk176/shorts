@@ -8,6 +8,8 @@ export type EditorReleaseChannel = "legacy" | "stable" | "canary";
 
 export type EditorReleaseAssignment = {
   languageTest?: boolean;
+  /** SNS/community worker passed the shared-editor compatibility probe. */
+  unifiedTemplateEditingCapable?: boolean;
   channel: EditorReleaseChannel;
   releaseId: string | null;
   uiVersion: number | null;

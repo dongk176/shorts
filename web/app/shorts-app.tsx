@@ -326,6 +326,8 @@ import {
   editorDocumentOutputDuration,
 } from "@/lib/editor-document-contract";
 import { EditorStudioTopbar, EditorStudioBackButton, EditorViewportZoomControl } from "@/components/editor-studio-chrome";
+import { SocialEditorDecoration } from "@/components/social-editor-decoration";
+import { communityHeadingColor, socialTemplateBrandColor, isUnifiedSnsSnapshot, seedSnsEditorLayers, unifiedSnsSnapshot, unifiedSnsTemplate } from "@/lib/unified-sns-editor";
 import { SnsShortEditor } from "@/components/sns-short-editor";
 import {
   createEditorRenderSpec,
@@ -472,6 +474,7 @@ function customTemplateFromEditorDraft(
   document: EditorDocumentSnapshot,
 ): CustomTemplate | null {
   const snapshot = document.template.snapshot;
+  if (isUnifiedSnsSnapshot(snapshot)) return unifiedSnsTemplate({ templateSnapshot: snapshot, videoAspectRatio: document.video.aspectRatio });
   if (
     !document.template.customTemplateId
     || !snapshot
@@ -4082,12 +4085,13 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
   const ui = useUiText();
   const { locale: editorLocale, t } = useI18n();
   const translationUnavailable = item.subtitleTranslation?.status === "unavailable";
+  const socialEditing = item.templateSnapshot?.snsTemplateVersion === 1 && editorRelease.unifiedTemplateEditingCapable === true;
   const positionedWordsV4Enabled = isEditorRenderSpecV4Enabled();
   const adminSubtitleLayoutEnabled = subtitleEditingReleaseEnabled(
     editorRelease,
   );
   const unifiedSubtitleLayoutEnabled = adminSubtitleLayoutEnabled
-    && unifiedTemplateSubtitleCanaryEnabled;
+    && (unifiedTemplateSubtitleCanaryEnabled || socialEditing);
   const editorRenderSpecVersion = editorRenderSpecVersionForRelease(
     editorRelease,
   );
@@ -4098,7 +4102,7 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
     );
   const japaneseFontEnabled = editorUsesJapaneseFont(
     outputLanguage, editorRelease.fontManifestSha256,
-    item.initialRenderSpec?.version === EDITOR_RENDER_SPEC_V4_VERSION
+    socialEditing && outputLanguage === "ja" ? "noto-sans-jp" : item.initialRenderSpec?.version === EDITOR_RENDER_SPEC_V4_VERSION
       ? item.initialRenderSpec.title.font.fontId : undefined,
   );
   const availableEditorFontOptions = (fullSubtitleStyleEditingEnabled || japaneseFontEnabled
@@ -4117,11 +4121,17 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
   const subtitleToolVisible = unifiedSubtitleLayoutEnabled
     ? adminSubtitleLayoutEnabled
     : adminSubtitleEditingEnabled;
-  const savedEditorDocument = overlayPreviewEnabled
+  const storedEditorDocument = overlayPreviewEnabled
     && (item.editorDocument?.version === 2 || item.editorDocument?.version === 3)
     ? item.editorDocument
     : null;
-  const initialRenderSpec = overlayPreviewEnabled
+  // Fixed-layout SNS documents contain no editable body layers. Seed those
+  // while retaining the user's saved trim, channel photo and title.
+  const savedEditorDocument = useMemo(() => {
+    if (!socialEditing || !storedEditorDocument || isUnifiedSnsSnapshot(storedEditorDocument.template.snapshot)) return storedEditorDocument;
+    return { ...storedEditorDocument, overlays: seedSnsEditorLayers(item) };
+  }, [item, socialEditing, storedEditorDocument]);
+  const initialRenderSpec = overlayPreviewEnabled && (!socialEditing || isUnifiedSnsSnapshot(storedEditorDocument?.template.snapshot))
     ? savedEditorDocument?.version === 3
       && savedEditorDocument.renderSpec.version === EDITOR_RENDER_SPEC_V4_VERSION
       ? savedEditorDocument.renderSpec
@@ -4142,10 +4152,10 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
   const initialTemplate = templates.find(
     (value) => value.id === initialTemplateId,
   ) || templates[0];
-  const [availableCustomTemplate] = useState<CustomTemplate | null>(() => editableCustomTemplate(item));
+  const [availableCustomTemplate] = useState<CustomTemplate | null>(() => socialEditing ? unifiedSnsTemplate(item) : editableCustomTemplate(item));
   const initialVideoAspectRatio = savedEditorDocument?.video.aspectRatio
     || item.videoAspectRatio;
-  const initialTitle = savedEditorDocument?.title.text || item.hookTitle;
+  const initialTitle = savedEditorDocument?.title.text || (socialEditing ? String((item.templateSnapshot?.snsContent as Record<string, unknown>)?.title || item.hookTitle) : item.hookTitle);
   const captionTemplateBrandColor = captionTemplateEditorSpec
     && templatePresetColorOptions.some(
       (option) => option.color === captionTemplateEditorSpec.style.accentColor,
@@ -4185,6 +4195,7 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
     : initialVideoAspectRatio || "1:1";
   const baseInitialTitleTextStyles = savedEditorDocument
     ? savedEditorDocument.title.textStyles
+    : socialEditing ? []
     : item.titleTextStylesInitialized
       ? item.titleTextStyles
     : defaultTemplateTitleTextStyles(
@@ -4245,7 +4256,7 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
   const [channelPresetImageBusy, setChannelPresetImageBusy] = useState(false);
   const [channelPresetError, setChannelPresetError] = useState<string | null>(null);
   const [subtitlesEnabled, setSubtitlesEnabled] = useState(
-    savedEditorDocument?.subtitles.enabled ?? item.subtitlesEnabled,
+    savedEditorDocument?.subtitles.enabled ?? (socialEditing ? false : item.subtitlesEnabled),
   );
   const subtitlesEnabledRef = useRef(subtitlesEnabled);
   const [segments, setSegments] = useState(
@@ -4358,7 +4369,7 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
     && !activeCustomTemplate
     && templateId === initialTemplateId,
   );
-  const templateSelectionChangedForSave = templateSelectionTouched
+  const templateSelectionChangedForSave = !socialEditing && templateSelectionTouched
     && !builtInSubtitleTemplateSelectionActive;
   const initialTemplateProvidesComments = initialTemplateId === "comment-capture"
     && (!availableCustomTemplate || availableCustomTemplate.config.comment.visible);
@@ -4439,6 +4450,7 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
   const [overlayLayout, setOverlayLayout] = useState(() => {
     const initialLayout = savedEditorDocument
       ? normalizeEditorTitleScaleLayout(savedEditorDocument.overlays)
+      : socialEditing ? seedSnsEditorLayers(item)
       : seedEditorOverlayLayoutFromInitialRenderSpec(
           seedCustomTemplateTitleFont(
             replaceTemplateTextOverlays(
@@ -5089,9 +5101,11 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
     baseRenderVersion: item.renderVersion,
     template: {
       id: templateId,
-      customTemplateId: activeCustomTemplate?.id || null,
+      customTemplateId: socialEditing ? null : activeCustomTemplate?.id || null,
       presetVersion,
-      snapshot: activeCustomTemplate
+      snapshot: socialEditing && activeCustomTemplate && item.templateSnapshot
+        ? unifiedSnsSnapshot(item.templateSnapshot, activeCustomTemplate.config, title, overlayLayout.textOverlays, socialTemplateBrandColor(activeCustomTemplate, item.templateSnapshot.brandColor))
+        : activeCustomTemplate
         ? {
             id: activeCustomTemplate.id,
             name: activeCustomTemplate.name,
@@ -5159,6 +5173,8 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
     );
     return document;
   }, [
+    socialEditing,
+    item.templateSnapshot,
     activeCustomTemplate,
     builtInSubtitleTemplateSelectionActive,
     builtInSubtitleTemplateSnapshot,
@@ -5677,7 +5693,7 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
   }, [editorFontApplySuggestion, textOverlays]);
   const validTitle = title.trim().length > 0 && title.length <= 80 && title.split("\n").length <= 2;
   const template = templates.find((value) => value.id === templateId) || templates[0];
-  const editorTemplateDisplayName = presetTemplateDisplayName(
+  const editorTemplateDisplayName = socialEditing ? availableCustomTemplate?.name || "SNS" : presetTemplateDisplayName(
     template.id,
     template.name,
     adminSubtitleLayoutEnabled,
@@ -7709,7 +7725,12 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
           ...templateHistoryRef.current.future,
         ],
       };
-      setSelectedOverlay("video");
+      if (templateChange.before.activeCustomTemplate?.id === "builtin-social") {
+        setSelectedOverlay(null);
+        setActiveEditorSidebarTool("background");
+      } else {
+        setSelectedOverlay("video");
+      }
       setInlineEditingOverlay(null);
     }
     editorHistoryOrderRef.current = {
@@ -7814,7 +7835,12 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
         ],
         future: futureTemplateChanges,
       };
-      setSelectedOverlay("video");
+      if (templateChange.before.activeCustomTemplate?.id === "builtin-social") {
+        setSelectedOverlay(null);
+        setActiveEditorSidebarTool("background");
+      } else {
+        setSelectedOverlay("video");
+      }
       setInlineEditingOverlay(null);
     }
     editorHistoryOrderRef.current = {
@@ -9280,6 +9306,23 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
     };
   }, [editTimeline?.url]);
 
+  const setSocialBrandColor = (color: string) => {
+    if (!socialEditing || !item.templateSnapshot) return;
+    finishPendingEditorInteractionsIncludingCaption();
+    const before = currentEditorTemplateSnapshot();
+    const nextTemplate = unifiedSnsTemplate({ ...item, templateSnapshot: { ...item.templateSnapshot, brandColor: color } });
+    if (!nextTemplate || socialTemplateBrandColor(before.activeCustomTemplate, item.templateSnapshot.brandColor) === color) return;
+    nextTemplate.version = (before.activeCustomTemplate?.version || 1) + 1;
+    const overlayLayout = cloneEditorOverlayLayout(before.overlayLayout);
+    const board = overlayLayout.textOverlays.find((overlay) => overlay.id === "sns-board");
+    if (board && board.color === communityHeadingColor(socialTemplateBrandColor(before.activeCustomTemplate, item.templateSnapshot.brandColor))) {
+      board.color = communityHeadingColor(color);
+    }
+    const after = { ...before, activeCustomTemplate: nextTemplate, overlayLayout };
+    applyEditorTemplateSnapshot(after);
+    recordEditorTemplateChange(before, after);
+  };
+
   const selectTemplate = (value: TemplateId) => {
     if (
       templateIdRef.current === value
@@ -10606,7 +10649,7 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
             {ui("앞으로 가기")}</button>
         </div>}
           <div className="editor-header-actions">
-            {overlayPreviewEnabled && <button type="button" className="editor-studio-template-button" onClick={() => toggleEditorSidebarTool("template")}>
+            {overlayPreviewEnabled && !socialEditing && <button type="button" className="editor-studio-template-button" onClick={() => toggleEditorSidebarTool("template")}>
               <EditorSidebarSectionIcon section="template" />{ui("템플릿")}</button>}
             {overlayPreviewEnabled && <div
               className="editor-mobile-history-actions"
@@ -10759,6 +10802,7 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
             containerType: "inline-size",
           }}
         >
+          {socialEditing && item.templateSnapshot && <SocialEditorDecoration snapshot={{ ...item.templateSnapshot, brandColor: socialTemplateBrandColor(activeCustomTemplate, item.templateSnapshot.brandColor) }} ratio={item.videoAspectRatio} />}
           {renderOverlayLayout.visible.title && (
             renderSpec?.version === EDITOR_RENDER_SPEC_V4_VERSION
             ? <EditorTitleV4Preview
@@ -11561,8 +11605,8 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
               data-editor-guide="sidebar-tools"
             >
             {EDITOR_SIDEBAR_TOOLS.filter((tool) => (
-              tool.id !== "subtitle"
-              || subtitleToolVisible
+              (tool.id !== "subtitle" || subtitleToolVisible)
+              && (tool.id !== "template" || !socialEditing)
             )).map((tool) => {
               const active = desktopSidebarOpen && (selectedOverlay === "video"
                 ? tool.id === "layout"
@@ -12413,6 +12457,16 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
               <header className="editor-tool-panel-header">
                 <strong>{ui("배경")}</strong>
               </header>
+              {socialEditing && <fieldset className="editor-background-color-setting" disabled={saving}>
+                <legend>{ui("브랜드 색상")}</legend>
+                <div className="flex flex-wrap gap-2">
+                  {templatePresetColorOptions.map((option) => <button key={option.color} type="button"
+                    aria-label={ui(option.name)} title={ui(option.name)}
+                    aria-pressed={socialTemplateBrandColor(activeCustomTemplate, item.templateSnapshot?.brandColor) === option.color}
+                    className="h-8 w-8 rounded-full border border-white/30 aria-pressed:outline aria-pressed:outline-2 aria-pressed:outline-offset-2"
+                    style={{ background: option.color }} onClick={() => setSocialBrandColor(option.color)} />)}
+                </div>
+              </fieldset>}
               {(customTemplateDesignEnabled || editorCanvasBackground?.kind === "uploaded_image") && <BackgroundAssetPicker
                 value={editorCanvasBackground}
                 onSelect={setEditorCanvasBackground}
@@ -13196,7 +13250,7 @@ export function ShortEditorPage({ projectNumber, shortId, rangeEditingEnabled = 
   if (!project) return <main className="editor-page grid place-items-center text-sm text-neutral-400">{ui("편집기를 준비하고 있습니다…")}</main>;
   if (!item || project.isExample) return <main className="editor-page grid place-items-center p-6 text-center"><div><h1 className="text-lg font-bold">{ui("편집할 수 없는 쇼츠입니다.")}</h1><Link href={`/projects/${projectNumber}`} prefetch={false} className="mt-6 inline-flex rounded-xl bg-white px-5 py-3 text-sm font-bold text-black">{ui("프로젝트로 돌아가기")}</Link></div></main>;
 
-  if (item.templateSnapshot?.snsTemplateVersion === 1) return <SnsShortEditor key={item.id}
+  if (item.templateSnapshot?.snsTemplateVersion === 1 && !editorRelease.unifiedTemplateEditingCapable) return <SnsShortEditor key={item.id}
     item={item} projectNumber={project.projectNumber} channelThumbnailUrl={project.channelThumbnailUrl}
     release={editorRelease} canEdit={Boolean(access?.canEdit)} onChanged={loadProject} />;
   return <Editor item={item} outputLanguage={project.outputLanguage} commentOutputLanguage={project.sourceLanguage ? project.outputLanguage : "ko"} channelThumbnailUrl={project.channelThumbnailUrl} standalone projectLabel={item.hookTitle} projectNumber={project.projectNumber} onClose={closeEditor} onChanged={loadProject} rangeEditingEnabled={rangeEditingEnabled} overlayPreviewEnabled={overlayPreviewEnabled} editorSaveEnabled={editorSaveEnabled} editorRelease={editorRelease} unifiedTemplateSubtitleCanaryEnabled={unifiedTemplateSubtitleCanaryEnabled} customTemplateDesignEnabled={customTemplateDesignEnabled} wordTimedSubtitlesAvailable={item.wordTimedSubtitlesAvailable} paidAccessBlocked={!access?.canEdit} />;

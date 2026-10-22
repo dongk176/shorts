@@ -1,3 +1,5 @@
+import { validateUnifiedSnsEdit } from "@/lib/unified-sns-editor-validation";
+import { isUnifiedSnsSnapshot } from "@/lib/unified-sns-editor";
 import { contentTextFont, hasUnsupportedCjkFont } from "@/lib/content-language";
 import { COMMUNITY_EDITOR_RELEASE_ID } from "@/lib/community-template-contract";
 import { SNS_EDITOR_RELEASE_ID, snsEditedSnapshotSchema, type SnsLanguage } from "@/lib/sns-editor-contract";
@@ -677,16 +679,21 @@ async function applyEditorDocument({
   const communityEditing = existing.templateSnapshot?.communityTemplateVersion === 1;
   const snsEditing = existing.templateSnapshot?.snsTemplateVersion === 1;
   if (snsEditing || requestedDocument.template.snapshot?.snsTemplateVersion === 1) {
-    if (!snsEditing || release.releaseId !== (communityEditing ? COMMUNITY_EDITOR_RELEASE_ID : SNS_EDITOR_RELEASE_ID) || templateSelectionTouched
-      || document.template.id !== "white-yellow" || document.template.customTemplateId !== null
-      || document.subtitles.enabled || document.comments.length || document.overlays.textOverlays.length) {
-      throw new HttpError(400, "SNS 편집 화면에서 다시 저장해 주세요.", "SNS_EDITOR_DOCUMENT_INVALID");
+    if (isUnifiedSnsSnapshot(requestedDocument.template.snapshot)) {
+      if (templateSelectionTouched) throw new HttpError(400, "편집 중 템플릿 종류를 변경할 수 없습니다.");
+      templateSelection.templateSnapshot = validateUnifiedSnsEdit(document, existing.templateSnapshot || {}, existing.videoAspectRatio as VideoAspectRatio, release);
+    } else {
+      if (release.unifiedTemplateEditingCapable || !snsEditing || release.releaseId !== (communityEditing ? COMMUNITY_EDITOR_RELEASE_ID : SNS_EDITOR_RELEASE_ID) || templateSelectionTouched
+        || document.template.id !== "white-yellow" || document.template.customTemplateId !== null
+        || document.subtitles.enabled || document.comments.length || document.overlays.textOverlays.length) {
+        throw new HttpError(400, "SNS 편집 화면에서 다시 저장해 주세요.", "SNS_EDITOR_DOCUMENT_INVALID");
+      }
+      const language = existing.templateSnapshot?.snsLanguage as SnsLanguage;
+      if (!["ko", "en", "ja"].includes(language)) throw new HttpError(400, "SNS 언어 설정을 확인해 주세요.");
+      const edited = snsEditedSnapshotSchema(existing.videoAspectRatio as VideoAspectRatio, language, communityEditing).parse(document.template.snapshot);
+      if (edited.snsContent.title !== document.title.text) throw new HttpError(400, "SNS 제목이 일치하지 않습니다.");
+      templateSelection.templateSnapshot = edited;
     }
-    const language = existing.templateSnapshot?.snsLanguage as SnsLanguage;
-    if (!["ko", "en", "ja"].includes(language)) throw new HttpError(400, "SNS 언어 설정을 확인해 주세요.");
-    const edited = snsEditedSnapshotSchema(existing.videoAspectRatio as VideoAspectRatio, language, communityEditing).parse(document.template.snapshot);
-    if (edited.snsContent.title !== document.title.text) throw new HttpError(400, "SNS 제목이 일치하지 않습니다.");
-    templateSelection.templateSnapshot = edited;
   }
   document.template.customTemplateId = templateSelection.customTemplateId;
   document.template.snapshot = templateSelection.templateSnapshot
@@ -819,7 +826,7 @@ async function applyEditorDocument({
       if (!renderSpecV4Requested) {
         throw new HttpError(409, "새 배경·템플릿 편집기를 다시 열어 주세요.", "CUSTOM_TEMPLATE_DESIGN_RENDER_UNAVAILABLE");
       }
-      if (lockedRelease.languageTest) {
+      if (lockedRelease.languageTest && !lockedRelease.unifiedTemplateEditingCapable) {
         await assertCustomTemplateDesignRenderRelease(tx, lockedRelease.releaseId, { languageTest: true });
       } else {
         await assertCustomTemplateDesignRenderRelease(tx, lockedRelease.releaseId);

@@ -1883,6 +1883,25 @@ def create_editor_background(
             else TEMPLATE_STYLES[document.template.id].background
         )
         image = Image.new("RGB", (CANVAS_WIDTH, CANVAS_HEIGHT), color)
+    snapshot = document.template.snapshot or {}
+    if snapshot.get("snsTemplateVersion") == 1 and snapshot.get("unifiedEditorVersion") == 1:
+        draw = ImageDraw.Draw(image)
+        color = snapshot["brandColor"]
+        if snapshot.get("communityTemplateVersion") == 1:
+            draw.rectangle((0, 0, 1080, 269), fill=color)
+            draw.line((0, 375, 1080, 375), fill="#303e78", width=3)
+        else:
+            from .sns_template import sns_layout
+            layout = sns_layout(document.video.aspect_ratio.value)
+            offset = 150 if document.video.aspect_ratio.value in {"16:9", "5:4", "1:1"} else 0
+            draw.rounded_rectangle((60, 150 + offset, 1020, 282 + offset), radius=26, fill=color)
+            # Match the shared preview's static social card. Editable layers
+            # are composited independently by the normal renderer below.
+            x = 60 if document.video.aspect_ratio.value == "9:16" else 30
+            draw.rectangle(
+                (x, 342 + offset, 1080 - x, layout.video[1] + layout.video[3] + 30),
+                outline="#e2e2e2", width=2,
+            )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     image.save(output_path, format="PNG", compress_level=1)
     return output_path
@@ -2118,11 +2137,13 @@ class EditorDocumentRenderer:
             from .sns_template import render_sns
 
             validate_sns_editor_document(document)
-            return render_sns(
-                self.settings, clean_path=clean_path, output_path=output_path, work_dir=work_dir,
-                ratio=document.video.aspect_ratio, snapshot=document.template.snapshot,
-                channel=document.channel.display_name, avatar=channel_thumbnail_path,
-            )
+            if (document.template.snapshot or {}).get("unifiedEditorVersion") != 1:
+                return render_sns(
+                    self.settings, clean_path=clean_path, output_path=output_path,
+                    work_dir=work_dir,
+                    ratio=document.video.aspect_ratio, snapshot=document.template.snapshot,
+                    channel=document.channel.display_name, avatar=channel_thumbnail_path,
+                )
         if document.render_spec is not None and document.render_spec.version == 4:
             verify_editor_font_face_v4(document.render_spec.title.font)
             verify_editor_font_face_v4(document.render_spec.channel.font)
