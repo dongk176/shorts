@@ -187,5 +187,25 @@ test('SNS and community immutable releases preserve public admission and owner c
  await check(nextJob);await check(betaJob);await check(job(publicId));
  await db.query('update shorts_mvp.language_test_releases set verified_at=null where id=$1',[sns]);
  await assert.rejects(check(job(sns)),/SNS_TEMPLATE_UNAVAILABLE/); await check(job(publicId));
+ // Unified releases preserve old requests and require their own capability proof.
+ await db.exec(fs.readFileSync(new URL('../supabase/migrations/20261022090759_unified_social_editor_binding.sql',import.meta.url),'utf8'));
+ const us='66f640ba-d156-4c90-9c4f-f79038bf9d14',uc='a576138e-1ddf-4469-8494-252058595705';
+ await db.query('update shorts_mvp.language_test_releases set verified_at=now() where id=$1',[cg4]);
+ for(const [id,generation,snapshot] of [[us,nextGeneration,{snsTemplateVersion:1}],[uc,cg5,{snsTemplateVersion:1,communityTemplateVersion:1}]]) {
+   await db.query('insert into shorts_mvp.editor_releases select $1,git_sha,worker_image_digest,font_manifest_sha256,status,staging_verified_at,ui_version,document_version,render_spec_version,caption_render_spec_version from shorts_mvp.editor_releases where id=$2',[id,nextEditor]);
+   const attestation={...proof,generationReleaseIds:[generation],unifiedTemplateEditorVersion:1};
+   await db.query("insert into shorts_mvp.editor_release_checks values($1,'isolated','sns_editor_compatibility','passed',now(),$2)",[id,JSON.stringify(attestation)]);
+   await db.query('update shorts_mvp.video_jobs set user_id=$1,language_test_release_id=$2,initial_editor_release_id=$2,template_snapshot=$3 where id=$4',[user,generation,JSON.stringify(snapshot),jobId]);
+   await db.query('update shorts_mvp.generated_shorts set user_id=$1,template_snapshot=$2 where id=$3',[user,JSON.stringify(snapshot),shortId]);
+   const unified={...request,release_id:id};
+   await edit(unified);
+   for(const patch of [{user_id:admin},{base_render_version:9},{release_channel:'stable'},{release_id:id===us?uc:us}]) await assert.rejects(edit({...unified,...patch}),/SNS_EDITOR_BINDING_MISMATCH/);
+   for(const invalid of [undefined,0,'1']) {
+     await db.query('update shorts_mvp.editor_release_checks set details=$1 where release_id=$2',[JSON.stringify({...attestation,unifiedTemplateEditorVersion:invalid}),id]);
+     await assert.rejects(edit(unified),/SNS_EDITOR_BINDING_MISMATCH/);
+   }
+   await db.query('update shorts_mvp.editor_release_checks set details=$1 where release_id=$2',[JSON.stringify(attestation),id]);
+   await edit(unified);
+ }
  }finally{await db.close();}
 });

@@ -9,7 +9,7 @@ import io
 from pathlib import Path
 from zipfile import ZipFile
 
-BASE_SHA256 = "5gFF6LTU15FCDenWTwoUNTAM+yTJOPncdyo6F26Tq+g="
+BASE_SHA256 = "PHeBGb+unKlOa0xOxwpvkfokVnr2R5tMKUw3lfEAWeg="
 
 
 def target_function(source: str) -> ast.FunctionDef:

@@ -5413,3 +5413,30 @@ def test_sns_dedicated_editor_requires_exact_registered_release(invalid):
         [{'id': 'ordinary', 'is_admin': False}] if table == 'app_users'
         else [] if invalid == 'proof' else [{'details': proof, 'completed_at': 'now'}])
     assert module._sns_editor_compatible(parent, release) is (invalid is None)
+
+
+@pytest.mark.parametrize("community", [False, True])
+@pytest.mark.parametrize("attested", [False, True])
+def test_unified_social_editor_requires_dedicated_capability(community, attested):
+    module, _ = _load_lambda("batch_submitter")
+    generation = ("8b0a6b0f-ab5d-43dd-afce-b3a2409b59b9" if community
+                  else "b871796a-f83a-4aed-8d56-bf039de1cdbf")
+    parent = {"language_test_release_id": generation, "user_id": "ordinary",
+              "template_snapshot": {"snsTemplateVersion": 1,
+                                    **({"communityTemplateVersion": 1} if community else {})}}
+    release = {"id": "a576138e-1ddf-4469-8494-252058595705" if community
+               else "66f640ba-d156-4c90-9c4f-f79038bf9d14",
+               "status": "canary_ready", "staging_verified_at": "now", "git_sha": "a" * 40,
+               "worker_image_digest": "sha256:" + "b" * 64, "font_manifest_sha256": "c" * 64,
+               "render_spec_version": 4, "caption_render_spec_version": 4,
+               "production_job_definition_arn": (
+                   "arn:aws:batch:ap-northeast-2:181651591905:job-definition/"
+                   "shorts-mvp-editor-release-language-test-sns-edit-aaaaaaaaaaaa:1")}
+    proof = {"generationReleaseIds": [generation], "sourceGitSha": release["git_sha"],
+             "imageDigest": release["worker_image_digest"],
+             "fontManifestSha256": release["font_manifest_sha256"],
+             **({"unifiedTemplateEditorVersion": 1} if attested else {})}
+    module.rest = MagicMock(side_effect=lambda table, **kwargs:
+                            [{"id": "ordinary", "is_admin": False}] if table == "app_users"
+                            else [{"details": proof, "completed_at": "now"}])
+    assert module._sns_editor_compatible(parent, release) is attested

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Sql } from "postgres";
+import type { Sql, TransactionSql } from "postgres";
 import fixture from "../../test-fixtures/unified-social-editor-v4.json";
 import { videoAspectRatios } from "./contracts";
 import { editorDocumentSnapshotSchema } from "./editor-document-contract";
@@ -7,7 +7,7 @@ import { templateConfigSchema } from "./template-config";
 import { snsCopyLimits, SNS_GENERATION_RELEASE_IDS, SNS_EDITOR_RELEASE_ID } from "./sns-editor-contract";
 import { snsEditorRelease } from "./sns-editor-release";
 import { seedSnsEditorLayers, unifiedSnsTemplate, UNIFIED_SNS_EDITOR_RELEASE_ID } from "./unified-sns-editor";
-import { validateUnifiedSnsEdit } from "./unified-sns-editor-validation";
+import { assertUnifiedSnsDesignRelease, validateUnifiedSnsEdit } from "./unified-sns-editor-validation";
 
 describe("shared SNS/community editor", () => {
   it.each(videoAspectRatios)("seeds valid movable layers for %s in every language", videoAspectRatio => {
@@ -61,5 +61,41 @@ describe("shared SNS/community editor", () => {
     expect(await snsEditorRelease(db, "owner", "short")).toMatchObject({ unifiedTemplateEditingCapable: true, subtitleEditingCapable: true });
     row.details.unifiedTemplateEditorVersion = 0;
     await expect(snsEditorRelease(db, "owner", "short")).rejects.toMatchObject({ code: "SNS_EDITOR_UNAVAILABLE" });
+  });
+});
+
+
+describe("dedicated social design attestation", () => {
+  const sha = "a".repeat(40), digest = "sha256:" + "b".repeat(64), font = "c".repeat(64);
+  const proof = () => ({ unifiedTemplateEditorVersion: 1, sourceGitSha: sha, imageDigest: digest,
+    fontManifestSha256: font, browserVerification: { desktop: true, mobile: true, sourceGitSha: sha },
+    unifiedSocialProbe: { version: 1, runtimeIdentityVerified: true, batchStatus: "SUCCEEDED",
+      sourceGitSha: sha, imageDigest: digest, fontManifestSha256: font,
+      manifestSha256: "d".repeat(64), manifestS3VersionId: "version", artifactUri: "s3://bucket/outputs/unified-social-verification/manifest.json",
+      cases: [{kind:"sns"},{kind:"community",subtitles:true}], customTemplateDesign: {
+        version: 1, passed: true, wrapRevision: "editor-text-v1", sourceGitSha: sha,
+        workerImageDigest: digest, fontManifestSha256: font, renderSpecVersion: 4, captionRenderSpecVersion: 4,
+        verification: {caseCount:3,textOverlayCount:20,deletedTextPreserved:true,maximumFrameMeanError:0.2,
+          fontIds:Array.from({length:20},(_,i)=>String(i))}
+      }
+    }
+  });
+  const db = (details: unknown, id = UNIFIED_SNS_EDITOR_RELEASE_ID) => vi.fn().mockResolvedValue([{
+    id,gitSha:sha,workerImageDigest:digest,fontManifestSha256:font,detailsJson:JSON.stringify(details)
+  }]) as unknown as TransactionSql;
+  it("requires exact worker, cloud render and browser evidence", async () => {
+    await expect(assertUnifiedSnsDesignRelease(db(proof()), UNIFIED_SNS_EDITOR_RELEASE_ID)).resolves.toBeUndefined();
+    await expect(assertUnifiedSnsDesignRelease(db(proof(), SNS_EDITOR_RELEASE_ID), SNS_EDITOR_RELEASE_ID)).rejects.toMatchObject({status:503});
+    for (const kind of ["digest","browser","runtime","version","design","fonts","deletion"]) {
+      const p=proof();
+      if(kind==="digest")p.unifiedSocialProbe.imageDigest="wrong";
+      if(kind==="browser")p.browserVerification.mobile=false;
+      if(kind==="runtime")p.unifiedSocialProbe.runtimeIdentityVerified=false;
+      if(kind==="version")p.unifiedSocialProbe.manifestS3VersionId="";
+      if(kind==="design")p.unifiedSocialProbe.customTemplateDesign.passed=false;
+      if(kind==="fonts")p.unifiedSocialProbe.customTemplateDesign.verification.fontIds=[];
+      if(kind==="deletion")p.unifiedSocialProbe.customTemplateDesign.verification.deletedTextPreserved=false;
+      await expect(assertUnifiedSnsDesignRelease(db(p),UNIFIED_SNS_EDITOR_RELEASE_ID)).rejects.toMatchObject({status:503});
+    }
   });
 });

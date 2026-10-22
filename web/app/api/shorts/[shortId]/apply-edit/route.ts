@@ -1,4 +1,4 @@
-import { validateUnifiedSnsEdit } from "@/lib/unified-sns-editor-validation";
+import { assertUnifiedSnsDesignRelease, validateUnifiedSnsEdit } from "@/lib/unified-sns-editor-validation";
 import { isUnifiedSnsSnapshot } from "@/lib/unified-sns-editor";
 import { contentTextFont, hasUnsupportedCjkFont } from "@/lib/content-language";
 import { COMMUNITY_EDITOR_RELEASE_ID } from "@/lib/community-template-contract";
@@ -826,7 +826,9 @@ async function applyEditorDocument({
       if (!renderSpecV4Requested) {
         throw new HttpError(409, "새 배경·템플릿 편집기를 다시 열어 주세요.", "CUSTOM_TEMPLATE_DESIGN_RENDER_UNAVAILABLE");
       }
-      if (lockedRelease.languageTest && !lockedRelease.unifiedTemplateEditingCapable) {
+      if (lockedRelease.unifiedTemplateEditingCapable) {
+        await assertUnifiedSnsDesignRelease(tx, lockedRelease.releaseId);
+      } else if (lockedRelease.languageTest) {
         await assertCustomTemplateDesignRenderRelease(tx, lockedRelease.releaseId, { languageTest: true });
       } else {
         await assertCustomTemplateDesignRenderRelease(tx, lockedRelease.releaseId);

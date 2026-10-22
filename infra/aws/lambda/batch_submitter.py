@@ -998,7 +998,12 @@ def _sns_editor_compatible(parent_job: dict[str, Any], release: dict[str, Any]) 
         "1ce342d0-cf2d-41b4-961b-f3abd9f4e336",
         "a7db3266-7fc0-4175-a818-39aaff712ad3", "0641d236-5e76-467e-95f3-bf695e6d6083",
     }
+    unified_id = (
+        "a576138e-1ddf-4469-8494-252058595705" if community
+        else "66f640ba-d156-4c90-9c4f-f79038bf9d14"
+    )
     community_editors = {
+        "a576138e-1ddf-4469-8494-252058595705",
         "ca57c1ae-c841-4f44-835a-f566a3c097c1",
         "d1bb4c9d-f055-4cbe-bdbd-318e51ffdf33",
         "242f96a3-fe3b-4f20-a006-3c6559d98573",
@@ -1014,6 +1019,7 @@ def _sns_editor_compatible(parent_job: dict[str, Any], release: dict[str, Any]) 
     if (release.get("id") not in (community_editors if community else {
         "406dadcf-f290-4eb8-b82e-a6e8c6b40105", "77d3b2de-12a4-4b7d-a134-87170b1d3ecf",
         "4fbfeeaa-e210-4143-aece-c17029d962a0",
+        "66f640ba-d156-4c90-9c4f-f79038bf9d14",
     })
         or parent_job.get("language_test_release_id") not in generation_ids
         or (parent_job.get("template_snapshot") or {}).get("snsTemplateVersion") != 1):
@@ -1030,6 +1036,7 @@ def _sns_editor_compatible(parent_job: dict[str, Any], release: dict[str, Any]) 
     )) or []
     if (not users
         or (((community and release.get("id") not in {
+                 "a576138e-1ddf-4469-8494-252058595705",
                  "d1bb4c9d-f055-4cbe-bdbd-318e51ffdf33", "ca57c1ae-c841-4f44-835a-f566a3c097c1",
              })
              or release.get("id") == "406dadcf-f290-4eb8-b82e-a6e8c6b40105")
@@ -1037,6 +1044,8 @@ def _sns_editor_compatible(parent_job: dict[str, Any], release: dict[str, Any]) 
         or not checks or not checks[0].get("completed_at")):
         return False
     details = checks[0].get("details") or {}
+    if release.get("id") == unified_id and details.get("unifiedTemplateEditorVersion") != 1:
+        return False
     return (
         parent_job["language_test_release_id"] in details.get("generationReleaseIds", [])
         and release.get("status") in {"canary_ready", "canary_active", "approved"}
