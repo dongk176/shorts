@@ -90,6 +90,8 @@ describe("native login and APNs boundary",()=>{
     await registerNativeDevice(uid,{installationId,token:"b".repeat(64),environment:"production"});
     const {rows}=await pg.query<{apns_token:string,transport:string,old:boolean}>("select apns_token,transport,active_from<now()-interval '30 minutes' as old from shorts_mvp.admin_mobile_subscriptions");
     expect(rows).toEqual([{apns_token:"b".repeat(64),transport:"apns",old:true}]);
+    // This test covers token rotation, independently of Seoul quiet hours.
+    await pg.exec(`insert into shorts_mvp.admin_mobile_preferences(admin_id,quiet_night) values('${uid}',false)`);
     await payment();await scanMobileEvents();await dispatchMobilePushes();
     expect(sendMobilePush).toHaveBeenCalledWith(expect.objectContaining({transport:"apns",apnsToken:"b".repeat(64),apnsEnvironment:"production"}),expect.anything());
   });

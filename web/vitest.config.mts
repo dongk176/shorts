@@ -6,7 +6,7 @@ export default defineConfig({
   // the same React automatic runtime when running directly under Vite.
   oxc: { jsx: { runtime: "automatic" } },
   resolve: {
-    alias: { "@": path.resolve(__dirname) },
+    alias: { "@": path.resolve(import.meta.dirname) },
   },
   test: {
     environment: "node",

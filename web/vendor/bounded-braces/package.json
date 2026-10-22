@@ -1,0 +1,14 @@
+{
+  "name": "@easycut/bounded-braces",
+  "version": "3.0.3-easycut.1",
+  "private": true,
+  "description": "Braces 3.0.3 with bounded parse nesting and AST walkers for build tooling",
+  "main": "index.js",
+  "license": "MIT",
+  "dependencies": {
+    "fill-range": "^7.1.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -52,7 +52,7 @@ describe("search language consistency", () => {
   it("matches public prices without changing units or advertising unavailable foreign pricing", () => {
     expect(publicMonthlyOffer("ko", false)).toMatchObject({ price: "9900", priceCurrency: "KRW" });
     expect(publicMonthlyOffer("en", true)).toMatchObject({ price: "3.99", priceCurrency: "USD", url: "https://www.easycut.co.kr/en/pricing" });
-    expect(publicMonthlyOffer("ja", true)).toMatchObject({ price: "590", priceCurrency: "JPY", url: "https://www.easycut.co.kr/jp/pricing" });
+    expect(publicMonthlyOffer("ja", true)).toMatchObject({ price: "750", priceCurrency: "JPY", url: "https://www.easycut.co.kr/jp/pricing" });
     expect(publicMonthlyOffer("en", false)).toBeUndefined();
     expect(publicMonthlyOffer("ja", false)).toBeUndefined();
   });

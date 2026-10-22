@@ -16,9 +16,7 @@ describe("admin editor subtitle layout", () => {
     expect(editorSource).toContain(
       "const adminSubtitleEditingEnabled = adminSubtitleLayoutEnabled\n    && !translationUnavailable && (wordTimedSubtitlesAvailable || Boolean(captionTemplateEditorSpec))",
     );
-    expect(editorSource).toContain(
-      'tool.id !== "subtitle"\n              || subtitleToolVisible',
-    );
+    expect(editorSource).toMatch(/tool\.id !== "subtitle"\s*\|\| subtitleToolVisible/);
     expect(editorSource).toContain(
       "wordTimedSubtitlesAvailable={item.wordTimedSubtitlesAvailable}",
     );

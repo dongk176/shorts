@@ -8,7 +8,7 @@ import { updatePage, UPDATE_PAGE_SIZE } from "../app/updates/pagination";
 describe("public multilingual pricing", () => {
   it("uses the public currency and preserves term totals", () => {
     expect(comparisonPricing("en", true)[0].priceLines[0]).toContain("$3.99");
-    expect(comparisonPricing("ja", true)[0].priceLines[0]).toContain("590");
+    expect(comparisonPricing("ja", true)[0].priceLines[0]).toContain("750");
     expect(comparisonPricing("ko", false)[0].priceLines[0]).toContain("9,900");
     expect(comparisonPricing("en", true)[1].priceLines[0]).toContain("$44.97 for 3 months");
     expect(JSON.stringify(comparisonPricing("ja", true).map(p => p.priceLines))).not.toContain("원");

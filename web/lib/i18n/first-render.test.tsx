@@ -109,10 +109,12 @@ describe("localized first render without browser effects", () => {
       release={{ channel: "legacy", releaseId: null, uiVersion: null, documentVersion: null, subtitleEditingCapable: false, subtitleEditingPublicEnabled: false }}
       canEdit onChanged={async () => {}} />, locale);
     expect(html).toContain(locale === "en" ? "Edit community template" : "コミュニティ風を編集");
-    expect(html).toContain(locale === "en" ? "Board name · 4–8 characters" : "掲示板名・4〜8文字");
-    expect(html).toContain(`href="/${locale === "ja" ? "jp" : "en"}/projects/42"`);
+    // The shared inspector initially shows the title tool; other fields stay in the preview.
+    expect(html).toContain(locale === "en" ? "Editing tools" : "編集ツール");
+    expect(html).toContain(locale === "en" ? 'aria-label="Back to projects"' : 'aria-label="プロジェクトに戻る"');
     for (const label of ["시작(초)", "SNS 제목", "커뮤니티 게시판 이름", "최상단 네모 배경에 적용됩니다."]) expect(html).not.toContain(label);
-    for (const authored of ["나의 게시판", "수정 반영", "원본 문구 보존", "저장"]) expect(html).toContain(`value="${authored}"`);
+    expect(html).toContain('value="수정 반영"');
+    for (const authored of ["나의 게시판", "수정 반영", "원본 문구 보존", "저장"]) expect(html).toContain(authored);
     expect(html).toContain('data-i18n-content=""');
   });
 

@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ db: vi.fn(), invalidate: vi.fn() }));
+const mocks = vi.hoisted(() => ({ db: vi.fn(), invalidate: vi.fn(), translate: vi.fn(async (post: unknown) => post) }));
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/db", () => ({ getDb: mocks.db }));
+vi.mock("./update-translation-server", () => ({ translateUpdate: mocks.translate }));
 vi.mock("next/cache", () => ({ unstable_cache: (fn: unknown) => fn, revalidateTag: mocks.invalidate }));
 import { saveUpdate } from "./update-store";
 import { updateDraftSchema } from "./update-content";
@@ -18,11 +19,21 @@ describe("public badge invalidation after admin changes", () => {
     const sql = Object.assign(vi.fn().mockResolvedValue([{ id, draft, version: 2, visible: true, firstPublishedAt: null, updatedAt: new Date(), hasChanges: false }]), { begin: vi.fn(async (fn: (tx: unknown) => Promise<void>) => { await fn(tx); }) });
     mocks.db.mockReturnValue(sql);
     await saveUpdate({ id, version: 1, action, draft }, id);
+    if (action === "publish") {
+      expect(mocks.translate).toHaveBeenCalledExactlyOnceWith(draft);
+      expect(mocks.translate.mock.invocationCallOrder[0]).toBeLessThan(sql.begin.mock.invocationCallOrder[0]);
+    } else expect(mocks.translate).not.toHaveBeenCalled();
     if (action === "save") expect(mocks.invalidate).not.toHaveBeenCalled();
     else {
       expect(mocks.invalidate).toHaveBeenCalledExactlyOnceWith(RECENT_UPDATES_TAG);
       expect(sql.begin.mock.invocationCallOrder[0]).toBeLessThan(mocks.invalidate.mock.invocationCallOrder[0]);
     }
+  });
+  it("does not open a transaction or invalidate when required translation fails", async () => {
+    mocks.translate.mockRejectedValueOnce(new Error("translation failed"));
+    await expect(saveUpdate({ id, version: 1, action: "publish", draft }, id)).rejects.toThrow("translation failed");
+    expect(mocks.db).not.toHaveBeenCalled();
+    expect(mocks.invalidate).not.toHaveBeenCalled();
   });
   it("does not invalidate on a failed transaction", async () => {
     mocks.db.mockReturnValue({ begin: vi.fn().mockRejectedValue(new Error("conflict")) });

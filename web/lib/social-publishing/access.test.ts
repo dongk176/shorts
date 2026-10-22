@@ -38,11 +38,24 @@ describe("administrator publishing rollout boundary", () => {
   });
   it("rejects ordinary accounts at every authenticated endpoint before reading publishing tables", async () => {
     const req = new Request("https://www.easycut.co.kr/api/social/tiktok", { method: "POST", headers: { Origin: "https://www.easycut.co.kr", "Content-Type": "application/json" }, body: "{}" });
-    const calls = [() => connectionsGet(req), () => oauthStart(req), () => oauthCallback(req), () => creatorPost(req), () => postsGet(req), () => postsPost(req),
+    const calls = [() => connectionsGet(req), () => oauthStart(req), () => creatorPost(req), () => postsGet(req), () => postsPost(req),
       () => connectionDelete(req, { params: Promise.resolve({ connectionId: "arbitrary" }) }),
       () => postCheck(req, { params: Promise.resolve({ postId: "arbitrary" }) }),
       () => previewGet(req, { params: Promise.resolve({ shortId: "arbitrary" }) })];
-    for (const call of calls) { const res = await call(); expect(res.status).toBe(403); expect(await res.json()).toEqual({ code: "TIKTOK_DISABLED" }); }
+    for (const call of calls) {
+      const res = await call();
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ code: "TIKTOK_DISABLED", requestId: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/) });
+      expect(res.headers.get("Cache-Control")).toBe("private, no-store");
+    }
+    // OAuth must return safely to the product rather than show a raw JSON failure.
+    const callback = await oauthCallback(req);
+    expect(callback.status).toBe(303);
+    const returned = new URL(callback.headers.get("Location")!);
+    expect(returned.origin + returned.pathname).toBe("https://www.easycut.co.kr/publish/channels");
+    expect(returned.searchParams.get("tiktokAccount")).toBe("failed");
+    expect(returned.searchParams.get("tiktokError")).toBe("TIKTOK_DISABLED");
+    expect(returned.searchParams.get("tiktokRequest")).toMatch(/^[0-9a-f-]{36}$/);
     expect(state.db.mock.calls.every(([strings]) => strings.join("").includes("app_users"))).toBe(true);
   });
   it("requires authentication even if a caller knows a project or connection ID", async () => {
