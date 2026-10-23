@@ -2,6 +2,8 @@
 import Script from "next/script";
 import { formatChangeAmount } from "@/lib/paddle/change-policy";
 import Link from "next/link";
+import { SubscriptionCancellationDialog } from "@/components/subscription-cancellation-dialog";
+import type { CancellationFeedback } from "@/lib/subscription-cancellation";
 import { useEffect, useRef, useState } from "react";
 import { paddlePlans, paddleDisplayPlans, paddlePackageTerms, formatPaddlePrice, paddleInitialTerm, paddleDiscount } from "@/lib/paddle/catalog";
 import { localizedHref } from "@/lib/i18n/routing";
@@ -211,6 +213,8 @@ export function PaddlePricing({
   const currency = initial?.currency || (language === "ja" ? "JPY" : "USD");
   const [months, setMonths] = useState<(typeof paddlePackageTerms)[number]>(() => paddleInitialTerm(initial?.providerStatus !== "canceled" ? initial?.planCode : undefined));
   const displayedPlans = paddleDisplayPlans(months, currency, initial?.providerStatus !== "canceled" ? initial?.planCode : undefined);
+  const [cancelSurvey, setCancelSurvey] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
   const [scriptReady, setScriptReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [actionPlan, setActionPlan] = useState<string | null>(null);
@@ -368,6 +372,18 @@ export function PaddlePricing({
     } catch(error) {changeError(error);}
     finally {await refreshSubscription().catch(()=>{});setBusy(false);setConfirmation(null);}
   }
+  const cancelLabel = locale === "ja" ? "解約を確定しますか？" : locale === "ko" ? "구독을 해지할까요?" : "Cancel your subscription?";
+  async function cancelSubscription(feedback: CancellationFeedback) {
+    if (busy) return;
+    setBusy(true); setCancelError(null);
+    try {
+      const response = await fetch("/api/paddle/portal", {method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"cancel",feedback})});
+      if (!response.ok) throw new Error(t.portalError);
+      setCancelSurvey(false);
+      await refreshSubscription();
+    } catch { setCancelError(t.portalError); }
+    finally { setBusy(false); }
+  }
   async function portal() {
     setBusy(true);
     try {
@@ -458,6 +474,10 @@ export function PaddlePricing({
           >
             {busy?t.working:t.manage}
           </button>}
+          {managementOnly && ['active','past_due','trialing'].includes(subscription.providerStatus) && !subscription.cancelAtPeriodEnd && !subscription.pendingChange && <button type="button" disabled={busy} onClick={() => {setCancelError(null);setCancelSurvey(true);}} className="ml-4 mt-4 rounded-xl border border-white/20 px-5 py-3 text-sm text-neutral-300">{locale === "ja" ? "契約を解約" : locale === "ko" ? "구독 해지" : "Cancel subscription"}</button>}
+          {cancelSurvey && <SubscriptionCancellationDialog locale={locale} title={cancelLabel} busy={busy} error={cancelError} onClose={() => setCancelSurvey(false)} onConfirm={(feedback) => void cancelSubscription(feedback)}>
+            <p>{locale === "ja" ? "現在の有料期間は維持され、以後の自動更新が停止されます。" : locale === "ko" ? "현재 유료 이용기간은 유지되고, 이후 자동 갱신이 중단됩니다." : "Your current paid access is retained. Future automatic renewal will stop."}</p><p>{t.end}: {displayDate(subscription.currentPeriodEnd)}</p>
+          </SubscriptionCancellationDialog>}
           {managementOnly && <Link className="ml-5 underline" href={localizedHref("/pricing",locale)}>{t.compare}</Link>}
         </div>
       )}

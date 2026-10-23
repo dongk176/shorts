@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
+import { cancellationRequestSchema } from "@/lib/subscription-cancellation";
 import { assertBillingMutationRequest } from "@/lib/billing-request";
 import { apiError } from "@/lib/http";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
@@ -8,7 +8,7 @@ import { setTossSubscriptionCancellation } from "@/lib/toss-billing-service";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const schema = z.object({ cancelAtPeriodEnd: z.boolean() }).strict();
+const schema = cancellationRequestSchema;
 
 export async function POST(request: Request) {
   try {
@@ -18,6 +18,7 @@ export async function POST(request: Request) {
     const result = await setTossSubscriptionCancellation({
       userId: session.userId,
       cancelAtPeriodEnd: input.cancelAtPeriodEnd,
+      feedback: input.cancelAtPeriodEnd ? input.feedback : undefined,
     });
     return NextResponse.json({
       ...result,

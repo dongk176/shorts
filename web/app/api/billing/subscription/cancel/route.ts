@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
+import { cancellationRequestSchema } from "@/lib/subscription-cancellation";
+import { saveCancellationFeedback } from "@/lib/subscription-cancellation-feedback";
 import { assertBillingMutationRequest } from "@/lib/billing-request";
 import { getDb } from "@/lib/db";
 import { apiError, HttpError } from "@/lib/http";
@@ -14,7 +15,7 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const schema = z.object({ cancelAtPeriodEnd: z.boolean() }).strict();
+const schema = cancellationRequestSchema;
 
 export async function POST(request: Request) {
   try {
@@ -71,11 +72,12 @@ export async function POST(request: Request) {
         await tx`
           update shorts_mvp.user_subscriptions
           set cancel_at_period_end=${body.cancelAtPeriodEnd},
-            canceled_at=${body.cancelAtPeriodEnd ? new Date() : null},
+            canceled_at=coalesce(canceled_at,clock_timestamp()),
             provider_schedule_status=${scheduleStatus},
             billing_review_status='clear',billing_review_reason=null
           where id=${subscription.id} and user_id=${session.userId} and status in ('active','past_due')
         `;
+        await saveCancellationFeedback(tx, session.userId, subscription.id, body.feedback);
         if (subscription.paymentMethodId && subscription.billingCycle === "monthly") await tx`
           update shorts_mvp.billing_payment_methods
           set provider_schedule_status=${scheduleStatus},status=${scheduleStatus}

@@ -1,3 +1,5 @@
+import { cancellationFeedbackSchema, type CancellationFeedback } from "@/lib/subscription-cancellation";
+import { saveCancellationFeedback } from "@/lib/subscription-cancellation-feedback";
 import { applyPaddleUpgrade, paidPlanCode } from "./change-ledger";
 import { paddleMonthlyPeriods } from "./periods";
 import { randomUUID } from "node:crypto";
@@ -510,4 +512,35 @@ async function cancelUnpaidCheckout(
       throw new Error("Checkout cancellation unconfirmed");
   }
   await tx`update shorts_mvp.paddle_checkouts set status='canceled' where id=${row.id}`;
+}
+
+// Keep provider-owned portal access for invoices/cards; cancellation in EasyCut
+// uses the same required survey as domestic billing.
+export async function cancelPaddleSubscription(userId: string, input: CancellationFeedback, db = getDb()) {
+  const feedback = cancellationFeedbackSchema.parse(input);
+  const environment = paddleEnvironment();
+  return db.begin(async (tx) => {
+    await tx`select pg_advisory_xact_lock(hashtextextended(${userId},0))`;
+    const [mapped] = await tx`select ps.paddle_id,ps.customer_id,ps.subscription_id,s.current_period_end
+      from shorts_mvp.paddle_subscriptions ps join shorts_mvp.user_subscriptions s on s.id=ps.subscription_id
+      where ps.user_id=${userId} and s.user_id=${userId} and ps.environment=${environment}
+      and s.status in ('active','past_due') order by ps.created_at desc limit 1 for update of s`;
+    if (!mapped) throw new HttpError(404, "No active Paddle subscription found.");
+    const [change] = await tx`select id from shorts_mvp.paddle_plan_changes where paddle_subscription_id=${mapped.paddleId}
+      and status in ('processing','unknown','scheduled') limit 1`;
+    if (change) throw new HttpError(409, "Resolve the pending plan change before cancellation.", "CHANGE_PENDING");
+    let sub = await paddleRequest<PaddleSubscription>(`/subscriptions/${mapped.paddleId}`);
+    if (sub.id !== mapped.paddleId || sub.customer_id !== mapped.customerId || !['active','past_due','trialing'].includes(sub.status)) throw new HttpError(409, "Subscription state changed. Please refresh.");
+    if (sub.scheduled_change?.action !== 'cancel') {
+      sub = await paddleRequest<PaddleSubscription>(`/subscriptions/${mapped.paddleId}/cancel`, {effective_from:'next_billing_period'});
+    }
+    if (sub.id !== mapped.paddleId || sub.customer_id !== mapped.customerId || sub.scheduled_change?.action !== 'cancel'
+      || !['active','past_due','trialing'].includes(sub.status)
+      || !Number.isFinite(Date.parse(sub.scheduled_change.effective_at))) throw new HttpError(503, "Cancellation could not be confirmed.");
+    await applySubscription(tx, sub);
+    await tx`update shorts_mvp.user_subscriptions set canceled_at=coalesce(canceled_at,clock_timestamp())
+      where id=${mapped.subscriptionId} and user_id=${userId} and cancel_at_period_end`;
+    await saveCancellationFeedback(tx, userId, mapped.subscriptionId, feedback);
+    return {ok:true};
+  });
 }

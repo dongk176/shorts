@@ -7,6 +7,8 @@ import { formatSeoulDate } from "@/lib/i18n/format";
 import { translateLegacyText } from "@/lib/i18n/legacy-phrases";
 
 import Link from "@/lib/i18n/navigation";
+import { SubscriptionCancellationDialog } from "@/components/subscription-cancellation-dialog";
+import type { CancellationFeedback } from "@/lib/subscription-cancellation";
 import { useState } from "react";
 import { AuthControls } from "@/components/auth-controls";
 import { SiteFooter } from "@/components/site-footer";
@@ -124,15 +126,15 @@ export function PlanManagementClient({ user, provider, initialTossState, initial
     setLegacyState(state.billing);
   }
 
-  async function mutate() {
-    if (!confirm || busy || !managedPlan) return;
+  async function mutate(feedback?: CancellationFeedback) {
+    if (!confirm || busy || !managedPlan || (confirm === "cancel" && !feedback)) return;
     setBusy(true);
     setError(null);
     try {
       const cancelAtPeriodEnd = confirm === "cancel";
       await post(
         provider === "toss" ? "/api/billing/toss/subscription/cancel" : "/api/billing/subscription/cancel",
-        { cancelAtPeriodEnd },
+        cancelAtPeriodEnd ? { cancelAtPeriodEnd, feedback } : { cancelAtPeriodEnd },
       );
       await refresh();
       setConfirm(null);
@@ -293,29 +295,32 @@ export function PlanManagementClient({ user, provider, initialTossState, initial
       </main>
       <SiteFooter />
 
-      {confirm && managedPlan ? (
+      {confirm === "cancel" && managedPlan ? (
+        <SubscriptionCancellationDialog locale={locale}
+          title={t("plan.cancelTitle", { plan: translateLegacyText(managedPlan.name, locale) })}
+          busy={busy} error={error ? ui(error) : null} onClose={() => setConfirm(null)}
+          onConfirm={(feedback) => void mutate(feedback)}>
+          <p>{t("plan.cancelDetail", { date: date(managedPlan.periodEnd) })}</p>
+          {provider === "toss" && view.nextPlan ? <p className="mt-3 text-amber-100/80">{t("plan.cancelScheduledChange", { plan: translateLegacyText(view.nextPlan.name, locale) })}</p> : null}
+        </SubscriptionCancellationDialog>
+      ) : null}
+
+      {confirm === "resume" && managedPlan ? (
         <div className="fixed inset-0 z-[160] grid place-items-center bg-black/65 p-5" onMouseDown={(event) => {
           if (event.target === event.currentTarget && !busy) setConfirm(null);
         }}>
           <section role="dialog" aria-modal="true" aria-labelledby="subscription-dialog-title" className="w-full max-w-md rounded-[22px] border border-white/[.14] bg-[#232526] p-6 shadow-[0_30px_100px_rgba(0,0,0,.65)]">
             <h2 id="subscription-dialog-title" className="text-xl font-black text-white">
-              {ui(confirm === "cancel" ? t("plan.cancelTitle", { plan: translateLegacyText(managedPlan.name, locale) }) : "구독을 계속 이용할까요?")}
+              {ui("구독을 계속 이용할까요?")}
             </h2>
             <p className="mt-3 text-sm leading-7 text-neutral-400">
-              {ui(confirm === "cancel"
-                ? t("plan.cancelDetail", { date: date(managedPlan.periodEnd) })
-                : "예약된 해지가 취소되고 현재 플랜의 자동 갱신이 유지됩니다.")}
+              {ui("예약된 해지가 취소되고 현재 플랜의 자동 갱신이 유지됩니다.")}
             </p>
-            {confirm === "cancel" && provider === "toss" && view.nextPlan ? (
-              <p className="mt-4 rounded-2xl border border-amber-300/15 bg-amber-300/[.055] px-4 py-3 text-sm leading-6 text-amber-100/80">
-                {t("plan.cancelScheduledChange", { plan: translateLegacyText(view.nextPlan.name, locale) })}
-              </p>
-            ) : null}
             {error ? <p role="alert" className="mt-4 text-sm text-red-200">{ui(error)}</p> : null}
             <div className="mt-7 flex justify-end gap-3">
               <button type="button" disabled={busy} onClick={() => setConfirm(null)} className="min-h-11 rounded-xl border border-white/[.12] px-5 text-sm font-black">{ui("닫기")}</button>
               <button type="button" disabled={busy} onClick={() => void mutate()} className="min-h-11 rounded-xl bg-[#ff715e] px-5 text-sm font-black text-white disabled:opacity-40">
-                {ui(busy ? "처리 중" : confirm === "cancel" ? "해지 예약" : "계속 이용")}
+                {ui(busy ? "처리 중" : "계속 이용")}
               </button>
             </div>
           </section>

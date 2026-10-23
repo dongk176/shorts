@@ -1,3 +1,5 @@
+import { cancellationFeedbackSchema, type CancellationFeedback } from "@/lib/subscription-cancellation";
+import { saveCancellationFeedback } from "@/lib/subscription-cancellation-feedback";
 import { randomUUID } from "node:crypto";
 import type { Sql, TransactionSql } from "postgres";
 import { addKstMonths, createBillingOrderId, syncCachedPlan } from "@/lib/billing";
@@ -1040,8 +1042,10 @@ export async function cancelScheduledTossSubscriptionChange(input: {
 export async function setTossSubscriptionCancellation(input: {
   userId: string;
   cancelAtPeriodEnd: boolean;
+  feedback?: CancellationFeedback;
   db?: Sql;
 }) {
+  const feedback = input.cancelAtPeriodEnd ? cancellationFeedbackSchema.parse(input.feedback) : null;
   const db = input.db ?? getDb();
   return db.begin(async (tx) => {
     await lockTossCustomer(tx, input.userId);
@@ -1052,12 +1056,13 @@ export async function setTossSubscriptionCancellation(input: {
     if (input.cancelAtPeriodEnd) {
       await tx`
         update shorts_mvp.user_subscriptions
-        set cancel_at_period_end=true,canceled_at=clock_timestamp(),
+        set cancel_at_period_end=true,canceled_at=coalesce(canceled_at,clock_timestamp()),
           scheduled_plan_code=null,scheduled_billing_cycle=null,
           scheduled_contract_months=null,scheduled_billing_price_krw=null,
           scheduled_change_effective_at=null,updated_at=clock_timestamp()
         where id=${current.id} and user_id=${input.userId} and payment_provider='toss'
       `;
+      await saveCancellationFeedback(tx, input.userId, current.id, feedback!);
     } else {
       await tx`
         update shorts_mvp.user_subscriptions
