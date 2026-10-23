@@ -1,3 +1,5 @@
+import { loadAdminCancellationFeedback } from "@/lib/admin-cancellation-feedback";
+import { AdminCancellationFeedbackDashboard } from "./admin-cancellation-feedback";
 import { AdminUpdates } from "./admin-updates";
 import { listAdminUpdates } from "@/lib/update-store";
 import Link from "next/link";
@@ -123,6 +125,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
   const params = await searchParams;
   const requestedTab = first(params.tab);
   const validTabs: AdminTab[] = [
+    "cancellations",
     "updates",
     "billing",
     "expenses",
@@ -149,6 +152,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
     return <AdminShell activeTab={tab} expenseAccess><AdminExpenses /></AdminShell>;
   }
   if (tab === "updates") return <AdminShell activeTab={tab} expenseAccess={expenseAccess}><AdminUpdates initialPosts={await listAdminUpdates()}/></AdminShell>;
+  if (tab === "cancellations") return <AdminShell activeTab={tab} expenseAccess={expenseAccess}><AdminCancellationFeedbackDashboard data={await loadAdminCancellationFeedback(params)} /></AdminShell>;
   const requestedStatus = first(params.status);
   const requestedProvider = first(params.provider);
   const status = ["pending", "processing", "succeeded", "failed", "unknown", "manual_review", "canceled", "expired"].includes(requestedStatus)

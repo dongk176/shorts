@@ -10,6 +10,7 @@ import { AdminSalesCard } from "./admin-sales-card";
 import type { AdminTrendData } from "@/lib/admin-trends";
 
 export type AdminTab =
+  | "cancellations"
   | "updates"
   | "billing"
   | "expenses"
@@ -94,6 +95,7 @@ const navigationGroups: Array<{
     icon: "billing",
     items: [
       { tab: "billing", label: "결제 관리", icon: "billing" },
+      { tab: "cancellations", label: "해지 사유", icon: "feedback" },
       { tab: "refunds", label: "환불 운영", icon: "refunds" },
       { tab: "expenses", label: "매입·비용 관리", icon: "billing" },
       { tab: "installments", label: "할부 혜택", icon: "installments" },
@@ -142,6 +144,7 @@ const navigationGroups: Array<{
 ];
 
 const pageCopy: Record<AdminTab, { eyebrow: string; title: string }> = {
+  cancellations: { eyebrow: "Commerce / Cancellations", title: "해지 사유" },
   updates: { eyebrow: "Content / Updates", title: "업데이트 관리" },
   expenses: { eyebrow: "Finance / Expenses", title: "매입·비용 관리" },
   billing: { eyebrow: "Commerce / Payments", title: "결제 운영" },
