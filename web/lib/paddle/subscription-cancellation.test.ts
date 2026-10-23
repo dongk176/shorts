@@ -41,6 +41,11 @@ it("keeps paid access, records feedback, and never repeats an already scheduled 
   const row=(await pg.query<{status:string;cancel_at_period_end:boolean}>("select * from shorts_mvp.user_subscriptions")).rows[0];
   expect(row.status).toBe('active');expect(row.cancel_at_period_end).toBe(true);
   expect((await pg.query("select * from shorts_mvp.subscription_cancellation_feedback")).rows).toHaveLength(1);
+  // Provider-portal resumption can leave the old cancellation timestamp locally.
+  await pg.exec("update shorts_mvp.user_subscriptions set cancel_at_period_end=false");
+  vi.mocked(paddleRequest).mockResolvedValueOnce(subscription).mockResolvedValueOnce(canceled);
+  await cancelPaddleSubscription(user,feedback,tag(pg));
+  expect((await pg.query("select * from shorts_mvp.subscription_cancellation_feedback")).rows).toHaveLength(2);
 });
 it("rejects ownership mismatch before any provider call",async()=>{
   await expect(cancelPaddleSubscription('00000000-0000-4000-8000-000000000099',feedback,tag(pg))).rejects.toThrow('No active');

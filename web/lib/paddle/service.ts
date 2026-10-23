@@ -521,7 +521,7 @@ export async function cancelPaddleSubscription(userId: string, input: Cancellati
   const environment = paddleEnvironment();
   return db.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtextextended(${userId},0))`;
-    const [mapped] = await tx`select ps.paddle_id,ps.customer_id,ps.subscription_id,s.current_period_end
+    const [mapped] = await tx`select ps.paddle_id,ps.customer_id,ps.subscription_id,s.current_period_end,s.cancel_at_period_end
       from shorts_mvp.paddle_subscriptions ps join shorts_mvp.user_subscriptions s on s.id=ps.subscription_id
       where ps.user_id=${userId} and s.user_id=${userId} and ps.environment=${environment}
       and s.status in ('active','past_due') order by ps.created_at desc limit 1 for update of s`;
@@ -538,7 +538,7 @@ export async function cancelPaddleSubscription(userId: string, input: Cancellati
       || !['active','past_due','trialing'].includes(sub.status)
       || !Number.isFinite(Date.parse(sub.scheduled_change.effective_at))) throw new HttpError(503, "Cancellation could not be confirmed.");
     await applySubscription(tx, sub);
-    await tx`update shorts_mvp.user_subscriptions set canceled_at=coalesce(canceled_at,clock_timestamp())
+    await tx`update shorts_mvp.user_subscriptions set canceled_at=case when ${Boolean(mapped.cancelAtPeriodEnd)} then coalesce(canceled_at,clock_timestamp()) else clock_timestamp() end
       where id=${mapped.subscriptionId} and user_id=${userId} and cancel_at_period_end`;
     await saveCancellationFeedback(tx, userId, mapped.subscriptionId, feedback);
     return {ok:true};
