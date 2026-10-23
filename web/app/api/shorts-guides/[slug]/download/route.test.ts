@@ -13,7 +13,7 @@ vi.mock("@/lib/db", () => ({ getDb: mocks.db }));
 vi.mock("node:fs/promises", () => ({ readFile: mocks.read }));
 import { GET } from "./route";
 import { HttpError } from "@/lib/http";
-import { guideSlugs } from "@/lib/shorts-guides/catalog";
+import { libraryGuideSlugs, guidePdfLocale } from "@/lib/shorts-guides/catalog";
 const call = (slug: string, lang = "ko") =>
   GET(
     new Request(
@@ -51,18 +51,19 @@ describe("private strategy downloads", () => {
     expect(mocks.read).not.toHaveBeenCalled();
   });
   it("serves each authorized book and language from the private allowlisted path", async () => {
-    for (const slug of guideSlugs)
+    for (const slug of libraryGuideSlugs)
       for (const locale of ["ko", "en", "ja"]) {
+        const fileLocale = guidePdfLocale(slug, locale as "ko" | "en" | "ja");
         const res = await call(slug, locale);
         expect(res.status).toBe(200);
         expect(res.headers.get("content-type")).toBe("application/pdf");
         expect(res.headers.get("content-disposition")).toContain(
-          `${slug}-${locale}.pdf`,
+          `${slug}-${fileLocale}.pdf`,
         );
         expect(res.headers.get("cache-control")).toContain("private");
         expect(mocks.read).toHaveBeenLastCalledWith(
           expect.stringContaining(
-            `/private/shorts-guides/${locale}/${slug}.pdf`,
+            `/private/shorts-guides/${fileLocale}/${slug}.pdf`,
           ),
         );
       }
@@ -76,6 +77,15 @@ describe("private strategy downloads", () => {
     ])
       expect((await call(slug, locale)).status).toBe(400);
     expect(mocks.auth).not.toHaveBeenCalled();
+    expect(mocks.read).not.toHaveBeenCalled();
+  });
+  it("protects all new Korean books before reading any private file", async () => {
+    for (const slug of ["after-work", "views-to-income", "weekend-shorts"]) {
+      mocks.auth.mockRejectedValueOnce(new HttpError(401, "Sign in"));
+      expect((await call(slug)).status).toBe(401);
+      mocks.billing.mockResolvedValueOnce({ hasPaymentHistory: true, activeProducts: [] });
+      expect((await call(slug, "en")).status).toBe(403);
+    }
     expect(mocks.read).not.toHaveBeenCalled();
   });
   it("fails closed when billing cannot be loaded", async () => {

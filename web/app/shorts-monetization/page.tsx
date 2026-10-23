@@ -589,9 +589,9 @@ export default async function MonetizationPage() {
                   "実践ブックを見てみよう",
                 )}
                 description={l(
-                  "5권의 목차와 표지를 무료로 미리 보세요",
-                  "Preview the contents and covers of all five books",
-                  "全5冊の目次と表紙を無料でチェック",
+                  "8권의 목차와 표지를 무료로 미리 보세요",
+                  "Preview the contents and covers of all eight books",
+                  "全8冊の目次と表紙を無料でチェック",
                 )}
               >
                 <GuideLibrary access={guideAccess} />

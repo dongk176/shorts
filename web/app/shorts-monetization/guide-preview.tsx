@@ -5,6 +5,8 @@ import Link from "@/lib/i18n/navigation";
 import { useI18n } from "@/lib/i18n/provider";
 import {
   guideCatalog,
+  analyticsGuide,
+  guideCoverSrc,
   textFor,
   type GuideSlug,
 } from "@/lib/shorts-guides/catalog";
@@ -84,13 +86,13 @@ export function GuidePreview({
               {book.chapters.map((chapter) => (
                 <li key={chapter[0]}>{textFor(chapter, locale)}</li>
               ))}
-              <li>
+              {!book.language && <li>
                 {l(
                   "이지컷 실습 · 시간별 계획 · 기록지 · FAQ",
                   "EasyCut practice · schedules · worksheet · FAQ",
                   "EasyCut実習・時間別プラン・記録シート・FAQ",
                 )}
-              </li>
+              </li>}
             </ol>
           </div>
           <div className={s.previewArtwork}>
@@ -110,10 +112,10 @@ export function GuidePreview({
             </div>
             <div className={s.sampleViewport}>
               <Image
-                src={`/shorts-guide-previews/${locale}/${slug}-cover.jpg?v=20260927-editorial-2`}
+                src={guideCoverSrc(slug, locale)}
                 alt={l("실행북 표지", "Workbook cover", "実践ブックの表紙")}
                 width={840}
-                height={1190}
+                height={book.language ? 1295 : 1190}
                 sizes={zoomed ? "1100px" : "(max-width: 767px) 100vw, 480px"}
                 className={zoomed ? s.zoomedSample : s.fitSample}
               />
@@ -122,7 +124,11 @@ export function GuidePreview({
         </div>
         <footer>
           <span>
-            {l(
+            {book.language ? l(
+              "전체 12페이지 · 한국어 PDF · 유료 플랜에 포함",
+              "12 pages · Korean PDF · Included with a paid plan",
+              "全12ページ・韓国語PDF・有料プランに含まれます",
+            ) : l(
               "전체 13페이지 · 유료 플랜에 포함",
               "13 pages · Included with a paid plan",
               "全13ページ・有料プランに含まれます",
@@ -151,7 +157,7 @@ export function GuidePreview({
                 trackGuideEvent({
                   name: "pricing_clicked",
                   locale,
-                  guide: slug,
+                  guide: analyticsGuide(slug),
                 })
               }
               className={s.nextButton}

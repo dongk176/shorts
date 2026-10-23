@@ -6,7 +6,10 @@ import { localizedHref } from "@/lib/i18n/routing";
 import { useI18n } from "@/lib/i18n/provider";
 import {
   guideCatalog,
-  guideSlugs,
+  guidePdfLocale,
+  guideCoverSrc,
+  libraryGuideSlugs,
+  analyticsGuide,
   textFor,
   type GuideSlug,
 } from "@/lib/shorts-guides/catalog";
@@ -24,15 +27,15 @@ export function GuideLibrary({ access }: { access: GuideAccess }) {
   const l = (ko: string, en: string, ja: string) =>
     textFor([ko, en, ja], locale);
   const slugs = recommended
-    ? [recommended, ...guideSlugs.filter((s) => s !== recommended)]
-    : guideSlugs;
+    ? [recommended, ...libraryGuideSlugs.filter((s) => s !== recommended)]
+    : libraryGuideSlugs;
   async function download(slug: GuideSlug) {
     if (busy) return;
     trackGuideEvent({
       name: "result_action",
       action: "download_attempt",
       locale,
-      guide: slug,
+      guide: analyticsGuide(slug),
     });
     setBusy(slug);
     setError("");
@@ -66,12 +69,12 @@ export function GuideLibrary({ access }: { access: GuideAccess }) {
         name: "result_action",
         action: "download_success",
         locale,
-        guide: slug,
+        guide: analyticsGuide(slug),
       });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `EasyCut-${slug}-${locale}.pdf`;
+      a.download = `EasyCut-${slug}-${guidePdfLocale(slug, locale)}.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -121,9 +124,9 @@ export function GuideLibrary({ access }: { access: GuideAccess }) {
         </div>
         <p>
           {l(
-            "5권 · 각 13페이지 · 한국어·영어·일본어 PDF\n목차와 표지 미리보기는 누구나 볼 수 있어요.",
-            "5 books · 13 pages each · Korean, English & Japanese PDFs\nAnyone can preview the contents and covers.",
-            "全5冊・各13ページ・韓国語／英語／日本語PDF\n目次と表紙のプレビューは、どなたでも読めます。",
+            "총 8권 · 기존 5권은 13쪽·3개 언어, 신간 3권은 12쪽·한국어 PDF\n목차와 표지 미리보기는 누구나 볼 수 있어요.",
+            "8 books · Original 5: 13 pages in 3 languages. New 3: 12 pages in Korean.\nAnyone can preview the contents and covers.",
+            "全8冊・従来の5冊は13ページ・3言語、新刊3冊は12ページ・韓国語PDF\n目次と表紙は、どなたでも見られます。",
           )}
         </p>
       </div>
@@ -138,9 +141,9 @@ export function GuideLibrary({ access }: { access: GuideAccess }) {
         <div>
           <strong>
             {l(
-              "유료 플랜 하나로, 실행북 5권 모두",
-              "One paid plan. All five workbooks.",
-              "有料プランひとつで、全5冊を。",
+              "유료 플랜 하나로, 실행북 8권 모두",
+              "One paid plan. All eight workbooks.",
+              "有料プランひとつで、全8冊を。",
             )}
           </strong>
           <p>
@@ -195,10 +198,10 @@ export function GuideLibrary({ access }: { access: GuideAccess }) {
             >
               <div className={s.bookIntro}>
                 <Image
-                  src={`/shorts-guide-previews/${locale}/${slug}-cover.jpg?v=20260927-editorial-2`}
+                  src={guideCoverSrc(slug, locale)}
                   alt={textFor(book.title, locale)}
                   width={420}
-                  height={595}
+                  height={book.language ? 648 : 595}
                   sizes="110px"
                 />
                 <div>
@@ -211,6 +214,11 @@ export function GuideLibrary({ access }: { access: GuideAccess }) {
                       )}
                     </span>
                   )}
+                  {book.language && (
+                    <span className={s.bookBadge}>
+                      {l("새 책 · 12쪽 · 한국어 PDF", "New · 12 pages · Korean PDF", "新刊・12ページ・韓国語PDF")}
+                    </span>
+                  )}
                   <h3>{textFor(book.title, locale)}</h3>
                   <p>{textFor(book.subtitle, locale)}</p>
                 </div>
@@ -221,11 +229,14 @@ export function GuideLibrary({ access }: { access: GuideAccess }) {
                 className={s.previewButton}
                 onClick={() => {
                   setError("");
-                  trackGuideEvent({
-                    name: "guide_preview",
-                    locale,
-                    guide: slug,
-                  });
+                  const trackedGuide = analyticsGuide(slug);
+                  if (trackedGuide) {
+                    trackGuideEvent({
+                      name: "guide_preview",
+                      locale,
+                      guide: trackedGuide,
+                    });
+                  }
                   setPreview(slug);
                 }}
               >

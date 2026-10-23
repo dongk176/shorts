@@ -9,7 +9,14 @@ export const guideSlugs = [
   "brand",
   "sales",
 ] as const;
-export type GuideSlug = (typeof guideSlugs)[number];
+export type StrategyGuideSlug = (typeof guideSlugs)[number];
+export const libraryGuideSlugs = [
+  ...guideSlugs,
+  "after-work",
+  "views-to-income",
+  "weekend-shorts",
+] as const;
+export type GuideSlug = (typeof libraryGuideSlugs)[number];
 export const guideCatalog: Record<
   GuideSlug,
   {
@@ -18,6 +25,8 @@ export const guideCatalog: Record<
     outcome: LocalText;
     chapters: LocalText[];
     color: string;
+    pages?: number;
+    language?: "ko";
   }
 > = {
   "first-short": {
@@ -241,8 +250,47 @@ export const guideCatalog: Record<
       ],
     ],
   },
+  "after-work": {
+    title: ["퇴근 후 쇼츠 한 편", "One Short After Work", "仕事帰りにショートを1本"],
+    subtitle: ["시작부터 제작, 수익 연결까지", "From getting started to revenue opportunities", "始め方から制作、収益へのつなぎ方まで"],
+    outcome: ["첫 10편과 30일 운영 계획 만들기", "Plan your first 10 videos and 30 days", "最初の10本と30日間の運営計画を作る"],
+    color: "#86aaff", pages: 12, language: "ko",
+    chapters: [
+      ["주제 선정과 첫 10편 기획", "Choose a topic and plan 10 videos", "テーマ選びと最初の10本"],
+      ["대본 예시와 화면 설계", "Script examples and shot planning", "台本例と画面構成"],
+      ["주말 제작 루틴과 게시 점검", "Weekend production and publishing checks", "週末の制作手順と公開前チェック"],
+      ["반응 개선과 수익 경로 선택", "Improve with feedback and choose a revenue path", "反応からの改善と収益の選択"],
+      ["30일 실행표와 한 편 기획서", "30-day action plan and video worksheet", "30日間の実行表と動画企画シート"],
+    ],
+  },
+  "views-to-income": {
+    title: ["조회수 다음은 수익이다", "Beyond Views: Build Revenue", "再生数の次は、収益へ"],
+    subtitle: ["제휴·협찬·자체 상품 실전 가이드", "A practical guide to affiliates, sponsors, and your own products", "アフィリエイト・協賛・自分の商品を実践"],
+    outcome: ["내 채널의 수익 동선과 14일 실험 설계", "Design your revenue journey and a 14-day experiment", "収益への導線と14日間の検証を設計する"],
+    color: "#e3ae63", pages: 12, language: "ko",
+    chapters: [
+      ["수익이 없는 이유와 경로 선택", "Find the gap and choose a revenue path", "収益につながらない理由と方法選び"],
+      ["제휴 대본과 실제 구매 동선", "Affiliate scripts and buyer journeys", "アフィリエイト台本と購入導線"],
+      ["협찬 제안문·견적·사용권", "Sponsor pitches, quotes, and usage rights", "協賛の提案・見積もり・使用権"],
+      ["작은 상품 검증과 판매 페이지", "Validate a small product and its sales page", "小さな商品の検証と販売ページ"],
+      ["이지컷 활용과 14일 실행표", "EasyCut workflow and 14-day action plan", "EasyCut活用と14日間の実行表"],
+    ],
+  },
+  "weekend-shorts": {
+    title: ["주말에 만드는 일주일 치 쇼츠", "A Week of Shorts, Made on the Weekend", "週末に作る、1週間分のショート"],
+    subtitle: ["소재부터 AI 편집까지, 한 주 제작 루틴", "A weekly workflow from ideas to AI-assisted editing", "素材集めからAI編集までの週間制作ルーティン"],
+    outcome: ["일주일 소재표와 반복 가능한 제작 흐름 완성", "Build a weekly idea plan and repeatable workflow", "1週間の素材表と続けられる制作手順を作る"],
+    color: "#8cdaca", pages: 12, language: "ko",
+    chapters: [
+      ["소재 수집표와 일곱 가지 질문", "Idea collection and seven distinct questions", "素材収集表と七つの質問"],
+      ["대본 틀과 촬영 준비", "Script templates and filming preparation", "台本テンプレートと撮影準備"],
+      ["AI 요청문과 이지컷 후보 선별", "AI prompts and EasyCut clip selection", "AIへの依頼文とEasyCutの候補選び"],
+      ["편집 검수와 일주일 게시 준비", "Editing checks and weekly publishing preparation", "編集チェックと1週間の公開準備"],
+      ["주말 시간표와 제작 준비표", "Weekend schedule and production worksheet", "週末の時間割と制作準備シート"],
+    ],
+  },
 };
-export function recommendedGuide(route: string): GuideSlug {
+export function recommendedGuide(route: string): StrategyGuideSlug {
   return (
     (
       {
@@ -250,7 +298,20 @@ export function recommendedGuide(route: string): GuideSlug {
         ads: "series",
         sponsor: "brand",
         sales: "sales",
-      } as Record<string, GuideSlug>
+      } as Record<string, StrategyGuideSlug>
     )[route] || "first-short"
   );
+}
+
+export function guidePdfLocale(slug: GuideSlug, locale: SiteLocale): SiteLocale {
+  return guideCatalog[slug].language ?? locale;
+}
+export function guideCoverSrc(slug: GuideSlug, locale: SiteLocale): string {
+  const version = guideCatalog[slug].language ? "20261024" : "20260927-editorial-2";
+  return `/shorts-guide-previews/${guidePdfLocale(slug, locale)}/${slug}-cover.jpg?v=${version}`;
+}
+
+// Keep new downloads compatible with the existing analytics DB allowlist.
+export function analyticsGuide(slug: GuideSlug): StrategyGuideSlug | undefined {
+  return guideSlugs.find((value) => value === slug);
 }
