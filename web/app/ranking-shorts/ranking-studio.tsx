@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { RankingExamples } from "./ranking-examples";
 import { RankingSelect } from "./ranking-select";
 import {
   defaultRankingStyle,
@@ -539,6 +540,7 @@ export function RankingStudio({
           <h1>랭킹 쇼츠</h1>
           <p>순위를 채우고, 가장 좋은 순간만 남기세요.</p>
         </div>
+        <div className="ranking-heading-actions"><RankingExamples />
         <button
           type="button"
           className="ranking-reset"
@@ -565,6 +567,7 @@ export function RankingStudio({
         >
           새로 시작
         </button>
+      </div>
       </header>
 
       <div className="ranking-workspace">
