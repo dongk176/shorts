@@ -124,3 +124,9 @@ export function resolveBuiltInSubtitleTemplateSnapshot(input: {
     config,
   } as EditorDocumentJsonObject;
 }
+
+/** The full saved layout, including built-in v5 presets, owns video geometry. */
+export function builtInSubtitleVideoConfig(snapshot: unknown) {
+  const parsed = templateConfigSchema.safeParse(jsonObject(snapshot)?.config);
+  return parsed.success && isTemplateConfigV5(parsed.data) ? parsed.data : null;
+}

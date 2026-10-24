@@ -5,6 +5,9 @@ type Phrase = readonly [ko: string, en: string, ja: string];
 // Legacy page copy is kept here while the product moves to semantic message keys.
 // User-provided and generated content is intentionally excluded from this table.
 const phrases: readonly Phrase[] = [
+  ["영상에 표시할 채널명", "Channel name on videos", "動画に表示するチャンネル名"],
+  ["비워두면 원본 영상의 채널명을 사용합니다", "Leave blank to use the source channel name", "空欄の場合は元動画のチャンネル名を使用します"],
+  ["저장한 이름은 이 템플릿으로 새로 만드는 영상에 적용됩니다.", "This name is applied to new videos made with this template.", "保存した名前は、このテンプレートで新しく作成する動画に適用されます。"],
   ["자막 검색", "Search captions", "字幕を検索"],
   ["자막 검색…", "Search captions…", "字幕を検索…"],
   ["검색 지우기", "Clear search", "検索をクリア"],

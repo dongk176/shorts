@@ -319,7 +319,7 @@ import {
   shouldPreserveInitialEditorRenderSpec,
   type EditorInitialRenderSpecLayerFingerprints,
 } from "@/lib/editor-initial-render-spec";
-import { builtInSubtitleChannelRect, resolveBuiltInSubtitleTemplateSnapshot } from "@/lib/editor-built-in-subtitle-template";
+import { builtInSubtitleChannelRect, builtInSubtitleVideoConfig, resolveBuiltInSubtitleTemplateSnapshot } from "@/lib/editor-built-in-subtitle-template";
 import {
   editorDraftDocumentSnapshotSchema,
   editorDocumentSnapshotSchema,
@@ -1196,7 +1196,7 @@ function FixedPresetChannel({
   );
 }
 
-function CaptionTemplateEditorChannel({
+export function CaptionTemplateEditorChannel({
   rect,
   fontSize,
   iconSize,
@@ -1257,7 +1257,7 @@ function CaptionTemplateEditorChannel({
       fallbackBackground="#000000"
       sizes="20px"
     />
-    <span data-i18n-skip className={fitSavedCommentChannel ? "whitespace-nowrap" : "max-w-[75%] truncate"}>{channelFit?.wordSpacePx !== undefined
+    <span data-i18n-skip className="whitespace-nowrap">{channelFit?.wordSpacePx !== undefined
       ? channelFit.text.split(" ").map((word, index) => <span key={index}>{index > 0 && <span
           style={{ display: "inline-block", width: `${channelFit.wordSpacePx! / 10.8}cqw`, fontSize: 0 }}
         > </span>}{word}</span>)
@@ -1396,7 +1396,7 @@ function PresetInlineEditorChannel({
       fallbackBackground={background}
       sizes="20px"
     />
-    <span className="max-w-[72%] truncate">{channelName}</span>
+    <span className="whitespace-nowrap">{channelName}</span>
   </>;
   if (!onPointerDown) {
     return <div className="flex items-start justify-center gap-2" style={{ fontFamily, fontWeight }}>{content}</div>;
@@ -5942,7 +5942,9 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
     && textOverlay.endSeconds > displayedPreviewTime
   ));
   const editorVideoBaseRect: CanvasRect = resolveEditorVideoPreviewFrame({
-    customTemplateConfig: activeCustomTemplate?.config || null,
+    customTemplateConfig: activeCustomTemplate?.config
+      || (builtInSubtitleTemplateSelectionActive
+        ? builtInSubtitleVideoConfig(builtInSubtitleTemplateSnapshot) : null),
     captionVideoFrame: captionTemplatePreviewSnapshot?.layout.video || null,
     fallbackFrame: {
       x: 0,

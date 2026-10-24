@@ -460,7 +460,7 @@ export async function POST(request: Request) {
           ,selected_source_duration_seconds,billable_source_seconds,source_language_hint,language_test_release_id
         ) values (
           ${jobId}, ${session.id}, ${session.userId}, ${input.requestId}, ${metadata.normalizedUrl}, ${metadata.videoId}, ${metadata.title},
-          ${metadata.channelName}, ${metadata.channelThumbnailUrl}, ${metadata.thumbnailUrl}, ${sourceDurationSeconds}, ${rangeStartSeconds},
+          ${resolvedExecution.channelDisplayName || metadata.channelName}, ${metadata.channelThumbnailUrl}, ${metadata.thumbnailUrl}, ${sourceDurationSeconds}, ${rangeStartSeconds},
           ${rangeEndSeconds}, ${resolvedTemplateId}, ${input.customTemplateId || null}, ${templateSnapshot ? tx.json(templateSnapshot) : null}, ${resolvedVideoAspectRatio},
           ${subtitleTemplateSnapshot?.subtitleTemplateId || null}, ${subtitleTemplateSnapshot ? tx.json(subtitleTemplateSnapshot) : null},
           'sec_31_60', ${input.outputLanguage}, ${plannedShortCount},

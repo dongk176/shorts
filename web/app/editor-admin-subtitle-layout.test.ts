@@ -125,7 +125,7 @@ describe("admin editor subtitle layout", () => {
       "captionVideoFrame: captionTemplatePreviewSnapshot?.layout.video || null,",
     );
     expect(editorSource).toContain(
-      "customTemplateConfig: activeCustomTemplate?.config || null,",
+      "builtInSubtitleVideoConfig(builtInSubtitleTemplateSnapshot)",
     );
     expect(editorSource).toContain("panelRect={captionTemplatePreviewSnapshot?.layout.title}");
     expect(editorSource).toContain("<CaptionTemplateEditorChannel");

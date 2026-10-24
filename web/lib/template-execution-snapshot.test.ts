@@ -17,6 +17,20 @@ function dbWithRows(...responses: unknown[][]) {
 }
 
 describe("template execution snapshot", () => {
+  it.each(["ugc_korea", "@ugc_korea_", "아홉글자이상채널명", ""])("passes saved channel identity %s separately from the strict worker config", async (name) => {
+    const config = createDefaultTemplateConfig();
+    config.channel.displayName = name;
+    const db = dbWithRows([{ id: "3e5cd85c-03db-4f04-9854-c39b74486172", name: "내 템플릿", baseTemplateId: "dark-minimal", config, version: 1 }]);
+    const result = await resolveTemplateExecutionSnapshot(db as never, {
+      userId: "8b849e2a-4339-4607-b705-8496265bf576", templateId: "dark-minimal",
+      customTemplateId: "3e5cd85c-03db-4f04-9854-c39b74486172", videoAspectRatio: "1:1",
+    });
+    expect(result.channelDisplayName).toBe(name || undefined);
+    expect(result.templateSnapshot).toHaveProperty("config.channel");
+    expect((result.templateSnapshot as { config: typeof config }).config.channel).not.toHaveProperty("displayName");
+    expect(config.channel.displayName).toBe(name);
+  });
+
   it("derives an immutable caption snapshot from the saved v5 subtitle layer", () => {
     const config = upgradeTemplateConfigToV5(
       createDefaultTemplateConfig("comment-capture"),

@@ -2358,6 +2358,7 @@ describe("job API security and idempotency", () => {
     const customTemplateId = "3e5cd85c-03db-4f04-9854-c39b74486172";
     const customTemplateConfig = createDefaultTemplateConfig("white-yellow");
     customTemplateConfig.video = videoFrameForAspect("9:16");
+    customTemplateConfig.channel.displayName = "@ugc_korea_";
     const db = dbWithRows([], [analysisRow]);
     const tx = dbWithRows(
       [],
@@ -2401,6 +2402,7 @@ describe("job API security and idempotency", () => {
         "insert into shorts_mvp.video_jobs",
       ));
     expect(insertCall?.slice(1)).toEqual(expect.arrayContaining([
+      "@ugc_korea_",
       customTemplateId,
       "elevenlabs_primary_openai_fallback",
       "elevenlabs_transcription",
@@ -3981,6 +3983,7 @@ describe("short ownership, expiry, and edit validation", () => {
 describe("custom-template plan access", () => {
   it("lets a Plus subscriber save a personal template", async () => {
     const config = createDefaultTemplateConfig("dark-minimal");
+    config.channel.displayName = "@ugc_korea_";
     const tx = dbWithRows(
       [],
       [{ count: 0 }],
@@ -4006,7 +4009,7 @@ describe("custom-template plan access", () => {
 
     expect(response.status).toBe(201);
     await expect(response.json()).resolves.toMatchObject({
-      template: { name: "플러스 템플릿", config: { schemaVersion: 4 } },
+      template: { name: "플러스 템플릿", config: { schemaVersion: 4, channel: { displayName: "@ugc_korea_" } } },
     });
   });
 

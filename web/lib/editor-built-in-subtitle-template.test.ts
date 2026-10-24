@@ -4,7 +4,9 @@ import { describe, expect, it } from "vitest";
 import { createEditorDocumentSnapshot } from "./editor-document-snapshot";
 import { createInitialEditorOverlayLayout } from "./editor-overlay-preview";
 import { compileEditorRenderTitleSpecV4 } from "./editor-render-spec";
-import { builtInSubtitleChannelRect, resolveBuiltInSubtitleTemplateSnapshot } from "./editor-built-in-subtitle-template";
+import { resolveEditorVideoPreviewFrame } from "./custom-template-preview-layout";
+import { subtitleTemplateStyleSnapshot } from "./subtitle-templates";
+import { builtInSubtitleVideoConfig, builtInSubtitleChannelRect, resolveBuiltInSubtitleTemplateSnapshot } from "./editor-built-in-subtitle-template";
 import { createUnifiedSubtitleTemplateConfig } from "./template-config";
 
 const measure = (text: string, fontSize: number) => ({
@@ -50,6 +52,31 @@ function documentWithSnapshot(snapshot: NonNullable<ReturnType<
 }
 
 describe("built-in subtitle template editor snapshot", () => {
+  it.each(subtitleRatioCases)("uses the saved video frame through save/reopen for $id $videoAspectRatio $captionPlacement", (test) => {
+    const config = builtInSubtitlePresentation(test).config;
+    const snapshot = { presetVersion: 4, config };
+    const legacy = subtitleTemplateStyleSnapshot(test.id, test.videoAspectRatio, "#35E6E3", test.captionPlacement).layout.video;
+    for (const stored of [snapshot, JSON.parse(JSON.stringify(snapshot))]) {
+      const frame = resolveEditorVideoPreviewFrame({
+        customTemplateConfig: builtInSubtitleVideoConfig(stored),
+        captionVideoFrame: legacy, fallbackFrame: legacy,
+      });
+      expect(frame).toEqual(config.video);
+      expect(frame.y + 66).toBe(config.video.y + 66);
+    }
+  });
+
+  it("matches project 27094's saved 636px video position without rewriting its offset", () => {
+    const config = builtInSubtitlePresentation({ id: "pop", videoAspectRatio: "1:1" }).config;
+    const frame = resolveEditorVideoPreviewFrame({
+      customTemplateConfig: builtInSubtitleVideoConfig({ config }),
+      captionVideoFrame: { x: 0, y: 420, width: 1080, height: 1080 },
+      fallbackFrame: { x: 0, y: 420, width: 1080, height: 1080 },
+    });
+    expect(frame.y + 66).toBe(636);
+    expect(builtInSubtitleVideoConfig({ presetVersion: 3 })).toBeNull();
+  });
+
   it.each(subtitleRatioCases)("previews saved channel position for $id $videoAspectRatio $captionPlacement despite an older caption layout", (test) => {
     const legacy = builtInSubtitlePresentation({ ...test, legacyChannelPosition: true });
     const current = builtInSubtitlePresentation(test);

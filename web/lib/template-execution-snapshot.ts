@@ -101,6 +101,7 @@ type ResolveAccess = (
 ) => Promise<SubtitleTemplateAccess>;
 
 export type ResolvedTemplateExecutionSnapshot = {
+  channelDisplayName?: string;
   resolvedTemplateId: TemplateId;
   resolvedVideoAspectRatio: VideoAspectRatio;
   templateSnapshot:
@@ -179,7 +180,12 @@ export async function resolveTemplateExecutionSnapshot(
       templateSnapshot.config,
     );
   }
+  // Channel identity belongs to job metadata. Keep the render config compatible
+  // with existing pinned workers, which intentionally reject unknown fields.
+  const channelDisplayName = templateSnapshot.config.channel.displayName?.trim();
+  delete templateSnapshot.config.channel.displayName;
   return {
+    ...(channelDisplayName ? { channelDisplayName } : {}),
     resolvedTemplateId: templateSnapshot.baseTemplateId,
     resolvedVideoAspectRatio: templateSnapshot.config.video.aspectRatio,
     templateSnapshot,

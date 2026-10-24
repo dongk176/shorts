@@ -44,11 +44,11 @@ function PreviewChannel({
       ? { width: customCanvasWidth(channel.maxWidth) }
     : customCenteredLayerStyle(channel);
   return (
-    <div
+    <div data-i18n-skip
       className={`${positionedBelow ? "absolute" : inCommentFlow ? "relative mx-auto mt-[2cqw] block" : "absolute"} z-30 truncate rounded px-[1.5cqw] py-[.7cqw] text-center font-bold`}
       style={{ ...flowStyle, color: channel.color, backgroundColor: channel.backgroundColor || "transparent", fontSize: customCanvasWidth(channel.fontSize), zIndex: templateDesignLayerZIndex(template.config, "channel") }}
     >
-      ● {label}
+      ● {channel.displayName || label}
     </div>
   );
 }

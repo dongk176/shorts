@@ -399,6 +399,7 @@ describe("file upload job control plane", () => {
     const config = upgradeTemplateConfigToV5(
       createDefaultTemplateConfig("comment-capture"),
     );
+    config.channel.displayName = "@ugc_korea_";
     config.subtitle = {
       ...config.subtitle,
       visible: false,
@@ -434,6 +435,7 @@ describe("file upload job control plane", () => {
     ).toBe(201);
     const jobInsert = query(queries, "insert into shorts_mvp.video_jobs");
     expect(jobInsert?.values).toEqual(expect.arrayContaining([
+      "@ugc_korea_",
       "comment-capture",
       customTemplateId,
       expect.objectContaining({

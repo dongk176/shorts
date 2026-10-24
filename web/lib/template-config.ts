@@ -173,7 +173,10 @@ const sharedTemplateLayers = {
   background: backgroundSchema,
   video: videoLayerSchema,
   subtitle: textLayerSchema.extend({ fontSize: z.number().int().min(24).max(72) }).strict(),
-  channel: textLayerSchema.extend({ fontSize: z.number().int().min(20).max(64) }).strict(),
+  channel: textLayerSchema.extend({
+    fontSize: z.number().int().min(20).max(64),
+    displayName: z.string().trim().max(50).optional(),
+  }).strict(),
 } as const;
 
 export const unifiedSubtitleVariants = ["highlight", "pop"] as const;
