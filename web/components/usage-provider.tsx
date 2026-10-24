@@ -18,6 +18,7 @@ export type UsageState = {
   authenticated: boolean;
   accountId: string | null;
   isEnterprise: boolean;
+  rankingAdmin?: boolean;
   usage: UsageSnapshot | null;
 };
 
@@ -62,6 +63,7 @@ export function UsageProvider({
         authenticated: body.authenticated,
         accountId: body.authenticated ? body.accountId : null,
         isEnterprise: body.authenticated && body.isEnterprise === true,
+        rankingAdmin: body.authenticated && body.rankingAdmin === true,
         usage: body.authenticated ? body.usage : null,
       });
       lastSuccessfulLoadAt.current = Date.now();

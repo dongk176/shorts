@@ -24,6 +24,7 @@ export async function GET() {
         authenticated: true,
         accountId: session.userId,
         isEnterprise: session.isEnterprise === true,
+        rankingAdmin: session.isAdmin === true && process.env.RANKING_SHORTS_ENABLED === "1",
         usage,
       },
       { headers: { "Cache-Control": "private, no-store" } },

@@ -33,6 +33,9 @@ function NavigationIcon({ path }: { path: string }) {
     strokeLinejoin: "round" as const,
   };
 
+  if (path === "/ranking-shorts") {
+    return <span className="site-nav-icon-frame" aria-hidden="true"><svg {...sharedProps}><path d="M3 21h18M4 21V11h5v10M9 21V4h6v17M15 21v-7h5v7" /></svg></span>;
+  }
   if (path === "/updates") {
     return <span className="site-nav-icon-frame" aria-hidden="true"><svg {...sharedProps}><rect x="4" y="3" width="16" height="18" rx="2.5"/><path d="M8 7h8M8 11h8M8 15h5M8 18h3"/></svg></span>;
   }
@@ -127,6 +130,7 @@ function NavigationLinks({ pathname, onNavigate, mobile = false, isEnterprise }:
     // Keep the framework-provided pathname when it is not URI encoded.
   }
   const privateActive = decodedPathname === "/easycut-private";
+  const { rankingAdmin } = useUsageState();
   return (
     <>
       {navigation.filter((item) => !isEnterprise || item.path !== "/pricing").map((item) => {
@@ -146,6 +150,7 @@ function NavigationLinks({ pathname, onNavigate, mobile = false, isEnterprise }:
           </Link>
         );
       })}
+      {rankingAdmin ? <Link href="/ranking-shorts" prefetch={false} className={mobile ? "rounded-xl px-4 py-3" : "nav-link"} onClick={onNavigate}><NavigationIcon path="/ranking-shorts" />랭킹 쇼츠</Link> : null}
       {!isEnterprise ? (
         <Link
           href="/easycut-private"
@@ -272,6 +277,7 @@ function GroupedNavigation({ collapsed, groupsOpen, onToggle, onNavigate, isEnte
   const { t } = useI18n();
   const hasRecentUpdate = useRecentUpdates();
   const id = useId();
+  const { rankingAdmin } = useUsageState();
   return <nav className="sidebar-group-navigation" aria-label={t("nav.primary")}>
     {sidebarGroups.map(group => {
       const items = group.items.filter(item => !isEnterprise || !["/pricing", "/easycut-private"].includes(item.href));
@@ -285,6 +291,7 @@ function GroupedNavigation({ collapsed, groupsOpen, onToggle, onNavigate, isEnte
           </button>
         </h2>
         <div id={`${id}-${group.id}`} className="sidebar-group-items" hidden={!open}>
+          {group.id === "creation" && rankingAdmin ? <Link href="/ranking-shorts" prefetch={false} className="sidebar-nav-link" aria-label="랭킹 쇼츠" aria-current={pathname === "/ranking-shorts" ? "page" : undefined} onClick={onNavigate}><NavigationIcon path="/ranking-shorts" /><span className="sidebar-link-label">랭킹 쇼츠</span></Link> : null}
           {items.map(item => {
             const label = item.labelKey ? t(item.labelKey) : "EASYCUT PRIVATE";
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`);

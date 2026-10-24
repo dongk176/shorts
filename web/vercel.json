@@ -57,6 +57,10 @@
     {
       "path": "/api/cron/youtube-english",
       "schedule": "25 */4 * * *"
+    },
+    {
+      "path": "/api/cron/ranking-completion-emails",
+      "schedule": "* * * * *"
     }
   ]
 }

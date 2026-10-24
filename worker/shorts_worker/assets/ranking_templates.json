@@ -1,0 +1,125 @@
+{
+  "layout": {
+    "width": 720,
+    "height": 1280,
+    "topClearance": 112,
+    "headerHeight": 294,
+    "titleBaseline": 188,
+    "subtitleBaseline": 273,
+    "titleWidth": 608,
+    "rankBaseline": 455,
+    "rankBottom": 1080,
+    "rankLeft": 56,
+    "rankRight": 592,
+    "rankStep": 68,
+    "rankOutline": 3
+  },
+  "fonts": {
+    "pretendard": {
+      "label": "프리텐다드",
+      "family": "RankingPretendard",
+      "file": "Pretendard-Bold.woff2"
+    },
+    "sandbox-aggro": {
+      "label": "샌드박스 어그로",
+      "family": "RankingAggro",
+      "file": "SandboxAggro-Bold.ttf"
+    },
+    "jalnan-2": {
+      "label": "여기어때 잘난체2",
+      "family": "RankingJalnan",
+      "file": "Jalnan2-Regular.woff2"
+    },
+    "godo": {
+      "label": "고도체 Bold",
+      "family": "RankingGodo",
+      "file": "Godo-Bold.ttf"
+    },
+    "paperlogy": {
+      "label": "페이퍼로지",
+      "family": "RankingPaperlogy",
+      "file": "Paperlogy-7Bold.ttf"
+    },
+    "blackhan": {
+      "label": "검은고딕",
+      "family": "RankingBlackHan",
+      "file": "BlackHanSans-Regular.ttf"
+    },
+    "dohyeon": {
+      "label": "도현",
+      "family": "RankingDoHyeon",
+      "file": "DoHyeon-Regular.ttf"
+    },
+    "jua": {
+      "label": "주아",
+      "family": "RankingJua",
+      "file": "Jua-Regular.ttf"
+    },
+    "suit": {
+      "label": "수트",
+      "family": "RankingSUIT",
+      "file": "SUIT-Bold.woff2"
+    },
+    "nanum-square-neo": {
+      "label": "나눔스퀘어 네오",
+      "family": "RankingNanumSquareNeo",
+      "file": "NanumSquareNeo-Bold.ttf"
+    }
+  },
+  "palettes": {
+    "gold": {
+      "label": "옐로 · 레드",
+      "title": "#ffe000",
+      "subtitle": "#ffffff",
+      "accent": "#ff360b"
+    },
+    "red": {
+      "label": "화이트 · 레드",
+      "title": "#ffffff",
+      "subtitle": "#ff8f85",
+      "accent": "#ff493c"
+    },
+    "mint": {
+      "label": "민트 · 라임",
+      "title": "#83f4cc",
+      "subtitle": "#ffffff",
+      "accent": "#dcff72"
+    },
+    "violet": {
+      "label": "라일락 · 핑크",
+      "title": "#d0b6ff",
+      "subtitle": "#ffffff",
+      "accent": "#ff9bc8"
+    }
+  },
+  "templates": {
+    "classic": {
+      "label": "클래식",
+      "description": "또렷한 옐로 타이틀",
+      "font": "pretendard",
+      "palette": "gold",
+      "position": "left"
+    },
+    "impact": {
+      "label": "임팩트",
+      "description": "선명한 화이트와 레드",
+      "font": "nanum-square-neo",
+      "palette": "red",
+      "position": "right"
+    },
+    "mint": {
+      "label": "프레시",
+      "description": "시원한 민트와 라임",
+      "font": "suit",
+      "palette": "mint",
+      "position": "left"
+    },
+    "berry": {
+      "label": "소프트",
+      "description": "둥근 글씨와 라일락",
+      "font": "godo",
+      "palette": "violet",
+      "position": "right"
+    }
+  }
+}
