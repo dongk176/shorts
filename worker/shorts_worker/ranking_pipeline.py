@@ -847,7 +847,8 @@ class RankingPipeline:
                         "force_original_aspect_ratio=increase:force_divisible_by=2,"
                         f"crop=720:{1280 - LAYOUT['headerHeight']},"
                         f"pad=720:1280:0:{LAYOUT['headerHeight']}:"
-                        "color=black,setsar=1,fps=30[base];[base][1:v]overlay=0:0:format=auto[v]",
+                        "color=black,setsar=1,fps=30[base];[base][1:v]overlay=0:0:format=auto,"
+                        "scale=in_range=auto:out_range=tv,format=yuv420p,setparams=range=limited[v]",
                         "-map",
                         "[v]",
                         "-map",
@@ -864,6 +865,8 @@ class RankingPipeline:
                         "22",
                         "-pix_fmt",
                         "yuv420p",
+                        "-color_range",
+                        "tv",
                         "-c:a",
                         "aac",
                         "-ar",

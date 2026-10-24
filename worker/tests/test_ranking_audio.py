@@ -35,6 +35,12 @@ def test_audio_transitions_music_and_disabled_render(tmp_path, monkeypatch):
                 "lavfi",
                 "-i",
                 "sine=frequency=1000:duration=1",
+                # Real social videos may be full-range. Concatenation must retain
+                # the limited-range transition's true black, including after BGM.
+                "-vf",
+                "scale=out_range=pc,setparams=range=full",
+                "-color_range",
+                "pc",
                 "-c:v",
                 "libx264",
                 "-pix_fmt",
