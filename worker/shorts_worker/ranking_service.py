@@ -178,7 +178,7 @@ class RankingService:
                 """update shorts_ranking_runtime.ranking_operations set status='failed',
                 error='처리 서버가 재시작되었거나 시간이 초과되었습니다. 다시 시도해 주세요.',
                 finished_at=now(),updated_at=now()
-               
+
                 where (status='running'
                 and (task_id<>%s or updated_at<now()-interval '20 minutes'))
                    or (status='queued' and created_at<now()-interval '30 minutes')""",
@@ -188,7 +188,7 @@ class RankingService:
                 join shorts_ranking_runtime.ranking_projects p on p.id=o.project_id
                 join shorts_ranking_runtime.app_users u on u.id=p.user_id
                 left join shorts_ranking_runtime.ranking_sources s on s.id=o.source_id
-               
+
                 where o.status='queued'
                 and p.deleted_at is null and p.expires_at>now() and u.is_admin=true
                 and (o.action<>'import' or s.status='queued')
