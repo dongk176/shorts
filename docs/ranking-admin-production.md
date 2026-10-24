@@ -119,3 +119,30 @@ public-video attestation provider with the mweb client. Ranking now has a separa
 `RANKING_YOUTUBE_PO_TOKEN_ENABLED` gate, validates that pinned runtime, and uses
 that same public, cookie-free configuration on the leased Webshare path. Instagram
 and TikTok retain disabled plugins. The existing ordinary worker is unchanged.
+
+## 2026-10-24: instant browser players
+
+- Baseline: promoted `dfd973ceab887f9920591485c6f84eb4d2a0e04d`, deployment
+  `dpl_DyxtxFDQZ3Ud5csM6sDNsu96ScdR`. Isolated worktree branch
+  `codex/ranking-instant-player-20261024`.
+- Full YouTube and TikTok links mount an allowlisted browser embed immediately.
+  Connecting these links performs no ranking API request, ECS wake, metadata
+  inspection, proxy request or source download. Player duration drives the trim
+  timeline; TikTok may require pressing play before it reports duration.
+- Source registration/inspection is deferred until Make video. Each resolved
+  server source replaces the provisional ID; selected ranges, ranks, custom
+  order and design remain unchanged. Server duration is revalidated before
+  submitting render. Successful registrations are retained for retry.
+- Embed failure never silently triggers a download for YouTube/TikTok. Original
+  links/file upload remain available. Instagram and redirect-only short URLs
+  retain their existing server preparation path.
+- Production configuration remains the same: Vercel project
+  `prj_bQyHRVC3Pfzq2dvUnAqEDlw66GOw`, Supabase `mvcprswvfybudtopepuj` /
+  `shorts_mvp`, production ranking ECS task revision 5 and worker source
+  `0c950c50971f6533e1c053a5cc0442b094600565`. No schema, worker, IAM, proxy pool,
+  ordinary user path, or publishing gate changes.
+- Verification plan: exact unaliased candidate, direct browser playback and
+  trim followed by one bounded two-source render on existing production ranking
+  resources. Expected ordinary test cost below KRW 1,000, no recurring resources.
+  Existing user jobs must not be stopped during cleanup. Lab is not used and is
+  not assumed to mirror production.

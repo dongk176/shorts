@@ -11,6 +11,7 @@ import type { RankingRemote } from "@/lib/ranking-shorts";
 import {
   rankingEmbedUrl,
   rankingInstagramHeight,
+  rankingPlayerDuration,
   rankingTikTokMessage,
 } from "@/lib/ranking-embed";
 import {
@@ -29,6 +30,7 @@ type YouTubePlayer = YouTubePreviewPlayer & {
   seekTo: (time: number, ahead: boolean) => void;
   cueVideoById: (options: { videoId: string; startSeconds: number }) => void;
   getCurrentTime: () => number;
+  getDuration: () => number;
   getPlayerState: () => number;
   destroy: () => void;
 };
@@ -93,11 +95,12 @@ export const RankingRemotePlayer = forwardRef<
     label: string;
     suspended: boolean;
     onTime: (time: number) => void;
+    onDuration: (duration: number) => void;
     onPlaying: (playing: boolean) => void;
     onUnavailable: () => void;
   }
 >(function RankingRemotePlayer(
-  { remote, start, label, onTime, onPlaying, onUnavailable, suspended },
+  { remote, start, label, onTime, onDuration, onPlaying, onUnavailable, suspended },
   ref,
 ) {
   const host = useRef<HTMLDivElement>(null);
@@ -105,8 +108,8 @@ export const RankingRemotePlayer = forwardRef<
   const youtube = useRef<YouTubePlayer | null>(null);
   const preview = useRef<ReturnType<typeof createYouTubePreview> | null>(null);
   const pendingSeek = useRef<number | null>(null);
-  const latest = useRef({ start, onTime, onPlaying, onUnavailable });
-  latest.current = { start, onTime, onPlaying, onUnavailable };
+  const latest = useRef({ start, onTime, onDuration, onPlaying, onUnavailable });
+  latest.current = { start, onTime, onDuration, onPlaying, onUnavailable };
   const [error, setError] = useState("");
   const [instagramHeight, setInstagramHeight] = useState(780);
   const url = rankingEmbedUrl(remote);
@@ -149,6 +152,14 @@ export const RankingRemotePlayer = forwardRef<
     let instance: YouTubePlayer | null = null;
     if (suspended) return;
     let unavailable = false;
+    let lastDuration = 0;
+    const reportDuration = (value: unknown) => {
+      const duration = rankingPlayerDuration(value);
+      if (duration !== null && duration !== lastDuration) {
+        lastDuration = duration;
+        latest.current.onDuration(duration);
+      }
+    };
     const fail = () => {
       if (alive && !unavailable) {
         unavailable = true;
@@ -195,6 +206,7 @@ export const RankingRemotePlayer = forwardRef<
                   pendingSeek.current = null;
                 }
                 interval = setInterval(() => {
+                  reportDuration(instance?.getDuration());
                   if (
                     !preview.current?.seeking &&
                     instance?.getPlayerState() === 1
@@ -237,7 +249,10 @@ export const RankingRemotePlayer = forwardRef<
         clearTimeout(readyTimer);
         message("seekTo", latest.current.start);
       }
-      if (data?.type === "time") latest.current.onTime(data.time);
+      if (data?.type === "time") {
+        latest.current.onTime(data.time);
+        reportDuration(data.duration);
+      }
       if (data?.type === "state") latest.current.onPlaying(data.state === 1);
       if (data?.type === "error") fail();
     };

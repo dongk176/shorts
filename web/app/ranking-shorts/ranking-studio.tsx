@@ -19,6 +19,8 @@ import { RankingColorField } from "./ranking-color-field";
 import { RankingTimeline } from "./ranking-timeline";
 import { RankingProgressOverlay } from "./ranking-progress-overlay";
 import { RankingOrderEditor } from "./ranking-order-editor";
+import { rankingDirectRemote } from "@/lib/ranking-embed";
+import { resolveRankingRender } from "@/lib/ranking-resolve-render";
 import { rankingOrderForCount } from "@/lib/ranking-order";
 import {
   RANKING_LIMITS,
@@ -31,6 +33,7 @@ type Slot = {
   link: string;
   label: string;
   source: RankingSource | null;
+  pendingLink?: boolean;
   start: number;
   end: number;
 };
@@ -225,8 +228,43 @@ export function RankingStudio({
     }
   }
 
+  async function ensureProject() {
+    if (projectRef.current) return projectRef.current;
+    const created = await requestJson("/api/ranking-shorts", { method: "POST" });
+    const id = created.id as string;
+    projectRef.current = id;
+    setProject(id);
+    return id;
+  }
+
+  function receiveDuration(index: number, sourceId: string, duration: number) {
+    if (!Number.isFinite(duration) || duration <= 0) return;
+    setSlots((previous) => previous.map((item, i) => {
+      if (i !== index || item.source?.id !== sourceId || !item.pendingLink) return item;
+      if (item.source.durationKnown && item.source.duration === duration) return item;
+      const start = Math.min(item.start, Math.max(0, duration - 0.5));
+      const end = Math.min(duration, Math.max(start + 0.5, item.end));
+      return { ...item, start, end, source: { ...item.source, duration, durationKnown: true } };
+    }));
+    if (duration > RANKING_LIMITS.sourceSeconds)
+      setError(`${index + 1}위 원본 영상은 20분 이하여야 합니다.`);
+  }
+
   async function importSource(file?: File) {
+    if (busyRef.current) return;
     const index = active;
+    const remote = !file ? rankingDirectRemote(slots[index].link) : null;
+    if (remote) {
+      patch(index, {
+        source: {
+          id: crypto.randomUUID(), remote, duration: 0, durationKnown: false,
+          width: 0, height: 0, hasAudio: true, previewReady: false,
+        },
+        pendingLink: true, start: 0, end: 10,
+      });
+      setCurrent(0);
+      return;
+    }
     if (file && file.size > RANKING_LIMITS.sourceBytes) {
       setError("250MB 이하의 영상 파일을 선택해 주세요.");
       return;
@@ -236,15 +274,7 @@ export function RankingStudio({
         ? `${index + 1}위 영상을 업로드하고 미리보기를 준비하고 있습니다…`
         : `${index + 1}위 영상의 구간 선택을 준비하고 있습니다…`,
       async () => {
-        let id = projectRef.current;
-        if (!id) {
-          const created = await requestJson("/api/ranking-shorts", {
-            method: "POST",
-          });
-          id = created.id as string;
-          projectRef.current = id;
-          setProject(id);
-        }
+        const id = await ensureProject();
         const requestId = crypto.randomUUID();
         const input = file
           ? { requestId, size: file.size }
@@ -296,7 +326,7 @@ export function RankingStudio({
         const data = await waitForOperation(queued);
         const source = data.source as RankingSource;
         setCurrent(0);
-        patch(index, { source, start: 0, end: Math.min(10, source.duration) });
+        patch(index, { source, pendingLink: false, start: 0, end: Math.min(10, source.duration) });
         if (source.durationKnown === false) {
           setBusy(
             `${index + 1}위 영상을 가져와 구간 선택을 준비하고 있습니다…`,
@@ -339,21 +369,46 @@ export function RankingStudio({
         : "선택한 구간을 자르고 랭킹 영상으로 합치고 있습니다…",
       async () => {
         setResult(null);
+        const id = await ensureProject();
+        const spec = await resolveRankingRender(parsed.data, async (clip) => {
+          const item = visible[clip.rank - 1];
+          let source = item.source!;
+          if (item.pendingLink) {
+            const queued = await requestJson(`/api/ranking-shorts/${id}/sources`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              // Stable across retries; do not register the same link twice.
+              body: JSON.stringify({ requestId: source.id, url: source.remote!.url }),
+            });
+            source = (await waitForOperation(queued)).source as RankingSource;
+            patch(clip.rank - 1, { source, pendingLink: false });
+          }
+          if (source.durationKnown === false) {
+            const queued = await requestJson(`/api/ranking-shorts/${id}/sources/${source.id}/preview`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ requestId: crypto.randomUUID() }),
+            });
+            source = (await waitForOperation(queued)).source as RankingSource;
+            patch(clip.rank - 1, { source });
+          }
+          return source;
+        });
         const output = await requestJson(
-          `/api/ranking-shorts/${project}/render`,
+          `/api/ranking-shorts/${id}/render`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               requestId: crypto.randomUUID(),
-              spec: parsed.data,
+              spec,
             }),
           },
         );
         window.history.replaceState(
           null,
           "",
-          `/ranking-shorts?project=${project}`,
+          `/ranking-shorts?project=${id}`,
         );
         setResult((await waitForOperation(output)) as Result);
         setShowResult(true);
@@ -409,7 +464,9 @@ export function RankingStudio({
     ready > 0 &&
     !overLimit &&
     Boolean(title.trim()) &&
-    !visible.some((item) => item.source?.durationKnown === false);
+    !visible.some((item) => item.source && (
+      item.source.durationKnown === false || item.source.duration > RANKING_LIMITS.sourceSeconds
+    ));
 
   function updateStyle(changes: Partial<RankingStyle>) {
     setStyle((previous) => ({ ...previous, ...changes }));
@@ -893,9 +950,10 @@ export function RankingStudio({
                           setPreviewPauseSignal((previous) => previous + 1);
                       }}
                       onTime={setCurrent}
+                      onDuration={(duration) => receiveDuration(active, slot.source!.id, duration)}
                       onUnavailable={() => {
                         const sourceId = slot.source?.id;
-                        if (!project || !sourceId || busyRef.current || previewFallbacks.current.has(sourceId)) return;
+                        if (slot.source?.remote?.platform !== "instagram" || !project || !sourceId || busyRef.current || previewFallbacks.current.has(sourceId)) return;
                         previewFallbacks.current.add(sourceId);
                         void task(
                           `${active + 1}위 영상을 가져와 구간 선택을 준비하고 있습니다…`,
@@ -936,7 +994,11 @@ export function RankingStudio({
                       <i />
                       {slot.source.previewReady
                         ? "영상 준비됨"
-                        : slot.source.durationKnown === false
+                        : slot.pendingLink
+                          ? slot.source.durationKnown === false
+                            ? "플레이어에서 재생하면 영상 길이가 표시됩니다"
+                            : "영상 만들기를 누르면 다운로드합니다"
+                          : slot.source.durationKnown === false
                           ? busy
                             ? "구간 선택 준비 중…"
                             : "영상을 가져오지 못했어요"
@@ -969,7 +1031,7 @@ export function RankingStudio({
                   ) : null}
                   {slot.source.durationKnown === false ? (
                     <div className="ranking-prepare-preview">
-                      {busy ? (
+                      {slot.pendingLink ? null : busy ? (
                         <p className="ranking-hint">
                           영상 길이와 장면을 불러오고 있어요.
                         </p>
