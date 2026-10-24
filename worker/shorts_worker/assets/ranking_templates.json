@@ -121,5 +121,14 @@
       "palette": "violet",
       "position": "right"
     }
+  },
+  "rankAppearance": {
+    "colors": [
+      "#ff3158",
+      "#ffe34d",
+      "#62df58"
+    ],
+    "defaultColor": "#ffffff",
+    "inactiveOpacity": 0.5
   }
 }

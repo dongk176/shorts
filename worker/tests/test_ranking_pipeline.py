@@ -500,3 +500,22 @@ def test_attestation_runtime_validation_fails_closed(ranking_project, monkeypatc
     monkeypatch.setattr("shorts_worker.ranking_pipeline._validate_po_token_runtime", invalid)
     with pytest.raises(RuntimeError):
         RankingPipeline(ranking_project)
+
+
+def test_fixed_rank_colors_and_inactive_opacity(tmp_path):
+    target = tmp_path / "rank-emphasis.png"
+    RankingPipeline.overlay(
+        "순위 강조",
+        2,
+        "두 번째",
+        3,
+        target,
+        labels={1: "첫 번째", 2: "두 번째", 3: "세 번째"},
+        revealed_ranks=[1, 2, 3],
+    )
+    with Image.open(target) as image:
+        for index, rgb in enumerate([(255, 49, 88), (255, 227, 77), (98, 223, 88)]):
+            y = LAYOUT["rankBaseline"] + index * LAYOUT["rankStep"]
+            row = image.crop((120, y - 48, 590, y + 6))
+            assert row.getchannel("A").getextrema()[1] == (255 if index == 1 else 128)
+            assert (*rgb, 255 if index == 1 else 128) in set(row.getdata())

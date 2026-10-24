@@ -32,6 +32,7 @@ export function RankingSequencePreview({
   layoutOnly = false,
   previewSource,
   previewStart = 0,
+  previewRank = 1,
 }: {
   clips: RankingPlaybackClip[];
   backgroundMusic?: {sourceId: string; volume: number} | null;
@@ -45,6 +46,7 @@ export function RankingSequencePreview({
   layoutOnly?: boolean;
   previewSource?: RankingSource;
   previewStart?: number;
+  previewRank?: number;
   suspended: boolean;
   pauseSignal: number;
   onStart: () => void;
@@ -221,7 +223,7 @@ export function RankingSequencePreview({
           title={title}
           subtitle={subtitle}
           count={count}
-          active={clip ? clip.rank - 1 : 0}
+          active={layoutOnly || (!playing && elapsed === 0) ? previewRank - 1 : clip ? clip.rank - 1 : 0}
           labels={labels}
           descending={descending}
           revealedRanks={

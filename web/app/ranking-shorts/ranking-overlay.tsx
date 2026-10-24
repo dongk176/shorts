@@ -123,6 +123,7 @@ export const RankingOverlay = memo(function RankingOverlay({
         return (
           <g
             key={index}
+            opacity={index === active ? 1 : rankingDesign.rankAppearance.inactiveOpacity}
             stroke="#080808"
             strokeWidth={layout.rankOutline * 2}
             paintOrder="stroke"
@@ -132,7 +133,7 @@ export const RankingOverlay = memo(function RankingOverlay({
               x={x}
               y={y}
               fontSize="48"
-              fill={["#f7c64a", "#e3e3e3", "#cd944c"][index] || "#fff"}
+              fill={rankingDesign.rankAppearance.colors[index] || rankingDesign.rankAppearance.defaultColor}
             >
               {number}
             </text>
@@ -140,7 +141,7 @@ export const RankingOverlay = memo(function RankingOverlay({
               x={x + numberWidth + gap}
               y={y}
               fontSize={labelSize}
-              fill="#fff"
+              fill={rankingDesign.rankAppearance.colors[index] || rankingDesign.rankAppearance.defaultColor}
             >
               {label}
             </text>

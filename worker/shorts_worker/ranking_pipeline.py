@@ -750,8 +750,11 @@ class RankingPipeline:
             anchor="ls",
         )
         labels = labels or {rank: label}
-        colors = ["#f7c64a", "#e3e3e3", "#cd944c"]
+        appearance = DESIGN["rankAppearance"]
+        colors = appearance["colors"]
         for index in range(count):
+            layer = Image.new("RGBA", image.size, (0, 0, 0, 0))
+            rank_draw = ImageDraw.Draw(layer)
             item_rank = index + 1
             y = LAYOUT["rankBaseline"] + index * min(
                 LAYOUT["rankStep"],
@@ -776,24 +779,31 @@ class RankingPipeline:
                     - number_width
                     - (draw.textlength(text, font=label_font) + 10 if text else 0)
                 )
-            draw.text(
+            rank_draw.text(
                 (x, y),
                 number,
                 font=number_font,
-                fill=colors[index] if index < 3 else "white",
+                fill=colors[index] if index < 3 else appearance["defaultColor"],
                 anchor="ls",
                 stroke_width=LAYOUT["rankOutline"],
                 stroke_fill="#080808",
             )
-            draw.text(
+            rank_draw.text(
                 (x + number_width + 10, y),
                 text,
                 font=label_font,
-                fill="white",
+                fill=colors[index] if index < 3 else appearance["defaultColor"],
                 anchor="ls",
                 stroke_width=LAYOUT["rankOutline"],
                 stroke_fill="#080808",
             )
+            if item_rank != rank:
+                layer.putalpha(
+                    layer.getchannel("A").point(
+                        lambda alpha: round(alpha * appearance["inactiveOpacity"])
+                    )
+                )
+            image.alpha_composite(layer)
         image.save(target)
 
     def render(self, spec: dict, render_id: str) -> dict:

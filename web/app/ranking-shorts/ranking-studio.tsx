@@ -1157,6 +1157,7 @@ export function RankingStudio({
               labels={visible.map((item) => item.label)}
               previewSource={slot.source || undefined}
               previewStart={slot.start}
+              previewRank={active + 1}
               descending={descending}
               style={style}
               suspended={Boolean(busy || (result && showResult))}
