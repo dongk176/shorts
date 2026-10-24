@@ -61,3 +61,9 @@ The baseline upload listener has a priority-1 origin-header rule. A path-only ru
 AWS reference for reusing VPC origins: https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-vpc-origins.html
 
 Final frontend rebuild after result-page/history changes passed. Route manifest has 0 removed / 9 added entries. All remote mutations remain pending. Browser automation review denied observation of the normal-profile AWS sign-in page, citing an isolated-login-window/profile requirement; no workaround was attempted. User authentication is required; exact AWS identity remains unverified until STS succeeds.
+
+## Authenticated production inventory — 2026-10-24
+
+User completed the AWS CLI login in a new Chrome incognito window. STS verified account `181651591905`. Current web alias still points to `96cd3057a3590a511fb49f29f195f3262021e210`. Runtime DB identity is PostgreSQL 17.6, `postgres.mvcprswvfybudtopepuj` pooler tenant, database/user `postgres`; public Supabase custom domain is `easycut.supabase.co`. Ranking tables/role are absent before migration.
+
+Existing upload service remains desired/running 0; task definition `shorts-mvp-file-upload-production:14`, image digest `sha256:357afd6f412720043d128a3e00dfffa1507e9ff3f55e95e6cb692df0f1d9b037`. Its priority-1 header rule and 403 default match the expected isolation design. Existing VPC origin `vo_Dc7FYwJ2oyZDiqvxBwyoFA` and CloudFront `ENOIJWSFW4XKW` are retained. Existing output bucket uses AES256 and its `outputs/` lifecycle expires objects after 30 days, including ranking outputs. No original/preview object storage will be added.

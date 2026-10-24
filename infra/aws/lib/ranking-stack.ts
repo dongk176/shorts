@@ -63,7 +63,7 @@ export class RankingAdminStack extends cdk.Stack {
       throw new Error("Verified network inventory required");
     if (
       !/^vo_[A-Za-z0-9]+$/.test(props.vpcOriginId) ||
-      !/^[a-z0-9-]+\.ap-northeast-2\.elb\.amazonaws\.com$/.test(
+      !/^[a-zA-Z0-9-]+\.ap-northeast-2\.elb\.amazonaws\.com$/.test(
         props.albDnsName,
       )
     )
