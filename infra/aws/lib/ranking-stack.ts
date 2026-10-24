@@ -16,6 +16,7 @@ import { Construct } from "constructs";
 import path from "node:path";
 
 export interface RankingProps extends cdk.StackProps {
+  proxyDestinations: { address: string; port: number }[];
   vpcId: string;
   vpcCidr: string;
   subnets: string[];
@@ -106,6 +107,21 @@ export class RankingAdminStack extends cdk.Stack {
     });
     for (const port of [443, 5432, 6543])
       sg.addEgressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(port));
+    if (!props.proxyDestinations?.length || props.proxyDestinations.length > 32)
+      throw new Error("Verified Webshare destinations required");
+    for (const { address, port } of props.proxyDestinations) {
+      const octets = address.split(".").map(Number);
+      if (
+        !/^\d{1,3}(\.\d{1,3}){3}$/.test(address) ||
+        octets.some((part) => part > 255) ||
+        [0, 10, 127].includes(octets[0]) || octets[0] >= 224 ||
+        (octets[0] === 169 && octets[1] === 254) ||
+        (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
+        (octets[0] === 192 && octets[1] === 168) ||
+        !Number.isInteger(port) || port < 1 || port > 65535
+      ) throw new Error("Webshare must use a verified public IPv4 and port");
+      sg.addEgressRule(ec2.Peer.ipv4(`${address}/32`), ec2.Port.tcp(port), "Configured Webshare IP");
+    }
     sg.addEgressRule(ec2.Peer.ipv4(props.vpcCidr), ec2.Port.udp(53));
     sg.addEgressRule(ec2.Peer.ipv4(props.vpcCidr), ec2.Port.tcp(53));
     const cluster = new ecs.Cluster(this, "Cluster", {

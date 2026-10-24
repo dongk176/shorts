@@ -3,6 +3,7 @@ import { Template, Match } from "aws-cdk-lib/assertions";
 import { describe, expect, it } from "vitest";
 import { RankingAdminStack, type RankingProps } from "../lib/ranking-stack";
 const props: RankingProps = {
+  proxyDestinations: [{ address: "203.0.113.8", port: 6214 }],
   env: { account: "181651591905", region: "ap-northeast-2" },
   vpcId: "vpc-12345678",
   vpcCidr: "10.0.0.0/16",
@@ -74,6 +75,8 @@ describe("isolated ranking infrastructure", () => {
     expect(serialized).not.toContain("WARP_CONF");
   });
   it("rejects unpinned images and cross-account dependencies", () => {
+    expect(() => template({ proxyDestinations: [] })).toThrow();
+    expect(() => template({ proxyDestinations: [{ address: "127.0.0.1", port: 80 }] })).toThrow();
     expect(() => template({ image: "image:latest" })).toThrow();
     expect(() =>
       template({
