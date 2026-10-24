@@ -21,6 +21,7 @@ import httpx
 from PIL import Image, ImageDraw, ImageFont
 
 from .errors import InvalidYouTubeUrl
+from .ingestion import PO_TOKEN_PLAYER_CLIENT, PO_TOKEN_PROVIDER_HOME, _validate_po_token_runtime
 from .url_validation import validate_youtube_url
 
 MAX_BYTES = 250 * 1024 * 1024
@@ -205,6 +206,9 @@ def expand_short_link(value: str) -> str:
 class RankingPipeline:
     def __init__(self, project: Path, egress=None):
         self.egress = egress
+        self.po_token = os.environ.get("RANKING_YOUTUBE_PO_TOKEN_ENABLED") == "1"
+        if self.po_token:
+            _validate_po_token_runtime()
         self.project = project.resolve(strict=True)
         # The caller cannot select arbitrary paths outside local test storage.
         root = Path(
@@ -348,6 +352,14 @@ class RankingPipeline:
             "--use-extractors",
             platform,
         ]
+        if platform == "youtube" and self.po_token:
+            base.remove("--no-plugin-dirs")
+            base += [
+                "--extractor-args",
+                f"youtube:player_client={PO_TOKEN_PLAYER_CLIENT}",
+                "--extractor-args",
+                f"youtubepot-bgutilscript:server_home={PO_TOKEN_PROVIDER_HOME}",
+            ]
         info = json.loads(self.run([*base, "--dump-single-json", "--skip-download", normalized]))
         duration = info.get("duration")
         if (

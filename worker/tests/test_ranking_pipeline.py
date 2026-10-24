@@ -339,8 +339,13 @@ def test_custom_order_reveals_only_played_ranks(tmp_path):
     target = tmp_path / "custom-order.png"
     labels = {rank: f"장면 {rank}" for rank in range(1, 6)}
     RankingPipeline.overlay(
-        "순서 테스트", 4, labels[4], 5, target,
-        labels=labels, revealed_ranks=[2, 4],
+        "순서 테스트",
+        4,
+        labels[4],
+        5,
+        target,
+        labels=labels,
+        revealed_ranks=[2, 4],
     )
     with Image.open(target) as image:
         for rank in range(1, 6):
@@ -454,3 +459,44 @@ def test_unknown_link_duration_never_falls_back_to_download(ranking_project, mon
     assert source["duration"] == 1200
     assert len(calls) == 1
     assert "--skip-download" in calls[0]
+
+
+def test_pinned_public_attestation_uses_selected_proxy_only(ranking_project, monkeypatch):
+    monkeypatch.setenv("RANKING_YOUTUBE_PO_TOKEN_ENABLED", "1")
+    validated = []
+    monkeypatch.setattr(
+        "shorts_worker.ranking_pipeline._validate_po_token_runtime", lambda: validated.append(True)
+    )
+    pipeline = RankingPipeline(ranking_project)
+    calls = []
+
+    def run(args, timeout=180):
+        calls.append(args)
+        return json.dumps(
+            {"duration": 21, "availability": "public", "formats": [{"has_drm": False}]}
+        )
+
+    monkeypatch.setattr(pipeline, "run", run)
+    pipeline._inspect_link(
+        "https://www.youtube.com/shorts/abcdefghijk", "http://selected.test:8080"
+    )
+    args = calls[0]
+    assert validated == [True]
+    assert args[args.index("--proxy") + 1] == "http://selected.test:8080"
+    assert "youtube:player_client=mweb" in args
+    assert "--no-plugin-dirs" not in args
+    assert not any("cookie" in x for x in args)
+    pipeline._inspect_link("https://www.instagram.com/reel/ABCDE/")
+    assert "--no-plugin-dirs" in calls[1]
+    assert not any("bgutil" in x for x in calls[1])
+
+
+def test_attestation_runtime_validation_fails_closed(ranking_project, monkeypatch):
+    monkeypatch.setenv("RANKING_YOUTUBE_PO_TOKEN_ENABLED", "1")
+
+    def invalid():
+        raise RuntimeError("unverified runtime")
+
+    monkeypatch.setattr("shorts_worker.ranking_pipeline._validate_po_token_runtime", invalid)
+    with pytest.raises(RuntimeError):
+        RankingPipeline(ranking_project)

@@ -100,3 +100,22 @@ loaded the finished video with readyState 4. Completion email was accepted by th
 provider, outbox status `sent`, attempt count 1. Browser automation's download
 navigation encountered ERR_BLOCKED_BY_CLIENT; storage retrieval and embedded
 playback succeeded, so the final end-user download flow still needs confirmation.
+
+Follow-up: the normal UI download button succeeded; downloaded file SHA-256
+`929151bd32f05949801846b06b3893498a8eaf6fe5e38bf71c857f3248c7a769`
+exactly matches the stored test result. The earlier automation helper was the
+failing path, not the end-user download action.
+
+The isolated receiver's restrictive egress policy needed the actual Webshare
+ports. Inventory now includes 20 public `/32` destinations and exact ports,
+validated against the existing secret without persisting credentials. Proxy
+replacement must refresh this inventory and security group as well as the secret.
+The legacy WARP probe's network failure does not establish that its old account
+configuration is invalid: this security group did not allow WARP's UDP transport.
+After the Webshare rules were applied, YouTube metadata acquisition succeeded on
+`webshare-20`, with the first bot-challenged route released before failover.
+The exact currently promoted ordinary worker also enables the pinned bgutil
+public-video attestation provider with the mweb client. Ranking now has a separate
+`RANKING_YOUTUBE_PO_TOKEN_ENABLED` gate, validates that pinned runtime, and uses
+that same public, cookie-free configuration on the leased Webshare path. Instagram
+and TikTok retain disabled plugins. The existing ordinary worker is unchanged.

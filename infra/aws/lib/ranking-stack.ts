@@ -213,7 +213,7 @@ export class RankingAdminStack extends cdk.Stack {
         RANKING_ALLOWED_ORIGINS: props.allowedOrigins.join(","),
         RANKING_CAPACITY_FUNCTION_ARN: functionArn,
         RANKING_SOURCE_COMMIT: props.sourceCommit,
-        YTDLP_NO_PLUGINS: "1",
+        RANKING_YOUTUBE_PO_TOKEN_ENABLED: "1",
         RANKING_WEBSHARE_ENABLED: "1",
       },
       secrets: {
