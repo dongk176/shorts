@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { RankingSelect } from "./ranking-select";
 import {
   defaultRankingStyle,
@@ -20,7 +21,6 @@ import { RankingTimeline } from "./ranking-timeline";
 import { RankingProgressOverlay } from "./ranking-progress-overlay";
 import { RankingOrderEditor } from "./ranking-order-editor";
 import { rankingDirectRemote } from "@/lib/ranking-embed";
-import { resolveRankingRender } from "@/lib/ranking-resolve-render";
 import { rankingOrderForCount } from "@/lib/ranking-order";
 import {
   RANKING_LIMITS,
@@ -83,6 +83,8 @@ export function RankingStudio({
   initialProject?: string | null;
   initialOperation?: string | null;
 }) {
+  const router = useRouter();
+  const submission = useRef<{ key: string; requestId: string } | null>(null);
   const [count, setCount] = useState(5);
   const [active, setActive] = useState(0);
   const [slots, setSlots] = useState(emptySlots);
@@ -115,37 +117,32 @@ export function RankingStudio({
     void (async () => {
       try {
         setBusy("작업을 불러오고 있습니다…");
-        for (let tries = 0; tries < 400 && alive; tries++) {
-          const data = await requestJson(
-            `/api/ranking-shorts/${initialProject}${initialOperation ? `?operation=${encodeURIComponent(initialOperation)}` : ""}`,
-            { method: "GET" },
-          );
-          if (!alive) return;
-          setProject(initialProject);
-          projectRef.current = initialProject;
-          if (data.draft.title) {
-            setTitle(data.draft.title);
-            setSubtitle(data.draft.subtitle);
-            setStyle(data.draft.style);
-            setCount(data.draft.rankCount || 5);
-          }
-          if (data.result) {
-            setResult(data.result);
-            setShowResult(true);
-            setBusy("");
-            return;
-          }
-          if (data.status === "failed")
-            throw new Error(data.error || "영상 제작을 완료하지 못했습니다.");
-          if (!["queued", "running"].includes(data.status)) {
-            setBusy("");
-            return;
-          }
-          setBusy(
-            "랭킹 영상을 만들고 있습니다. 완료되면 이메일로 알려드립니다…",
-          );
-          await pause(3000);
+        const data = await requestJson(
+          `/api/ranking-shorts/${initialProject}${initialOperation ? `?operation=${encodeURIComponent(initialOperation)}` : ""}`,
+          { method: "GET" },
+        );
+        if (!alive) return;
+        setProject(initialProject);
+        projectRef.current = initialProject;
+        if (data.draft.title) {
+          setTitle(data.draft.title);
+          setSubtitle(data.draft.subtitle);
+          setStyle(data.draft.style);
+          setCount(data.draft.rankCount || 5);
         }
+        if (data.result) {
+          setResult(data.result);
+          setShowResult(true);
+          setBusy("");
+          return;
+        }
+        if (data.status === "failed")
+          throw new Error(data.error || "영상 제작을 완료하지 못했습니다.");
+        if (!["queued", "running"].includes(data.status)) {
+          setBusy("");
+          return;
+        }
+        router.replace("/projects#ranking-project-list-title");
         if (alive) setBusy("");
       } catch (error) {
         if (alive) {
@@ -161,7 +158,7 @@ export function RankingStudio({
     return () => {
       alive = false;
     };
-  }, [initialProject, initialOperation]);
+  }, [initialProject, initialOperation, router]);
   const slot = slots[active];
   const visible = slots.slice(0, count);
   const descending = orderMode !== "asc";
@@ -363,57 +360,23 @@ export function RankingStudio({
       setError(parsed.error.issues[0].message);
       return;
     }
-    await task(
-      hasRemote
-        ? "링크 영상을 다운로드하고 선택한 구간을 합치고 있습니다…"
-        : "선택한 구간을 자르고 랭킹 영상으로 합치고 있습니다…",
-      async () => {
-        setResult(null);
-        const id = await ensureProject();
-        const spec = await resolveRankingRender(parsed.data, async (clip) => {
-          const item = visible[clip.rank - 1];
-          let source = item.source!;
-          if (item.pendingLink) {
-            const queued = await requestJson(`/api/ranking-shorts/${id}/sources`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              // Stable across retries; do not register the same link twice.
-              body: JSON.stringify({ requestId: source.id, url: source.remote!.url }),
-            });
-            source = (await waitForOperation(queued)).source as RankingSource;
-            patch(clip.rank - 1, { source, pendingLink: false });
-          }
-          if (source.durationKnown === false) {
-            const queued = await requestJson(`/api/ranking-shorts/${id}/sources/${source.id}/preview`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ requestId: crypto.randomUUID() }),
-            });
-            source = (await waitForOperation(queued)).source as RankingSource;
-            patch(clip.rank - 1, { source });
-          }
-          return source;
-        });
-        const output = await requestJson(
-          `/api/ranking-shorts/${id}/render`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              requestId: crypto.randomUUID(),
-              spec,
-            }),
-          },
-        );
-        window.history.replaceState(
-          null,
-          "",
-          `/ranking-shorts?project=${id}`,
-        );
-        setResult((await waitForOperation(output)) as Result);
-        setShowResult(true);
-      },
-    );
+    await task("작업을 접수하고 있습니다…", async () => {
+      const id = await ensureProject();
+      const links = visible.flatMap((item) => item.pendingLink && item.source?.remote
+        ? [{ sourceId: item.source.id, url: item.source.remote.url }] : []);
+      const key = JSON.stringify({ projectId: id, spec: parsed.data, links });
+      if (submission.current?.key !== key)
+        submission.current = { key, requestId: crypto.randomUUID() };
+      await requestJson(`/api/ranking-shorts/${id}/render`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requestId: submission.current.requestId, spec: parsed.data, links }),
+      });
+      // The durable render operation owns downloading and assembly from here.
+      // Navigating away or closing the tab cannot interrupt the job.
+      router.push("/projects#ranking-project-list-title");
+      router.refresh();
+    });
   }
 
   async function prepareSource(
@@ -1137,7 +1100,9 @@ export function RankingStudio({
               title={title}
               subtitle={subtitle}
               count={count}
-              labels={visible.map((item) => (item.source ? item.label : ""))}
+              labels={visible.map((item) => item.label)}
+              previewSource={slot.source || undefined}
+              previewStart={slot.start}
               descending={descending}
               style={style}
               suspended={Boolean(busy || (result && showResult))}

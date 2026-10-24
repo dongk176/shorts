@@ -30,6 +30,6 @@ describe("ranking projects on the ordinary project page", () => {
   it("serializes only card metadata and exposes duration only from the latest successful render", async () => {
     vi.stubEnv("RANKING_SHORTS_ENABLED", "1");
     state.query.mockResolvedValue([{ id: "project", title: "완성 영상", createdAt: new Date("2026-10-24T00:00:00Z"), status: "succeeded", operationId: "render", duration: "3.021333", ignoredSecret: "not returned" }]);
-    expect(await loadRankingProjectList("owner")).toEqual([{ id: "project", title: "완성 영상", createdAt: "2026-10-24T00:00:00.000Z", status: "succeeded", operationId: "render", duration: 3.021333 }]);
+    expect(await loadRankingProjectList("owner")).toEqual([{ id: "project", title: "완성 영상", createdAt: "2026-10-24T00:00:00.000Z", status: "succeeded", operationId: "render", duration: 3.021333, remoteUrl: null, busy: false }]);
   });
 });

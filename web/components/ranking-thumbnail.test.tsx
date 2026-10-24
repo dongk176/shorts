@@ -1,0 +1,30 @@
+import { describe, expect, it } from "vitest";
+import { renderToStaticMarkup } from "react-dom/server";
+import { RankingThumbnail } from "./ranking-thumbnail";
+import { RankingSequencePreview } from "@/app/ranking-shorts/ranking-sequence-preview";
+import { defaultRankingStyle } from "@/lib/ranking-templates";
+
+describe("ranking visual previews", () => {
+  it("uses the completed video without autoplay or source preparation", () => {
+    const html = renderToStaticMarkup(<RankingThumbnail lazy={false} videoUrl="/api/ranking-shorts/project/media/result?result=1" />);
+    expect(html).toContain('<video');
+    expect(html).toContain('preload="metadata"');
+    expect(html).not.toContain('autoPlay');
+    expect(html).not.toContain('/preview');
+  });
+  it("uses a public YouTube cover without a worker", () => {
+    const html = renderToStaticMarkup(<RankingThumbnail lazy={false} remote={{ platform: "youtube", videoId: "vtQV5zRU71o", url: "https://youtu.be/vtQV5zRU71o" }} />);
+    expect(html).toContain('https://i.ytimg.com/vi/vtQV5zRU71o/hqdefault.jpg');
+    expect(html).not.toContain('<iframe');
+  });
+  it("keeps TikTok's cover paused and muted", () => {
+    const html = renderToStaticMarkup(<RankingThumbnail lazy={false} remote={{ platform: "tiktok", videoId: "6718335390845095173", url: "https://www.tiktok.com/@scout2015/video/6718335390845095173" }} />);
+    expect(html).toContain('autoplay=0&amp;muted=1');
+    expect(html).toContain('pointer-events:none');
+  });
+  it("shows typed labels even with no source or no playback yet", () => {
+    const html = renderToStaticMarkup(<RankingSequencePreview clips={[]} project={null} title="제목" subtitle="순위" count={3} labels={["첫째 장면", "둘째 장면", ""]} descending style={defaultRankingStyle} layoutOnly suspended={false} pauseSignal={0} onStart={() => {}} />);
+    expect(html).toContain("첫째 장면");
+    expect(html).toContain("둘째 장면");
+  });
+});

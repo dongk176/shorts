@@ -93,6 +93,32 @@ suite("ranking isolated database workflow", () => {
     await state.db`update shorts_mvp.ranking_operations set status='succeeded',result=${state.db.json({ duration: 5, outputKey: `outputs/ranking/${project}/${op.operationId}.mp4` })} where id=${op.operationId}`;
     await state.db`insert into shorts_mvp.ranking_completion_emails(operation_id) values(${op.operationId})`;
   });
+  it("atomically accepts concurrent identical remote renders and rolls back invalid sources", async () => {
+    const pending = randomUUID();
+    const input = { requestId: randomUUID(), links: [{ sourceId: pending, url: "https://www.youtube.com/shorts/vtQV5zRU71o" }],
+      spec: { title: "remote queue", descending: true, rankCount: 2, playbackOrder: [2],
+        clips: [{ rank: 2, sourceId: pending, label: "remote", start: 1, end: 4 }] } };
+    const [before] = await state.db`select count(*)::int as count from shorts_mvp.ranking_sources where project_id=${project}`;
+    await expect(queueRankingOperation(project, owner, "render", { ...input, spec: { ...input.spec,
+      clips: [...input.spec.clips, { rank: 1, sourceId: randomUUID(), label: "missing", start: 0, end: 1 }], playbackOrder: [2, 1] } }))
+      .rejects.toMatchObject({ status: 400 });
+    const [after] = await state.db`select count(*)::int as count from shorts_mvp.ranking_sources where project_id=${project}`;
+    expect(after.count).toBe(before.count);
+    const [a, b] = await Promise.all([
+      queueRankingOperation(project, owner, "render", input), queueRankingOperation(project, owner, "render", input),
+    ]);
+    expect(a.operationId).toBe(b.operationId);
+    const [op] = await state.db`select payload,status from shorts_mvp.ranking_operations where id=${a.operationId}`;
+    expect(op.status).toBe("queued");
+    expect(op.payload.playbackOrder).toEqual([2]);
+    const [source] = await state.db`select status,metadata,remote_url from shorts_mvp.ranking_sources where id=${op.payload.clips[0].sourceId}`;
+    expect(source.status).toBe("ready");
+    expect(source.metadata.durationKnown).toBe(false);
+    expect(source.remoteUrl).toBe("https://www.youtube.com/watch?v=vtQV5zRU71o");
+    const [final] = await state.db`select count(*)::int as count from shorts_mvp.ranking_sources where project_id=${project}`;
+    expect(final.count).toBe(before.count + 1);
+    await state.db`update shorts_mvp.ranking_operations set status='failed' where id=${a.operationId}`;
+  });
   it("sends a completion only once across concurrent cron workers", async () => {
     const send = vi.fn().mockResolvedValue("email-test");
     await Promise.all([processRankingEmails(send), processRankingEmails(send)]);

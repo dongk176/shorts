@@ -8,6 +8,7 @@ import {
   RANKING_LIMITS,
   type RankingSource,
 } from "./ranking-shorts";
+import { rankingDirectRemote } from "./ranking-embed";
 import { rankingUuid, requireRankingProject } from "./ranking-access";
 import { rankingReceiverAccess, wakeRankingRuntime } from "./ranking-runtime";
 
@@ -126,16 +127,27 @@ export async function queueRankingOperation(
 ) {
   await requireRankingProject(projectId, owner);
   const envelope = z
-    .object({ requestId: z.uuid(), spec: rankingRenderSchema.optional() })
+    .object({
+      requestId: z.uuid(),
+      spec: rankingRenderSchema.optional(),
+      links: z.array(z.object({ sourceId: z.uuid(), url: z.string().url().max(2048) }).strict())
+        .max(RANKING_LIMITS.ranks).optional(),
+    })
     .strict()
     .safeParse(input);
   if (!envelope.success || (action === "render" && !envelope.data.spec))
     throw new HttpError(400, "선택한 구간과 제목을 확인해 주세요.");
   const spec = envelope.data.spec;
+  const links = envelope.data.links || [];
+  if ((action !== "render" && links.length) ||
+      new Set(links.map((link) => link.sourceId)).size !== links.length ||
+      links.some((link) => !rankingDirectRemote(link.url) || !spec?.clips.some((clip) => clip.sourceId === link.sourceId)))
+    throw new HttpError(400, "등록할 영상 링크를 확인해 주세요.");
   if (sourceId) rankingUuid(sourceId);
   await wakeRankingRuntime();
   const operationId = await getDb().begin(async (tx) => {
-    await tx`select id from shorts_mvp.ranking_projects where id=${projectId} for update`;
+    const locked = await tx`select id from shorts_mvp.ranking_projects where id=${projectId} and user_id=${owner} and deleted_at is null and expires_at>now() for update`;
+    if (!locked[0]) throw new HttpError(404, "작업을 찾을 수 없습니다.");
     const existing =
       await tx`select id from shorts_mvp.ranking_operations where project_id=${projectId} and request_id=${envelope.data.requestId}`;
     if (existing[0]) return existing[0].id;
@@ -147,21 +159,39 @@ export async function queueRankingOperation(
     if (action === "preview") {
       if (!sources.some((s) => s.id === sourceId && s.remoteUrl))
         throw new HttpError(404, "원본 영상을 다시 추가해 주세요.");
-    } else
-      for (const clip of spec!.clips) {
-        const source = sources.find((s) => s.id === clip.sourceId);
-        if (
-          !source ||
-          source.status !== "ready" ||
-          !source.metadata ||
-          source.metadata.durationKnown === false ||
-          clip.end > source.metadata.duration
-        )
-          throw new HttpError(
-            400,
-            `${clip.rank}위 영상의 구간을 다시 확인해 주세요.`,
-          );
+    } else {
+      if (sources.length + links.length > 30)
+        throw new HttpError(409, "작업당 영상은 최대 30개입니다. 새로 시작해 주세요.");
+      const replacements = new Map<string, string>();
+      for (const link of links) {
+        if (sources.some((source) => source.id === link.sourceId))
+          throw new HttpError(400, "이미 등록된 영상입니다. 다시 확인해 주세요.");
+        const id = randomUUID();
+        // 'ready' also represents a registered remote link, as in worker.register_link.
+        // Never trust browser duration metadata. The worker downloads, probes and
+        // validates the public source and selected range before rendering.
+        const remote = rankingDirectRemote(link.url)!;
+        const metadata: RankingSource = {
+          id, remote, duration: RANKING_LIMITS.sourceSeconds, durationKnown: false,
+          previewReady: false, width: 0, height: 0, hasAudio: true,
+        };
+        await tx`insert into shorts_mvp.ranking_sources(id,project_id,status,remote_url,metadata) values(${id},${projectId},'ready',${remote.url},${tx.json(metadata)})`;
+        replacements.set(link.sourceId, id);
       }
+      for (const clip of spec!.clips) {
+        if (clip.end > RANKING_LIMITS.sourceSeconds)
+          throw new HttpError(400, `${clip.rank}위 영상의 구간을 다시 확인해 주세요.`);
+        const replacement = replacements.get(clip.sourceId);
+        if (replacement) {
+          clip.sourceId = replacement;
+          continue;
+        }
+        const source = sources.find((s) => s.id === clip.sourceId);
+        if (!source || source.status !== "ready" || !source.metadata ||
+            (source.metadata.durationKnown === false ? !source.remoteUrl : clip.end > source.metadata.duration))
+          throw new HttpError(400, `${clip.rank}위 영상의 구간을 다시 확인해 주세요.`);
+      }
+    }
     const id = randomUUID();
     await tx`insert into shorts_mvp.ranking_operations(id,project_id,source_id,action,payload,request_id) values(${id},${projectId},${sourceId || null},${action},${tx.json(spec || {})},${envelope.data.requestId})`;
     if (spec)

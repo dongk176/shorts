@@ -1,3 +1,4 @@
+import { loadRankingProjectList } from "@/lib/ranking-project-list";
 import { createRankingProject } from "@/lib/ranking-jobs";
 import {
   requireRankingAdmin,
@@ -16,10 +17,7 @@ export async function POST(request: Request) {
 export async function GET(request: Request) {
   try {
     const admin = await requireRankingAdmin(request);
-    const { getDb } = await import("@/lib/db");
-    const rows =
-      await getDb()`select p.id,p.draft->>'title' as title,p.created_at,coalesce(o.status,'draft') as status from shorts_mvp.ranking_projects p left join lateral(select status from shorts_mvp.ranking_operations where project_id=p.id and action='render' order by created_at desc limit 1)o on true where p.user_id=${admin.id} and p.deleted_at is null and p.expires_at>now() order by p.created_at desc limit 20`;
-    return rankingReply({ projects: rows });
+    return rankingReply({ projects: await loadRankingProjectList(admin.authUserId) });
   } catch (error) {
     return rankingError(error);
   }

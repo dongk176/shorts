@@ -150,3 +150,5 @@
 
 .ranking-history{margin-top:24px;border-top:1px solid #ffffff18;padding-top:16px}.ranking-history summary{cursor:pointer;color:#c7c4bd;font-size:14px}.ranking-history>div{display:grid;gap:8px;margin-top:12px}.ranking-history a{display:flex;justify-content:space-between;padding:12px 16px;border:1px solid #ffffff18;border-radius:8px}.ranking-history a span{color:#cdbb9b}.ranking-history p{color:#aaa;font-size:14px}
 .ranking-history-row{display:flex;gap:8px;align-items:center}.ranking-history-row>a{flex:1;min-width:0}.ranking-history-row>button{padding:10px;color:#aba9a3;font-size:13px}.ranking-history-row>button:disabled{opacity:.4}.ranking-completed .ranking-output-player{max-width:360px;margin:24px auto}.ranking-completed>.ranking-download-button{max-width:360px;margin:12px auto}.ranking-completed>p{text-align:center;color:#aaa}
+
+.ranking-composition-still{position:absolute;top:var(--ranking-video-top);left:0;right:0;bottom:0;pointer-events:none}

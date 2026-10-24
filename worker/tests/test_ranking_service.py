@@ -360,3 +360,64 @@ def test_restricted_worker_upload_render_and_email_outbox(service, monkeypatch):
             ).fetchone()["status"]
             == "pending"
         )
+
+
+@pytest.mark.parametrize("end,valid", [(4, True), (6, False)])
+def test_render_owns_pending_link_download_and_actual_range_validation(
+    tmp_path, monkeypatch, end, valid
+):
+    """A queued web submission needs no further browser calls to inspect/download."""
+    from types import SimpleNamespace
+
+    project, source_id, operation = (str(uuid4()) for _ in range(3))
+    remote = {
+        "url": "https://www.youtube.com/watch?v=vtQV5zRU71o",
+        "platform": "youtube",
+        "videoId": "vtQV5zRU71o",
+    }
+    source = {
+        "id": source_id,
+        "status": "ready",
+        "remote_url": remote["url"],
+        "metadata": {"id": source_id, "duration": 1200, "durationKnown": False, "remote": remote},
+    }
+    svc = RankingService.__new__(RankingService)
+    svc.root, svc.bucket = tmp_path, "test-bucket"
+    svc.directory = lambda _: tmp_path
+    svc.sources = lambda _: [source]
+    saved, uploads, imports = [], [], []
+    svc.save_source = lambda *args: saved.append(args)
+    svc.s3 = SimpleNamespace(upload_file=lambda *args, **kwargs: uploads.append(args))
+    monkeypatch.setenv("RANKING_WEBSHARE_ENABLED", "0")
+
+    class Pipeline:
+        def __init__(self, directory, **kwargs):
+            self.directory = directory
+
+        def import_source(self, source, url):
+            imports.append((source, url))
+            return {"id": source, "duration": 5, "width": 720, "height": 1280, "hasAudio": True}
+
+        def render(self, spec, render_id):
+            assert spec["clips"][0]["start"] == 1
+            assert spec["playbackOrder"] == [2]
+            assert json.loads((tmp_path / "sources.json").read_text())[0]["duration"] == 5
+            (tmp_path / "result.mp4").write_bytes(b"fixture-result")
+            return {"fileName": "result.mp4", "duration": end - 1}
+
+    monkeypatch.setattr("shorts_worker.ranking_service.RankingPipeline", Pipeline)
+    spec = {
+        "playbackOrder": [2],
+        "clips": [{"rank": 2, "sourceId": source_id, "start": 1, "end": end}],
+    }
+    op = {"project_id": project, "id": operation, "action": "render", "payload": spec}
+    if valid:
+        assert svc.execute(op)["duration"] == 3
+        assert len(uploads) == 1
+        assert not (tmp_path / "result.mp4").exists()
+    else:
+        with pytest.raises(RankingFailure, match="실제 원본 길이"):
+            svc.execute(op)
+        assert not uploads
+    assert imports == [(source_id, remote["url"])]
+    assert saved[0][1]["durationKnown"] is True

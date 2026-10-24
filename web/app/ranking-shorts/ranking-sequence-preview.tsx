@@ -8,7 +8,8 @@ import {
   type CSSProperties,
 } from "react";
 import { rankingDesign, type RankingStyle } from "@/lib/ranking-templates";
-import { rankingTime } from "@/lib/ranking-shorts";
+import { rankingTime, type RankingSource } from "@/lib/ranking-shorts";
+import { RankingThumbnail } from "@/components/ranking-thumbnail";
 import {
   rankingPlaybackPosition,
   type RankingPlaybackClip,
@@ -28,6 +29,8 @@ export function RankingSequencePreview({
   pauseSignal,
   onStart,
   layoutOnly = false,
+  previewSource,
+  previewStart = 0,
 }: {
   clips: RankingPlaybackClip[];
   project: string | null;
@@ -38,6 +41,8 @@ export function RankingSequencePreview({
   descending: boolean;
   style: RankingStyle;
   layoutOnly?: boolean;
+  previewSource?: RankingSource;
+  previewStart?: number;
   suspended: boolean;
   pauseSignal: number;
   onStart: () => void;
@@ -188,6 +193,14 @@ export function RankingSequencePreview({
         ) : (
           <div className="ranking-composition-empty" />
         )}
+        {previewSource && (layoutOnly || (!playing && elapsed === 0)) ? (
+          <div className="ranking-composition-still">
+            <RankingThumbnail key={previewSource.id}
+              lazy={false} remote={previewSource.remote} time={previewStart}
+              videoUrl={project && (!previewSource.remote || previewSource.previewReady)
+                ? `/api/ranking-shorts/${project}/media/${previewSource.id}` : undefined} />
+          </div>
+        ) : null}
         <RankingOverlay
           title={title}
           subtitle={subtitle}
@@ -196,15 +209,16 @@ export function RankingSequencePreview({
           labels={labels}
           descending={descending}
           revealedRanks={
-            layoutOnly ? [] : clips.slice(0, index + 1).map((item) => item.rank)
+            layoutOnly || !playing
+              ? Array.from({ length: count }, (_, i) => i + 1)
+              : clips.slice(0, index + 1).map((item) => item.rank)
           }
           style={style}
         />
       </div>
       {layoutOnly ? (
         <p className="ranking-hint">
-          영상은 왼쪽 원본 플레이어에서 확인하세요. 전체 합성 영상은 ‘영상
-          만들기’ 후 재생할 수 있습니다.
+          선택한 영상의 표지와 배치를 보여드려요. 전체 영상은 제작 후 재생할 수 있습니다.
         </p>
       ) : (
         <div className="ranking-sequence-controls">
