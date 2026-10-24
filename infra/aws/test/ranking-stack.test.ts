@@ -69,6 +69,9 @@ describe("isolated ranking infrastructure", () => {
     t.resourceCountIs("AWS::CloudFront::VpcOrigin", 0);
     t.resourceCountIs("AWS::ElasticLoadBalancingV2::Listener", 0);
     expect(serialized).toContain("RANKING_ORIGIN_SECRET");
+    expect(serialized).toContain("RANKING_WEBSHARE_ENABLED");
+    expect(serialized).toContain("INGESTION_PROXY_ROUTES_JSON");
+    expect(serialized).not.toContain("WARP_CONF");
   });
   it("rejects unpinned images and cross-account dependencies", () => {
     expect(() => template({ image: "image:latest" })).toThrow();

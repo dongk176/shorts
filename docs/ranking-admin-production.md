@@ -67,3 +67,36 @@ Final frontend rebuild after result-page/history changes passed. Route manifest 
 User completed the AWS CLI login in a new Chrome incognito window. STS verified account `181651591905`. Current web alias still points to `96cd3057a3590a511fb49f29f195f3262021e210`. Runtime DB identity is PostgreSQL 17.6, `postgres.mvcprswvfybudtopepuj` pooler tenant, database/user `postgres`; public Supabase custom domain is `easycut.supabase.co`. Ranking tables/role are absent before migration.
 
 Existing upload service remains desired/running 0; task definition `shorts-mvp-file-upload-production:14`, image digest `sha256:357afd6f412720043d128a3e00dfffa1507e9ff3f55e95e6cb692df0f1d9b037`. Its priority-1 header rule and 403 default match the expected isolation design. Existing VPC origin `vo_Dc7FYwJ2oyZDiqvxBwyoFA` and CloudFront `ENOIJWSFW4XKW` are retained. Existing output bucket uses AES256 and its `outputs/` lifecycle expires objects after 30 days, including ranking outputs. No original/preview object storage will be added.
+
+## Webshare admission correction (2026-10-24)
+
+The actual AWS candidate reproduced YouTube bot challenges on direct egress.
+Direct per-video attestation did not resolve that challenge; the inactive legacy
+WARP configuration also failed its bounded connectivity probe. Neither is enabled.
+The requested production path now uses the existing `INGESTION_PROXY_ROUTES_JSON`
+Webshare pool, injected only into the isolated ranking receiver.
+
+`20261024110000_ranking_webshare_admission.sql` adds a separate 10-minute ranking
+lease to each existing IP slot. The three existing admission functions keep their
+live production definitions and permissions; a hash guard refuses deployment if
+any definition has changed since inspection. Only their free-slot predicates gain
+an exclusion for an active ranking lease. Ordinary job leases, queue ordering,
+usage, retries and release logic remain intact. Ranking receives only two narrow
+SECURITY DEFINER functions in its private schema, not access to ordinary tables.
+At most one ranking acquisition can hold an IP globally; acquisition and download
+share that lease, release it in `finally`, and expire after receiver loss. The
+pipeline deadline (540 seconds) is shorter than the lease (600 seconds). Restricted
+content fails closed before transient classification; only bot/429, network errors,
+and metadata-gated media 403 can rotate. Up to 20 distinct configured routes,
+60 seconds capacity wait, and the overall deadline bound retries. Route IDs and
+categories are audited without proxy credentials, account material or raw stderr.
+
+Actual cloud test before this correction: web `8187d6b`, worker `befbe035` on ECS
+revision 2 generated operation `ccd84ed2-66ab-44d3-9cac-57cb677ecf8f`.
+Three sources (file, Instagram, TikTok), custom playback `[2,3,1]`, ranges `[4,8]`,
+`[1,4]`, `[2,5]`, SUIT/mint/custom white title and right-side ranks produced
+720×1280 H.264/AAC, 300 frames at 30fps, 10.021333s. The authenticated browser
+loaded the finished video with readyState 4. Completion email was accepted by the
+provider, outbox status `sent`, attempt count 1. Browser automation's download
+navigation encountered ERR_BLOCKED_BY_CLIENT; storage retrieval and embedded
+playback succeeded, so the final end-user download flow still needs confirmation.

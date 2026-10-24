@@ -36,6 +36,63 @@ class RankingFailure(ValueError):
     pass
 
 
+class RankingDownloadFailure(RankingFailure):
+    def __init__(self, category: str):
+        self.category = category
+        super().__init__(
+            "영상을 가져오지 못했습니다. 제한 없는 공개 영상인지 확인하거나 "
+            "사용 권한이 있는 영상 파일을 넣어 주세요."
+        )
+
+
+def download_failure_category(output: str, *, media: bool = False) -> str:
+    value = output.lower()
+    # Restrictions take precedence even if the same output mentions a bot/429.
+    if any(
+        marker in value
+        for marker in (
+            "private video",
+            "video is private",
+            "not available in your country",
+            "not available in your region",
+            "geo restricted",
+            "geo-restricted",
+            "members-only",
+            "members only",
+            "join this channel",
+            "paid content",
+            "purchase this content",
+            "payment",
+            "drm",
+            "age-restricted",
+            "confirm your age",
+            "sign in to confirm your age",
+        )
+    ):
+        return "terminal"
+    if any(marker in value for marker in ("not a bot", "http error 429", "too many requests")):
+        return "bot_check"
+    if any(
+        marker in value
+        for marker in (
+            "connection refused",
+            "connection reset",
+            "timed out",
+            "network is unreachable",
+            "name or service not known",
+            "temporary failure in name resolution",
+            "remote end closed",
+            "remote disconnected",
+            "tlsv1 alert",
+            "proxy error",
+            "unable to connect",
+            "certificate verify failed",
+        )
+    ) or (media and "unable to download video data" in value and "http error 403" in value):
+        return "network_error"
+    return "terminal"
+
+
 def ranking_style(value=None) -> dict:
     style = DEFAULT_STYLE if value is None else value
     if (
@@ -146,7 +203,8 @@ def expand_short_link(value: str) -> str:
 
 
 class RankingPipeline:
-    def __init__(self, project: Path):
+    def __init__(self, project: Path, egress=None):
+        self.egress = egress
         self.project = project.resolve(strict=True)
         # The caller cannot select arbitrary paths outside local test storage.
         root = Path(
@@ -161,6 +219,7 @@ class RankingPipeline:
         self.deadline = time.monotonic() + DEADLINE_SECONDS
 
     def run(self, args: list[str], timeout: int = 180) -> str:
+        youtube = "yt_dlp" in args and "youtube" in args
         remaining = self.deadline - time.monotonic()
         if remaining <= 0:
             raise RankingFailure("처리 시간이 초과되었습니다. 더 짧은 영상으로 시도해 주세요.")
@@ -186,6 +245,8 @@ class RankingPipeline:
             try:
                 while process.poll() is None:
                     if time.monotonic() >= until:
+                        if youtube:
+                            raise RankingDownloadFailure("network_error")
                         raise RankingFailure("영상 처리 시간이 초과되었습니다.")
                     if out.tell() > 4 * 1024 * 1024 or err.tell() > 4 * 1024 * 1024:
                         raise RankingFailure("영상 정보를 처리할 수 없습니다.")
@@ -199,6 +260,14 @@ class RankingPipeline:
                         raise RankingFailure("250MB 이하의 영상을 사용해 주세요.")
                     time.sleep(0.1)
                 if process.returncode:
+                    if youtube:
+                        err.seek(0)
+                        raise RankingDownloadFailure(
+                            download_failure_category(
+                                err.read(4 * 1024 * 1024).decode("utf8", errors="replace"),
+                                media="--skip-download" not in args,
+                            )
+                        )
                     raise RankingFailure(
                         "영상을 가져오거나 변환하지 못했습니다. 공개 영상인지 확인하거나 "
                         "사용 권한이 있는 영상 파일을 직접 넣어 주세요."
@@ -246,6 +315,12 @@ class RankingPipeline:
         }
 
     def inspect_link(self, url: str) -> tuple[str, str, list[str], dict]:
+        url, platform = normalized_link(expand_short_link(url))
+        if self.egress and platform == "youtube":
+            return self.egress.run(lambda proxy: self._inspect_link(url, proxy), self.deadline)
+        return self._inspect_link(url)
+
+    def _inspect_link(self, url: str, proxy: str = "") -> tuple[str, str, list[str], dict]:
         normalized, platform = normalized_link(expand_short_link(url))
         # Separate metadata gate: never rotate identity/region or use login material.
         base = [
@@ -267,7 +342,7 @@ class RankingPipeline:
             "--extractor-retries",
             "0",
             "--proxy",
-            "",
+            proxy,
             "--playlist-items",
             "1",
             "--use-extractors",
@@ -322,7 +397,19 @@ class RankingPipeline:
         }
 
     def acquire(self, directory: Path, url: str) -> Path:
-        normalized, _, base, _ = self.inspect_link(url)
+        url, platform = normalized_link(expand_short_link(url))
+        if self.egress and platform == "youtube":
+            return self.egress.run(
+                lambda proxy: self._acquire(directory, url, proxy), self.deadline
+            )
+        return self._acquire(directory, url)
+
+    def _acquire(self, directory: Path, url: str, proxy: str = "") -> Path:
+        # A failed attempt must not reuse fragments from a different egress.
+        for partial in directory.glob("download.*"):
+            if partial.is_file():
+                partial.unlink()
+        normalized, _, base, _ = self._inspect_link(url, proxy)
         self.run(
             [
                 *base,

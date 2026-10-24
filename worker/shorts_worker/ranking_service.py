@@ -21,6 +21,7 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
+from .ranking_egress import RankingEgress
 from .ranking_pipeline import MAX_BYTES, RankingFailure, RankingPipeline, checked_id
 
 ROUTE = re.compile(r"^/ranking/v1/projects/([0-9a-f-]{36})/sources/([0-9a-f-]{36})$")
@@ -227,7 +228,10 @@ class RankingService:
         directory = self.directory(project)
         if shutil.disk_usage(self.root).free < 2 * 1024**3:
             raise RankingFailure("작업 공간이 부족합니다. 잠시 후 다시 시도해 주세요.")
-        pipeline = RankingPipeline(directory)
+        egress = (
+            RankingEgress(self, op) if os.environ.get("RANKING_WEBSHARE_ENABLED") == "1" else None
+        )
+        pipeline = RankingPipeline(directory, egress=egress)
         if op["action"] != "render":
             source_id = str(op["source_id"])
             source = next(s for s in self.sources(project) if str(s["id"]) == source_id)

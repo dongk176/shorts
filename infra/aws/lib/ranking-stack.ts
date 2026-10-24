@@ -198,8 +198,13 @@ export class RankingAdminStack extends cdk.Stack {
         RANKING_CAPACITY_FUNCTION_ARN: functionArn,
         RANKING_SOURCE_COMMIT: props.sourceCommit,
         YTDLP_NO_PLUGINS: "1",
+        RANKING_WEBSHARE_ENABLED: "1",
       },
       secrets: {
+        INGESTION_PROXY_ROUTES_JSON: ecs.Secret.fromSecretsManager(
+          runtime,
+          "INGESTION_PROXY_ROUTES_JSON",
+        ),
         DATABASE_URL: ecs.Secret.fromSecretsManager(
           runtime,
           "RANKING_DATABASE_URL",
