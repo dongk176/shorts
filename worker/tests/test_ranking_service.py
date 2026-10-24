@@ -113,6 +113,13 @@ def service(tmp_path, monkeypatch):
         db.execute("delete from shorts_mvp.app_users where id=%s", (owner,))
 
 
+def test_runtime_transaction_limits(service):
+    svc, _, _ = service
+    with svc.db() as db:
+        assert db.execute("show statement_timeout").fetchone()["statement_timeout"] == "10s"
+        assert db.execute("show lock_timeout").fetchone()["lock_timeout"] == "3s"
+
+
 def source_op(service, owner, project, action="import", size=4):
     source, op = str(uuid4()), str(uuid4())
     with service.db() as db:

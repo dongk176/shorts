@@ -123,6 +123,10 @@ class RankingService:
                 "-c statement_timeout=10000 -c lock_timeout=3000 -c application_name=ranking-worker"
             ),
         ) as db:
+            # Transaction poolers can ignore startup options. Apply limits to
+            # the actual transaction, without changing shared session defaults.
+            db.execute("set local statement_timeout = '10s'")
+            db.execute("set local lock_timeout = '3s'")
             yield db
 
     def authorized_source(self, project, source, owner):
