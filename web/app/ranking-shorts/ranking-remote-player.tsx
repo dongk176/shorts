@@ -94,9 +94,10 @@ export const RankingRemotePlayer = forwardRef<
     suspended: boolean;
     onTime: (time: number) => void;
     onPlaying: (playing: boolean) => void;
+    onUnavailable: () => void;
   }
 >(function RankingRemotePlayer(
-  { remote, start, label, onTime, onPlaying, suspended },
+  { remote, start, label, onTime, onPlaying, onUnavailable, suspended },
   ref,
 ) {
   const host = useRef<HTMLDivElement>(null);
@@ -104,8 +105,8 @@ export const RankingRemotePlayer = forwardRef<
   const youtube = useRef<YouTubePlayer | null>(null);
   const preview = useRef<ReturnType<typeof createYouTubePreview> | null>(null);
   const pendingSeek = useRef<number | null>(null);
-  const latest = useRef({ start, onTime, onPlaying });
-  latest.current = { start, onTime, onPlaying };
+  const latest = useRef({ start, onTime, onPlaying, onUnavailable });
+  latest.current = { start, onTime, onPlaying, onUnavailable };
   const [error, setError] = useState("");
   const [instagramHeight, setInstagramHeight] = useState(780);
   const url = rankingEmbedUrl(remote);
@@ -147,14 +148,19 @@ export const RankingRemotePlayer = forwardRef<
     let interval: ReturnType<typeof setInterval> | undefined;
     let instance: YouTubePlayer | null = null;
     if (suspended) return;
+    let unavailable = false;
     const fail = () => {
-      if (alive) {
+      if (alive && !unavailable) {
+        unavailable = true;
+        clearTimeout(readyTimer);
+        latest.current.onUnavailable();
         setError(
           "플레이어를 연결하지 못했습니다. 원본 링크에서 확인하거나 파일을 선택해 주세요.",
         );
         latest.current.onPlaying(false);
       }
     };
+    const readyTimer = setTimeout(fail, 20000);
     if (remote.platform === "youtube") {
       void loadYouTube()
         .then((api) => {
@@ -173,6 +179,7 @@ export const RankingRemotePlayer = forwardRef<
             events: {
               onReady: () => {
                 if (!alive || !instance) return;
+                clearTimeout(readyTimer);
                 instance.cueVideoById({
                   videoId: remote.videoId,
                   startSeconds: latest.current.start,
@@ -215,7 +222,10 @@ export const RankingRemotePlayer = forwardRef<
           event,
           frame.current?.contentWindow ?? null,
         );
-        if (height !== null) setInstagramHeight(height);
+        if (height !== null) {
+          clearTimeout(readyTimer);
+          setInstagramHeight(height);
+        }
         return;
       }
       if (remote.platform !== "tiktok") return;
@@ -224,6 +234,7 @@ export const RankingRemotePlayer = forwardRef<
         frame.current?.contentWindow ?? null,
       );
       if (data?.type === "ready") {
+        clearTimeout(readyTimer);
         message("seekTo", latest.current.start);
       }
       if (data?.type === "time") latest.current.onTime(data.time);
@@ -234,6 +245,7 @@ export const RankingRemotePlayer = forwardRef<
     return () => {
       alive = false;
       clearInterval(interval);
+      clearTimeout(readyTimer);
       window.removeEventListener("message", listener);
       preview.current?.dispose();
       preview.current = null;

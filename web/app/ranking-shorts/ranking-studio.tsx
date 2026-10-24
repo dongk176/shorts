@@ -88,6 +88,7 @@ export function RankingStudio({
   const [subtitle, setSubtitle] = useState("오늘의 랭킹");
   const player = useRef<HTMLVideoElement>(null);
   const remotePlayer = useRef<RankingRemoteHandle>(null);
+  const previewFallbacks = useRef(new Set<string>());
   const [current, setCurrent] = useState(0);
   const [showResult, setShowResult] = useState(false);
   const [previewPauseSignal, setPreviewPauseSignal] = useState(0);
@@ -892,6 +893,15 @@ export function RankingStudio({
                           setPreviewPauseSignal((previous) => previous + 1);
                       }}
                       onTime={setCurrent}
+                      onUnavailable={() => {
+                        const sourceId = slot.source?.id;
+                        if (!project || !sourceId || busyRef.current || previewFallbacks.current.has(sourceId)) return;
+                        previewFallbacks.current.add(sourceId);
+                        void task(
+                          `${active + 1}위 영상을 가져와 구간 선택을 준비하고 있습니다…`,
+                          () => prepareSource(project, sourceId, active, slot.start, slot.end),
+                        );
+                      }}
                     />
                   ) : (
                     <div className="ranking-source-player">
