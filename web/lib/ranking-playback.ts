@@ -1,4 +1,5 @@
 export type RankingPlaybackClip = {
+  transitionUrl?: string;
   rank: number;
   sourceId: string;
   start: number;

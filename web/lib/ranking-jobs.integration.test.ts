@@ -119,6 +119,27 @@ suite("ranking isolated database workflow", () => {
     expect(final.count).toBe(before.count + 1);
     await state.db`update shorts_mvp.ranking_operations set status='failed' where id=${a.operationId}`;
   });
+  it("admits bounded audio uploads and validates music ownership separately from clips", async () => {
+    await expect(queueRankingSource(project, owner, {requestId: randomUUID(), kind: "audio", size: 31 * 1024 * 1024})).rejects.toMatchObject({status: 400});
+    const queued = await queueRankingSource(project, owner, {requestId: randomUUID(), kind: "audio", size: 1000});
+    if (!("operationId" in queued)) throw new Error("runtime not ready");
+    const [upload] = await state.db`select source_id from shorts_mvp.ranking_operations where id=${queued.operationId}`;
+    const [source] = await state.db`select metadata from shorts_mvp.ranking_sources where id=${upload.sourceId}`;
+    expect(source.metadata.kind).toBe("audio");
+    await state.db`update shorts_mvp.ranking_sources set status='ready',metadata=${state.db.json({id: upload.sourceId, kind: "audio", duration: 10, durationKnown: true})} where id=${upload.sourceId}`;
+    await state.db`update shorts_mvp.ranking_operations set status='succeeded' where id=${queued.operationId}`;
+    const video = randomUUID();
+    await state.db`insert into shorts_mvp.ranking_sources(id,project_id,status,metadata) values(${video},${project},'ready',${state.db.json({id:video,duration:10})})`;
+    const spec = {title: "music", descending: true, transitionSound: "scratch", clips: [{rank:1,sourceId:video,label:"one",start:0,end:2}], backgroundMusic:{sourceId:upload.sourceId,volume:0.2}};
+    await expect(queueRankingOperation(project,owner,"render",{requestId:randomUUID(),spec:{...spec,backgroundMusic:{sourceId:video,volume:0.2}}})).rejects.toMatchObject({status:400});
+    await expect(queueRankingOperation(project,owner,"render",{requestId:randomUUID(),spec:{...spec,backgroundMusic:{sourceId:randomUUID(),volume:0.2}}})).rejects.toMatchObject({status:400});
+    await expect(queueRankingOperation(project,owner,"render",{requestId:randomUUID(),spec:{...spec,clips:[{...spec.clips[0],sourceId:upload.sourceId}]}})).rejects.toMatchObject({status:400});
+    const rendered = await queueRankingOperation(project,owner,"render",{requestId:randomUUID(),spec});
+    const [operation] = await state.db`select payload from shorts_mvp.ranking_operations where id=${rendered.operationId}`;
+    expect(operation.payload.backgroundMusic).toEqual(spec.backgroundMusic);
+    expect(operation.payload.transitionSound).toBe("scratch");
+    await state.db`update shorts_mvp.ranking_operations set status='failed' where id=${rendered.operationId}`;
+  });
   it("sends a completion only once across concurrent cron workers", async () => {
     const send = vi.fn().mockResolvedValue("email-test");
     await Promise.all([processRankingEmails(send), processRankingEmails(send)]);

@@ -11,6 +11,8 @@ import {
   rankingPreset,
   type RankingStyle,
 } from "@/lib/ranking-templates";
+import { RankingAudioSettings } from "./ranking-audio-settings";
+import { rankingAudioSequence, transitionSeconds, type RankingSound } from "@/lib/ranking-audio";
 import { RankingSequencePreview } from "./ranking-sequence-preview";
 import {
   RankingRemotePlayer,
@@ -85,6 +87,13 @@ export function RankingStudio({
 }) {
   const router = useRouter();
   const submission = useRef<{ key: string; requestId: string } | null>(null);
+  const [soundEnabled, setSoundEnabled] = useState(false);
+  const [sound, setSound] = useState<RankingSound>("lip-bass");
+  const [musicEnabled, setMusicEnabled] = useState(false);
+  const [music, setMusic] = useState<{id: string; name: string} | null>(null);
+  const [musicVolume, setMusicVolume] = useState(0.15);
+  const transitionSound = soundEnabled ? sound : null;
+  const backgroundMusic = musicEnabled && music ? {sourceId: music.id, volume: musicVolume} : null;
   const [count, setCount] = useState(5);
   const [active, setActive] = useState(0);
   const [slots, setSlots] = useState(emptySlots);
@@ -183,7 +192,7 @@ export function RankingStudio({
   const ready = visible.filter((item) => item.source).length;
   const total = visible.reduce(
     (sum, item) => sum + (item.source ? item.end - item.start : 0),
-    0,
+    transitionSeconds(transitionSound, ready),
   );
   const overLimit = total > RANKING_LIMITS.outputSeconds;
   const hasRemote = visible.some(
@@ -334,9 +343,42 @@ export function RankingStudio({
     );
   }
 
+  async function uploadMusic(file: File) {
+    if (!file.size || file.size > 30 * 1024 * 1024) {
+      setError("배경음악은 30MB 이하 파일을 선택해 주세요."); return;
+    }
+    await task("배경음악을 준비하고 있습니다…", async () => {
+      const id = await ensureProject();
+      const input = {requestId: crypto.randomUUID(), size: file.size, kind: "audio"};
+      const queue = () => requestJson(`/api/ranking-shorts/${id}/sources`, {
+        method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(input),
+      });
+      let queued = await queue();
+      const deadline = Date.now() + 300_000;
+      while (queued.preparing && Date.now() < deadline) {await pause(5000); queued = await queue();}
+      if (queued.preparing) throw new Error("처리기가 준비 중입니다. 잠시 후 다시 시도해 주세요.");
+      try {
+        const uploaded = await fetch(queued.upload.url, {method: "PUT",
+          headers: {Authorization: `Bearer ${queued.upload.token}`, "Content-Type": "application/octet-stream"},
+          body: file, signal: AbortSignal.timeout(300_000)});
+        if (!uploaded.ok) throw new Error("배경음악을 업로드하지 못했습니다.");
+      } catch (error) {
+        const cancelled = await fetch(queued.pollUrl, {method: "DELETE"}).catch(() => null);
+        if (cancelled?.status !== 409) throw error;
+      }
+      const data = await waitForOperation(queued);
+      setMusic({id: data.source.id, name: file.name});
+      setMusicEnabled(true); setResult(null); setShowResult(false);
+    });
+  }
+
+  function invalidateAudio() {setResult(null); setShowResult(false);}
+
   async function render() {
     const parsed = rankingRenderSchema.safeParse({
       title,
+      transitionSound,
+      backgroundMusic,
       subtitle,
       style,
       descending,
@@ -437,7 +479,7 @@ export function RankingStudio({
     setShowResult(false);
   }
   const colors = rankingColors(style);
-  const sequence = visible
+  const sequence = rankingAudioSequence(visible
     .flatMap((item, i) =>
       item.source
         ? [
@@ -450,7 +492,7 @@ export function RankingStudio({
           ]
         : [],
     )
-    .sort((a, b) => order.indexOf(a.rank) - order.indexOf(b.rank));
+    .sort((a, b) => order.indexOf(a.rank) - order.indexOf(b.rank)), transitionSound);
   const sequenceKey = sequence
     .map((item) => `${item.rank}:${item.sourceId}:${item.start}:${item.end}`)
     .join("|");
@@ -510,6 +552,10 @@ export function RankingStudio({
               window.history.replaceState(null, "", "/ranking-shorts");
               projectRef.current = null;
               setProject(null);
+              setMusic(null);
+              setMusicEnabled(false);
+              setSoundEnabled(false);
+              setMusicVolume(0.15);
               setSlots(emptySlots());
               setActive(0);
               setResult(null);
@@ -792,6 +838,13 @@ export function RankingStudio({
                   </button>
                 </div>
               </div>
+              <RankingAudioSettings sound={sound} enabled={soundEnabled}
+                onSound={(value) => {setSound(value); invalidateAudio();}}
+                onEnabled={(value) => {setSoundEnabled(value); invalidateAudio();}}
+                music={music} musicEnabled={musicEnabled} onMusicEnabled={(value) => {setMusicEnabled(value); invalidateAudio();}}
+                onUpload={uploadMusic} onRemove={() => {setMusic(null); invalidateAudio();}}
+                volume={musicVolume} onVolume={(value) => {setMusicVolume(value); invalidateAudio();}}
+                disabled={Boolean(busy)} project={project} />
             </fieldset>
           </section>
 
@@ -1093,9 +1146,10 @@ export function RankingStudio({
           ) : null}
           <div hidden={Boolean(result && showResult)}>
             <RankingSequencePreview
-              key={sequenceKey + hasRemote}
+              key={sequenceKey + hasRemote + transitionSound + backgroundMusic?.sourceId + backgroundMusic?.volume}
               layoutOnly={hasRemote}
               clips={sequence}
+              backgroundMusic={backgroundMusic}
               project={project}
               title={title}
               subtitle={subtitle}

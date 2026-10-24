@@ -1,3 +1,4 @@
+import { transitionSeconds, rankingSoundSchema, rankingMusicSchema } from "./ranking-audio";
 import { z } from "zod";
 import { defaultRankingStyle, rankingStyleSchema } from "./ranking-templates";
 
@@ -32,6 +33,8 @@ export const rankingRenderSchema = z
     subtitle: z.string().trim().max(60).default("랭킹"),
     style: rankingStyleSchema.default(defaultRankingStyle),
     descending: z.boolean(),
+    transitionSound: rankingSoundSchema.nullable().optional(),
+    backgroundMusic: rankingMusicSchema.nullable().optional(),
     playbackOrder: z
       .array(z.number().int().min(1).max(RANKING_LIMITS.ranks))
       .min(1)
@@ -77,7 +80,7 @@ export const rankingRenderSchema = z
         message: "선택한 순위 범위 안에서 영상을 넣어 주세요.",
       });
     }
-    let total = 0;
+    let total = transitionSeconds(value.transitionSound, value.clips.length);
     for (const clip of value.clips) {
       const duration = clip.end - clip.start;
       total += duration;

@@ -30,6 +30,7 @@ DEADLINE_SECONDS = 540
 ASSETS = Path(__file__).parent / "assets"
 DESIGN = json.loads((ASSETS / "ranking_templates.json").read_text())
 LAYOUT = DESIGN["layout"]
+SOUNDS = {item["id"]: item for item in json.loads((ASSETS / "ranking_audio.json").read_text())}
 DEFAULT_STYLE = {"template": "classic", "font": "pretendard", "palette": "gold", "position": "left"}
 
 
@@ -515,6 +516,119 @@ class RankingPipeline:
                     else:
                         file.unlink(missing_ok=True)
 
+    def import_audio(self, source_id: str) -> dict:
+        directory = self.project / checked_id(source_id)
+        if directory.is_symlink() or directory.resolve().parent != self.project:
+            raise RankingFailure("잘못된 음악 경로입니다.")
+        source = directory / "upload"
+        output = directory / "source.mp4"
+        try:
+            if source.stat().st_size > 30 * 1024 * 1024:
+                raise RankingFailure("배경음악은 30MB 이하여야 합니다.")
+            probe = json.loads(
+                self.run(
+                    [
+                        "ffprobe",
+                        "-v",
+                        "error",
+                        "-protocol_whitelist",
+                        "file,pipe",
+                        "-format_whitelist",
+                        "mp3,wav,flac,ogg,mov,aac",
+                        "-show_format",
+                        "-show_streams",
+                        "-of",
+                        "json",
+                        str(source),
+                    ],
+                    timeout=30,
+                )
+            )
+            duration = float(probe.get("format", {}).get("duration", 0))
+            if (
+                not math.isfinite(duration)
+                or not 0.5 <= duration <= 1200
+                or not any(
+                    stream.get("codec_type") == "audio" for stream in probe.get("streams", [])
+                )
+            ):
+                raise RankingFailure("배경음악은 0.5초~20분 길이의 오디오 파일이어야 합니다.")
+            # Keep the existing private receiver, ownership and ephemeral cleanup contract.
+            self.run(
+                [
+                    "ffmpeg",
+                    "-nostdin",
+                    "-v",
+                    "error",
+                    "-protocol_whitelist",
+                    "file,pipe",
+                    "-format_whitelist",
+                    "mp3,wav,flac,ogg,mov,aac",
+                    "-i",
+                    str(source),
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "color=c=black:s=16x16:r=30",
+                    "-map",
+                    "1:v:0",
+                    "-map",
+                    "0:a:0",
+                    "-t",
+                    str(min(duration, 180)),
+                    "-c:v",
+                    "libx264",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-c:a",
+                    "aac",
+                    "-ar",
+                    "48000",
+                    "-ac",
+                    "2",
+                    "-movflags",
+                    "+faststart",
+                    "-y",
+                    str(output),
+                ]
+            )
+            return {"id": source_id, **self.probe(output), "kind": "audio"}
+        except BaseException:
+            output.unlink(missing_ok=True)
+            raise
+        finally:
+            source.unlink(missing_ok=True)
+
+    def audio_settings(self, spec: dict):
+        sound = spec.get("transitionSound")
+        if sound is not None and (not isinstance(sound, str) or sound not in SOUNDS):
+            raise RankingFailure("효과음을 다시 선택해 주세요.")
+        music = spec.get("backgroundMusic")
+        if music is not None:
+            if not isinstance(music, dict) or set(music) != {"sourceId", "volume"}:
+                raise RankingFailure("배경음악 설정을 확인해 주세요.")
+            checked_id(music["sourceId"])
+            volume = music["volume"]
+            if (
+                type(volume) not in (int, float)
+                or not math.isfinite(volume)
+                or not 0 <= volume <= 1
+            ):
+                raise RankingFailure("배경음악 볼륨을 확인해 주세요.")
+            registered = json.loads((self.project / "sources.json").read_text())
+            path = self.project / music["sourceId"] / "source.mp4"
+            if (
+                not any(
+                    s.get("id") == music["sourceId"] and s.get("kind") == "audio"
+                    for s in registered
+                )
+                or not path.is_file()
+                or path.is_symlink()
+                or path.parent.is_symlink()
+            ):
+                raise RankingFailure("배경음악이 만료되었습니다. 다시 추가해 주세요.")
+        return SOUNDS.get(sound), music
+
     def validate_render(self, spec: dict) -> list[dict]:
         ranking_style(spec.get("style"))
         clips = spec.get("clips", [])
@@ -537,7 +651,8 @@ class RankingPipeline:
         ):
             raise RankingFailure("둘째 줄 제목은 60자 이내로 입력해 주세요.")
         registered = {s["id"] for s in json.loads((self.project / "sources.json").read_text())}
-        total = 0.0
+        sound, _ = self.audio_settings(spec)
+        total = (sound["duration"] if sound else 0) * (len(clips) - 1)
         for clip in clips:
             source_id = checked_id(clip["sourceId"])
             source = self.project / source_id / "source.mp4"
@@ -684,6 +799,7 @@ class RankingPipeline:
     def render(self, spec: dict, render_id: str) -> dict:
         checked_id(render_id)
         clips = self.validate_render(spec)
+        sound, music = self.audio_settings(spec)
         work = self.project / f"render-{render_id}"
         work.mkdir()
         output = self.project / f"result-{render_id}.mp4"
@@ -749,7 +865,16 @@ class RankingPipeline:
                     ]
                 )
             listing = work / "concat.txt"
-            listing.write_text("".join(f"file 'clip-{i}.mp4'\n" for i in range(len(clips))))
+            entries = []
+            if sound:
+                shutil.copyfile(
+                    ASSETS / "ranking_audio" / f"{sound['id']}.mp4", work / "transition.mp4"
+                )
+            for i in range(len(clips)):
+                if i and sound:
+                    entries.append("file 'transition.mp4'\n")
+                entries.append(f"file 'clip-{i}.mp4'\n")
+            listing.write_text("".join(entries))
             self.run(
                 [
                     "ffmpeg",
@@ -770,8 +895,48 @@ class RankingPipeline:
                     str(output),
                 ]
             )
-            probe = self.probe(output)
             expected = sum(c["end"] - c["start"] for c in clips)
+            expected += (sound["duration"] if sound else 0) * (len(clips) - 1)
+            if music:
+                unmixed = work / "unmixed.mp4"
+                output.rename(unmixed)
+                self.run(
+                    [
+                        "ffmpeg",
+                        "-nostdin",
+                        "-v",
+                        "error",
+                        "-i",
+                        str(unmixed),
+                        "-stream_loop",
+                        "-1",
+                        "-i",
+                        str(self.project / music["sourceId"] / "source.mp4"),
+                        "-filter_complex",
+                        f"[1:a]volume={music['volume']},"
+                        f"afade=t=out:st={max(0, expected - 0.3)}:d=0.3[bg];"
+                        "[0:a][bg]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95:level=false[a]",
+                        "-map",
+                        "0:v:0",
+                        "-map",
+                        "[a]",
+                        "-c:v",
+                        "copy",
+                        "-c:a",
+                        "aac",
+                        "-ar",
+                        "48000",
+                        "-ac",
+                        "2",
+                        "-t",
+                        str(expected),
+                        "-movflags",
+                        "+faststart",
+                        "-y",
+                        str(output),
+                    ]
+                )
+            probe = self.probe(output)
             if abs(probe["duration"] - expected) > 0.25:
                 raise RankingFailure("완성 영상 길이가 선택 구간과 일치하지 않습니다.")
             return {"duration": probe["duration"], "fileName": output.name}

@@ -254,7 +254,8 @@ def test_runtime_role_cannot_read_email_or_change_render_payload(service):
             db.rollback()
 
 
-def test_restricted_worker_upload_render_and_email_outbox(service, monkeypatch):
+@pytest.mark.parametrize("with_audio", [False, True])
+def test_restricted_worker_upload_render_and_email_outbox(service, monkeypatch, with_audio):
     from contextlib import contextmanager
 
     from psycopg.types.json import Jsonb
@@ -335,6 +336,51 @@ def test_restricted_worker_upload_render_and_email_outbox(service, monkeypatch):
             for i, source in enumerate(source_ids)
         ],
     }
+    expected_duration = 3
+    if with_audio:
+        music_id, import_id = str(uuid4()), str(uuid4())
+        with original_db() as db:
+            db.execute(
+                "insert into shorts_mvp.ranking_sources(id,project_id,status,size_bytes) "
+                "values(%s,%s,'uploading',4)",
+                (music_id, project),
+            )
+            db.execute(
+                "insert into shorts_mvp.ranking_operations"
+                "(id,project_id,source_id,action,request_id) values(%s,%s,%s,'import',%s)",
+                (import_id, project, music_id, str(uuid4())),
+            )
+            db.execute(
+                "update shorts_mvp.ranking_sources set metadata=%s where id=%s",
+                (Jsonb({"kind": "audio"}), music_id),
+            )
+        music_dir = directory / music_id
+        music_dir.mkdir()
+        pipeline.run(
+            [
+                "ffmpeg",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=220:duration=0.7",
+                "-f",
+                "wav",
+                str(music_dir / "upload"),
+            ]
+        )
+        svc.enqueue_import(project, music_id)
+        music_op = svc.claim()
+        svc.finish(music_op, result=svc.execute(music_op))
+        assert not (music_dir / "upload").exists()
+        spec.update(
+            {
+                "transitionSound": "scratch",
+                "backgroundMusic": {"sourceId": music_id, "volume": 0.15},
+            }
+        )
+        expected_duration = 5
     with original_db() as db:
         db.execute(
             "insert into shorts_mvp.ranking_operations"
@@ -344,13 +390,13 @@ def test_restricted_worker_upload_render_and_email_outbox(service, monkeypatch):
     op = svc.claim()
     result = svc.execute(op)
     svc.finish(op, result=result)
-    assert result["duration"] == pytest.approx(3, abs=1 / 30)
+    assert result["duration"] == pytest.approx(expected_duration, abs=0.15)
     assert len(captures) == 1
     assert captures[0][1] == f"outputs/ranking/{project}/{render}.mp4"
     output = directory / "verified-result.mp4"
     output.write_bytes(captures[0][3])
     info = pipeline.probe(output)
-    assert info["duration"] == pytest.approx(3, abs=0.1)
+    assert info["duration"] == pytest.approx(expected_duration, abs=0.15)
     assert (info["width"], info["height"]) == (720, 1280)
     with original_db() as db:
         assert (

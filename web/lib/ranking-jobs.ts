@@ -15,6 +15,7 @@ import { rankingReceiverAccess, wakeRankingRuntime } from "./ranking-runtime";
 const sourceInput = z
   .object({
     requestId: z.uuid(),
+    kind: z.literal("audio").optional(),
     url: z.string().url().max(2048).optional(),
     size: z
       .number()
@@ -56,7 +57,9 @@ export async function queueRankingSource(
   const value = sourceInput.safeParse(input);
   if (!value.success)
     throw new HttpError(400, "영상 링크 또는 250MB 이하 파일을 확인해 주세요.");
-  const { requestId, url, size } = value.data;
+  const { requestId, url, size, kind } = value.data;
+  if (kind === "audio" && (url || !size || size > 30 * 1024 * 1024))
+    throw new HttpError(400, "배경음악은 30MB 이하 파일을 선택해 주세요.");
   if (url) {
     const parsed = new URL(url);
     if (
@@ -107,7 +110,7 @@ export async function queueRankingSource(
       );
     const id = randomUUID(),
       sourceId = randomUUID();
-    await tx`insert into shorts_mvp.ranking_sources(id,project_id,status,remote_url,size_bytes) values(${sourceId},${projectId},${size ? "uploading" : "queued"},${url || null},${size || null})`;
+    await tx`insert into shorts_mvp.ranking_sources(id,project_id,status,remote_url,size_bytes,metadata) values(${sourceId},${projectId},${size ? "uploading" : "queued"},${url || null},${size || null},${tx.json(kind ? {kind} : {})})`;
     await tx`insert into shorts_mvp.ranking_operations(id,project_id,source_id,action,request_id) values(${id},${projectId},${sourceId},${size ? "import" : "inspect"},${requestId})`;
     return { id, sourceId };
   });
@@ -178,6 +181,11 @@ export async function queueRankingOperation(
         await tx`insert into shorts_mvp.ranking_sources(id,project_id,status,remote_url,metadata) values(${id},${projectId},'ready',${remote.url},${tx.json(metadata)})`;
         replacements.set(link.sourceId, id);
       }
+      if (spec!.backgroundMusic) {
+        const music = sources.find((source) => source.id === spec!.backgroundMusic!.sourceId);
+        if (!music || music.status !== "ready" || music.metadata?.kind !== "audio")
+          throw new HttpError(400, "배경음악을 다시 추가해 주세요.");
+      }
       for (const clip of spec!.clips) {
         if (clip.end > RANKING_LIMITS.sourceSeconds)
           throw new HttpError(400, `${clip.rank}위 영상의 구간을 다시 확인해 주세요.`);
@@ -187,7 +195,7 @@ export async function queueRankingOperation(
           continue;
         }
         const source = sources.find((s) => s.id === clip.sourceId);
-        if (!source || source.status !== "ready" || !source.metadata ||
+        if (!source || source.status !== "ready" || !source.metadata || source.metadata.kind === "audio" ||
             (source.metadata.durationKnown === false ? !source.remoteUrl : clip.end > source.metadata.duration))
           throw new HttpError(400, `${clip.rank}위 영상의 구간을 다시 확인해 주세요.`);
       }

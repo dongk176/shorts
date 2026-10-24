@@ -238,6 +238,9 @@ class RankingService:
             (directory / source_id).mkdir(exist_ok=True, mode=0o700)
             if op["action"] == "inspect":
                 meta = pipeline.register_link(source_id, source["remote_url"])
+            elif (source["metadata"] or {}).get("kind") == "audio":
+                meta = pipeline.import_audio(source_id)
+                meta.update({"durationKnown": True, "previewReady": True})
             else:
                 meta = pipeline.import_source(
                     source_id, source["remote_url"] if op["action"] == "preview" else None
@@ -250,9 +253,22 @@ class RankingService:
         spec = op["payload"]
         sources = self.sources(project)
         source_map = {str(s["id"]): s for s in sources}
+        music = spec.get("backgroundMusic")
+        if music:
+            source = source_map.get(music.get("sourceId"))
+            if (
+                not source
+                or source["status"] != "ready"
+                or (source["metadata"] or {}).get("kind") != "audio"
+            ):
+                raise RankingFailure("배경음악을 다시 추가해 주세요.")
         for clip in spec["clips"]:
             source = source_map.get(clip["sourceId"])
-            if not source or source["status"] != "ready":
+            if (
+                not source
+                or source["status"] != "ready"
+                or (source["metadata"] or {}).get("kind") == "audio"
+            ):
                 raise RankingFailure("원본 영상을 다시 추가해 주세요.")
             source_dir = directory / checked_id(clip["sourceId"])
             source_dir.mkdir(exist_ok=True, mode=0o700)

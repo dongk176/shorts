@@ -18,6 +18,7 @@ import { RankingOverlay } from "./ranking-overlay";
 
 export function RankingSequencePreview({
   clips,
+  backgroundMusic,
   project,
   title,
   subtitle,
@@ -33,6 +34,7 @@ export function RankingSequencePreview({
   previewStart = 0,
 }: {
   clips: RankingPlaybackClip[];
+  backgroundMusic?: {sourceId: string; volume: number} | null;
   project: string | null;
   title: string;
   subtitle: string;
@@ -48,6 +50,7 @@ export function RankingSequencePreview({
   onStart: () => void;
 }) {
   const video = useRef<HTMLVideoElement>(null);
+  const music = useRef<HTMLAudioElement>(null);
   const intent = useRef(false);
   const transitioning = useRef(false);
   const pendingSeek = useRef<number | null>(null);
@@ -114,6 +117,14 @@ export function RankingSequencePreview({
     return () => cancelAnimationFrame(frame);
   }, [playing, clip, offset, advance]);
 
+  function syncMusic() {
+    const audio = music.current;
+    if (!audio || !backgroundMusic || !Number.isFinite(audio.duration) || !audio.duration) return;
+    audio.volume = backgroundMusic.volume * Math.min(1, Math.max(0, total - elapsed) / 0.3);
+    const position = (offset + Math.max(0, (video.current?.currentTime ?? clip.start) - clip.start)) % audio.duration;
+    if (Math.abs(audio.currentTime - position) > 0.2) audio.currentTime = position;
+    if (intent.current) void audio.play().catch(() => setError("배경음악 재생 버튼을 다시 눌러 주세요."));
+  }
   function play(media: HTMLVideoElement) {
     void media.play().catch(() => {
       intent.current = false;
@@ -162,14 +173,17 @@ export function RankingSequencePreview({
   } as CSSProperties;
   return (
     <div className="ranking-sequence-preview">
-      <div className="ranking-composition" style={videoStyle}>
+      {backgroundMusic && project && !layoutOnly ? <audio ref={music} loop preload="auto"
+        src={`/api/ranking-shorts/${project}/media/${backgroundMusic.sourceId}`}
+        onLoadedMetadata={syncMusic} onError={() => setError("배경음악 미리보기가 만료되었습니다. 음악을 다시 추가해 주세요.")} /> : null}
+      <div className={`ranking-composition${clip?.transitionUrl ? " is-transition" : ""}`} style={videoStyle}>
         {clip && project && !layoutOnly ? (
           <video
             key={`${clip.sourceId}:${clip.rank}`}
             ref={video}
             playsInline
             preload="auto"
-            src={`/api/ranking-shorts/${project}/media/${clip.sourceId}`}
+            src={clip.transitionUrl || `/api/ranking-shorts/${project}/media/${clip.sourceId}`}
             aria-label="전체 미리보기 영상"
             data-rank={clip.rank}
             onLoadedMetadata={(event) => {
@@ -179,10 +193,12 @@ export function RankingSequencePreview({
               transitioning.current = false;
               if (intent.current) play(media);
             }}
-            onPlay={() => setPlaying(true)}
-            onPause={() => setPlaying(false)}
+            onPlay={() => {setPlaying(true); syncMusic();}}
+            onTimeUpdate={syncMusic}
+            onPause={() => {setPlaying(false); music.current?.pause();}}
             onEnded={advance}
             onError={() => {
+              music.current?.pause();
               intent.current = false;
               setPlaying(false);
               setError(
@@ -193,7 +209,7 @@ export function RankingSequencePreview({
         ) : (
           <div className="ranking-composition-empty" />
         )}
-        {previewSource && (layoutOnly || (!playing && elapsed === 0)) ? (
+        {!clip?.transitionUrl && previewSource && (layoutOnly || (!playing && elapsed === 0)) ? (
           <div className="ranking-composition-still">
             <RankingThumbnail key={previewSource.id}
               lazy={false} remote={previewSource.remote} time={previewStart}
@@ -201,7 +217,7 @@ export function RankingSequencePreview({
                 ? `/api/ranking-shorts/${project}/media/${previewSource.id}` : undefined} />
           </div>
         ) : null}
-        <RankingOverlay
+        {!clip?.transitionUrl && <RankingOverlay
           title={title}
           subtitle={subtitle}
           count={count}
@@ -214,7 +230,7 @@ export function RankingSequencePreview({
               : clips.slice(0, index + 1).map((item) => item.rank)
           }
           style={style}
-        />
+        />}
       </div>
       {layoutOnly ? (
         <p className="ranking-hint">
