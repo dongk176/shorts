@@ -16,7 +16,7 @@ const statusLabels = {
   failed: "제작 실패",
 } as const;
 
-export function RankingProjectList({ projects }: { projects: RankingProjectSummary[] }) {
+export function RankingProjectList({ projects, embedded = false, onOpen }: { projects: RankingProjectSummary[]; embedded?: boolean; onOpen?: (project: RankingProjectSummary) => void }) {
   const router = useRouter();
   const [items, setItems] = useState(projects);
   useEffect(() => setItems(projects), [projects]);
@@ -25,7 +25,7 @@ export function RankingProjectList({ projects }: { projects: RankingProjectSumma
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const inFlight = useRef(false);
-  const visible = items.filter((project) => !removed.includes(project.id));
+  const visible = items.filter((project) => !removed.includes(project.id) && (!embedded || project.status !== "draft"));
   const hasActive = visible.some((project) => project.busy || ["queued", "running"].includes(project.status));
   useEffect(() => {
     if (!hasActive) return;
@@ -79,23 +79,23 @@ export function RankingProjectList({ projects }: { projects: RankingProjectSumma
   }
   if (!visible.length) return null;
   return (
-    <section className="mt-8" aria-labelledby="ranking-project-list-title">
-      <div className="mb-4 flex items-center justify-between gap-4">
+    <section className="mt-8" aria-labelledby={embedded ? undefined : "ranking-project-list-title"} aria-label={embedded ? "제작한 랭킹 쇼츠" : undefined}>
+      {!embedded && <div className="mb-4 flex items-center justify-between gap-4">
         <h2 id="ranking-project-list-title" className="text-lg font-bold text-white">
           랭킹 쇼츠 <span className="ml-2 text-sm font-medium text-neutral-400">{visible.length}</span>
         </h2>
         <Link href="/ranking-shorts" prefetch={false} className="inline-flex min-h-11 items-center rounded-lg px-3 text-sm font-semibold text-[#dfcba5] hover:bg-white/5">
           새 랭킹 쇼츠 <span className="ml-2" aria-hidden="true">＋</span>
         </Link>
-      </div>
+      </div>}
       <div className="grid gap-3 sm:grid-cols-2">
         {visible.map((project) => {
           const complete = project.status === "succeeded" && project.operationId;
           const title = project.title?.trim() || "제목 없는 랭킹 쇼츠";
           const href = `/ranking-shorts?project=${project.id}`;
           return (
-            <article key={project.id} className="overflow-hidden rounded-2xl border border-white/10 bg-white/[.035] transition hover:border-white/20">
-              <Link href={href} prefetch={false} aria-label={`${title} 열기`} className="block aspect-video overflow-hidden bg-black">
+            <article key={project.id} data-ranking-project={project.id} className="overflow-hidden rounded-2xl border border-white/10 bg-white/[.035] transition hover:border-white/20">
+              <Link href={href} onClick={onOpen ? (event) => { event.preventDefault(); onOpen(project); } : undefined} prefetch={false} aria-label={`${title} 열기`} className="block aspect-video overflow-hidden bg-black">
                 <RankingThumbnail
                   key={`${project.id}:${project.operationId}`}
                   videoUrl={complete ? `/api/ranking-shorts/${project.id}/media/${project.operationId}?result=1` : undefined}
@@ -111,7 +111,7 @@ export function RankingProjectList({ projects }: { projects: RankingProjectSumma
                 </span>
               </div>
               <h3 className="mt-3 truncate text-lg font-bold text-white">
-                <Link href={href} prefetch={false} className="hover:text-[#dfcba5]">{title}</Link>
+                <Link href={href} onClick={onOpen ? (event) => { event.preventDefault(); onOpen(project); } : undefined} prefetch={false} className="hover:text-[#dfcba5]">{title}</Link>
               </h3>
               <p className="mt-2 text-sm text-neutral-400">
                 <time dateTime={project.createdAt}>{new Intl.DateTimeFormat("ko-KR", { year: "numeric", month: "long", day: "numeric", timeZone: "Asia/Seoul" }).format(new Date(project.createdAt))}</time>
@@ -125,7 +125,7 @@ export function RankingProjectList({ projects }: { projects: RankingProjectSumma
                 </div>
               ) : null}
               <div className="mt-5 flex flex-wrap gap-2">
-                {!["queued", "running"].includes(project.status) ? <Link href={href} prefetch={false} aria-label={`${title} ${complete ? "영상 보기" : "작업 열기"}`} className="inline-flex min-h-11 items-center justify-center rounded-xl bg-white/10 px-4 text-sm font-bold text-white hover:bg-white/15">
+                {!["queued", "running"].includes(project.status) ? <Link href={href} onClick={onOpen ? (event) => { event.preventDefault(); onOpen(project); } : undefined} prefetch={false} aria-label={`${title} ${complete ? "영상 보기" : "작업 열기"}`} className="inline-flex min-h-11 items-center justify-center rounded-xl bg-white/10 px-4 text-sm font-bold text-white hover:bg-white/15">
                   {complete ? "영상 보기" : "작업 열기"} <span className="ml-2" aria-hidden="true">↗</span>
                 </Link> : null}
                 {complete ? (

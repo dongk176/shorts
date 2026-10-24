@@ -18,6 +18,7 @@ import { RankingOverlay } from "./ranking-overlay";
 
 export function RankingSequencePreview({
   clips,
+  localMedia = {},
   backgroundMusic,
   project,
   title,
@@ -35,6 +36,7 @@ export function RankingSequencePreview({
   previewRank = 1,
 }: {
   clips: RankingPlaybackClip[];
+  localMedia?: Record<string,string>;
   backgroundMusic?: {sourceId: string; volume: number} | null;
   project: string | null;
   title: string;
@@ -179,17 +181,17 @@ export function RankingSequencePreview({
   } as CSSProperties;
   return (
     <div className="ranking-sequence-preview">
-      {backgroundMusic && project && !layoutOnly ? <audio ref={music} loop preload="auto"
-        src={`/api/ranking-shorts/${project}/media/${backgroundMusic.sourceId}`}
+      {backgroundMusic && (project || localMedia[backgroundMusic.sourceId]) && !layoutOnly ? <audio ref={music} loop preload="auto"
+        src={localMedia[backgroundMusic.sourceId] || `/api/ranking-shorts/${project}/media/${backgroundMusic.sourceId}`}
         onLoadedMetadata={syncMusic} onError={() => setError("배경음악 미리보기가 만료되었습니다. 음악을 다시 추가해 주세요.")} /> : null}
       <div className={`ranking-composition${clip?.transitionUrl ? " is-transition" : ""}`} style={videoStyle}>
-        {clip && project && !layoutOnly ? (
+        {clip && (project || localMedia[clip.sourceId] || clip.transitionUrl) && !layoutOnly ? (
           <video
             key={`${clip.sourceId}:${clip.rank}`}
             ref={video}
             playsInline
             preload="auto"
-            src={clip.transitionUrl || `/api/ranking-shorts/${project}/media/${clip.sourceId}`}
+            src={clip.transitionUrl || localMedia[clip.sourceId] || `/api/ranking-shorts/${project}/media/${clip.sourceId}`}
             aria-label="전체 미리보기 영상"
             data-rank={clip.rank}
             onLoadedMetadata={(event) => {
@@ -219,8 +221,8 @@ export function RankingSequencePreview({
           <div className="ranking-composition-still">
             <RankingThumbnail key={previewSource.id}
               lazy={false} remote={previewSource.remote} time={previewStart}
-              videoUrl={project && (!previewSource.remote || previewSource.previewReady)
-                ? `/api/ranking-shorts/${project}/media/${previewSource.id}` : undefined} />
+              videoUrl={localMedia[previewSource.id] || (project && (!previewSource.remote || previewSource.previewReady)
+                ? `/api/ranking-shorts/${project}/media/${previewSource.id}` : undefined)} />
           </div>
         ) : null}
         {!clip?.transitionUrl && <RankingOverlay

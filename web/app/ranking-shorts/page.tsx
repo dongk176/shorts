@@ -15,8 +15,9 @@ export default async function RankingShortsPage({
 }: {
   searchParams: Promise<{ project?: string; operation?: string }>;
 }) {
+  let ownerId: string;
   try {
-    await requireRankingAdmin();
+    ownerId = (await requireRankingAdmin()).id;
   } catch (error) {
     if (error instanceof HttpError && [401, 403, 404].includes(error.status))
       notFound();
@@ -29,6 +30,7 @@ export default async function RankingShortsPage({
         <Link href="/">롱폼 → 숏폼으로 이동</Link>
       </SiteHeader>
       <RankingStudio
+        ownerId={ownerId}
         key={`${project || "new"}:${operation || "latest"}`}
         initialProject={project || null}
         initialOperation={operation || null}

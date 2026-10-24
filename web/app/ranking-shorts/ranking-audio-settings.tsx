@@ -4,12 +4,12 @@ import { rankingSounds, type RankingSound } from "@/lib/ranking-audio";
 import { RankingSelect } from "./ranking-select";
 
 export function RankingAudioSettings({ sound, enabled, onSound, onEnabled, music, musicEnabled,
-  onMusicEnabled, onUpload, onRemove, volume, onVolume, disabled, project }: {
+  onMusicEnabled, onUpload, onRemove, volume, onVolume, disabled, project, localUrl }: {
   sound: RankingSound; enabled: boolean; onSound: (sound: RankingSound) => void;
   onEnabled: (enabled: boolean) => void; music: {id: string; name: string} | null;
   musicEnabled: boolean; onMusicEnabled: (enabled: boolean) => void;
   onUpload: (file: File) => void; onRemove: () => void; volume: number;
-  onVolume: (volume: number) => void; disabled: boolean; project: string | null;
+  onVolume: (volume: number) => void; disabled: boolean; project: string | null; localUrl?: string;
 }) {
   const sample = useRef<HTMLAudioElement>(null);
   return <details className="ranking-audio-settings">
@@ -44,7 +44,7 @@ export function RankingAudioSettings({ sound, enabled, onSound, onEnabled, music
       <p className="ranking-hint">영상 끝까지 재생합니다. 짧은 음악은 반복됩니다.</p>
       <label>볼륨 {Math.round(volume * 100)}%<input aria-label="배경음악 볼륨" type="range" min="0" max="100" value={Math.round(volume * 100)}
         disabled={disabled} onChange={(event) => onVolume(Number(event.target.value) / 100)} /></label>
-      <audio controls preload="none" src={`/api/ranking-shorts/${project}/media/${music.id}`} aria-label="배경음악 들어보기"
+      <audio controls preload="none" src={localUrl || `/api/ranking-shorts/${project}/media/${music.id}`} aria-label="배경음악 들어보기"
         ref={(element) => {if (element) element.volume = volume;}} />
     </div> : musicEnabled ? <p className="ranking-hint">MP3·WAV·M4A 등 · 최대 30MB / 20분</p> : null}
   </details>;

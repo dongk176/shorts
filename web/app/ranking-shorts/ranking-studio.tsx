@@ -2,7 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { ProjectDeleteOverlay } from "@/components/project-delete-overlay";
+import type { RankingProjectSummary } from "@/lib/ranking-project-list";
+import { defaultRankingDraft,emptyRankingSlots,type RankingSlot as Slot,type RankingDraftRecord } from "@/lib/ranking-draft";
+import { useRankingDraft } from "./use-ranking-draft";
+import { RankingWorkspaceProjects } from "./ranking-workspace-projects";
 import { RankingExamples } from "./ranking-examples";
 import { RankingSelect } from "./ranking-select";
 import {
@@ -32,22 +36,7 @@ import {
   type RankingSource,
 } from "@/lib/ranking-shorts";
 
-type Slot = {
-  link: string;
-  label: string;
-  source: RankingSource | null;
-  pendingLink?: boolean;
-  start: number;
-  end: number;
-};
-const emptySlots = (): Slot[] =>
-  Array.from({ length: RANKING_LIMITS.ranks }, () => ({
-    link: "",
-    label: "",
-    source: null,
-    start: 0,
-    end: 0,
-  }));
+const emptySlots = emptyRankingSlots;
 type Result = { url: string; duration: number };
 
 async function requestJson(url: string, init: RequestInit) {
@@ -80,13 +69,15 @@ async function waitForOperation(data: { pollUrl: string }) {
 }
 
 export function RankingStudio({
+  ownerId = "local",
   initialProject = null,
   initialOperation = null,
 }: {
+  ownerId?: string;
   initialProject?: string | null;
   initialOperation?: string | null;
 }) {
-  const router = useRouter();
+
   const submission = useRef<{ key: string; requestId: string } | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [sound, setSound] = useState<RankingSound>("lip-bass");
@@ -118,9 +109,38 @@ export function RankingStudio({
   const busyRef = useRef(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<Result | null>(null);
-  const [history, setHistory] = useState<
-    { id: string; title: string; status: string }[]
-  >([]);
+  const [files,setFiles] = useState<Record<string,File>>({});
+  const [localMedia,setLocalMedia] = useState<Record<string,string>>({});
+  const [sending,setSending] = useState(false);
+  const [resetOpen,setResetOpen] = useState(false);
+  const [projectsRevision,setProjectsRevision] = useState(0);
+  const [submitted,setSubmitted] = useState<RankingProjectSummary|null>(null);
+  const uploadedFiles = useRef(new Map<string,RankingSource>());
+  const draftStore = useRankingDraft(ownerId,!initialProject,{version:1,title,subtitle,style,count,active,slots,orderMode,customOrder,soundEnabled,sound,musicEnabled,music,musicVolume},files,restoreDraft);
+  function restoreDraft(record:RankingDraftRecord) {
+    const d=record.draft;
+    setTitle(d.title);setSubtitle(d.subtitle);setStyle(d.style);setCount(d.count);setActive(Math.min(d.active,d.count-1));
+    setOrderMode(d.orderMode);setCustomOrder(d.customOrder);setSoundEnabled(d.soundEnabled);setSound(d.sound);
+    setMusicEnabled(d.musicEnabled);setMusicVolume(d.musicVolume);
+    const missing=d.slots.some(item=>item.source&&!item.source.remote&&!record.files[item.source.id]) || Boolean(d.music&&!record.files[d.music.id]);
+    setMusic(d.music&&record.files[d.music.id]?d.music:null);
+    setSlots(d.slots.map(item=>item.source?.remote?{...item,pendingLink:true,source:{...item.source,previewReady:false}}:item.source&&!record.files[item.source.id]?{...item,source:null}:item));
+    setFiles(record.files);
+    if(missing)setError("저장된 파일을 불러오지 못했어요. 제목과 구간은 유지했으니 해당 파일만 다시 선택해 주세요.");
+  }
+  useEffect(()=>{
+    const urls=Object.fromEntries(Object.entries(files).map(([id,file])=>[id,URL.createObjectURL(file)]));setLocalMedia(urls);
+    return()=>Object.values(urls).forEach(url=>URL.revokeObjectURL(url));
+  },[files]);
+  function scrollProjects(){requestAnimationFrame(()=>document.getElementById("ranking-workspace-projects")?.scrollIntoView({behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"instant":"smooth",block:"start"}));}
+  function resetEditor(){
+    const d=defaultRankingDraft();projectRef.current=null;setProject(null);submission.current=null;uploadedFiles.current.clear();previewFallbacks.current.clear();
+    setTitle(d.title);setSubtitle(d.subtitle);setStyle(d.style);setCount(d.count);setActive(0);setSlots(emptySlots());setOrderMode(d.orderMode);setCustomOrder([]);
+    setSoundEnabled(false);setSound(d.sound);setMusicEnabled(false);setMusic(null);setMusicVolume(d.musicVolume);setFiles({});setResult(null);setShowResult(false);setCurrent(0);setError("");setOrderOpen(false);setDesignOpen(false);setCustomDesignOpen(false);
+  }
+  async function startFresh(){
+    await task("새 작업을 준비하고 있습니다…",async()=>{await draftStore.clear();resetEditor();setResetOpen(false);});
+  }
   useEffect(() => {
     if (!initialProject) return;
     let alive = true;
@@ -152,7 +172,8 @@ export function RankingStudio({
           setBusy("");
           return;
         }
-        router.replace("/projects#ranking-project-list-title");
+        setProjectsRevision(n=>n+1);
+        scrollProjects();
         if (alive) setBusy("");
       } catch (error) {
         if (alive) {
@@ -168,7 +189,7 @@ export function RankingStudio({
     return () => {
       alive = false;
     };
-  }, [initialProject, initialOperation, router]);
+  }, [initialProject, initialOperation]);
   const slot = slots[active];
   const visible = slots.slice(0, count);
   const descending = orderMode !== "asc";
@@ -258,6 +279,16 @@ export function RankingStudio({
   }
 
   async function importSource(file?: File) {
+    if(file){
+      await task(`${active+1}위 영상의 구간 선택을 준비하고 있습니다…`,async()=>{
+        if(file.size>RANKING_LIMITS.sourceBytes)throw new Error("250MB 이하의 영상 파일을 선택해 주세요.");
+        const metadata=await inspectLocalFile(file,"video");const id=crypto.randomUUID();
+        const start=!slot.source && slot.end>0?Math.min(slot.start,Math.max(0,metadata.duration-.5)):0;
+        const end=!slot.source && slot.end>0?Math.min(metadata.duration,Math.max(start+.5,slot.end)):Math.min(10,metadata.duration);
+        setFiles(previous=>{const next={...previous,[id]:file};if(slot.source)delete next[slot.source.id];return next;});patch(active,{source:{id,...metadata,previewReady:true,durationKnown:true},pendingLink:false,start,end});setCurrent(0);
+      });return;
+    }
+
     if (busyRef.current) return;
     const index = active;
     const remote = !file ? rankingDirectRemote(slots[index].link) : null;
@@ -272,20 +303,12 @@ export function RankingStudio({
       setCurrent(0);
       return;
     }
-    if (file && file.size > RANKING_LIMITS.sourceBytes) {
-      setError("250MB 이하의 영상 파일을 선택해 주세요.");
-      return;
-    }
     await task(
-      file
-        ? `${index + 1}위 영상을 업로드하고 미리보기를 준비하고 있습니다…`
-        : `${index + 1}위 영상의 구간 선택을 준비하고 있습니다…`,
+      `${index + 1}위 영상의 구간 선택을 준비하고 있습니다…`,
       async () => {
         const id = await ensureProject();
         const requestId = crypto.randomUUID();
-        const input = file
-          ? { requestId, size: file.size }
-          : { requestId, url: slots[index].link.trim() };
+        const input = { requestId, url: slots[index].link.trim() };
         let queued = await requestJson(`/api/ranking-shorts/${id}/sources`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -305,30 +328,6 @@ export function RankingStudio({
           throw new Error(
             "영상 처리기가 준비 중입니다. 잠시 후 다시 시도해 주세요.",
           );
-        if (file) {
-          setBusy(`${index + 1}위 영상을 업로드하고 있습니다…`);
-          let uploaded: Response;
-          try {
-            uploaded = await fetch(queued.upload.url, {
-              method: "PUT",
-              headers: {
-                Authorization: `Bearer ${queued.upload.token}`,
-                "Content-Type": "application/octet-stream",
-              },
-              body: file,
-              signal: AbortSignal.timeout(600_000),
-            });
-            if (!uploaded.ok) throw new Error("UploadFailed");
-          } catch {
-            const cancelled = await fetch(queued.pollUrl, {
-              method: "DELETE",
-            }).catch(() => null);
-            if (cancelled?.status !== 409)
-              throw new Error(
-                "영상을 업로드하지 못했습니다. 다시 추가해 주세요.",
-              );
-          }
-        }
         setBusy(`${index + 1}위 영상의 구간 선택을 준비하고 있습니다…`);
         const data = await waitForOperation(queued);
         const source = data.source as RankingSource;
@@ -344,33 +343,27 @@ export function RankingStudio({
     );
   }
 
-  async function uploadMusic(file: File) {
-    if (!file.size || file.size > 30 * 1024 * 1024) {
-      setError("배경음악은 30MB 이하 파일을 선택해 주세요."); return;
-    }
-    await task("배경음악을 준비하고 있습니다…", async () => {
-      const id = await ensureProject();
-      const input = {requestId: crypto.randomUUID(), size: file.size, kind: "audio"};
-      const queue = () => requestJson(`/api/ranking-shorts/${id}/sources`, {
-        method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(input),
-      });
-      let queued = await queue();
-      const deadline = Date.now() + 300_000;
-      while (queued.preparing && Date.now() < deadline) {await pause(5000); queued = await queue();}
-      if (queued.preparing) throw new Error("처리기가 준비 중입니다. 잠시 후 다시 시도해 주세요.");
-      try {
-        const uploaded = await fetch(queued.upload.url, {method: "PUT",
-          headers: {Authorization: `Bearer ${queued.upload.token}`, "Content-Type": "application/octet-stream"},
-          body: file, signal: AbortSignal.timeout(300_000)});
-        if (!uploaded.ok) throw new Error("배경음악을 업로드하지 못했습니다.");
-      } catch (error) {
-        const cancelled = await fetch(queued.pollUrl, {method: "DELETE"}).catch(() => null);
-        if (cancelled?.status !== 409) throw error;
-      }
-      const data = await waitForOperation(queued);
-      setMusic({id: data.source.id, name: file.name});
-      setMusicEnabled(true); setResult(null); setShowResult(false);
+  async function inspectLocalFile(file:File,kind:"video"|"audio"):Promise<Omit<RankingSource,"id">>{
+    return new Promise((resolve,reject)=>{const media=document.createElement(kind);const url=URL.createObjectURL(file);const timer=window.setTimeout(()=>finish(new Error("파일 정보를 읽지 못했습니다. 다른 파일을 선택해 주세요.")),15000);
+      const finish=(error?:Error)=>{media.onloadedmetadata=null;media.onerror=null;window.clearTimeout(timer);const metadata={duration:media.duration,width:kind==="video"?(media as HTMLVideoElement).videoWidth:16,height:kind==="video"?(media as HTMLVideoElement).videoHeight:16,hasAudio:true};media.removeAttribute("src");media.load();URL.revokeObjectURL(url);if(error)reject(error);else resolve(metadata);};
+      media.preload="metadata";media.onloadedmetadata=()=>finish(!Number.isFinite(media.duration)||media.duration<=0||media.duration>RANKING_LIMITS.sourceSeconds?new Error("20분 이하의 영상·음악을 선택해 주세요."):undefined);media.onerror=()=>finish(new Error("이 파일은 브라우저에서 미리 볼 수 없어요. MP4 영상 또는 MP3·WAV 음악으로 선택해 주세요."));media.src=url;
     });
+  }
+  async function uploadMusic(file:File){
+    if(file.size>30*1024*1024){setError("30MB 이하의 음악 파일을 선택해 주세요.");return;}
+    await task("배경음악을 준비하고 있습니다…",async()=>{await inspectLocalFile(file,"audio");const id=crypto.randomUUID();setFiles(previous=>{const next={...previous,[id]:file};if(music)delete next[music.id];return next;});setMusic({id,name:file.name});setMusicEnabled(true);invalidateAudio();});
+  }
+  async function uploadForRender(id:string,localId:string,file:File,kind:"video"|"audio"){
+    const cached=uploadedFiles.current.get(localId);if(cached)return cached;
+    const input={requestId:crypto.randomUUID(),size:file.size,...(kind==="audio"?{kind}: {})};
+    const queue=()=>requestJson(`/api/ranking-shorts/${id}/sources`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(input)});
+    let queued=await queue();const deadline=Date.now()+300_000;
+    while(queued.preparing&&Date.now()<deadline){setBusy("영상 처리기를 준비하고 있습니다…");await pause(5000);queued=await queue();}
+    if(queued.preparing)throw new Error("영상 처리기가 준비 중이에요. 입력 내용은 보관되니 잠시 후 다시 눌러 주세요.");
+    setBusy(kind==="audio"?"배경음악을 전송하고 있습니다…":"영상 파일을 전송하고 있습니다…");
+    try{const response=await fetch(queued.upload.url,{method:"PUT",headers:{Authorization:`Bearer ${queued.upload.token}`,"Content-Type":"application/octet-stream"},body:file,signal:AbortSignal.timeout(600_000)});if(!response.ok)throw Error("파일을 전송하지 못했습니다. 다시 시도해 주세요.");}
+    catch(error){const cancelled=await fetch(queued.pollUrl,{method:"DELETE"}).catch(()=>null);if(cancelled?.status!==409)throw error;}
+    const data=await waitForOperation(queued);uploadedFiles.current.set(localId,data.source);return data.source as RankingSource;
   }
 
   function invalidateAudio() {setResult(null); setShowResult(false);}
@@ -403,23 +396,30 @@ export function RankingStudio({
       setError(parsed.error.issues[0].message);
       return;
     }
+    setSending(true);scrollProjects();
     await task("작업을 접수하고 있습니다…", async () => {
       const id = await ensureProject();
+      const spec = structuredClone(parsed.data);
+      for(const clip of spec.clips){const file=files[clip.sourceId];if(file)clip.sourceId=(await uploadForRender(id,clip.sourceId,file,"video")).id;}
+      if(spec.backgroundMusic && files[spec.backgroundMusic.sourceId])spec.backgroundMusic.sourceId=(await uploadForRender(id,spec.backgroundMusic.sourceId,files[spec.backgroundMusic.sourceId],"audio")).id;
+      setBusy("작업을 접수하고 있습니다…");
       const links = visible.flatMap((item) => item.pendingLink && item.source?.remote
         ? [{ sourceId: item.source.id, url: item.source.remote.url }] : []);
-      const key = JSON.stringify({ projectId: id, spec: parsed.data, links });
+      const key = JSON.stringify({ projectId: id, spec, links });
       if (submission.current?.key !== key)
         submission.current = { key, requestId: crypto.randomUUID() };
-      await requestJson(`/api/ranking-shorts/${id}/render`, {
+      const accepted = await requestJson(`/api/ranking-shorts/${id}/render`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ requestId: submission.current.requestId, spec: parsed.data, links }),
+        body: JSON.stringify({ requestId: submission.current.requestId, spec, links }),
       });
-      // The durable render operation owns downloading and assembly from here.
-      // Navigating away or closing the tab cannot interrupt the job.
-      router.push("/projects#ranking-project-list-title");
-      router.refresh();
+      setSubmitted({id,title,createdAt:new Date().toISOString(),status:"queued",operationId:accepted.operationId||null,duration:null,remoteUrl:links[0]?.url||null,busy:true});
+      let draftClearFailed = false;
+      try { await draftStore.clear(); } catch { draftClearFailed = true; }
+      resetEditor();setProjectsRevision(n=>n+1);scrollProjects();
+      if (draftClearFailed) setError("영상 제작은 접수됐습니다. 브라우저의 이전 임시 저장 내용을 지우지 못했어요.");
     });
+    setSending(false);
   }
 
   async function prepareSource(
@@ -462,9 +462,7 @@ export function RankingStudio({
     setCurrent(seconds);
   }
   const sourceUrl =
-    slot.source && !remoteSource && project
-      ? `/api/ranking-shorts/${project}/media/${slot.source.id}`
-      : "";
+    slot.source ? localMedia[slot.source.id] || (!remoteSource && project ? `/api/ranking-shorts/${project}/media/${slot.source.id}` : "") : "";
   const canRender =
     !busy &&
     ready > 0 &&
@@ -537,37 +535,15 @@ export function RankingStudio({
           <div className="ranking-eyebrow">
             CREATIVE STUDIO <span>관리자 전용</span>
           </div>
-          <h1>랭킹 쇼츠</h1>
+          <div className="ranking-title-row"><h1>랭킹 쇼츠</h1><RankingExamples /></div>
           <p>순위를 채우고, 가장 좋은 순간만 남기세요.</p>
         </div>
-        <div className="ranking-heading-actions"><RankingExamples />
-        <button
-          type="button"
-          className="ranking-reset"
-          disabled={Boolean(busy)}
-          onClick={() => {
-            void task("작업을 정리하고 있습니다…", async () => {
-              if (projectRef.current && !result)
-                await requestJson(`/api/ranking-shorts/${projectRef.current}`, {
-                  method: "DELETE",
-                });
-              window.history.replaceState(null, "", "/ranking-shorts");
-              projectRef.current = null;
-              setProject(null);
-              setMusic(null);
-              setMusicEnabled(false);
-              setSoundEnabled(false);
-              setMusicVolume(0.15);
-              setSlots(emptySlots());
-              setActive(0);
-              setResult(null);
-              setCurrent(0);
-            });
-          }}
-        >
-          새로 시작
-        </button>
-      </div>
+        <div className="ranking-draft-actions">
+          <span className="ranking-save-status" role="status">{draftStore.status}</span>
+          <button type="button" className="ranking-new-button" disabled={Boolean(busy)||!draftStore.loaded} onClick={()=>setResetOpen(true)}>
+            <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M10 4v12M4 10h12" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/></svg>새로 시작
+          </button>
+        </div>
       </header>
 
       <div className="ranking-workspace">
@@ -847,7 +823,7 @@ export function RankingStudio({
                 music={music} musicEnabled={musicEnabled} onMusicEnabled={(value) => {setMusicEnabled(value); invalidateAudio();}}
                 onUpload={uploadMusic} onRemove={() => {setMusic(null); invalidateAudio();}}
                 volume={musicVolume} onVolume={(value) => {setMusicVolume(value); invalidateAudio();}}
-                disabled={Boolean(busy)} project={project} />
+                disabled={Boolean(busy)} project={project} localUrl={music ? localMedia[music.id] : undefined} />
             </fieldset>
           </section>
 
@@ -1149,6 +1125,7 @@ export function RankingStudio({
           ) : null}
           <div hidden={Boolean(result && showResult)}>
             <RankingSequencePreview
+              localMedia={localMedia}
               key={sequenceKey + hasRemote + transitionSound + backgroundMusic?.sourceId + backgroundMusic?.volume}
               layoutOnly={hasRemote}
               clips={sequence}
@@ -1227,7 +1204,8 @@ export function RankingStudio({
           </p>
         ) : null}
       </div>
-      {busy ? <RankingProgressOverlay message={busy} /> : null}
+      {(busy && !sending) || !draftStore.loaded ? <RankingProgressOverlay message={busy || "저장한 작업을 불러오고 있습니다…"} /> : null}
+      <ProjectDeleteOverlay open={resetOpen} state="confirm" statusLabel="새로 시작" title="작성 중인 내용을 초기화할까요?" message={"입력한 제목, 영상, 선택 구간과 소리 설정이 모두 초기화됩니다.\n이미 제작한 프로젝트는 그대로 남아 있어요."} actionPendingLabel="초기화 중…" actionLabel="초기화하고 새로 시작" closeLabel="계속 편집" actionPending={Boolean(busy)} onAction={()=>void startFresh()} onClose={()=>{if(!busy)setResetOpen(false);}} />
       {orderOpen ? (
         <RankingOrderEditor
           order={order}
@@ -1236,60 +1214,7 @@ export function RankingStudio({
           onClose={() => setOrderOpen(false)}
         />
       ) : null}
-      <details
-        className="ranking-history"
-        onToggle={(event) => {
-          if (event.currentTarget.open)
-            void requestJson("/api/ranking-shorts", { method: "GET" })
-              .then((data) => setHistory(data.projects))
-              .catch(() => setError("최근 작업을 불러오지 못했습니다."));
-        }}
-      >
-        <summary>최근 작업</summary>
-        <div>
-          {history.length ? (
-            history.map((item) => (
-              <div className="ranking-history-row" key={item.id}>
-                <a href={`/ranking-shorts?project=${item.id}`}>
-                  {item.title || "랭킹 쇼츠"}
-                  <span>
-                    {item.status === "succeeded"
-                      ? "완료"
-                      : item.status === "failed"
-                        ? "실패"
-                        : item.status === "draft"
-                          ? "미완료"
-                          : "제작 중"}
-                  </span>
-                </a>
-                <button
-                  type="button"
-                  disabled={
-                    Boolean(busy) ||
-                    ["queued", "running"].includes(item.status) ||
-                    item.id === project
-                  }
-                  aria-label={`${item.title || "랭킹 쇼츠"} 작업 삭제`}
-                  onClick={() =>
-                    void task("작업을 정리하고 있습니다…", async () => {
-                      await requestJson(`/api/ranking-shorts/${item.id}`, {
-                        method: "DELETE",
-                      });
-                      setHistory((previous) =>
-                        previous.filter((row) => row.id !== item.id),
-                      );
-                    })
-                  }
-                >
-                  삭제
-                </button>
-              </div>
-            ))
-          ) : (
-            <p>아직 제작한 영상이 없어요.</p>
-          )}
-        </div>
-      </details>
+      <RankingWorkspaceProjects revision={projectsRevision} submitted={submitted} preparing={sending ? {title,message:busy} : null} />
       <footer className="ranking-test-note">
         완료되면 이메일로 알려드려요. 완성 영상은 30일간 보관됩니다.
       </footer>

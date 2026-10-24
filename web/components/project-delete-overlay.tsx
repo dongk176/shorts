@@ -14,6 +14,7 @@ export function ProjectDeleteOverlay({
   actionLabel,
   closeLabel,
   actionPending = false,
+  actionPendingLabel = "삭제 처리 중...",
   onAction,
   onClose,
 }: {
@@ -25,6 +26,7 @@ export function ProjectDeleteOverlay({
   actionLabel?: string;
   closeLabel: string;
   actionPending?: boolean;
+  actionPendingLabel?: string;
   onAction?: () => void;
   onClose: () => void;
 }) {
@@ -166,7 +168,7 @@ export function ProjectDeleteOverlay({
               onClick={onAction}
               className="min-h-12 rounded-xl bg-[#ff715e] px-5 text-sm font-black text-white transition hover:bg-[#ff5f4a] disabled:cursor-wait disabled:opacity-55"
             >
-              {ui(actionPending ? "삭제 처리 중..." : actionLabel)}
+              {ui(actionPending ? actionPendingLabel : actionLabel)}
             </button>
           ) : null}
         </div>

@@ -26,9 +26,10 @@ it("returns the imported, unique allowlisted catalog only after admin authorizat
   expect(response.status).toBe(200);
   expect(response.headers.get("cache-control")).toBe("private, no-store");
   const data = await response.json();
-  expect(data.checkedAt).toBe("2026-10-24");
-  expect(data.items).toHaveLength(100);
-  expect(new Set(data.items.map((item: {id:string})=>item.id)).size).toBe(100);
+  expect(data.checkedAt).toBe("2026-10-24~2026-10-25");
+  expect(data.items).toHaveLength(186);
+  expect(new Set(data.items.map((item: {id:string})=>item.id)).size).toBe(186);
+  expect(data.items.filter((item: {language:string}) => item.language === "한국어")).toHaveLength(100);
   for (const item of data.items) {
     expect(item.id).toMatch(/^[\w-]{11}$/);
     expect(item.url).toBe(`https://www.youtube.com/shorts/${item.id}`);
