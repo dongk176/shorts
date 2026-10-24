@@ -125,7 +125,11 @@ export function RankingSequencePreview({
     audio.volume = backgroundMusic.volume * Math.min(1, Math.max(0, total - elapsed) / 0.3);
     const position = (offset + Math.max(0, (video.current?.currentTime ?? clip.start) - clip.start)) % audio.duration;
     if (Math.abs(audio.currentTime - position) > 0.2) audio.currentTime = position;
-    if (intent.current) void audio.play().catch(() => setError("배경음악 재생 버튼을 다시 눌러 주세요."));
+    if (intent.current) void audio.play().catch((cause: unknown) => {
+      // A clip change or pause can cancel an outstanding play request normally.
+      if (cause instanceof DOMException && cause.name === "AbortError") return;
+      if (intent.current) setError("배경음악 재생 버튼을 다시 눌러 주세요.");
+    });
   }
   function play(media: HTMLVideoElement) {
     void media.play().catch(() => {
