@@ -157,6 +157,8 @@ export const RankingRemotePlayer = forwardRef<
       const duration = rankingPlayerDuration(value);
       if (duration !== null && duration !== lastDuration) {
         lastDuration = duration;
+        clearTimeout(readyTimer);
+        setError("");
         latest.current.onDuration(duration);
       }
     };
@@ -171,7 +173,9 @@ export const RankingRemotePlayer = forwardRef<
         latest.current.onPlaying(false);
       }
     };
-    const readyTimer = setTimeout(fail, 20000);
+    // TikTok can wait for a user gesture before sending onPlayerReady.
+    // A paused cover is not a failed player; actual errors still use fail().
+    const readyTimer = remote.platform === "tiktok" ? undefined : setTimeout(fail, 20000);
     if (remote.platform === "youtube") {
       void loadYouTube()
         .then((api) => {
@@ -247,6 +251,7 @@ export const RankingRemotePlayer = forwardRef<
       );
       if (data?.type === "ready") {
         clearTimeout(readyTimer);
+        setError("");
         message("seekTo", latest.current.start);
       }
       if (data?.type === "time") {
