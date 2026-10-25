@@ -88,6 +88,17 @@ export function RankingStudio({
   const backgroundMusic = musicEnabled && music ? {sourceId: music.id, volume: musicVolume} : null;
   const [count, setCount] = useState(5);
   const [active, setActive] = useState(0);
+  const [sceneOpen, setSceneOpen] = useState(false);
+  const sceneDialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    if (!sceneOpen) return;
+    const element = sceneDialog.current;
+    const focus = document.activeElement as HTMLElement | null;
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    element?.showModal();
+    return () => { element?.close(); document.body.style.overflow = overflow; focus?.focus(); };
+  }, [sceneOpen]);
   const [slots, setSlots] = useState(emptySlots);
   const [title, setTitle] = useState("놓치면 아쉬운 순간");
   const [style, setStyle] = useState<RankingStyle>(defaultRankingStyle);
@@ -848,6 +859,7 @@ export function RankingStudio({
                   onClick={() => {
                     setActive(index);
                     setCurrent(item.start);
+                    setSceneOpen(true);
                   }}
                   aria-pressed={active === index}
                   className={active === index ? "is-active" : ""}
@@ -863,6 +875,12 @@ export function RankingStudio({
                 </button>
               ))}
             </div>
+            <button type="button" className="ranking-scene-summary" onClick={() => setSceneOpen(true)}>
+              <span><strong>{active + 1}위 · {slot.label || "장면 선택"}</strong><small>{slot.source ? `${rankingTime(slot.start)} – ${rankingTime(slot.end)} · 구간 수정` : "링크나 파일을 추가하세요"}</small></span><span aria-hidden="true">＋</span>
+            </button>
+            {sceneOpen && <dialog ref={sceneDialog} className="ranking-scene-dialog" aria-labelledby="ranking-scene-title" onCancel={(event) => { if (busy) event.preventDefault(); else setSceneOpen(false); }}>
+              <header><div><small>순위별 장면</small><h2 id="ranking-scene-title">{active + 1}위 영상 선택</h2></div><button type="button" disabled={Boolean(busy)} aria-label="장면 선택 닫기" onClick={() => setSceneOpen(false)}>×</button></header>
+              <div className="ranking-scene-scroll">
             <div className="ranking-clip-body">
               <fieldset
                 disabled={Boolean(busy)}
@@ -1092,6 +1110,12 @@ export function RankingStudio({
                 </div>
               )}
             </div>
+              {error && <p role="alert" className="ranking-error">{error}</p>}
+              </div>
+              <footer><button type="button" disabled={Boolean(busy)} onClick={() => setSceneOpen(false)}>완료</button>
+                {active + 1 < count && <button type="button" disabled={Boolean(busy)} onClick={() => { player.current?.pause(); remotePlayer.current?.pause(); setActive(active + 1); setCurrent(slots[active + 1].start); setError(""); sceneDialog.current?.querySelector(".ranking-scene-scroll")?.scrollTo(0, 0); }}>다음 순위 고르기 · {active + 2}위 →</button>}
+              </footer>
+            </dialog>}
           </section>
           <p className="ranking-edit-note">
             순위 이름은 영상이 등장할 때 공개됩니다. 가로 영상은 중앙을 기준으로

@@ -23,6 +23,17 @@ export function RankingProjectList({ projects, embedded = false, onOpen }: { pro
   const [removed, setRemoved] = useState<string[]>([]);
   const [deleting, setDeleting] = useState<RankingProjectSummary | null>(null);
   const [pending, setPending] = useState(false);
+  const [menu, setMenu] = useState<string | null>(null);
+  useEffect(() => {
+    if (!menu) return;
+    const close = (event: PointerEvent) => {
+      if (!(event.target instanceof Element) || !event.target.closest(`[data-ranking-menu="${menu}"]`)) setMenu(null);
+    };
+    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") setMenu(null); };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", escape);
+    return () => { document.removeEventListener("pointerdown", close); document.removeEventListener("keydown", escape); };
+  }, [menu]);
   const [error, setError] = useState("");
   const inFlight = useRef(false);
   const visible = items.filter((project) => !removed.includes(project.id) && (!embedded || project.status !== "draft"));
@@ -88,13 +99,13 @@ export function RankingProjectList({ projects, embedded = false, onOpen }: { pro
           새 랭킹 쇼츠 <span className="ml-2" aria-hidden="true">＋</span>
         </Link>
       </div>}
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="project-collection-grid grid grid-cols-[minmax(0,1fr)] gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {visible.map((project) => {
           const complete = project.status === "succeeded" && project.operationId;
           const title = project.title?.trim() || "제목 없는 랭킹 쇼츠";
           const href = `/ranking-shorts?project=${project.id}`;
           return (
-            <article key={project.id} data-ranking-project={project.id} className="overflow-hidden rounded-2xl border border-white/10 bg-white/[.035] transition hover:border-white/20">
+            <article key={project.id} data-ranking-project={project.id} className="project-card relative overflow-hidden rounded-2xl border border-white/10 bg-white/[.035] transition hover:border-white/20">
               <Link href={href} onClick={onOpen ? (event) => { event.preventDefault(); onOpen(project); } : undefined} prefetch={false} aria-label={`${title} 열기`} className="block aspect-video overflow-hidden bg-black">
                 <RankingThumbnail
                   key={`${project.id}:${project.operationId}`}
@@ -103,18 +114,13 @@ export function RankingProjectList({ projects, embedded = false, onOpen }: { pro
                   fit="contain"
                 />
               </Link>
-              <div className="p-5">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-xs font-semibold tracking-wide text-[#dfcba5]">랭킹 쇼츠</span>
-                <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${project.status === "failed" ? "bg-red-400/10 text-red-300" : complete ? "bg-emerald-400/10 text-emerald-300" : "bg-white/5 text-neutral-300"}`}>
-                  {statusLabels[project.status]}
-                </span>
-              </div>
-              <h3 className="mt-3 truncate text-lg font-bold text-white">
+              <div className="p-4">
+              <h3 className="truncate text-sm font-bold text-white">
                 <Link href={href} onClick={onOpen ? (event) => { event.preventDefault(); onOpen(project); } : undefined} prefetch={false} className="hover:text-[#dfcba5]">{title}</Link>
               </h3>
-              <p className="mt-2 text-sm text-neutral-400">
-                <time dateTime={project.createdAt}>{new Intl.DateTimeFormat("ko-KR", { year: "numeric", month: "long", day: "numeric", timeZone: "Asia/Seoul" }).format(new Date(project.createdAt))}</time>
+              <p className="mt-2 flex items-center justify-between gap-2 text-xs text-neutral-400">
+                <span className={complete ? "text-emerald-400" : project.status === "failed" ? "text-red-300" : "text-neutral-300"}>● {statusLabels[project.status]}</span>
+                <time dateTime={project.createdAt}>{new Intl.DateTimeFormat("ko-KR", { year: "numeric", month: "numeric", day: "numeric", timeZone: "Asia/Seoul" }).format(new Date(project.createdAt))}</time>
                 {complete && project.duration != null ? ` · ${project.duration.toFixed(1)}초` : null}
               </p>
               {["queued", "running"].includes(project.status) ? (
@@ -124,7 +130,8 @@ export function RankingProjectList({ projects, embedded = false, onOpen }: { pro
                   <span className="sr-only">완료되면 자동으로 갱신됩니다.</span>
                 </div>
               ) : null}
-              <div className="mt-5 flex flex-wrap gap-2">
+              <button data-ranking-menu={project.id} type="button" aria-label={`${title} 메뉴`} aria-expanded={menu === project.id} onClick={() => setMenu(menu === project.id ? null : project.id)} className="absolute right-2 top-2 flex h-10 w-10 items-center justify-center rounded-xl border border-white/20 bg-black/80 text-white">•••</button>
+              {menu === project.id && <div data-ranking-menu={project.id} className="absolute right-2 top-14 z-10 flex flex-col gap-1 rounded-xl border border-white/20 bg-neutral-900 p-2 shadow-xl" onKeyDown={(event) => { if (event.key === "Escape") setMenu(null); }}>
                 {!["queued", "running"].includes(project.status) ? <Link href={href} onClick={onOpen ? (event) => { event.preventDefault(); onOpen(project); } : undefined} prefetch={false} aria-label={`${title} ${complete ? "영상 보기" : "작업 열기"}`} className="inline-flex min-h-11 items-center justify-center rounded-xl bg-white/10 px-4 text-sm font-bold text-white hover:bg-white/15">
                   {complete ? "영상 보기" : "작업 열기"} <span className="ml-2" aria-hidden="true">↗</span>
                 </Link> : null}
@@ -137,7 +144,7 @@ export function RankingProjectList({ projects, embedded = false, onOpen }: { pro
                   title={project.busy ? "진행 중인 작업은 완료 후 삭제할 수 있습니다." : undefined}
                   onClick={() => { setError(""); setDeleting(project); }}
                   className="ml-auto inline-flex min-h-11 items-center rounded-xl px-3 text-sm font-semibold text-neutral-400 hover:bg-red-400/10 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-40">삭제</button>
-              </div>
+              </div>}
               </div>
             </article>
           );

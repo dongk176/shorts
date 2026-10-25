@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { RankingRemote } from "@/lib/ranking-shorts";
-import { rankingEmbedUrl } from "@/lib/ranking-embed";
 
 // A paused frame/cover only. This never prepares or downloads a source on a worker.
 export function RankingThumbnail({ videoUrl, remote, time = 0.1, fit = "cover", lazy = true }: {
@@ -46,10 +45,6 @@ export function RankingThumbnail({ videoUrl, remote, time = 0.1, fit = "cover", 
         // Public covers should load directly, without the image optimizer or source worker.
         // eslint-disable-next-line @next/next/no-img-element
         <img src={`https://i.ytimg.com/vi/${remote.videoId}/hqdefault.jpg`} alt="" style={mediaStyle} referrerPolicy="no-referrer" onError={() => setFailed(true)} />
-      ) : visible && !failed && remote?.platform === "tiktok" && /^\d{10,25}$/.test(remote.videoId) ? (
-        <iframe title="틱톡 영상 표지" tabIndex={-1} loading="lazy" referrerPolicy="strict-origin-when-cross-origin"
-          src={`${rankingEmbedUrl(remote)}&controls=0&play_button=0&description=0&music_info=0&autoplay=0&muted=1`}
-          style={{ width: "100%", height: "100%", border: 0, pointerEvents: "none" }} />
       ) : (
         <div className="flex h-full min-h-24 items-center justify-center bg-gradient-to-br from-neutral-800 to-neutral-950 text-sm text-neutral-500">랭킹 쇼츠</div>
       )}

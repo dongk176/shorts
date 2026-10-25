@@ -422,23 +422,36 @@ class RankingPipeline:
         for partial in directory.glob("download.*"):
             if partial.is_file():
                 partial.unlink()
-        normalized, _, base, _ = self._inspect_link(url, proxy)
-        self.run(
-            [
-                *base,
-                "--max-filesize",
-                str(MAX_BYTES),
-                "--match-filter",
-                "duration <=? 1200 & !is_live",
-                "--format",
-                "bv*[height<=1080]+ba/b[height<=1080]",
-                "--merge-output-format",
-                "mp4",
-                "--output",
-                str(directory / "download.%(ext)s"),
-                normalized,
-            ]
-        )
+        normalized, platform, base, info = self._inspect_link(url, proxy)
+        # Reuse the validated Instagram response; re-extraction can add tens of seconds.
+        info_path = directory / "validated-info.json"
+        if platform == "instagram":
+            info_path.write_text(json.dumps(info))
+            info_path.chmod(0o600)
+        try:
+            self.run(
+                [
+                    *base,
+                    "--max-filesize",
+                    str(MAX_BYTES),
+                    "--match-filter",
+                    "duration <=? 1200 & !is_live",
+                    "--format",
+                    "bv*[height<=1080]+ba/b[height<=1080]/"
+                    "bv*[width<=1080][height<=1920]+ba/b[width<=1080][height<=1920]",
+                    "--merge-output-format",
+                    "mp4",
+                    "--output",
+                    str(directory / "download.%(ext)s"),
+                    *(
+                        ["--load-info-json", str(info_path)]
+                        if platform == "instagram"
+                        else [normalized]
+                    ),
+                ]
+            )
+        finally:
+            info_path.unlink(missing_ok=True)
         candidates = [
             p for p in directory.glob("download.*") if p.suffix in {".mp4", ".webm", ".mkv"}
         ]

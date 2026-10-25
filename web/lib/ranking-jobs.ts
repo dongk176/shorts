@@ -85,6 +85,10 @@ export async function queueRankingSource(
         "유튜브·인스타그램·틱톡 공개 영상 링크를 넣어 주세요.",
       );
   }
+  // Instagram often omits duration. Prepare once instead of inspect -> preview
+  // (which repeats extraction). The worker still validates public access and limits.
+  const instagramId = url && ["instagram.com", "www.instagram.com"].includes(new URL(url).hostname)
+    ? /^\/(?:reel|reels|p)\/([\w-]{5,80})\/?$/.exec(new URL(url).pathname)?.[1] : undefined;
   await requireRankingProject(projectId, owner);
   const ready = await wakeRankingRuntime();
   if (size && !ready) return { preparing: true };
@@ -110,8 +114,9 @@ export async function queueRankingSource(
       );
     const id = randomUUID(),
       sourceId = randomUUID();
-    await tx`insert into shorts_mvp.ranking_sources(id,project_id,status,remote_url,size_bytes,metadata) values(${sourceId},${projectId},${size ? "uploading" : "queued"},${url || null},${size || null},${tx.json(kind ? {kind} : {})})`;
-    await tx`insert into shorts_mvp.ranking_operations(id,project_id,source_id,action,request_id) values(${id},${projectId},${sourceId},${size ? "import" : "inspect"},${requestId})`;
+    const metadata = instagramId ? { remote: { platform: "instagram", videoId: instagramId, url: `https://www.instagram.com/reel/${instagramId}/` } } : kind ? {kind} : {};
+    await tx`insert into shorts_mvp.ranking_sources(id,project_id,status,remote_url,size_bytes,metadata) values(${sourceId},${projectId},${size ? "uploading" : "queued"},${url || null},${size || null},${tx.json(metadata)})`;
+    await tx`insert into shorts_mvp.ranking_operations(id,project_id,source_id,action,request_id) values(${id},${projectId},${sourceId},${size ? "import" : instagramId ? "preview" : "inspect"},${requestId})`;
     return { id, sourceId };
   });
   return {

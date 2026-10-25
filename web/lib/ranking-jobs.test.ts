@@ -4,7 +4,7 @@ const state = vi.hoisted(() => ({ owner: vi.fn(), wake: vi.fn(), query: vi.fn(),
 vi.mock("./db", () => ({ getDb: () => ({ begin: state.begin }) }));
 vi.mock("./ranking-access", () => ({ requireRankingProject: state.owner, rankingUuid: (id: string) => id }));
 vi.mock("./ranking-runtime", () => ({ wakeRankingRuntime: state.wake, rankingReceiverAccess: vi.fn() }));
-import { queueRankingOperation } from "./ranking-jobs";
+import { queueRankingOperation, queueRankingSource } from "./ranking-jobs";
 import { HttpError } from "./http";
 const project = "00000000-0000-4000-8000-000000000001";
 const sourceId = "00000000-0000-4000-8000-000000000002";
@@ -83,5 +83,23 @@ describe("durable ranking render submission", () => {
     const value = input(); value.links = [];
     await expect(queueRankingOperation(project, "owner", "render", value)).rejects.toMatchObject({ status: 400 });
     expect(statements().some((q) => q.sql.includes("insert into shorts_mvp.ranking_operations"))).toBe(false);
+  });
+});
+
+
+describe("Instagram preparation", () => {
+  it("queues one validated preview instead of a redundant metadata job", async () => {
+    state.query.mockImplementation((strings: TemplateStringsArray) => Promise.resolve(strings.join("?").includes("count(*)") ? [{count: 0}] : []));
+    const result = await queueRankingSource(project, "owner", {requestId, url: "https://www.instagram.com/reel/DZJ9ag9SNRI/?igsh=test"});
+    const queries = statements();
+    expect(queries.find(q => q.sql.includes("insert into shorts_mvp.ranking_operations"))?.args).toContain("preview");
+    expect(queries.find(q => q.sql.includes("insert into shorts_mvp.ranking_sources"))?.args.at(-1)).toEqual({remote: {platform: "instagram",videoId: "DZJ9ag9SNRI",url: "https://www.instagram.com/reel/DZJ9ag9SNRI/"}});
+    expect(result).toHaveProperty("operationId");
+  });
+  it("does not admit an Instagram source belonging to another administrator", async () => {
+    state.owner.mockRejectedValue(new HttpError(404,"not found"));
+    await expect(queueRankingSource(project,"other",{requestId,url:"https://www.instagram.com/reel/DZJ9ag9SNRI/"})).rejects.toMatchObject({status:404});
+    expect(state.wake).not.toHaveBeenCalled();
+    expect(state.begin).not.toHaveBeenCalled();
   });
 });

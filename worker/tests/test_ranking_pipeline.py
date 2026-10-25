@@ -519,3 +519,54 @@ def test_fixed_rank_colors_and_inactive_opacity(tmp_path):
             row = image.crop((120, y - 48, 590, y + 6))
             assert row.getchannel("A").getextrema()[1] == (255 if index == 1 else 128)
             assert (*rgb, 255 if index == 1 else 128) in set(row.getdata())
+
+
+def test_portrait_instagram_formats_and_metadata_reuse(ranking_project, monkeypatch):
+    from yt_dlp import YoutubeDL
+
+    pipeline = RankingPipeline(ranking_project)
+    calls = []
+    metadata = {
+        "id": "ABCDE",
+        "formats": [
+            {
+                "format_id": "video",
+                "url": "https://example.test/video.mp4",
+                "ext": "mp4",
+                "width": 720,
+                "height": 1280,
+                "vcodec": "vp9",
+                "acodec": "none",
+            },
+            {
+                "format_id": "audio",
+                "url": "https://example.test/audio.m4a",
+                "ext": "m4a",
+                "vcodec": "none",
+                "acodec": "aac",
+            },
+        ],
+    }
+
+    def run(args, timeout=180):
+        calls.append(args)
+        if "--skip-download" in args:
+            return json.dumps(metadata)
+        selector = args[args.index("--format") + 1]
+        with YoutubeDL({"quiet": True}) as ydl:
+            result = list(
+                ydl.build_format_selector(selector)(
+                    {"formats": metadata["formats"], "incomplete_formats": False}
+                )
+            )
+        assert result and result[0]["format_id"] == "video+audio"
+        info_path = Path(args[args.index("--load-info-json") + 1])
+        assert json.loads(info_path.read_text()) == metadata
+        assert "https://www.instagram.com/reel/ABCDE/" not in args
+        (ranking_project / "download.mp4").write_bytes(b"test")
+        return ""
+
+    monkeypatch.setattr(pipeline, "run", run)
+    pipeline.acquire(ranking_project, "https://www.instagram.com/reel/ABCDE/")
+    assert len(calls) == 2
+    assert not (ranking_project / "validated-info.json").exists()
