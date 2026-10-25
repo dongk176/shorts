@@ -21,7 +21,7 @@ export function FixedPreview() {
       const columns = getComputedStyle(workspace).gridTemplateColumns.split(' ');
       const columnWidth = parseFloat(columns[columns.length - 1]) || 320;
       const availableWidth = Math.min(columnWidth, (window.innerHeight - 190) * 9 / 16 + 25);
-      const width = Math.max(150, (availableWidth - 25) * 0.9 + 25);
+      const width = Math.max(150, (availableWidth - 25) * 0.8 + 25);
       shell.style.setProperty('--local-preview-width', `${width}px`);
       shell.style.setProperty('--local-preview-left', `${Math.max(16, Math.min(rect.right - width, window.innerWidth - width - 16))}px`);
     };

@@ -119,11 +119,6 @@ export function RankingTimeline({
   }
   return (
     <div className="ranking-trim">
-      <div className="ranking-trim-heading">
-        <span>
-          사용할 구간 <strong>{(end - start).toFixed(1)}초</strong>
-        </span>
-      </div>
       <div className="ranking-timeline-scroll">
         <div className="ranking-timeline-width">
           <div

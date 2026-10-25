@@ -23,6 +23,7 @@ import {
 import { RankingAudioSettings } from "./ranking-audio-settings";
 import { rankingAudioSequence, transitionSeconds, type RankingSound } from "@/lib/ranking-audio";
 import { RankingSequencePreview } from "./ranking-sequence-preview";
+import { RankingYouTubeScenePreview, type RankingPreviewSeek } from "./ranking-youtube-scene-preview";
 import { RankingColorField } from "./ranking-color-field";
 import { RankingTimeline } from "./ranking-timeline";
 import { RankingProgressOverlay } from "./ranking-progress-overlay";
@@ -139,6 +140,7 @@ export function RankingStudio({
   const [current, setCurrent] = useState(0);
   const [showResult, setShowResult] = useState(false);
   const [previewPauseSignal, setPreviewPauseSignal] = useState(0);
+  const [previewSeek, setPreviewSeek] = useState<RankingPreviewSeek | null>(null);
   const [orderMode, setOrderMode] = useState<"desc" | "asc" | "custom">("desc");
   const [customOrder, setCustomOrder] = useState<number[]>([]);
   const [orderOpen, setOrderOpen] = useState(false);
@@ -306,6 +308,14 @@ export function RankingStudio({
     (item) => item.source?.remote && !item.source.previewReady,
   );
   const remoteSource = slot.source?.remote && !slot.source.previewReady;
+  function updateSourceDuration(duration: number) {
+    if (!Number.isFinite(duration) || duration <= 0) return;
+    if (duration > RANKING_LIMITS.sourceSeconds) { setError("20분 이하의 영상을 선택해 주세요."); return; }
+    if (slot.source && (slot.source.durationKnown === false || slot.source.duration !== duration)) {
+      const start = Math.min(slot.start, Math.max(0, duration - .5));
+      patch(active, {source: {...slot.source, duration, durationKnown: true}, start, end: Math.min(duration, Math.max(start + .5, slot.end))});
+    }
+  }
   useEffect(() => {
     if (busy) {
       player.current?.pause();
@@ -523,6 +533,7 @@ export function RankingStudio({
   }
 
   function seek(seconds: number) {
+    if (slot.source) setPreviewSeek(previous => ({sourceId: slot.source!.id, time: seconds, revision: (previous?.revision ?? 0) + 1}));
     if (remoteSource && slot.source?.remote?.platform === "youtube") {
       remotePlayer.current?.pause();
       remotePlayer.current?.seek(seconds);
@@ -1054,15 +1065,8 @@ export function RankingStudio({
                     <RankingRemotePlayer key={slot.source.id} ref={remotePlayer} remote={slot.source.remote}
                       start={slot.start} label={`${active + 1}위 원본 영상`} suspended={Boolean(busy)}
                       onTime={setCurrent} onPlaying={playing => { if (playing) setPreviewPauseSignal(value => value + 1); }}
-                      onUnavailable={() => setError("유튜브에서 이 영상의 재생을 허용하지 않았어요. 다른 공개 영상이나 파일을 선택해 주세요.")}
-                      onDuration={duration => {
-                        if (!Number.isFinite(duration) || duration <= 0) return;
-                        if (duration > RANKING_LIMITS.sourceSeconds) { setError("20분 이하의 영상을 선택해 주세요."); return; }
-                        if (slot.source && (slot.source.durationKnown === false || slot.source.duration !== duration)) {
-                          const start = Math.min(slot.start, Math.max(0, duration - .5));
-                          patch(active, {source: {...slot.source, duration, durationKnown: true}, start, end: Math.min(duration, Math.max(start + .5, slot.end))});
-                        }
-                      }} />
+                      onUnavailable={() => { /* The source player displays its own reconnect action. */ }}
+                      onDuration={updateSourceDuration} />
                   ) : remoteSource && slot.source.remote ? (
                     <div className="ranking-empty-source">
                       <strong>저장한 영상의 미리보기를 다시 연결해 주세요</strong>
@@ -1097,40 +1101,12 @@ export function RankingStudio({
                       />
                     </div>
                   )}
-                  <div className="ranking-source-status">
-                    <span>
-                      <i />
-                      {slot.source.remote?.platform === "youtube" && remoteSource
-                        ? "영상 만들기를 누르면 다운로드합니다"
-                        : slot.source.previewReady
-                        ? "영상 준비됨"
-                        : slot.pendingLink
-                          ? slot.source.durationKnown === false
-                            ? "영상을 가져오면 바로 구간을 고를 수 있어요"
-                            : "미리보기를 다시 연결해 주세요"
-                          : slot.source.durationKnown === false
-                          ? busy
-                            ? "구간 선택 준비 중…"
-                            : "영상을 가져오지 못했어요"
-                          : remoteSource
-                            ? "미리보기를 다시 연결해 주세요"
-                            : "영상 준비됨"}
-                    </span>
-                    <span>
-                      {slot.source.durationKnown === false
-                        ? ""
-                        : `원본 ${rankingTime(slot.source.duration)} · `}
-                      <button
-                        disabled={Boolean(busy)}
-                        type="button"
-                        onClick={() => {
-                          patch(active, { source: null, start: 0, end: 0 });
-                          setCurrent(0);
-                        }}
-                      >
-                        삭제
-                      </button>
-                    </span>
+                  <div className="ranking-source-actions">
+                    <button type="button" className="ranking-source-remove" disabled={Boolean(busy)}
+                      aria-label={`${active + 1}위 영상 제거`} title="영상 제거"
+                      onClick={() => { patch(active, {source: null, start: 0, end: 0}); setCurrent(0); }}>
+                      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5m4-5v5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                    </button>
                   </div>
                   {slot.source.durationKnown === false ? (
                     <div className="ranking-prepare-preview">
@@ -1274,7 +1250,16 @@ export function RankingStudio({
             </div>
           ) : null}
           <div hidden={Boolean(result && showResult)}>
-            <RankingSequencePreview
+            {slot.source?.remote?.platform === "youtube" && !slot.source.previewReady ? (
+              <RankingYouTubeScenePreview key={slot.source.id} source={slot.source}
+                start={slot.start} end={slot.end} seek={previewSeek}
+                title={title} subtitle={subtitle} count={count} labels={visible.map(item => item.label)}
+                rank={active + 1} descending={descending} style={style}
+                suspended={Boolean(busy || (mobileScene && sceneOpen) || (result && showResult))}
+                pauseSignal={previewPauseSignal}
+                onDuration={updateSourceDuration}
+                onStart={() => { player.current?.pause(); remotePlayer.current?.pause(); }} />
+            ) : <RankingSequencePreview
               localMedia={localMedia}
               key={sequenceKey + hasRemote + transitionSound + backgroundMusic?.sourceId + backgroundMusic?.volume}
               layoutOnly={hasRemote}
@@ -1294,9 +1279,9 @@ export function RankingStudio({
               pauseSignal={previewPauseSignal}
               onStart={() => {
                 player.current?.pause();
-
+                remotePlayer.current?.pause();
               }}
-            />
+            />}
           </div>
           {result ? (
             <div className="ranking-preview-caption">

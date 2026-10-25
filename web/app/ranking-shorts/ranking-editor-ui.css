@@ -438,3 +438,19 @@
 }
 .ranking-refreshed .ranking-scene-dialog .ranking-source-player.is-portrait video{width:100%;height:100%;object-fit:contain}
 @media(max-width:850px){.ranking-refreshed{--ranking-source-height:min(52dvh,480px)}}
+
+/* Embedded selected frames use the renderer's centered cover crop, not a cover image. */
+.ranking-youtube-crop{position:absolute;top:var(--ranking-video-top);bottom:0;inset-inline:0;overflow:hidden;background:#000}
+.ranking-youtube-crop-frame{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}
+.ranking-refreshed .ranking-remote-player.is-composition,
+.ranking-refreshed .ranking-remote-player.is-composition .ranking-remote-frame,
+.ranking-refreshed .ranking-remote-player.is-composition .ranking-remote-frame iframe{width:100%;height:100%;max-width:none;max-height:none;aspect-ratio:auto;margin:0;border:0;border-radius:0}
+.ranking-youtube-crop .ranking-remote-player{pointer-events:none}
+.ranking-scene-preview-loading{position:absolute;z-index:4;inset:var(--ranking-video-top) 0 0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;background:#101114ed;color:#d8d6de;font-size:14px;text-align:center;padding:20px}
+.ranking-scene-preview-loading button{padding:10px 14px;border:1px solid #ffffff40;border-radius:10px}
+.ranking-source-actions{display:flex;justify-content:flex-end;margin-top:8px}
+.ranking-source-remove{display:grid;place-items:center;width:40px;height:40px;border:1px solid #ffffff20;border-radius:10px;color:#b7b4c0;background:#ffffff05}
+.ranking-source-remove:hover{background:#ffffff12;color:#fff}
+.ranking-source-remove:focus-visible{outline:2px solid #c9b2ee;outline-offset:3px}
+.ranking-source-reconnect{margin-inline-start:12px;text-decoration:underline;font-weight:700}
+@media(max-width:850px){.ranking-refreshed .ranking-preview-column{max-width:300px;width:min(100%,300px)}}

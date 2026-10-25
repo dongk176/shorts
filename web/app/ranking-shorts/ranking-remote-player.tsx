@@ -98,9 +98,11 @@ export const RankingRemotePlayer = forwardRef<
     onDuration: (duration: number) => void;
     onPlaying: (playing: boolean) => void;
     onUnavailable: () => void;
+    composition?: boolean;
+    onReady?: () => void;
   }
 >(function RankingRemotePlayer(
-  { remote, start, label, onTime, onDuration, onPlaying, onUnavailable, suspended },
+  { remote, start, label, onTime, onDuration, onPlaying, onUnavailable, suspended, composition = false, onReady },
   ref,
 ) {
   const host = useRef<HTMLDivElement>(null);
@@ -108,9 +110,10 @@ export const RankingRemotePlayer = forwardRef<
   const youtube = useRef<YouTubePlayer | null>(null);
   const preview = useRef<ReturnType<typeof createYouTubePreview> | null>(null);
   const pendingSeek = useRef<number | null>(null);
-  const latest = useRef({ start, onTime, onDuration, onPlaying, onUnavailable });
-  latest.current = { start, onTime, onDuration, onPlaying, onUnavailable };
+  const latest = useRef({ start, onTime, onDuration, onPlaying, onUnavailable, onReady });
+  latest.current = { start, onTime, onDuration, onPlaying, onUnavailable, onReady };
   const [error, setError] = useState("");
+  const [attempt, setAttempt] = useState(0);
   const [instagramHeight, setInstagramHeight] = useState(780);
   const url = rankingEmbedUrl(remote);
   function message(type: string, value?: number) {
@@ -168,7 +171,7 @@ export const RankingRemotePlayer = forwardRef<
         clearTimeout(readyTimer);
         latest.current.onUnavailable();
         setError(
-          "플레이어를 연결하지 못했습니다. 원본 링크에서 확인하거나 파일을 선택해 주세요.",
+          "플레이어 연결이 지연됐어요. 다시 연결하거나 영상 파일을 선택해 주세요.",
         );
         latest.current.onPlaying(false);
       }
@@ -189,6 +192,10 @@ export const RankingRemotePlayer = forwardRef<
           embed.searchParams.set("origin", window.location.origin);
           embed.searchParams.set("playsinline", "1");
           embed.searchParams.set("rel", "0");
+          if (composition) {
+            embed.searchParams.set("controls", "0");
+            embed.searchParams.set("disablekb", "1");
+          }
           container.src = embed.toString();
           container.title = "YouTube 원본 영상";
           container.allow = "autoplay; encrypted-media; fullscreen; picture-in-picture";
@@ -207,12 +214,15 @@ export const RankingRemotePlayer = forwardRef<
               onReady: () => {
                 if (!alive || !instance) return;
                 clearTimeout(readyTimer);
+                unavailable = false;
+                setError("");
                 instance.cueVideoById({
                   videoId: remote.videoId,
                   startSeconds: latest.current.start,
                 });
                 preview.current = createYouTubePreview(instance, () => {
-                  if (alive)
+                  if (alive && composition) fail();
+                  else if (alive)
                     setError(
                       "장면을 불러오지 못했습니다. 플레이어의 재생 버튼을 눌러 다시 확인해 주세요.",
                     );
@@ -221,6 +231,7 @@ export const RankingRemotePlayer = forwardRef<
                   preview.current.seek(pendingSeek.current);
                   pendingSeek.current = null;
                 }
+                latest.current.onReady?.();
                 interval = setInterval(() => {
                   reportDuration(instance?.getDuration());
                   if (
@@ -228,7 +239,7 @@ export const RankingRemotePlayer = forwardRef<
                     instance?.getPlayerState() === 1
                   )
                     latest.current.onTime(instance.getCurrentTime());
-                }, 100);
+                }, composition ? 30 : 100);
               },
               onStateChange: ({ data }) => {
                 if (alive)
@@ -285,10 +296,10 @@ export const RankingRemotePlayer = forwardRef<
       instance?.destroy();
       youtube.current = null;
     };
-  }, [remote.platform, remote.videoId, suspended, url]);
+  }, [remote.platform, remote.videoId, suspended, url, composition, attempt]);
 
   return (
-    <div className={`ranking-remote-player is-${remote.platform}`}>
+    <div className={`ranking-remote-player is-${remote.platform}${composition ? " is-composition" : ""}`}>
       {suspended ? (
         <div className="ranking-remote-frame" />
       ) : remote.platform === "youtube" ? (
@@ -313,16 +324,9 @@ export const RankingRemotePlayer = forwardRef<
       {error ? (
         <p role="alert" className="ranking-error">
           {error}
+          {!composition && remote.platform === "youtube" ? <button type="button" className="ranking-source-reconnect" onClick={() => { setError(""); setAttempt(value => value + 1); }}>다시 연결</button> : null}
         </p>
       ) : null}
-      <a
-        className="ranking-original-link"
-        href={remote.url}
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-        원본 열기 ↗
-      </a>
     </div>
   );
 });
