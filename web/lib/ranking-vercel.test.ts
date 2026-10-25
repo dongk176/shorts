@@ -54,6 +54,8 @@ beforeEach(() => {
           taskId: "vercel:generation",
           expiresAt: new Date(Date.now() + 600000),
           isAdmin: true,
+          createdAt: new Date(),
+          payload: {},
         },
       ];
     if (sql.includes("select count(*)")) return [{ count: 1 }];

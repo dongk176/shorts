@@ -11,6 +11,7 @@ export type RankingProjectSummary = {
   duration: number | null;
   remoteUrl: string | null;
   busy: boolean;
+  progressMessage?: string | null;
 };
 
 // This optional list must never broaden the ordinary projects page's access.
@@ -22,6 +23,7 @@ export async function loadRankingProjectList(
   const rows = await getDb()`
     select p.id,p.draft->>'title' as title,p.created_at,
       coalesce(o.status,'draft') as status,o.id as operation_id,
+      case when o.status='running' then o.result->>'progressMessage' end as progress_message,
       case when o.status='succeeded' then o.result->>'duration' end as duration,
       s.remote_url,
       exists(select 1 from shorts_mvp.ranking_operations pending
@@ -50,5 +52,6 @@ export async function loadRankingProjectList(
     duration: row.duration == null ? null : Number(row.duration),
     remoteUrl: row.remoteUrl || null,
     busy: Boolean(row.busy),
+    ...(row.progressMessage ? {progressMessage: row.progressMessage} : {}),
   }));
 }

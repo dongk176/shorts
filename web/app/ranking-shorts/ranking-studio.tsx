@@ -24,6 +24,7 @@ import { RankingColorField } from "./ranking-color-field";
 import { RankingTimeline } from "./ranking-timeline";
 import { RankingProgressOverlay } from "./ranking-progress-overlay";
 import { RankingOrderEditor } from "./ranking-order-editor";
+import { RankingRemotePlayer, type RankingRemoteHandle } from "./ranking-remote-player";
 import { rankingDirectRemote } from "@/lib/ranking-embed";
 import { rankingOrderForCount } from "@/lib/ranking-order";
 import {
@@ -114,6 +115,7 @@ export function RankingStudio({
   const [style, setStyle] = useState<RankingStyle>(defaultRankingStyle);
   const [subtitle, setSubtitle] = useState("오늘의 랭킹");
   const player = useRef<HTMLVideoElement>(null);
+  const remotePlayer = useRef<RankingRemoteHandle>(null);
   const [current, setCurrent] = useState(0);
   const [showResult, setShowResult] = useState(false);
   const [previewPauseSignal, setPreviewPauseSignal] = useState(0);
@@ -345,6 +347,12 @@ export function RankingStudio({
     if (busyRef.current) return;
     const index = active;
     const remote = !file ? rankingDirectRemote(slots[index].link) : null;
+    if (remote?.platform === "youtube") {
+      patch(index, { source: { id: crypto.randomUUID(), remote, duration: RANKING_LIMITS.sourceSeconds, durationKnown: false, previewReady: false, width: 0, height: 0, hasAudio: true }, pendingLink: true, start: 0, end: 10 });
+      setCurrent(0);
+      setSourceJobs(previous => { const next = {...previous}; delete next[index]; return next; });
+      return;
+    }
     await sourceTask(index, async (progress) => {
         const id = await ensureProject();
         const requestId = crypto.randomUUID();
@@ -495,6 +503,12 @@ export function RankingStudio({
   }
 
   function seek(seconds: number) {
+    if (remoteSource && slot.source?.remote?.platform === "youtube") {
+      remotePlayer.current?.pause();
+      remotePlayer.current?.seek(seconds);
+      setCurrent(seconds);
+      return;
+    }
     const video = player.current;
     if (!video) return;
     video.pause();
@@ -993,7 +1007,20 @@ export function RankingStudio({
                 <div className="ranking-source-progress"><p role="alert" className="ranking-error">{activeJob.error}</p><button type="button" className="ranking-primary" onClick={() => void importSource()}>다시 가져오기</button></div>
               ) : slot.source ? (
                 <>
-                  {remoteSource && slot.source.remote ? (
+                  {remoteSource && slot.source.remote?.platform === "youtube" ? (
+                    <RankingRemotePlayer key={slot.source.id} ref={remotePlayer} remote={slot.source.remote}
+                      start={slot.start} label={`${active + 1}위 원본 영상`} suspended={Boolean(busy)}
+                      onTime={setCurrent} onPlaying={playing => { if (playing) setPreviewPauseSignal(value => value + 1); }}
+                      onUnavailable={() => setError("유튜브에서 이 영상의 재생을 허용하지 않았어요. 다른 공개 영상이나 파일을 선택해 주세요.")}
+                      onDuration={duration => {
+                        if (!Number.isFinite(duration) || duration <= 0) return;
+                        if (duration > RANKING_LIMITS.sourceSeconds) { setError("20분 이하의 영상을 선택해 주세요."); return; }
+                        if (slot.source && (slot.source.durationKnown === false || slot.source.duration !== duration)) {
+                          const start = Math.min(slot.start, Math.max(0, duration - .5));
+                          patch(active, {source: {...slot.source, duration, durationKnown: true}, start, end: Math.min(duration, Math.max(start + .5, slot.end))});
+                        }
+                      }} />
+                  ) : remoteSource && slot.source.remote ? (
                     <div className="ranking-empty-source">
                       <strong>저장한 영상의 미리보기를 다시 연결해 주세요</strong>
                       <button type="button" className="ranking-primary" disabled={Boolean(busy)} onClick={() => void importSource()}>영상 가져오기</button>
@@ -1029,7 +1056,9 @@ export function RankingStudio({
                   <div className="ranking-source-status">
                     <span>
                       <i />
-                      {slot.source.previewReady
+                      {slot.source.remote?.platform === "youtube" && remoteSource
+                        ? "영상 만들기를 누르면 다운로드합니다"
+                        : slot.source.previewReady
                         ? "영상 준비됨"
                         : slot.pendingLink
                           ? slot.source.durationKnown === false

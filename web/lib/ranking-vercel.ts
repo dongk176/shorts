@@ -205,6 +205,61 @@ export async function rankingVercelAccess(
     ? { url: `${url}?token=${encodeURIComponent(token)}` }
     : { url, token };
 }
+// Prepare each remote independently so another source's retry never downloads
+// successful inputs again. Children share the existing per-owner concurrency cap.
+async function prepareRenderSources(project: string, operation: string, task: string) {
+  const db = getDb();
+  const children = await db.begin(async tx => {
+    const owners = await tx`select u.id from shorts_mvp.app_users u join shorts_mvp.ranking_projects p on p.user_id=u.id where p.id=${project} and u.is_admin=true for update of u`;
+    if (!owners[0]) throw new HttpError(403, "관리자 전용 기능입니다.");
+    await tx`select id from shorts_mvp.ranking_projects where id=${project} for update`;
+    const parents = await tx`select * from shorts_mvp.ranking_operations where id=${operation} and status='running'`;
+    const parent = parents[0];
+    if (!parent) return [];
+    if (Date.now() - new Date(parent.createdAt).getTime() > 15 * 60_000) {
+      await tx`update shorts_mvp.ranking_operations set status='failed',error='영상 준비 제한 시간을 초과했습니다. 잠시 후 다시 시도해 주세요.',finished_at=now() where id=${operation}`;
+      return [];
+    }
+    const sources = await tx`select * from shorts_mvp.ranking_sources where project_id=${project}`;
+    const previous = await tx`select * from shorts_mvp.ranking_operations where project_id=${project} and payload->>'renderOperationId'=${operation}`;
+    const counts = await tx`select count(*)::int as count from shorts_mvp.ranking_operations o join shorts_mvp.ranking_projects p on p.id=o.project_id where p.user_id=${owners[0].id} and o.executor='vercel' and o.action!='render' and o.status in ('queued','running')`;
+    let available = Math.max(0, 3 - counts[0].count);
+    const result: {id: string; rank: number}[] = [];
+    const seen = new Set<string>();
+    for (const clip of parent.payload.clips as {sourceId: string; rank: number}[]) {
+      if (seen.has(clip.sourceId)) continue;
+      seen.add(clip.sourceId);
+      const source = sources.find(row => row.id === clip.sourceId);
+      if (source?.taskId === task && source.status === 'ready' && source.metadata?.previewReady) continue;
+      const child = previous.find(row => row.sourceId === clip.sourceId);
+      if (child?.status === 'failed' || !source?.remoteUrl) {
+        await tx`update shorts_mvp.ranking_operations set status='failed',error=${`${clip.rank}위: ${child?.error || "원본 파일을 다시 추가해 주세요."}`},finished_at=now() where id=${operation}`;
+        return [];
+      }
+      if (child) { result.push({id: child.id, rank: clip.rank}); continue; }
+      if (available <= 0) continue;
+      available--;
+      const id = randomUUID();
+      await tx`insert into shorts_mvp.ranking_operations(id,project_id,source_id,action,status,payload,request_id,executor) values(${id},${project},${source.id},'preview','running',${tx.json({renderOperationId: operation, rank: clip.rank})},${randomUUID()},'vercel')`;
+      result.push({id, rank: clip.rank});
+    }
+    return result;
+  });
+  await Promise.allSettled(children.map(child => syncRankingVercelOperation(project, child.id)));
+  const rows = await db`select o.status,o.payload,s.id,s.task_id,s.status as source_status,s.metadata from shorts_mvp.ranking_operations o join shorts_mvp.ranking_sources s on s.project_id=o.project_id where o.id=${operation}`;
+  if (!rows[0] || rows[0].status !== 'running') return false;
+  const clips = rows[0].payload.clips as {sourceId: string; rank: number}[];
+  const pending = clips.find(clip => !rows.some(row => row.id === clip.sourceId && row.taskId === task && row.sourceStatus === 'ready' && row.metadata?.previewReady));
+  if (!pending) {
+    await db`update shorts_mvp.ranking_operations set result=null where id=${operation} and status='running'`;
+    return true;
+  }
+  const attempts = await db`select count(*)::int as count from shorts_mvp.ranking_route_attempts a join shorts_mvp.ranking_operations o on o.id=a.operation_id where o.project_id=${project} and o.source_id=${pending.sourceId} and o.payload->>'renderOperationId'=${operation}`;
+  const message = `${pending.rank}위 영상 가져오는 중 · ${Math.min(10, attempts[0].count + 1)}/10회`;
+  await db`update shorts_mvp.ranking_operations set result=${db.json({progressMessage: message})},updated_at=now() where id=${operation} and status='running'`;
+  return false;
+}
+
 export async function dispatchRankingVercel(
   project: string,
   operation: string,
@@ -224,18 +279,9 @@ export async function dispatchRankingVercel(
     await db`select id,remote_url,metadata,size_bytes,task_id from shorts_mvp.ranking_sources where project_id=${project}`;
   const source = sources.find((s) => s.id === op.sourceId);
   const task = `vercel:${session.generation}`;
+  if (op.action === "render" && !(await prepareRenderSources(project, operation, task))) return;
   await db`update shorts_mvp.ranking_operations set task_id=${task} where id=${operation} and status='running'`;
-  const needsYoutube =
-    op.action === "render"
-      ? sources.some(
-          (s) =>
-            op.payload.clips.some(
-              (c: { sourceId: string }) => c.sourceId === s.id,
-            ) &&
-            /youtube\.com|youtu\.be/.test(s.remoteUrl || "") &&
-            s.taskId !== task,
-        )
-      : /youtube\.com|youtu\.be/.test(source?.remoteUrl || "");
+  const needsYoutube = op.action !== "render" && /youtube\.com|youtu\.be/.test(source?.remoteUrl || "");
   const proxy = needsYoutube
     ? await leaseRankingVercelRoute(operation, task)
     : "";
@@ -275,7 +321,7 @@ export async function dispatchRankingVercel(
       Authorization: `Bearer ${secret(session)}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ ...payload, proxy, attempt }),
+    body: JSON.stringify({ ...payload, proxy, attempt, maxAttempts: op.payload?.renderOperationId && needsYoutube ? 10 : 3 }),
     signal: AbortSignal.timeout(15000),
     cache: "no-store",
   });
@@ -321,6 +367,9 @@ export async function syncRankingVercelOperation(
       error: "작업 공간이 바뀌었습니다. 영상을 다시 가져와 주세요.",
     };
   else {
+    if (!op.taskId && op.payload?.renderOperationId && Date.now() - new Date(op.createdAt).getTime() > 10 * 60_000) {
+      state = {status: "failed", error: "다운로드 준비 제한 시간을 초과했습니다. 잠시 후 다시 시도해 주세요."};
+    } else {
     if (!op.taskId) {
       await dispatchRankingVercel(project, operation);
       return {stage: "preparing" as const};
@@ -336,6 +385,7 @@ export async function syncRankingVercelOperation(
     }
     if (!response.ok) return;
     state = await response.json();
+    }
   }
   if (!["succeeded", "failed"].includes(state.status)) return rankingVercelProgress(state.progress);
   if (
@@ -355,8 +405,12 @@ export async function syncRankingVercelOperation(
         state.failureCategory!,
       );
     const after =
-      await db`select count(*)::int as count from shorts_mvp.ranking_route_attempts where operation_id=${operation}`;
-    if (after[0].count > 0 && after[0].count < 3) {
+      await db`select count(*)::int as count,max(created_at) as last_attempt_at from shorts_mvp.ranking_route_attempts where operation_id=${operation}`;
+    const limit = op.payload?.renderOperationId ? 10 : 3;
+    if (after[0].count > 0 && after[0].count < limit && Date.now() - new Date(op.createdAt).getTime() < 10 * 60_000) {
+      const delay = [5, 10, 15, 20, 30, 40, 50, 60, 60][Math.min(8, after[0].count - 1)] * 1000;
+      const jitter = parseInt(createHash("sha256").update(`${operation}.${after[0].count}`).digest("hex").slice(0, 4), 16) % 1000;
+      if (after[0].lastAttemptAt && Date.now() < new Date(after[0].lastAttemptAt).getTime() + delay + jitter) return {stage: "preparing" as const};
       await dispatchRankingVercel(project, operation);
       return;
     }
@@ -409,7 +463,7 @@ export async function syncRankingVercelOperation(
 }
 export async function reconcileRankingVercel() {
   const rows =
-    await getDb()`select id,project_id from shorts_mvp.ranking_operations where executor='vercel' and status='running' order by created_at limit 8`;
+    await getDb()`select id,project_id from shorts_mvp.ranking_operations where executor='vercel' and status='running' order by created_at limit 12`;
   await Promise.allSettled(
     rows.map((row) => syncRankingVercelOperation(row.projectId, row.id)),
   );
@@ -430,7 +484,7 @@ export async function stopRankingVercel(project: string) {
 }
 export async function syncRankingVercelProjects(owner: string) {
   const rows =
-    await getDb()`select o.id,o.project_id from shorts_mvp.ranking_operations o join shorts_mvp.ranking_projects p on p.id=o.project_id where p.user_id=${owner} and o.executor='vercel' and o.status='running' order by o.created_at limit 3`;
+    await getDb()`select o.id,o.project_id from shorts_mvp.ranking_operations o join shorts_mvp.ranking_projects p on p.id=o.project_id where p.user_id=${owner} and o.executor='vercel' and o.status='running' order by o.created_at limit 12`;
   await Promise.allSettled(
     rows.map((row) => syncRankingVercelOperation(row.projectId, row.id)),
   );

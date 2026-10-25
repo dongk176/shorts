@@ -156,3 +156,23 @@ def test_safe_failure_reasons_never_contain_credentials():
         ("not available in your country; HTTP Error 429", "restricted_or_unavailable"),
     ]:
         assert download_failure_reason(message, download_failure_category(message)) == expected
+
+
+def test_render_source_budget_allows_ten_attempts_but_never_eleven(tmp_path, monkeypatch):
+    monkeypatch.setenv("RANKING_STORAGE_ROOT", str(tmp_path))
+    monkeypatch.setattr("threading.Thread.start", lambda self: None)
+    service = Service(dict(project=str(uuid4()), owner=str(uuid4()), secret="a" * 64, origins=[]))
+    operation = str(uuid4())
+    data = dict(
+        action="preview",
+        sourceId=str(uuid4()),
+        url="https://www.youtube.com/watch?v=abcdefghijk",
+        maxAttempts=10,
+    )
+    for attempt in range(10):
+        assert service.submit(operation, {**data, "attempt": attempt})["attempt"] == attempt
+        service.operations[operation].update(status="failed", failureCategory="bot_check")
+    with pytest.raises(RankingFailure):
+        service.submit(operation, {**data, "attempt": 10})
+    with pytest.raises(RankingFailure):
+        service.submit(operation, {**data, "attempt": 9, "sourceId": str(uuid4())})

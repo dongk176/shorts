@@ -79,17 +79,8 @@ class Egress:
         self.proxy = proxy
 
     def run(self, action, deadline):
-        for attempt in range(2):
-            try:
-                return action(self.proxy)
-            except RankingDownloadFailure as exc:
-                if (
-                    exc.category in {"terminal", "bot_check"}
-                    or attempt
-                    or time.monotonic() + 2 >= deadline
-                ):
-                    raise
-                time.sleep(1)
+        # Route rotation and the total attempt budget belong to the coordinator.
+        return action(self.proxy)
 
 
 class VercelPipeline(RankingPipeline):
@@ -119,10 +110,21 @@ class Service:
             raise RankingFailure("잘못된 작업입니다.")
         with self.lock:
             attempt = data.get("attempt", 0)
-            if type(attempt) is not int or not 0 <= attempt < 3:
+            maximum = data.get("maxAttempts", 3)
+            if (
+                type(maximum) is not int
+                or not 1 <= maximum <= 10
+                or type(attempt) is not int
+                or not 0 <= attempt < maximum
+            ):
                 raise RankingFailure("재시도 횟수를 확인해 주세요.")
             previous = self.operations.get(operation)
             if previous:
+                if any(
+                    previous["data"].get(key) != data.get(key)
+                    for key in ("action", "sourceId", "url", "maxAttempts")
+                ):
+                    raise RankingFailure("재시도할 원본이 변경되었습니다.")
                 if not (
                     previous["status"] == "failed"
                     and previous.get("failureCategory") in {"bot_check", "network_error"}

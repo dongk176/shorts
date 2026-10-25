@@ -126,7 +126,7 @@ export function RankingProjectList({ projects, embedded = false, onOpen }: { pro
               {["queued", "running"].includes(project.status) ? (
                 <div role="status" className="mt-4 flex items-center gap-2 text-sm text-[#dfcba5]">
                   <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-r-transparent" aria-hidden="true" />
-                  {project.status === "queued" ? "제작 순서를 기다리고 있어요" : "영상을 만들고 있어요"}
+                  {project.progressMessage || (project.status === "queued" ? "제작 순서를 기다리고 있어요" : "영상을 만들고 있어요")}
                   <span className="sr-only">완료되면 자동으로 갱신됩니다.</span>
                 </div>
               ) : null}
