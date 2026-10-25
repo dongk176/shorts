@@ -46,13 +46,6 @@ export async function createRankingProject(userId: string) {
   return db.begin(async (tx) => {
     // Serializes only this administrator's admissions; never locks ordinary jobs.
     await tx`select id from shorts_mvp.app_users where id=${userId} and is_admin=true for update`;
-    const count =
-      await tx`select count(*)::integer as count from shorts_mvp.ranking_projects where user_id=${userId} and deleted_at is null and expires_at>now()`;
-    if (count[0].count >= 20)
-      throw new HttpError(
-        409,
-        "보관 중인 랭킹 작업이 많습니다. 이전 작업을 정리해 주세요.",
-      );
     const id = randomUUID();
     await tx`insert into shorts_mvp.ranking_projects(id,user_id) values(${id},${userId})`;
     return { id };

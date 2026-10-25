@@ -48,6 +48,16 @@ suite("ranking isolated database workflow", () => {
     await state.db`delete from shorts_mvp.app_users where id in (${owner},${other})`;
     await state.db.end();
   });
+  it("creates a 21st project without deleting any retained work", async () => {
+    for (let i = 1; i < 20; i++) {
+      await state.db`insert into shorts_mvp.ranking_projects(id,user_id) values(${randomUUID()},${owner})`;
+    }
+    const created = await createRankingProject(owner);
+    const rows = await state.db`select id from shorts_mvp.ranking_projects where user_id=${owner} and deleted_at is null`;
+    expect(rows).toHaveLength(21);
+    expect(rows.some((row) => row.id === project)).toBe(true);
+    expect(rows.some((row) => row.id === created.id)).toBe(true);
+  });
   it("rejects another administrator's project without creating a source", async () => {
     await expect(
       queueRankingSource(project, other, { requestId: randomUUID(), size: 4 }),
