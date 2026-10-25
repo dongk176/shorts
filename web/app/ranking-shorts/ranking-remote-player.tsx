@@ -183,7 +183,7 @@ export const RankingRemotePlayer = forwardRef<
           // Bind the API to an existing privacy-enhanced iframe. Letting the
           // API create it uses youtube.com, which can stall on browser cookies.
           const container = document.createElement("iframe");
-          const embed = new URL(rankingEmbedUrl(remote));
+          const embed = new URL(url);
           embed.hostname = "www.youtube-nocookie.com";
           embed.searchParams.set("enablejsapi", "1");
           embed.searchParams.set("origin", window.location.origin);
@@ -285,7 +285,7 @@ export const RankingRemotePlayer = forwardRef<
       instance?.destroy();
       youtube.current = null;
     };
-  }, [remote.platform, remote.videoId, suspended]);
+  }, [remote.platform, remote.videoId, suspended, url]);
 
   return (
     <div className="ranking-remote-player">
