@@ -86,6 +86,7 @@ export function RankingStudio({
 
   const submission = useRef<{ key: string; requestId: string } | null>(null);
   const [popularRank, setPopularRank] = useState<number | null>(null);
+  const [popularSelection, setPopularSelection] = useState<string | null>(null);
   const [fileDragging, setFileDragging] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [sound, setSound] = useState<RankingSound>("lip-bass");
@@ -100,6 +101,7 @@ export function RankingStudio({
   const activeRef = useRef(active);
   activeRef.current = active;
   const sceneDialog = useRef<HTMLDialogElement>(null);
+  const scenePanel = useRef<HTMLElement | null>(null);
   const [mobileScene, setMobileScene] = useState(false);
   useEffect(() => {
     const query = window.matchMedia("(max-width: 850px)");
@@ -118,6 +120,15 @@ export function RankingStudio({
     element?.showModal();
     return () => { element?.close(); document.body.style.overflow = overflow; focus?.focus(); };
   }, [sceneOpen, mobileScene]);
+  useEffect(() => {
+    if (!popularSelection || popularRank !== null) return;
+    const frame = requestAnimationFrame(() => {
+      if (!mobileScene) scenePanel.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      scenePanel.current?.querySelector<HTMLElement>('[role="slider"]')?.focus({ preventScroll: true });
+      setPopularSelection(null);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [popularSelection, popularRank, mobileScene]);
   const [slots, setSlots] = useState(emptySlots);
   const [title, setTitle] = useState("놓치면 아쉬운 순간");
   const [style, setStyle] = useState<RankingStyle>(defaultRankingStyle);
@@ -594,13 +605,17 @@ export function RankingStudio({
 
   return (
     <main className="ranking-studio">
-      {refreshedDesign && popularRank !== null && <PopularPicker rank={popularRank + 1} onClose={() => setPopularRank(null)} onSelect={video => {
+      {refreshedDesign && popularRank !== null && <PopularPicker onClose={() => setPopularRank(null)} onSelect={video => {
         const link = `https://www.youtube.com/watch?v=${video.videoId}`;
         const remote = rankingDirectRemote(link);
         if (!remote) return;
         player.current?.pause();
-        patch(popularRank, {link, source: {id: crypto.randomUUID(), remote, duration: video.durationSeconds, durationKnown: true, previewReady: false, width: 0, height: 0, hasAudio: true}, pendingLink: true, start: 0, end: Math.min(10, video.durationSeconds)});
-        setActive(popularRank); setCurrent(0); setError(""); setPopularRank(null); setSceneOpen(true);
+        const sourceId = crypto.randomUUID();
+        const previousSource = slots[popularRank].source;
+        if (previousSource) setFiles(previous => { const next = {...previous}; delete next[previousSource.id]; return next; });
+        setSourceJobs(previous => { const next = {...previous}; delete next[popularRank]; return next; });
+        patch(popularRank, {link, source: {id: sourceId, remote, duration: video.durationSeconds, durationKnown: true, previewReady: false, width: 0, height: 0, hasAudio: true}, pendingLink: true, start: 0, end: Math.min(10, video.durationSeconds)});
+        setActive(popularRank); setCurrent(0); setError(""); setPopularRank(null); setSceneOpen(true); setPopularSelection(sourceId);
       }} />}
       <header className="ranking-heading">
         <div>
@@ -941,7 +956,7 @@ export function RankingStudio({
             <button type="button" className="ranking-scene-summary" onClick={() => setSceneOpen(true)}>
               <span><strong>{active + 1}위 · {slot.label || "장면 선택"}</strong><small>{activeJob && !activeJob.error ? "영상 준비 중 · 다른 순위도 편집할 수 있어요" : slot.source ? `${rankingTime(slot.start)} – ${rankingTime(slot.end)} · 구간 수정` : "링크나 파일을 추가하세요"}</small></span><span aria-hidden="true">＋</span>
             </button>
-            {(!mobileScene || sceneOpen) && <SceneContainer {...sceneBackdrop} ref={(element: HTMLDialogElement | HTMLDivElement | null) => { sceneDialog.current = element instanceof HTMLDialogElement ? element : null; }} className={`ranking-scene-dialog${mobileScene ? "" : " is-inline"}`} aria-labelledby="ranking-scene-title" onCancel={(event) => { if (busy) event.preventDefault(); else setSceneOpen(false); }}>
+            {(!mobileScene || sceneOpen) && <SceneContainer {...sceneBackdrop} ref={(element: HTMLDialogElement | HTMLDivElement | null) => { scenePanel.current = element; sceneDialog.current = element instanceof HTMLDialogElement ? element : null; }} className={`ranking-scene-dialog${mobileScene ? "" : " is-inline"}`} aria-labelledby="ranking-scene-title" onCancel={(event) => { if (busy) event.preventDefault(); else setSceneOpen(false); }}>
               <header><div><small>순위별 장면</small><h2 id="ranking-scene-title">{active + 1}위 영상 선택</h2></div><button type="button" disabled={Boolean(busy)} aria-label="장면 선택 닫기" onClick={() => setSceneOpen(false)}>×</button></header>
               <div className="ranking-scene-scroll">
             <div className="ranking-clip-body">

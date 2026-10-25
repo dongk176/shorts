@@ -575,7 +575,7 @@ export function popularVideoParams(
   return params;
 }
 
-export function VideoCard({ video, rank, searching = false, active, onOpen, onClose, saveAction, onSelect, selectLabel }: {
+export function VideoCard({ video, rank, searching = false, active, onOpen, onClose, saveAction, onSelect, selectLabel, openYoutubeLabel }: {
   video: PopularVideo;
   rank: number;
   searching?: boolean;
@@ -585,6 +585,7 @@ export function VideoCard({ video, rank, searching = false, active, onOpen, onCl
   saveAction?: ReactNode;
   onSelect?: () => void;
   selectLabel?: string;
+  openYoutubeLabel?: string;
 }) {
   const { locale } = useI18n();
   const uiCopy = popularUiCopy[locale];
@@ -637,7 +638,7 @@ export function VideoCard({ video, rank, searching = false, active, onOpen, onCl
           <button type="button" tabIndex={-1} aria-label={uiCopy.closeActions} onClick={onClose} className="absolute inset-0 cursor-default" />
           <div className="relative z-10 grid w-full max-w-48 gap-3" role="group" aria-label={uiCopy.actions(video.title)}>
             <a href={youtubeUrl} target="_blank" rel="noopener noreferrer" className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#f04435] px-4 text-sm font-extrabold text-white shadow-[0_10px_30px_rgba(240,68,53,.28)] transition hover:bg-[#ff5b4b]">
-              {uiCopy.openYoutube} <span aria-hidden="true">↗</span>
+              {openYoutubeLabel || uiCopy.openYoutube} <span aria-hidden="true">↗</span>
             </a>
             <button type="button" disabled={copying} onClick={() => onSelect ? onSelect() : void copyLinkAndGoHome()} className="min-h-12 rounded-xl border border-white/15 bg-white/[.08] px-4 text-sm font-extrabold text-white transition hover:border-violet-300/50 hover:bg-violet-400/15 disabled:cursor-wait disabled:opacity-60">
               {onSelect ? selectLabel || "이 영상 선택" : copying ? uiCopy.copying : uiCopy.copyLink}

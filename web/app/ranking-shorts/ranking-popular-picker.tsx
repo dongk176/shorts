@@ -6,7 +6,7 @@ import { VideoCard, popularVideoParams } from '../실시간인기/popular-videos
 import type { PopularVideo, PopularVideoCategory, PopularVideoResponse, PopularDiscoveryPeriod } from '@/lib/youtube-popular';
 
 
-export default function PopularPicker({rank,onClose,onSelect}:{rank:number;onClose:()=>void;onSelect:(video:PopularVideo)=>void}) {
+export default function PopularPicker({onClose,onSelect}:{onClose:()=>void;onSelect:(video:PopularVideo)=>void}) {
   const backdrop = useRankingBackdrop(onClose);
   const dialog=useRef<HTMLDialogElement>(null);
   const [category,setCategory]=useState<PopularVideoCategory>('all');
@@ -53,7 +53,7 @@ export default function PopularPicker({rank,onClose,onSelect}:{rank:number;onClo
       </div>
       <p className="ranking-popular-count">{loading?'인기 영상을 찾고 있어요…':`${items.length}개 표시`}{search?' · 검색 결과는 조회수순':''}</p>
       {error&&<div className="ranking-popular-error" role="alert"><strong>영상을 불러오지 못했어요</strong><p>{error}</p><button type="button" onClick={()=>items.length?void loadMore():setRetry(v=>v+1)}>다시 시도</button></div>}
-      {loading?<div className="ranking-popular-loading" role="status">목록을 불러오는 중…</div>:<div className="ranking-popular-grid">{items.map((video,index)=><VideoCard key={video.videoId} video={video} rank={index+1} searching active={active===video.videoId} onOpen={()=>setActive(video.videoId)} onClose={()=>setActive(null)} onSelect={()=>onSelect(video)} selectLabel={`${rank}위에 추가하기`}/>)}</div>}
+      {loading?<div className="ranking-popular-loading" role="status">목록을 불러오는 중…</div>:<div className="ranking-popular-grid">{items.map((video,index)=><VideoCard key={video.videoId} video={video} rank={index+1} searching active={active===video.videoId} onOpen={()=>setActive(video.videoId)} onClose={()=>setActive(null)} onSelect={()=>onSelect(video)} selectLabel="쇼츠 선택" openYoutubeLabel="유튜브로 보기"/>)}</div>}
       {!loading&&!error&&!items.length&&<div className="ranking-popular-empty"><strong>현재 목록에 3분 이하 영상이 없어요.</strong><p>{cursor?'다음 목록을 불러오거나 필터를 바꿔보세요.':'검색어나 필터를 바꿔보세요.'}</p></div>}
       {!loading&&cursor&&<button className="ranking-popular-more" type="button" disabled={more} onClick={()=>void loadMore()}>{more?'불러오는 중…':'영상 더 불러오기'}</button>}
     </div>
