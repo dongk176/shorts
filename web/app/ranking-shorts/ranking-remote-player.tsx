@@ -288,7 +288,7 @@ export const RankingRemotePlayer = forwardRef<
   }, [remote.platform, remote.videoId, suspended, url]);
 
   return (
-    <div className="ranking-remote-player">
+    <div className={`ranking-remote-player is-${remote.platform}`}>
       {suspended ? (
         <div className="ranking-remote-frame" />
       ) : remote.platform === "youtube" ? (

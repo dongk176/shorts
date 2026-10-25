@@ -2,19 +2,23 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { RankingRemote } from "@/lib/ranking-shorts";
+import { rankingYoutubeCovers } from "@/lib/ranking-covers";
 
 // A paused frame/cover only. This never prepares or downloads a source on a worker.
-export function RankingThumbnail({ videoUrl, remote, time = 0.1, fit = "cover", lazy = true }: {
+export function RankingThumbnail({ videoUrl, remote, time = 0.1, fit = "cover", lazy = true, portrait = false }: {
   videoUrl?: string;
   remote?: RankingRemote;
   time?: number;
   fit?: "cover" | "contain";
   lazy?: boolean;
+  portrait?: boolean;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const video = useRef<HTMLVideoElement>(null);
   const [visible, setVisible] = useState(!lazy);
   const [failed, setFailed] = useState(false);
+  const [coverIndex, setCoverIndex] = useState(0);
+  const covers = remote?.platform === "youtube" ? rankingYoutubeCovers(remote.videoId, portrait) : [];
   useEffect(() => {
     const media = video.current;
     if (media && media.readyState >= 1)
@@ -41,10 +45,17 @@ export function RankingThumbnail({ videoUrl, remote, time = 0.1, fit = "cover", 
             video.currentTime = Math.max(0, Math.min(time, Number.isFinite(video.duration) ? Math.max(0, video.duration - 0.05) : time));
           }}
           onError={() => setFailed(true)} />
-      ) : visible && !failed && remote?.platform === "youtube" && /^[\w-]{11}$/.test(remote.videoId) ? (
+      ) : visible && !failed && covers[coverIndex] ? (
         // Public covers should load directly, without the image optimizer or source worker.
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={`https://i.ytimg.com/vi/${remote.videoId}/hqdefault.jpg`} alt="" style={mediaStyle} referrerPolicy="no-referrer" onError={() => setFailed(true)} />
+        <img src={covers[coverIndex]} alt="" style={mediaStyle} referrerPolicy="no-referrer"
+          onLoad={event => {
+            // ytimg sometimes returns a valid tiny placeholder image for a
+            // missing variant; browsers can fire load instead of error.
+            if (event.currentTarget.naturalWidth <= 120 && event.currentTarget.naturalHeight <= 90)
+              setCoverIndex(index => index === coverIndex ? index + 1 : index);
+          }}
+          onError={() => setCoverIndex(index => index === coverIndex ? index + 1 : index)} />
       ) : (
         <div className="flex h-full min-h-24 items-center justify-center bg-gradient-to-br from-neutral-800 to-neutral-950 text-sm text-neutral-500">랭킹 쇼츠</div>
       )}

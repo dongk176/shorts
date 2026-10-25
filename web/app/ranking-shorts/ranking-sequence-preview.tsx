@@ -244,7 +244,7 @@ export function RankingSequencePreview({
         {!clip?.transitionUrl && previewSource && (layoutOnly || (!playing && elapsed === 0)) ? (
           <div className="ranking-composition-still">
             <RankingThumbnail key={previewSource.id}
-              lazy={false} remote={previewSource.remote} time={previewStart}
+              lazy={false} portrait remote={previewSource.remote} time={previewStart}
               videoUrl={localMedia[previewSource.id] || (project && (!previewSource.remote || previewSource.previewReady)
                 ? `/api/ranking-shorts/${project}/media/${previewSource.id}` : undefined)} />
           </div>
@@ -270,7 +270,9 @@ export function RankingSequencePreview({
       </div>
       {layoutOnly ? (
         <p className="ranking-hint">
-          선택한 영상의 표지와 배치를 보여드려요. 전체 영상은 제작 후 재생할 수 있습니다.
+          {previewSource?.remote?.platform === "youtube" && !previewSource.previewReady
+            ? "유튜브 표지 미리보기예요. 선택한 장면은 원본 플레이어에서 확인하세요."
+            : "선택한 영상의 표지와 배치를 보여드려요. 전체 영상은 제작 후 재생할 수 있습니다."}
         </p>
       ) : (
         <div className="ranking-sequence-controls">

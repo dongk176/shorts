@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 const PopularPicker = dynamic(() => import("./ranking-popular-picker"));
@@ -1069,7 +1069,8 @@ export function RankingStudio({
                       <button type="button" className="ranking-primary" disabled={Boolean(busy)} onClick={() => void importSource()}>영상 가져오기</button>
                     </div>
                   ) : (
-                    <div className="ranking-source-player">
+                    <div className={`ranking-source-player${slot.source.height > slot.source.width && slot.source.width > 0 ? " is-portrait" : ""}`}
+                      style={{"--ranking-source-ratio": slot.source.width > 0 && slot.source.height > 0 ? slot.source.width / slot.source.height : 9 / 16} as CSSProperties}>
                       <video
                         key={sourceUrl + active}
                         ref={player}
