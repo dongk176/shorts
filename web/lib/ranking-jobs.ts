@@ -224,6 +224,12 @@ export async function rankingOperation(
     await getDb()`select id,status,result,error,action from shorts_mvp.ranking_operations where project_id=${projectId} and id=${operationId}`;
   if (!rows[0]) throw new HttpError(404, "작업을 찾을 수 없습니다.");
   const row = rows[0];
+  // A cold receiver can finish extraction before the load balancer admits media GETs.
+  // Keep the existing bounded client poll active until the preview is reachable.
+  if (row.status === "succeeded" && ["preview", "import"].includes(row.action)
+    && row.result?.source?.previewReady && !(await wakeRankingRuntime())) {
+    return { status: "running", result: null, error: null };
+  }
   const result =
     row.status === "succeeded"
       ? row.action === "render"
