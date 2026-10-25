@@ -123,8 +123,8 @@ export async function queueRankingSource(
       await tx`select id,source_id as "sourceId" from shorts_mvp.ranking_operations where project_id=${projectId} and request_id=${requestId}`;
     if (existing[0]) return { id: existing[0].id, sourceId: existing[0].sourceId };
     const active =
-      await tx`select id,action from shorts_mvp.ranking_operations where project_id=${projectId} and status in ('queued','running')`;
-    if (vercel && !active.some(o => o.action === "render")) {
+      await tx`select id,action,executor from shorts_mvp.ranking_operations where project_id=${projectId} and status in ('queued','running')`;
+    if (vercel && !active.some(o => o.action === "render" || o.executor === "ecs")) {
       const running = await tx`select count(*)::int as count from shorts_mvp.ranking_operations o join shorts_mvp.ranking_projects p on p.id=o.project_id where p.user_id=${owner} and o.executor='vercel' and o.status in ('queued','running')`;
       if (running[0].count >= 3) return null;
     } else if (active[0])
@@ -196,6 +196,7 @@ export async function queueRankingOperation(
   if (vercel) await ensureRankingVercel(projectId, owner, origin);
   else await wakeRankingRuntime();
   const operationId = await getDb().begin(async (tx) => {
+    if (vercel) await tx`select id from shorts_mvp.app_users where id=${owner} and is_admin=true for update`;
     const locked = await tx`select id from shorts_mvp.ranking_projects where id=${projectId} and user_id=${owner} and deleted_at is null and expires_at>now() for update`;
     if (!locked[0]) throw new HttpError(404, "작업을 찾을 수 없습니다.");
     const existing =
@@ -204,6 +205,10 @@ export async function queueRankingOperation(
     const active =
       await tx`select id from shorts_mvp.ranking_operations where project_id=${projectId} and status in ('queued','running')`;
     if (active[0]) throw new HttpError(409, "진행 중인 작업이 있습니다.");
+    if (vercel && action === "preview") {
+      const running = await tx`select count(*)::int as count from shorts_mvp.ranking_operations o join shorts_mvp.ranking_projects p on p.id=o.project_id where p.user_id=${owner} and o.executor='vercel' and o.status in ('queued','running')`;
+      if (running[0].count >= 3) throw new HttpError(429, "영상 3개를 준비 중입니다. 먼저 완료된 뒤 다시 시도해 주세요.");
+    }
     const sources =
       await tx`select id,status,metadata,remote_url from shorts_mvp.ranking_sources where project_id=${projectId}`;
     if (action === "preview") {
