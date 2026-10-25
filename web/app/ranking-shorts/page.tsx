@@ -5,6 +5,9 @@ import { requireRankingAdmin } from "@/lib/ranking-access";
 import { HttpError } from "@/lib/http";
 import { RankingStudio } from "./ranking-studio";
 import "./ranking-shorts.css";
+import "./ranking-popular-picker.css";
+import "./ranking-editor-ui.css";
+import { FixedPreview } from "./ranking-fixed-preview";
 export const dynamic = "force-dynamic";
 export const metadata = {
   title: "랭킹 쇼츠 | EasyCut",
@@ -25,16 +28,18 @@ export default async function RankingShortsPage({
   }
   const { project, operation } = await searchParams;
   return (
-    <div className="app-shell ranking-page-shell site-chrome desktop-sidebar-layout min-h-screen text-neutral-100">
+    <div className="app-shell ranking-refreshed ranking-page-shell site-chrome desktop-sidebar-layout min-h-screen text-neutral-100">
       <SiteHeader desktopSidebar showUsageIndicator={false}>
         <Link href="/">롱폼 → 숏폼으로 이동</Link>
       </SiteHeader>
       <RankingStudio
+        refreshedDesign
         ownerId={ownerId}
         key={`${project || "new"}:${operation || "latest"}`}
         initialProject={project || null}
         initialOperation={operation || null}
       />
+      <FixedPreview />
     </div>
   );
 }

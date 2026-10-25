@@ -2,6 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
+const PopularPicker = dynamic(() => import("./ranking-popular-picker"));
+import { useRankingBackdrop } from "./use-ranking-backdrop";
 import { RankingSourceQueue } from "@/lib/ranking-source-queue";
 import { ProjectDeleteOverlay } from "@/components/project-delete-overlay";
 import type { RankingProjectSummary } from "@/lib/ranking-project-list";
@@ -71,15 +74,19 @@ async function waitForOperation(data: { pollUrl: string }, onProgress?: (progres
 
 export function RankingStudio({
   ownerId = "local",
+  refreshedDesign = false,
   initialProject = null,
   initialOperation = null,
 }: {
   ownerId?: string;
+  refreshedDesign?: boolean;
   initialProject?: string | null;
   initialOperation?: string | null;
 }) {
 
   const submission = useRef<{ key: string; requestId: string } | null>(null);
+  const [popularRank, setPopularRank] = useState<number | null>(null);
+  const [fileDragging, setFileDragging] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [sound, setSound] = useState<RankingSound>("lip-bass");
   const [musicEnabled, setMusicEnabled] = useState(false);
@@ -100,6 +107,7 @@ export function RankingStudio({
     update(); query.addEventListener("change", update);
     return () => query.removeEventListener("change", update);
   }, []);
+  const sceneBackdrop = useRankingBackdrop(() => { if (!busy) setSceneOpen(false); });
   const SceneContainer = mobileScene ? "dialog" : "div";
   useEffect(() => {
     if (!sceneOpen || !mobileScene) return;
@@ -115,6 +123,7 @@ export function RankingStudio({
   const [style, setStyle] = useState<RankingStyle>(defaultRankingStyle);
   const [subtitle, setSubtitle] = useState("오늘의 랭킹");
   const player = useRef<HTMLVideoElement>(null);
+  const sourceFileInput = useRef<HTMLInputElement>(null);
   const remotePlayer = useRef<RankingRemoteHandle>(null);
   const [current, setCurrent] = useState(0);
   const [showResult, setShowResult] = useState(false);
@@ -585,13 +594,21 @@ export function RankingStudio({
 
   return (
     <main className="ranking-studio">
+      {refreshedDesign && popularRank !== null && <PopularPicker rank={popularRank + 1} onClose={() => setPopularRank(null)} onSelect={video => {
+        const link = `https://www.youtube.com/watch?v=${video.videoId}`;
+        const remote = rankingDirectRemote(link);
+        if (!remote) return;
+        player.current?.pause();
+        patch(popularRank, {link, source: {id: crypto.randomUUID(), remote, duration: video.durationSeconds, durationKnown: true, previewReady: false, width: 0, height: 0, hasAudio: true}, pendingLink: true, start: 0, end: Math.min(10, video.durationSeconds)});
+        setActive(popularRank); setCurrent(0); setError(""); setPopularRank(null); setSceneOpen(true);
+      }} />}
       <header className="ranking-heading">
         <div>
           <div className="ranking-eyebrow">
             CREATIVE STUDIO <span>관리자 전용</span>
           </div>
           <div className="ranking-title-row"><h1>랭킹 쇼츠</h1><RankingExamples /></div>
-          <p>순위를 채우고, 가장 좋은 순간만 남기세요.</p>
+
         </div>
         <div className="ranking-draft-actions">
           <span className="ranking-save-status" role="status">{draftStore.status}</span>
@@ -854,7 +871,7 @@ export function RankingStudio({
                     aria-expanded={orderOpen}
                     onClick={() => setOrderOpen(true)}
                   >
-                    <span>재생 순서</span>
+                    <span>{refreshedDesign ? "⇅ 재생 순서 편집" : "재생 순서"}</span>
                     <svg
                       viewBox="0 0 20 20"
                       width="18"
@@ -873,7 +890,7 @@ export function RankingStudio({
                   </button>
                 </div>
               </div>
-              <RankingAudioSettings sound={sound} enabled={soundEnabled}
+              <RankingAudioSettings presentation={refreshedDesign ? "dialog" : "inline"} sound={sound} enabled={soundEnabled}
                 onSound={(value) => {setSound(value); invalidateAudio();}}
                 onEnabled={(value) => {setSoundEnabled(value); invalidateAudio();}}
                 music={music} musicEnabled={musicEnabled} onMusicEnabled={(value) => {setMusicEnabled(value); invalidateAudio();}}
@@ -894,6 +911,7 @@ export function RankingStudio({
                   {ready}/{count}
                 </small>
               </h2>
+              {refreshedDesign && <button type="button" className="ranking-find-popular" disabled={Boolean(busy) || Boolean(sourceJobs[active] && !sourceJobs[active].error)} onClick={() => setPopularRank(active)} aria-haspopup="dialog"><svg className="ranking-find-popular-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m4 16 6-6 4 4 6-9M14 5h6v6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg><span>실시간 인기에서 찾기</span><svg className="ranking-find-popular-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m9 5 7 7-7 7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg></button>}
             </div>
             <div className="ranking-rank-tabs" aria-label="순위별 영상">
               {visible.map((item, index) => (
@@ -913,24 +931,25 @@ export function RankingStudio({
                     {index + 1}
                     <small>위</small>
                   </span>
-                  <i
+                  {refreshedDesign ? (sourceJobs[index] ? <span className={`ranking-rank-status ${sourceJobs[index].error ? "is-error" : "is-loading"}`} role="img" aria-label={sourceJobs[index].error ? "가져오기 실패" : "영상 준비 중"}>{sourceJobs[index].error ? "!" : ""}</span> : item.source ? <span className="ranking-rank-status is-ready" role="img" aria-label="영상 준비됨">✓</span> : null) : (                  <i
                     className={sourceJobs[index] ? sourceJobs[index].error ? "is-failed" : "is-downloading" : item.source ? "is-ready" : ""}
                     aria-label={sourceJobs[index] ? sourceJobs[index].error ? "가져오기 실패" : "영상 준비 중" : item.source ? "영상 준비됨" : "영상 없음"}
-                  />
+                  />)}
                 </button>
               ))}
             </div>
             <button type="button" className="ranking-scene-summary" onClick={() => setSceneOpen(true)}>
               <span><strong>{active + 1}위 · {slot.label || "장면 선택"}</strong><small>{activeJob && !activeJob.error ? "영상 준비 중 · 다른 순위도 편집할 수 있어요" : slot.source ? `${rankingTime(slot.start)} – ${rankingTime(slot.end)} · 구간 수정` : "링크나 파일을 추가하세요"}</small></span><span aria-hidden="true">＋</span>
             </button>
-            {(!mobileScene || sceneOpen) && <SceneContainer ref={(element: HTMLDialogElement | HTMLDivElement | null) => { sceneDialog.current = element instanceof HTMLDialogElement ? element : null; }} className={`ranking-scene-dialog${mobileScene ? "" : " is-inline"}`} aria-labelledby="ranking-scene-title" onCancel={(event) => { if (busy) event.preventDefault(); else setSceneOpen(false); }}>
+            {(!mobileScene || sceneOpen) && <SceneContainer {...sceneBackdrop} ref={(element: HTMLDialogElement | HTMLDivElement | null) => { sceneDialog.current = element instanceof HTMLDialogElement ? element : null; }} className={`ranking-scene-dialog${mobileScene ? "" : " is-inline"}`} aria-labelledby="ranking-scene-title" onCancel={(event) => { if (busy) event.preventDefault(); else setSceneOpen(false); }}>
               <header><div><small>순위별 장면</small><h2 id="ranking-scene-title">{active + 1}위 영상 선택</h2></div><button type="button" disabled={Boolean(busy)} aria-label="장면 선택 닫기" onClick={() => setSceneOpen(false)}>×</button></header>
               <div className="ranking-scene-scroll">
             <div className="ranking-clip-body">
               <fieldset
                 disabled={Boolean(busy)}
-                className="ranking-source-fields"
+                className={`ranking-source-fields${refreshedDesign && !slot.source ? " is-empty" : ""}`}
               >
+                {(!refreshedDesign || slot.source) && <>
                 <label>
                   순위 이름
                   <input
@@ -943,10 +962,17 @@ export function RankingStudio({
                     }
                   />
                 </label>
+                </>}
                 <span className="ranking-source-label">
                   영상 링크 또는 파일
                 </span>
                 <div className="ranking-import-row">
+                  <div className={refreshedDesign ? "ranking-link-input" : "contents"}>
+                    {refreshedDesign && <span className="ranking-platform-icons" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" width="21" height="21"><rect x="2" y="5" width="20" height="14" rx="4" fill="#ff4545"/><path d="m10 8 6 4-6 4Z" fill="white"/></svg>
+                      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#e58daf" strokeWidth="1.8"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="#e58daf" stroke="none"/></svg>
+                      <svg viewBox="0 0 24 24" width="20" height="20" fill="#ddd"><path d="M14 2h3c.3 2.7 1.8 4.4 4 4.7v3a9 9 0 0 1-4-1.3V16a6 6 0 1 1-6-6h1v3h-1a3 3 0 1 0 3 3Z"/></svg>
+                    </span>}
                   <input
                     aria-label="영상 링크"
                     type="url"
@@ -957,6 +983,7 @@ export function RankingStudio({
                     }
                     placeholder="쇼츠 · 릴스 · 틱톡 링크 붙여넣기"
                   />
+                  </div>
                   <button
                     type="button"
                     disabled={!slot.link.trim() || Boolean(busy) || Boolean(activeJob && !activeJob.error)}
@@ -982,6 +1009,7 @@ export function RankingStudio({
                     </svg>
                     파일 선택
                     <input
+                      ref={sourceFileInput}
                       type="file"
                       disabled={Boolean(activeJob && !activeJob.error)}
                       accept="video/*,.mkv"
@@ -1132,7 +1160,32 @@ export function RankingStudio({
                   )}
                 </>
               ) : (
-                <div className="ranking-empty-source">
+<div className={`ranking-empty-source${refreshedDesign ? " ranking-file-dropzone" : ""}${fileDragging ? " is-dragging" : ""}`}
+                  role={refreshedDesign ? "button" : undefined}
+                  tabIndex={refreshedDesign && !busy && !(activeJob && !activeJob.error) ? 0 : undefined}
+                  aria-label={refreshedDesign ? `${active + 1}위 영상 파일 선택` : undefined}
+                  aria-disabled={Boolean(busy) || Boolean(activeJob && !activeJob.error)}
+                  onClick={refreshedDesign ? () => { if (!busy && !(activeJob && !activeJob.error)) sourceFileInput.current?.click(); } : undefined}
+                  onKeyDown={refreshedDesign ? event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); if (!busy && !(activeJob && !activeJob.error)) sourceFileInput.current?.click(); } } : undefined}
+                  onDragOver={refreshedDesign ? event => {
+                    if (!event.dataTransfer.types.includes("Files")) return;
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = busy || (activeJob && !activeJob.error) ? "none" : "copy";
+                    if (!busy && !(activeJob && !activeJob.error)) setFileDragging(true);
+                  } : undefined}
+                  onDragLeave={refreshedDesign ? event => {
+                    if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) setFileDragging(false);
+                  } : undefined}
+                  onDrop={refreshedDesign ? event => {
+                    event.preventDefault(); setFileDragging(false);
+                    if (busy || (activeJob && !activeJob.error)) return;
+                    const dropped = Array.from(event.dataTransfer.files);
+                    if (dropped.length !== 1) { setError("순위마다 영상 파일을 하나씩 넣어 주세요."); return; }
+                    const file = dropped[0];
+                    if (!file.type.startsWith("video/") && !/\.(mp4|mov|m4v|webm|mkv|avi)$/i.test(file.name)) { setError("영상 파일을 넣어 주세요."); return; }
+                    setError(""); void importSource(file);
+                  } : undefined}
+                >
                   <div className="ranking-empty-icon" aria-hidden="true">
                     <svg viewBox="0 0 24 24" width="28" height="28">
                       <rect
@@ -1148,9 +1201,9 @@ export function RankingStudio({
                       <path d="m10 9 5 3-5 3Z" fill="currentColor" />
                     </svg>
                   </div>
-                  <strong>{active + 1}위에 들어갈 영상을 추가하세요</strong>
+                  <strong>{fileDragging ? "여기에 놓으면 영상이 추가돼요" : `${active + 1}위에 들어갈 영상을 추가하세요`}</strong>
                   <p>
-                    링크나 파일을 넣으면 바로 재생하며 구간을 고를 수 있어요.
+                    {refreshedDesign ? "영상 파일을 여기로 끌어다 놓거나, 위에 링크를 붙여넣으세요." : "링크나 파일을 넣으면 바로 재생하며 구간을 고를 수 있어요."}
                   </p>
                   <small>원본 최대 20분 · 250MB</small>
                 </div>
@@ -1158,15 +1211,26 @@ export function RankingStudio({
             </div>
               {error && <p role="alert" className="ranking-error">{error}</p>}
               </div>
-              <footer><button type="button" disabled={Boolean(busy)} onClick={() => setSceneOpen(false)}>완료</button>
+              {refreshedDesign ? <footer className="ranking-guided-footer">
+                {!slot.source && <span className="ranking-skip-hint">빈 순위는 영상에서 건너뛰어요.</span>}
+                <button type="button" disabled={Boolean(busy)} onClick={() => {
+                  player.current?.pause();
+                  if (active + 1 < count) {
+                    setActive(active + 1); setCurrent(slots[active + 1].start); setError("");
+                    sceneDialog.current?.querySelector(".ranking-scene-scroll")?.scrollTo(0, 0);
+                  } else {
+                    setSceneOpen(false);
+                    document.querySelector<HTMLElement>(".ranking-preview-column")?.scrollIntoView({behavior:"smooth",block:"center"});
+                    requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(".ranking-preview-toggle:not(:disabled)")?.focus({preventScroll:true}));
+                  }
+                }}>{active + 1 < count ? slot.source ? `저장하고 ${active + 2}위로 →` : `${active + 2}위로 건너뛰기 →` : "전체 확인하기 →"}</button>
+              </footer> : <>              <footer><button type="button" disabled={Boolean(busy)} onClick={() => setSceneOpen(false)}>완료</button>
                 {active + 1 < count && <button type="button" disabled={Boolean(busy)} onClick={() => { player.current?.pause();  setActive(active + 1); setCurrent(slots[active + 1].start); setError(""); sceneDialog.current?.querySelector(".ranking-scene-scroll")?.scrollTo(0, 0); }}>다음 순위 고르기 · {active + 2}위 →</button>}
-              </footer>
+              </footer></>}
+
             </SceneContainer>}
           </section>
-          <p className="ranking-edit-note">
-            순위 이름은 영상이 등장할 때 공개됩니다. 가로 영상은 중앙을 기준으로
-            세로 화면에 맞춥니다.
-          </p>
+
         </div>
 
         <aside
@@ -1175,7 +1239,7 @@ export function RankingStudio({
         >
           <div className="ranking-section-heading">
             <h2>
-              {result && showResult
+              {refreshedDesign ? "미리보기" : result && showResult
                 ? "완성 영상"
                 : hasRemote
                   ? "레이아웃 미리보기"
@@ -1230,13 +1294,13 @@ export function RankingStudio({
               </button>
             </div>
           ) : null}
-          <div className="ranking-export-summary">
+          {!refreshedDesign && <div className="ranking-export-summary">
             <span>전체 길이</span>
             <strong className={overLimit ? "is-over" : ""}>
               {total.toFixed(1)}
               <small> / 180초</small>
             </strong>
-          </div>
+          </div>}
           {overLimit ? (
             <p role="alert" className="ranking-error">
               사용 구간을 줄여 총 180초 이하로 맞춰 주세요.

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { useRankingBackdrop } from "./use-ranking-backdrop";
 import { moveRankingRank, shuffleRankingOrder } from "@/lib/ranking-order";
 
 type OrderProps = {
@@ -117,19 +118,23 @@ export function RankingOrderEditor({
 }: OrderProps & { onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const titleId = useId();
+  const backdrop = useRankingBackdrop(onClose);
   useEffect(() => {
     const element = dialog.current!;
+    const focus = document.activeElement as HTMLElement | null;
     const overflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     element.showModal();
     return () => {
       element.close();
       document.body.style.overflow = overflow;
+      focus?.focus({ preventScroll: true });
     };
   }, []);
   return (
     <dialog
       ref={dialog}
+      {...backdrop}
       className="ranking-order-dialog"
       aria-labelledby={titleId}
       onCancel={(event) => {

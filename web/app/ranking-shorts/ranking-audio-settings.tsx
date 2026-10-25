@@ -1,18 +1,31 @@
 "use client";
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { rankingSounds, type RankingSound } from "@/lib/ranking-audio";
+import { useRankingBackdrop } from "./use-ranking-backdrop";
 import { RankingSelect } from "./ranking-select";
 
 export function RankingAudioSettings({ sound, enabled, onSound, onEnabled, music, musicEnabled,
-  onMusicEnabled, onUpload, onRemove, volume, onVolume, disabled, project, localUrl }: {
+  onMusicEnabled, onUpload, onRemove, volume, onVolume, disabled, project, localUrl, presentation = "inline" }: {
   sound: RankingSound; enabled: boolean; onSound: (sound: RankingSound) => void;
   onEnabled: (enabled: boolean) => void; music: {id: string; name: string} | null;
   musicEnabled: boolean; onMusicEnabled: (enabled: boolean) => void;
   onUpload: (file: File) => void; onRemove: () => void; volume: number;
-  onVolume: (volume: number) => void; disabled: boolean; project: string | null; localUrl?: string;
+  onVolume: (volume: number) => void; disabled: boolean; project: string | null; localUrl?: string; presentation?: "inline" | "dialog";
 }) {
   const sample = useRef<HTMLAudioElement>(null);
-  return <details className="ranking-audio-settings">
+  const [open, setOpen] = useState(false);
+  const backdrop = useRankingBackdrop(() => setOpen(false));
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const element = dialog.current;
+    const focus = document.activeElement as HTMLElement | null;
+    element?.showModal();
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { element?.querySelectorAll("audio").forEach(audio => audio.pause()); element?.close(); document.body.style.overflow = previous; focus?.focus({preventScroll:true}); };
+  }, [open]);
+  const settings = <details className="ranking-audio-settings" open={presentation === "dialog" ? true : undefined}>
     <summary>소리 <span>{enabled ? "효과음 켜짐" : "효과음 없음"}{music && musicEnabled ? " · 배경음악 켜짐" : ""}</span></summary>
     <div className="ranking-audio-row">
       <span>전환 효과음</span>
@@ -48,4 +61,11 @@ export function RankingAudioSettings({ sound, enabled, onSound, onEnabled, music
         ref={(element) => {if (element) element.volume = volume;}} />
     </div> : musicEnabled ? <p className="ranking-hint">MP3·WAV·M4A 등 · 최대 30MB / 20분</p> : null}
   </details>;
+  if (presentation === "inline") return settings;
+  return <><button type="button" className="ranking-sound-trigger" aria-haspopup="dialog" onClick={() => setOpen(true)}><span aria-hidden="true">♫</span> 소리 설정 <small>{enabled || musicEnabled ? "ON" : "OFF"}</small></button>
+    {open && <dialog className="ranking-local-sound-dialog" ref={dialog} aria-labelledby="ranking-sound-heading" onCancel={() => setOpen(false)} {...backdrop}>
+      <header><div><h2 id="ranking-sound-heading">소리 설정</h2><p>순위 사이의 효과음과 배경음악</p></div><button type="button" aria-label="소리 설정 닫기" onClick={() => setOpen(false)}>×</button></header>
+      {settings}<button type="button" className="ranking-sound-done" onClick={() => setOpen(false)}>완료</button>
+    </dialog>}
+  </>;
 }
