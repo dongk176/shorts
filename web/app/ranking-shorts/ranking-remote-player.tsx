@@ -38,7 +38,7 @@ type YouTubeAPI = {
   Player: new (
     element: HTMLElement,
     options: {
-      videoId: string;
+      videoId?: string;
       width: string;
       height: string;
       playerVars: Record<string, number | string>;
@@ -180,10 +180,22 @@ export const RankingRemotePlayer = forwardRef<
       void loadYouTube()
         .then((api) => {
           if (!alive || !host.current) return;
-          const container = document.createElement("div");
+          // Bind the API to an existing privacy-enhanced iframe. Letting the
+          // API create it uses youtube.com, which can stall on browser cookies.
+          const container = document.createElement("iframe");
+          const embed = new URL(rankingEmbedUrl(remote));
+          embed.hostname = "www.youtube-nocookie.com";
+          embed.searchParams.set("enablejsapi", "1");
+          embed.searchParams.set("origin", window.location.origin);
+          embed.searchParams.set("playsinline", "1");
+          embed.searchParams.set("rel", "0");
+          container.src = embed.toString();
+          container.title = "YouTube 원본 영상";
+          container.allow = "autoplay; encrypted-media; fullscreen; picture-in-picture";
+          container.allowFullscreen = true;
+          container.referrerPolicy = "strict-origin-when-cross-origin";
           host.current.appendChild(container);
           instance = new api.Player(container, {
-            videoId: remote.videoId,
             width: "100%",
             height: "100%",
             playerVars: {
