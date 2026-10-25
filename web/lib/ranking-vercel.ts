@@ -1,3 +1,4 @@
+import { rankingVercelProgress } from "./ranking-vercel-contract";
 import "server-only";
 import { Sandbox } from "@vercel/sandbox";
 import { createHash, createHmac, randomUUID } from "node:crypto";
@@ -301,6 +302,7 @@ export async function syncRankingVercelOperation(
     result?: Record<string, unknown>;
     error?: string;
     failureCategory?: "bot_check" | "network_error" | "terminal";
+    progress?: unknown;
   };
   if (
     !session ||
@@ -334,7 +336,7 @@ export async function syncRankingVercelOperation(
     if (!response.ok) return;
     state = await response.json();
   }
-  if (!["succeeded", "failed"].includes(state.status)) return;
+  if (!["succeeded", "failed"].includes(state.status)) return rankingVercelProgress(state.progress);
   if (
     state.status === "failed" &&
     op.taskId &&

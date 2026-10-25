@@ -211,7 +211,8 @@ def expand_short_link(value: str) -> str:
 
 
 class RankingPipeline:
-    def __init__(self, project: Path, egress=None):
+    def __init__(self, project: Path, egress=None, progress=None):
+        self.progress = progress or (lambda value: None)
         self.egress = egress
         self.po_token = os.environ.get("RANKING_YOUTUBE_PO_TOKEN_ENABLED") == "1"
         if self.po_token:
@@ -255,6 +256,8 @@ class RankingPipeline:
                 args, stdout=out, stderr=err, shell=False, start_new_session=True
             )
             until = time.monotonic() + min(timeout, remaining)
+            progress_offset = 0
+            progress_buffer = b""
             try:
                 while process.poll() is None:
                     if time.monotonic() >= until:
@@ -271,6 +274,18 @@ class RankingPipeline:
                         if p.is_file()
                     ):
                         raise RankingFailure("250MB 이하의 영상을 사용해 주세요.")
+                    if "--progress-template" in args:
+                        # pread does not change the descriptor offset shared with the child.
+                        chunk = os.pread(out.fileno(), 65536, progress_offset)
+                        progress_offset += len(chunk)
+                        lines = (progress_buffer + chunk).split(b"\n")
+                        progress_buffer = lines.pop()[-1024:]
+                        for line in lines:
+                            match = re.search(rb"ranking-progress:\s*(\d+(?:\.\d+)?)%", line)
+                            if match:
+                                self.progress({
+                                    "stage": "downloading", "percent": min(100, float(match[1]))
+                                })
                     time.sleep(0.1)
                 if process.returncode:
                     if youtube:
@@ -444,7 +459,9 @@ class RankingPipeline:
         for partial in directory.glob("download.*"):
             if partial.is_file():
                 partial.unlink()
+        self.progress({"stage": "preparing"})
         normalized, platform, base, info = self._inspect_link(url, proxy)
+        self.progress({"stage": "downloading"})
         # Reuse the validated Instagram response; re-extraction can add tens of seconds.
         info_path = directory / "validated-info.json"
         if platform == "instagram":
@@ -454,6 +471,11 @@ class RankingPipeline:
             self.run(
                 [
                     *base,
+                    "--progress",
+                    "--newline",
+                    "--no-colors",
+                    "--progress-template",
+                    "download:ranking-progress:%(progress._percent_str)s",
                     "--max-filesize",
                     str(MAX_BYTES),
                     "--match-filter",
@@ -489,6 +511,7 @@ class RankingPipeline:
             source = self.acquire(directory, url) if url else directory / "upload"
             if source.stat().st_size > MAX_BYTES:
                 raise RankingFailure("250MB 이하의 영상을 선택해 주세요.")
+            self.progress({"stage": "converting"})
             probe = self.probe(source)
             args = [
                 "ffmpeg",
@@ -662,7 +685,13 @@ class RankingPipeline:
                 or path.parent.is_symlink()
             ):
                 raise RankingFailure("배경음악이 만료되었습니다. 다시 추가해 주세요.")
-        return SOUNDS.get(sound), music
+        selected = SOUNDS.get(sound)
+        version = spec.get("transitionVersion", 1)
+        if version not in (1, 2):
+            raise RankingFailure("효과음 설정을 다시 선택해 주세요.")
+        if selected and version == 1:
+            selected = {**selected, "asset": selected["id"], "duration": selected["legacyDuration"]}
+        return selected, music
 
     def validate_render(self, spec: dict) -> list[dict]:
         ranking_style(spec.get("style"))
@@ -916,7 +945,7 @@ class RankingPipeline:
             entries = []
             if sound:
                 shutil.copyfile(
-                    ASSETS / "ranking_audio" / f"{sound['id']}.mp4", work / "transition.mp4"
+                    ASSETS / "ranking_audio" / f"{sound['asset']}.mp4", work / "transition.mp4"
                 )
             for i in range(len(clips)):
                 if i and sound:

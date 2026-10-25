@@ -570,3 +570,22 @@ def test_portrait_instagram_formats_and_metadata_reuse(ranking_project, monkeypa
     pipeline.acquire(ranking_project, "https://www.instagram.com/reel/ABCDE/")
     assert len(calls) == 2
     assert not (ranking_project / "validated-info.json").exists()
+
+
+def test_download_progress_is_read_without_disturbing_child_output(tmp_path, monkeypatch):
+    import sys
+
+    monkeypatch.setenv("RANKING_STORAGE_ROOT", str(tmp_path))
+    project = tmp_path / str(uuid4())
+    project.mkdir()
+    events = []
+    pipeline = RankingPipeline(project, progress=events.append)
+    output = pipeline.run([
+        sys.executable, "-c",
+        "import time;print('ranking-progress: 42.5%',flush=True);time.sleep(.3);"
+        "print('ranking-progress: 87.0%',flush=True);time.sleep(.3)",
+        "--progress-template",
+    ])
+    assert {"stage": "downloading", "percent": 42.5} in events
+    assert {"stage": "downloading", "percent": 87.0} in events
+    assert "42.5%" in output and "87.0%" in output

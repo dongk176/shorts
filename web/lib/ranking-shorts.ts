@@ -34,6 +34,7 @@ export const rankingRenderSchema = z
     style: rankingStyleSchema.default(defaultRankingStyle),
     descending: z.boolean(),
     transitionSound: rankingSoundSchema.nullable().optional(),
+    transitionVersion: z.literal(2).optional(),
     backgroundMusic: rankingMusicSchema.nullable().optional(),
     playbackOrder: z
       .array(z.number().int().min(1).max(RANKING_LIMITS.ranks))
@@ -80,7 +81,7 @@ export const rankingRenderSchema = z
         message: "선택한 순위 범위 안에서 영상을 넣어 주세요.",
       });
     }
-    let total = transitionSeconds(value.transitionSound, value.clips.length);
+    let total = transitionSeconds(value.transitionSound, value.clips.length, value.transitionVersion ?? 1);
     for (const clip of value.clips) {
       const duration = clip.end - clip.start;
       total += duration;

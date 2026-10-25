@@ -2,21 +2,29 @@
   {
     "id": "kick",
     "label": "킥",
-    "duration": 0.8666666666666667
+    "duration": 0.7666666666666667,
+    "asset": "kick-v2",
+    "legacyDuration": 0.8666666666666667
   },
   {
     "id": "lip-bass",
     "label": "립베이스",
-    "duration": 1.3333333333333333
+    "duration": 0.8666666666666667,
+    "asset": "lip-bass-v2",
+    "legacyDuration": 1.3333333333333333
   },
   {
     "id": "whoosh",
     "label": "휙",
-    "duration": 0.8666666666666667
+    "duration": 0.2,
+    "asset": "whoosh-v2",
+    "legacyDuration": 0.8666666666666667
   },
   {
     "id": "scratch",
     "label": "스크래치",
-    "duration": 1.0
+    "duration": 0.7333333333333333,
+    "asset": "scratch-v2",
+    "legacyDuration": 1
   }
 ]

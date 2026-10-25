@@ -25,7 +25,7 @@ export function RankingAudioSettings({ sound, enabled, onSound, onEnabled, music
         <button type="button" aria-label="효과음 들어보기" onClick={() => {
           if (sample.current) {sample.current.currentTime = 0; void sample.current.play().catch(() => {});}
         }}>▶ 듣기</button>
-        <audio ref={sample} src={`/audio/ranking/${sound}.mp3`} preload="none" />
+        <audio ref={sample} src={`/audio/ranking/${rankingSounds.find(item => item.id === sound)?.asset}.mp4`} preload="none" />
       </>}
     </div>
     {enabled && <p className="ranking-hint">순위 사이에 같은 소리와 검정 화면이 들어갑니다.</p>}

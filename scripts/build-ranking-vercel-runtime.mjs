@@ -21,8 +21,8 @@ const names = [
   "assets/ranking_templates.json",
   "assets/ranking_audio.json",
   ...Object.values(design.fonts).map((f) => "assets/editor_fonts/" + f.file),
-  ...["kick", "lip-bass", "whoosh", "scratch"].map(
-    (id) => "assets/ranking_audio/" + id + ".mp4",
+  ...JSON.parse(await readFile(path.join(source, "assets/ranking_audio.json"), "utf8")).flatMap(
+    (sound) => [sound.id, sound.asset].map(asset => "assets/ranking_audio/" + asset + ".mp4"),
   ),
 ];
 const files = [];

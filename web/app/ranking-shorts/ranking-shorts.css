@@ -181,3 +181,30 @@
 .app-shell main.ranking-studio>section.ranking-workspace-projects,.ranking-studio .ranking-workspace-projects{max-width:1088px;margin:64px auto 0;padding:0;border:0;background:none;box-shadow:none}.ranking-studio .ranking-workspace-projects section{padding:0;border:0;background:none;box-shadow:none}.ranking-library-heading h2{font-size:20px}.ranking-library-heading>div>span{display:none}
 @media(max-width:700px){.ranking-scene-dialog{width:100%;max-height:94dvh;margin:auto 0 0;border-radius:20px 20px 0 0}.ranking-scene-dialog>header{padding:18px}.ranking-scene-scroll{padding:0 18px 16px}.ranking-scene-dialog>footer{padding:14px 18px max(18px,env(safe-area-inset-bottom))}.ranking-scene-dialog footer button{flex:1;padding:10px}.ranking-scene-dialog .ranking-source-player video,.ranking-scene-dialog .ranking-remote-frame{height:32dvh}.ranking-scene-dialog h2{font-size:20px}}
 @media(max-width:700px){.ranking-scene-dialog{max-width:100%;box-sizing:border-box}.ranking-scene-dialog footer button{font-size:14px;white-space:nowrap}.ranking-scene-dialog footer button:first-child:not(:last-child){flex:0 0 64px}}
+
+/* Keep the document as the sticky preview's scrolling ancestor. */
+.app-shell.ranking-page-shell{overflow:clip}
+.ranking-rank-tabs{border-bottom:0}
+.ranking-rank-tabs i.is-downloading{width:10px;height:10px;background:transparent;border:2px solid #dac6a540;border-top-color:#dac6a5;animation:ranking-spin 1s linear infinite}
+.ranking-rank-tabs i.is-failed{background:#f19a91}
+.ranking-source-progress{min-height:240px;margin-top:18px;padding:40px 24px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;text-align:center;border:1px solid #ffffff18;border-radius:12px;background:#101317}
+.ranking-source-progress .ranking-spinner{width:24px;height:24px;margin:0}
+.ranking-source-progress strong{font-size:17px;font-variant-numeric:tabular-nums}
+.ranking-source-progress progress{width:min(280px,100%);height:6px;accent-color:#dfcba5;border:0;border-radius:10px;overflow:hidden}
+.ranking-source-progress p{color:#b5b7bf;font-size:14px;line-height:1.7}
+.ranking-source-toast{position:fixed;z-index:90;left:50%;bottom:28px;transform:translateX(-50%);display:flex;align-items:center;gap:16px;padding:16px 20px;background:#292c2e;border:1px solid #dfcba560;border-radius:14px;box-shadow:0 12px 40px #0006;max-width:calc(100vw - 24px);font-size:14px}
+.ranking-source-toast button{color:#dfcba5;white-space:nowrap;min-height:32px}
+.ranking-source-toast button:last-child{font-size:22px}
+.ranking-scene-dialog.is-inline{display:block;position:static;width:100%;max-height:none;border:0;border-radius:0;background:none;overflow:visible}
+.ranking-scene-dialog.is-inline>header{display:none}
+.ranking-scene-dialog.is-inline .ranking-scene-scroll{padding:0;overflow:visible}
+.ranking-scene-dialog.is-inline>footer{padding:16px 0 0;background:none}
+.ranking-scene-dialog.is-inline>footer>button:first-child{display:none}
+@media(min-width:851px){.ranking-scene-summary{display:none}.ranking-preview-column{top:24px;align-self:start;width:min(100%,calc((100dvh - 225px)*9/16));justify-self:end}.ranking-scene-dialog.is-inline .ranking-source-player video{height:min(42dvh,380px)}}
+@media(max-width:850px){.ranking-scene-dialog{width:100%;max-width:100%;max-height:94dvh;margin:auto 0 0;border-radius:20px 20px 0 0}.ranking-source-toast{bottom:18px;gap:10px;padding:12px;font-size:13px}.ranking-scene-dialog>footer{padding-bottom:max(18px,env(safe-area-inset-bottom))}}
+@media(prefers-reduced-motion:reduce){.ranking-rank-tabs i.is-downloading{animation:none}}
+
+.ranking-composition>video.is-buffered{visibility:hidden;pointer-events:none}
+.ranking-preview-toggle{position:absolute;z-index:5;left:50%;bottom:16px;transform:translateX(-50%);width:52px;height:52px;border-radius:50%;display:grid;place-items:center;background:#151718dd;border:1px solid #ffffff70;box-shadow:0 3px 16px #0007;color:#fff;backdrop-filter:blur(8px)}
+.ranking-preview-toggle:hover{background:#353739}
+.ranking-sequence-controls{justify-content:center;margin-top:10px}

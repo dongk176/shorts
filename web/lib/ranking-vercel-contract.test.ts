@@ -43,3 +43,13 @@ it("requires a playable source belonging to the admitted source", () => {
     }),
   ).toThrow();
 });
+
+it("only exposes known progress stages and finite measured percentages", async () => {
+  const {rankingVercelProgress} = await import("./ranking-vercel-contract");
+  expect(rankingVercelProgress({stage:"downloading",percent:42.5,secret:"hidden"})).toEqual({stage:"downloading",percent:42.5});
+  expect(rankingVercelProgress({stage:"downloading",percent:NaN})).toEqual({stage:"downloading"});
+  expect(rankingVercelProgress({stage:"downloading",percent:140})).toEqual({stage:"downloading",percent:100});
+  expect(rankingVercelProgress({stage:"converting",percent:99})).toEqual({stage:"converting"});
+  expect(rankingVercelProgress({stage:"arbitrary"})).toBeUndefined();
+  expect(rankingVercelProgress(null)).toBeUndefined();
+});

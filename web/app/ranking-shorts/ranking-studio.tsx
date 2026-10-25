@@ -50,10 +50,13 @@ async function requestJson(url: string, init: RequestInit) {
 }
 const pause = (ms: number) =>
   new Promise<void>((resolve) => window.setTimeout(resolve, ms));
-async function waitForOperation(data: { pollUrl: string }) {
+type SourceProgress = { stage: "waiting" | "preparing" | "downloading" | "converting"; percent?: number };
+type SourceJob = SourceProgress & { error?: string };
+async function waitForOperation(data: { pollUrl: string }, onProgress?: (progress: SourceProgress) => void) {
   const deadline = Date.now() + 20 * 60_000;
   while (Date.now() < deadline) {
     const state = await requestJson(data.pollUrl, { method: "GET" });
+    if (state.progress) onProgress?.(state.progress);
     if (state.status === "succeeded") return state.result;
     if (state.status === "failed")
       throw new Error(state.error || "영상 처리를 완료하지 못했습니다.");
@@ -85,16 +88,26 @@ export function RankingStudio({
   const [count, setCount] = useState(5);
   const [active, setActive] = useState(0);
   const [sceneOpen, setSceneOpen] = useState(false);
+  const activeRef = useRef(active);
+  activeRef.current = active;
   const sceneDialog = useRef<HTMLDialogElement>(null);
+  const [mobileScene, setMobileScene] = useState(false);
   useEffect(() => {
-    if (!sceneOpen) return;
+    const query = window.matchMedia("(max-width: 850px)");
+    const update = () => setMobileScene(query.matches);
+    update(); query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+  const SceneContainer = mobileScene ? "dialog" : "div";
+  useEffect(() => {
+    if (!sceneOpen || !mobileScene) return;
     const element = sceneDialog.current;
     const focus = document.activeElement as HTMLElement | null;
     const overflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     element?.showModal();
     return () => { element?.close(); document.body.style.overflow = overflow; focus?.focus(); };
-  }, [sceneOpen]);
+  }, [sceneOpen, mobileScene]);
   const [slots, setSlots] = useState(emptySlots);
   const [title, setTitle] = useState("놓치면 아쉬운 순간");
   const [style, setStyle] = useState<RankingStyle>(defaultRankingStyle);
@@ -112,6 +125,50 @@ export function RankingStudio({
   const projectRef = useRef<string | null>(null);
   const [busy, setBusy] = useState("");
   const busyRef = useRef(false);
+  const [sourceJobs, setSourceJobs] = useState<Record<number, SourceJob>>({});
+  const pendingSources = useRef(new Set<number>());
+  const sourceQueue = useRef(Promise.resolve());
+  const alive = useRef(true);
+  const [sourceNotice, setSourceNotice] = useState<{index: number; message: string} | null>(null);
+  const sourcePending = Object.values(sourceJobs).some(job => !job.error);
+  const activeJob = sourceJobs[active];
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  useEffect(() => {
+    if (!sourcePending) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [sourcePending]);
+  useEffect(() => {
+    if (!sourceNotice) return;
+    const timer = window.setTimeout(() => setSourceNotice(null), 8000);
+    return () => window.clearTimeout(timer);
+  }, [sourceNotice]);
+  function updateSourceJob(index: number, job?: SourceJob) {
+    if (!alive.current) return;
+    setSourceJobs(previous => { const next = {...previous}; if (job) next[index] = job; else delete next[index]; return next; });
+  }
+  async function sourceTask(index: number, action: (progress: (value: SourceProgress) => void) => Promise<void>) {
+    if (busyRef.current || pendingSources.current.has(index)) return;
+    pendingSources.current.add(index);
+    updateSourceJob(index, {stage: "waiting"});
+    // One download at a time preserves the existing worker/IP admission limits.
+    // Other ranks can be edited and queued immediately while this runs.
+    const run = sourceQueue.current.then(async () => {
+      if (!alive.current) return;
+      try {
+        updateSourceJob(index, {stage: "preparing"});
+        await action(value => updateSourceJob(index, value));
+        if (!alive.current) return;
+        updateSourceJob(index);
+        setSourceNotice({index, message: `${index + 1}위 영상 준비 완료`});
+      } catch (failure) {
+        updateSourceJob(index, {stage: "preparing", error: failure instanceof Error ? failure.message : "영상을 가져오지 못했어요. 다시 시도해 주세요."});
+      } finally { pendingSources.current.delete(index); }
+    });
+    sourceQueue.current = run.catch(() => undefined);
+    await run;
+  }
   const [error, setError] = useState("");
   const [result, setResult] = useState<Result | null>(null);
   const [files,setFiles] = useState<Record<string,File>>({});
@@ -140,10 +197,11 @@ export function RankingStudio({
   function scrollProjects(){requestAnimationFrame(()=>document.getElementById("ranking-workspace-projects")?.scrollIntoView({behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"instant":"smooth",block:"start"}));}
   function resetEditor(){
     const d=defaultRankingDraft();projectRef.current=null;setProject(null);submission.current=null;uploadedFiles.current.clear();
-    setTitle(d.title);setSubtitle(d.subtitle);setStyle(d.style);setCount(d.count);setActive(0);setSlots(emptySlots());setOrderMode(d.orderMode);setCustomOrder([]);
+    setSourceJobs({});setSourceNotice(null);setTitle(d.title);setSubtitle(d.subtitle);setStyle(d.style);setCount(d.count);setActive(0);setSlots(emptySlots());setOrderMode(d.orderMode);setCustomOrder([]);
     setSoundEnabled(false);setSound(d.sound);setMusicEnabled(false);setMusic(null);setMusicVolume(d.musicVolume);setFiles({});setResult(null);setShowResult(false);setCurrent(0);setError("");setOrderOpen(false);setDesignOpen(false);setCustomDesignOpen(false);
   }
   async function startFresh(){
+    if (pendingSources.current.size) return;
     await task("새 작업을 준비하고 있습니다…",async()=>{if(project)await requestJson(`/api/ranking-shorts/${project}/session`,{method:"DELETE"});await draftStore.clear();resetEditor();setResetOpen(false);});
   }
   useEffect(() => {
@@ -270,21 +328,19 @@ export function RankingStudio({
 
   async function importSource(file?: File) {
     if(file){
-      await task(`${active+1}위 영상의 구간 선택을 준비하고 있습니다…`,async()=>{
+      await sourceTask(active,async()=>{
         if(file.size>RANKING_LIMITS.sourceBytes)throw new Error("250MB 이하의 영상 파일을 선택해 주세요.");
-        const metadata=await inspectLocalFile(file,"video");const id=crypto.randomUUID();
+        const metadata=await inspectLocalFile(file,"video");if(!alive.current)return;const id=crypto.randomUUID();
         const start=!slot.source && slot.end>0?Math.min(slot.start,Math.max(0,metadata.duration-.5)):0;
         const end=!slot.source && slot.end>0?Math.min(metadata.duration,Math.max(start+.5,slot.end)):Math.min(10,metadata.duration);
-        setFiles(previous=>{const next={...previous,[id]:file};if(slot.source)delete next[slot.source.id];return next;});patch(active,{source:{id,...metadata,previewReady:true,durationKnown:true},pendingLink:false,start,end});setCurrent(0);
+        setFiles(previous=>{const next={...previous,[id]:file};if(slot.source)delete next[slot.source.id];return next;});patch(active,{source:{id,...metadata,previewReady:true,durationKnown:true},pendingLink:false,start,end});if(activeRef.current===active)setCurrent(0);
       });return;
     }
 
     if (busyRef.current) return;
     const index = active;
     const remote = !file ? rankingDirectRemote(slots[index].link) : null;
-    await task(
-      `${index + 1}위 영상의 구간 선택을 준비하고 있습니다…`,
-      async () => {
+    await sourceTask(index, async (progress) => {
         const id = await ensureProject();
         const requestId = crypto.randomUUID();
         const input = { requestId, url: slots[index].link.trim() };
@@ -295,7 +351,7 @@ export function RankingStudio({
         });
         const preparingDeadline = Date.now() + 5 * 60_000;
         while (queued.preparing && Date.now() < preparingDeadline) {
-          setBusy("영상 처리기를 시작하고 있습니다…");
+          progress({stage: "preparing"});
           await pause(5000);
           queued = await requestJson(`/api/ranking-shorts/${id}/sources`, {
             method: "POST",
@@ -307,15 +363,13 @@ export function RankingStudio({
           throw new Error(
             "영상 처리기가 준비 중입니다. 잠시 후 다시 시도해 주세요.",
           );
-        setBusy(`${index + 1}위 영상의 구간 선택을 준비하고 있습니다…`);
-        const data = await waitForOperation(queued);
+        const data = await waitForOperation(queued, progress);
+        if (!alive.current) return;
         const source = { ...data.source, remote: remote || data.source.remote } as RankingSource;
-        setCurrent(0);
+        if (activeRef.current === index) setCurrent(0);
         patch(index, { source, pendingLink: false, start: 0, end: Math.min(10, source.duration) });
         if (!source.previewReady) {
-          setBusy(
-            `${index + 1}위 영상을 가져와 구간 선택을 준비하고 있습니다…`,
-          );
+          progress({stage: "converting"});
           await prepareSource(id, source.id, index, 0, 10);
         }
       },
@@ -353,9 +407,11 @@ export function RankingStudio({
   function invalidateAudio() {setResult(null); setShowResult(false);}
 
   async function render() {
+    if (pendingSources.current.size) return;
     const parsed = rankingRenderSchema.safeParse({
       title,
       transitionSound,
+      transitionVersion: 2,
       backgroundMusic,
       subtitle,
       style,
@@ -430,7 +486,7 @@ export function RankingStudio({
       Math.max(start + 0.5, previousEnd),
     );
     patch(index, { source, start, end });
-    setCurrent(start);
+    if (activeRef.current === index) setCurrent(start);
   }
 
   function seek(seconds: number) {
@@ -444,6 +500,7 @@ export function RankingStudio({
     slot.source ? localMedia[slot.source.id] || (!remoteSource && project ? `/api/ranking-shorts/${project}/media/${slot.source.id}` : "") : "";
   const canRender =
     !busy &&
+    !sourcePending &&
     ready > 0 &&
     !overLimit &&
     Boolean(title.trim()) &&
@@ -519,7 +576,7 @@ export function RankingStudio({
         </div>
         <div className="ranking-draft-actions">
           <span className="ranking-save-status" role="status">{draftStore.status}</span>
-          <button type="button" className="ranking-new-button" disabled={Boolean(busy)||!draftStore.loaded} onClick={()=>setResetOpen(true)}>
+          <button type="button" className="ranking-new-button" disabled={Boolean(busy)||sourcePending||!draftStore.loaded} onClick={()=>setResetOpen(true)}>
             <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M10 4v12M4 10h12" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/></svg>새로 시작
           </button>
         </div>
@@ -755,7 +812,7 @@ export function RankingStudio({
                   <RankingSelect
                     label="몇 위까지 만들까요?"
                     value={String(count)}
-                    disabled={Boolean(busy)}
+                    disabled={Boolean(busy) || sourcePending}
                     options={Array.from({ length: 10 }, (_, i) => ({
                       value: String(i + 1),
                       label: `${i + 1}위까지`,
@@ -764,6 +821,7 @@ export function RankingStudio({
                       const value = Number(next);
                       setCustomOrder(rankingOrderForCount(order, value));
                       setCount(value);
+                      setSourceNotice(null);
                       setActive((previous) => Math.min(previous, value - 1));
                       setResult(null);
                     }}
@@ -837,16 +895,16 @@ export function RankingStudio({
                     <small>위</small>
                   </span>
                   <i
-                    className={item.source ? "is-ready" : ""}
-                    aria-label={item.source ? "영상 준비됨" : "영상 없음"}
+                    className={sourceJobs[index] ? sourceJobs[index].error ? "is-failed" : "is-downloading" : item.source ? "is-ready" : ""}
+                    aria-label={sourceJobs[index] ? sourceJobs[index].error ? "가져오기 실패" : "영상 준비 중" : item.source ? "영상 준비됨" : "영상 없음"}
                   />
                 </button>
               ))}
             </div>
             <button type="button" className="ranking-scene-summary" onClick={() => setSceneOpen(true)}>
-              <span><strong>{active + 1}위 · {slot.label || "장면 선택"}</strong><small>{slot.source ? `${rankingTime(slot.start)} – ${rankingTime(slot.end)} · 구간 수정` : "링크나 파일을 추가하세요"}</small></span><span aria-hidden="true">＋</span>
+              <span><strong>{active + 1}위 · {slot.label || "장면 선택"}</strong><small>{activeJob && !activeJob.error ? "영상 준비 중 · 다른 순위도 편집할 수 있어요" : slot.source ? `${rankingTime(slot.start)} – ${rankingTime(slot.end)} · 구간 수정` : "링크나 파일을 추가하세요"}</small></span><span aria-hidden="true">＋</span>
             </button>
-            {sceneOpen && <dialog ref={sceneDialog} className="ranking-scene-dialog" aria-labelledby="ranking-scene-title" onCancel={(event) => { if (busy) event.preventDefault(); else setSceneOpen(false); }}>
+            {(!mobileScene || sceneOpen) && <SceneContainer ref={(element: HTMLDialogElement | HTMLDivElement | null) => { sceneDialog.current = element instanceof HTMLDialogElement ? element : null; }} className={`ranking-scene-dialog${mobileScene ? "" : " is-inline"}`} aria-labelledby="ranking-scene-title" onCancel={(event) => { if (busy) event.preventDefault(); else setSceneOpen(false); }}>
               <header><div><small>순위별 장면</small><h2 id="ranking-scene-title">{active + 1}위 영상 선택</h2></div><button type="button" disabled={Boolean(busy)} aria-label="장면 선택 닫기" onClick={() => setSceneOpen(false)}>×</button></header>
               <div className="ranking-scene-scroll">
             <div className="ranking-clip-body">
@@ -873,6 +931,7 @@ export function RankingStudio({
                   <input
                     aria-label="영상 링크"
                     type="url"
+                    disabled={Boolean(activeJob && !activeJob.error)}
                     value={slot.link}
                     onChange={(event) =>
                       patch(active, { link: event.target.value })
@@ -881,7 +940,7 @@ export function RankingStudio({
                   />
                   <button
                     type="button"
-                    disabled={!slot.link.trim() || Boolean(busy)}
+                    disabled={!slot.link.trim() || Boolean(busy) || Boolean(activeJob && !activeJob.error)}
                     onClick={() => void importSource()}
                   >
                     구간 선택하기
@@ -905,6 +964,7 @@ export function RankingStudio({
                     파일 선택
                     <input
                       type="file"
+                      disabled={Boolean(activeJob && !activeJob.error)}
                       accept="video/*,.mkv"
                       aria-label={`${active + 1}위 영상 파일`}
                       onChange={(event) => {
@@ -916,7 +976,17 @@ export function RankingStudio({
                   </label>
                 </div>
               </fieldset>
-              {slot.source ? (
+              {activeJob && !activeJob.error ? (
+                <div className="ranking-source-progress" role="status" aria-live="polite">
+                  <span className="ranking-spinner" aria-hidden="true" />
+                  <strong>{activeJob.stage === "waiting" ? "다운로드 대기 중" : activeJob.stage === "converting" ? "미리보기 준비 중" : activeJob.stage === "downloading" ? "다운로드 중" : "영상 연결 중"}
+                    {activeJob.stage === "downloading" && activeJob.percent !== undefined ? ` ${Math.floor(activeJob.percent)}%` : "…"}</strong>
+                  <progress max={100} value={activeJob.stage === "downloading" ? activeJob.percent : undefined} aria-label={`${active + 1}위 다운로드 진행률`} />
+                  <p>약 1분, 영상에 따라 더 걸릴 수 있어요.<br />이 페이지를 열어 둔 채 다른 순위를 편집하세요.</p>
+                </div>
+              ) : activeJob?.error ? (
+                <div className="ranking-source-progress"><p role="alert" className="ranking-error">{activeJob.error}</p><button type="button" className="ranking-primary" onClick={() => void importSource()}>다시 가져오기</button></div>
+              ) : slot.source ? (
                 <>
                   {remoteSource && slot.source.remote ? (
                     <div className="ranking-empty-source">
@@ -1057,7 +1127,7 @@ export function RankingStudio({
               <footer><button type="button" disabled={Boolean(busy)} onClick={() => setSceneOpen(false)}>완료</button>
                 {active + 1 < count && <button type="button" disabled={Boolean(busy)} onClick={() => { player.current?.pause();  setActive(active + 1); setCurrent(slots[active + 1].start); setError(""); sceneDialog.current?.querySelector(".ranking-scene-scroll")?.scrollTo(0, 0); }}>다음 순위 고르기 · {active + 2}위 →</button>}
               </footer>
-            </dialog>}
+            </SceneContainer>}
           </section>
           <p className="ranking-edit-note">
             순위 이름은 영상이 등장할 때 공개됩니다. 가로 영상은 중앙을 기준으로
@@ -1106,7 +1176,7 @@ export function RankingStudio({
               previewRank={active + 1}
               descending={descending}
               style={style}
-              suspended={Boolean(busy || sceneOpen || (result && showResult))}
+              suspended={Boolean(busy || (mobileScene && sceneOpen) || (result && showResult))}
               pauseSignal={previewPauseSignal}
               onStart={() => {
                 player.current?.pause();
@@ -1157,12 +1227,17 @@ export function RankingStudio({
                 void render();
               }}
             >
-              {busy ? "처리 중…" : "영상 만들기"}
+              {busy ? "처리 중…" : sourcePending ? "영상 준비 중…" : "영상 만들기"}
               <span>↗</span>
             </button>
           )}
         </aside>
       </div>
+      {sourceNotice && <div className="ranking-source-toast" role="status">
+        <span>✓ {sourceNotice.message}</span>
+        <button type="button" onClick={() => { setActive(sourceNotice.index); setSceneOpen(true); setCurrent(slots[sourceNotice.index].start); setSourceNotice(null); document.getElementById("ranking-clips-heading")?.scrollIntoView({behavior:"smooth",block:"start"}); }}>구간 고르기 →</button>
+        <button type="button" aria-label="알림 닫기" onClick={() => setSourceNotice(null)}>×</button>
+      </div>}
       <div className="ranking-notices" aria-live="polite">
         {error ? (
           <p role="alert" className="ranking-error">

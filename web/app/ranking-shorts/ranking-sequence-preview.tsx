@@ -55,6 +55,7 @@ export function RankingSequencePreview({
 }) {
   const video = useRef<HTMLVideoElement>(null);
   const music = useRef<HTMLAudioElement>(null);
+  const mediaElements = useRef(new Map<number, HTMLVideoElement>());
   const intent = useRef(false);
   const transitioning = useRef(false);
   const pendingSeek = useRef<number | null>(null);
@@ -176,6 +177,31 @@ export function RankingSequencePreview({
     }
     if (video.current) play(video.current);
   }
+  const toggleRef = useRef(toggle);
+  toggleRef.current = toggle;
+  useEffect(() => {
+    const keydown = (event: KeyboardEvent) => {
+      if (event.code !== "Space" || event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest('input,textarea,select,button,a,video,audio,[contenteditable="true"],[role="slider"],[role="textbox"]') || document.querySelector('dialog[open],[role="dialog"][aria-modal="true"]')) return;
+      if (!clip || suspended || layoutOnly) return;
+      event.preventDefault(); toggleRef.current();
+    };
+    window.addEventListener("keydown", keydown);
+    return () => window.removeEventListener("keydown", keydown);
+  }, [clip, suspended, layoutOnly]);
+  const clipStart = clip?.start;
+  useEffect(() => {
+    const media = mediaElements.current.get(index);
+    if (!media || clipStart === undefined) return;
+    video.current = media;
+    if (media.readyState >= 1) {
+      media.currentTime = pendingSeek.current ?? clipStart;
+      pendingSeek.current = null;
+      transitioning.current = false;
+      if (intent.current) void media.play().catch(() => { intent.current = false; setPlaying(false); setError("재생 버튼을 다시 눌러 주세요."); });
+    }
+  }, [index, clipStart]);
   const videoStyle = {
     "--ranking-video-top": `${(rankingDesign.layout.headerHeight / rankingDesign.layout.height) * 100}%`,
   } as CSSProperties;
@@ -185,38 +211,36 @@ export function RankingSequencePreview({
         src={localMedia[backgroundMusic.sourceId] || `/api/ranking-shorts/${project}/media/${backgroundMusic.sourceId}`}
         onLoadedMetadata={syncMusic} onError={() => setError("배경음악 미리보기가 만료되었습니다. 음악을 다시 추가해 주세요.")} /> : null}
       <div className={`ranking-composition${clip?.transitionUrl ? " is-transition" : ""}`} style={videoStyle}>
-        {clip && (project || localMedia[clip.sourceId] || clip.transitionUrl) && !layoutOnly ? (
+        {clips.length > 0 && !layoutOnly ? clips.map((item, itemIndex) => (
           <video
-            key={`${clip.sourceId}:${clip.rank}`}
-            ref={video}
+            key={`${item.sourceId}:${item.rank}`}
+            ref={element => { if (element) { mediaElements.current.set(itemIndex, element); if (itemIndex === index) video.current = element; } else mediaElements.current.delete(itemIndex); }}
+            className={itemIndex === index ? "is-current" : "is-buffered"}
+            aria-hidden={itemIndex !== index}
             playsInline
-            preload="auto"
-            src={clip.transitionUrl || localMedia[clip.sourceId] || `/api/ranking-shorts/${project}/media/${clip.sourceId}`}
+            preload={itemIndex >= index && itemIndex <= index + 2 ? "auto" : "none"}
+            src={item.transitionUrl || localMedia[item.sourceId] || `/api/ranking-shorts/${project}/media/${item.sourceId}`}
             aria-label="전체 미리보기 영상"
-            data-rank={clip.rank}
+            data-rank={item.rank}
             onLoadedMetadata={(event) => {
               const media = event.currentTarget;
-              media.currentTime = pendingSeek.current ?? clip.start;
+              media.currentTime = itemIndex === index ? pendingSeek.current ?? item.start : item.start;
+              if (itemIndex !== index) return;
               pendingSeek.current = null;
               transitioning.current = false;
               if (intent.current) play(media);
             }}
-            onPlay={() => {setPlaying(true); syncMusic();}}
-            onTimeUpdate={syncMusic}
-            onPause={() => {setPlaying(false); music.current?.pause();}}
-            onEnded={advance}
+            onPlaying={() => { if (itemIndex === index) {setPlaying(true); syncMusic();} }}
+            onTimeUpdate={() => { if (itemIndex === index) syncMusic(); }}
+            onPause={() => { if (itemIndex === index) {setPlaying(false); music.current?.pause();} }}
+            onEnded={() => { if (itemIndex === index) advance(); }}
             onError={() => {
-              music.current?.pause();
-              intent.current = false;
-              setPlaying(false);
-              setError(
-                "미리보기를 불러오지 못했습니다. 영상을 다시 가져와 주세요.",
-              );
+              if (itemIndex !== index) return;
+              music.current?.pause(); intent.current = false; setPlaying(false);
+              setError("미리보기를 불러오지 못했습니다. 영상을 다시 가져와 주세요.");
             }}
           />
-        ) : (
-          <div className="ranking-composition-empty" />
-        )}
+        )) : <div className="ranking-composition-empty" />}
         {!clip?.transitionUrl && previewSource && (layoutOnly || (!playing && elapsed === 0)) ? (
           <div className="ranking-composition-still">
             <RankingThumbnail key={previewSource.id}
@@ -239,6 +263,10 @@ export function RankingSequencePreview({
           }
           style={style}
         />}
+        {!layoutOnly && <button type="button" className="ranking-preview-toggle" disabled={!clip || suspended}
+          aria-label={playing ? "전체 미리보기 일시 정지" : "전체 미리보기 재생"} aria-keyshortcuts="Space" onClick={toggle}>
+          <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">{playing ? <path d="M7 5h4v14H7zm6 0h4v14h-4z" fill="currentColor" /> : <path d="m9 5 11 7-11 7z" fill="currentColor" />}</svg>
+        </button>}
       </div>
       {layoutOnly ? (
         <p className="ranking-hint">
@@ -246,16 +274,6 @@ export function RankingSequencePreview({
         </p>
       ) : (
         <div className="ranking-sequence-controls">
-          <button
-            type="button"
-            disabled={!clip || suspended}
-            aria-label={
-              playing ? "전체 미리보기 일시 정지" : "전체 미리보기 재생"
-            }
-            onClick={toggle}
-          >
-            {playing ? "Ⅱ 일시 정지" : "▶ 전체 재생"}
-          </button>
           <span>
             {rankingTime(elapsed)} / {rankingTime(total)}
           </span>

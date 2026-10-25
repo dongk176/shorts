@@ -39,3 +39,14 @@ and background frequencies in the output. Existing renderer integration tests
 remain intact. Browser fixture uses real UI/preview components with stubbed APIs;
 verified collapsed controls, custom single-select, switches, seek into black
 transition, and full playback completion. Web build/lint/typecheck pass.
+
+## 2026-10-25 brisk transitions (version 2)
+
+New editor submissions include `transitionVersion: 2`. Version 2 uses immutable
+`*-v2.mp4` assets, identical in browser and bundled worker: kick 23 frames,
+lip-bass 26 frames, whoosh 6 frames, scratch 22 frames (30fps). Leading and trailing
+silence is removed; lip-bass fades over its last 140ms. The original MP3/MP4 files
+are retained. Jobs from already-open older editors omit the version and retain
+original audio assets and durations, including when a newer sandbox renders them.
+Preview keeps the next effect/scene buffered so switching sources does not wait
+for another initial media request. Actual output uses the same versioned segments.

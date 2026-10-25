@@ -35,3 +35,13 @@ export function rankingVercelResult(
     .parse(value);
   return parsed;
 }
+
+/** Only explicit worker stages and measured download percentages reach the UI. */
+export function rankingVercelProgress(value: unknown) {
+  if (!value || typeof value !== "object") return undefined;
+  const input = value as Record<string, unknown>;
+  if (!["preparing", "downloading", "converting"].includes(String(input.stage))) return undefined;
+  const percent = input.stage === "downloading" && typeof input.percent === "number" && Number.isFinite(input.percent)
+    ? Math.max(0, Math.min(100, input.percent)) : undefined;
+  return {stage: input.stage as "preparing" | "downloading" | "converting", ...(percent === undefined ? {} : {percent})};
+}

@@ -106,3 +106,9 @@ it("does not release the newer lease when a stale poll returns the previous atte
     ),
   ).toBe(false);
 });
+it("returns sanitized live progress without marking an operation complete", async () => {
+  state.fetch.mockResolvedValue(new Response(JSON.stringify({status:"running",progress:{stage:"downloading",percent:62.5,proxy:"not-exposed"}})));
+  expect(await syncRankingVercelOperation(project, operation)).toEqual({stage:"downloading",percent:62.5});
+  expect(state.release).not.toHaveBeenCalled();
+  expect(state.query.mock.calls.some(([strings])=>strings.join("?").startsWith("update"))).toBe(false);
+});

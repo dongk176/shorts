@@ -82,6 +82,7 @@ def test_audio_transitions_music_and_disabled_render(tmp_path, monkeypatch):
     (project / "sources.json").write_text(json.dumps([*sources, music]))
     spec = {
         "title": "효과음 테스트",
+        "transitionVersion": 2,
         "subtitle": "순위 사이 검정 화면",
         "rankCount": 5,
         "descending": False,
@@ -182,3 +183,38 @@ def test_audio_transitions_music_and_disabled_render(tmp_path, monkeypatch):
         )
     with pytest.raises(RankingFailure):
         pipeline.validate_render({**spec, "backgroundMusic": {"sourceId": music_id, "volume": 1.1}})
+
+
+def test_transition_assets_start_promptly_and_match_preview(tmp_path):
+    from shorts_worker.ranking_pipeline import ASSETS
+
+    web_audio = Path(__file__).resolve().parents[2] / "web/public/audio/ranking"
+    for setting in SOUNDS.values():
+        asset = ASSETS / "ranking_audio" / f"{setting['asset']}.mp4"
+        assert asset.read_bytes() == (web_audio / asset.name).read_bytes()
+        raw = subprocess.check_output([
+            "ffmpeg", "-v", "error", "-i", str(asset), "-vn", "-f", "s16le",
+            "-ac", "1", "-ar", "48000", "-",
+        ], timeout=20)
+        samples = array("h", raw)
+        audible = [i for i, value in enumerate(samples) if abs(value) > 328]
+        assert audible[0] / 48000 < .02  # sound arrives with the first black frame
+        assert setting["duration"] - audible[-1] / 48000 < .10
+        if setting["id"] == "lip-bass":
+            assert .8 < setting["duration"] < .9
+            tail = samples[int((setting["duration"] - .04) * 48000):]
+            body = samples[int(.2 * 48000):int(.4 * 48000)]
+            assert sum(abs(x) for x in tail) / len(tail) < sum(abs(x) for x in body) / len(body) / 2
+
+
+def test_existing_browser_jobs_keep_original_transition_timing(tmp_path, monkeypatch):
+    monkeypatch.setenv("RANKING_STORAGE_ROOT", str(tmp_path))
+    project = tmp_path / str(uuid4())
+    project.mkdir()
+    pipeline = RankingPipeline(project)
+    original, _ = pipeline.audio_settings({"transitionSound": "lip-bass"})
+    current, _ = pipeline.audio_settings({"transitionSound": "lip-bass", "transitionVersion": 2})
+    assert original["duration"] == 40 / 30
+    assert original["asset"] == "lip-bass"
+    assert current["duration"] == 26 / 30
+    assert current["asset"] == "lip-bass-v2"

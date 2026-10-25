@@ -25,7 +25,7 @@ export default async function RankingShortsPage({
   }
   const { project, operation } = await searchParams;
   return (
-    <div className="app-shell site-chrome desktop-sidebar-layout min-h-screen text-neutral-100">
+    <div className="app-shell ranking-page-shell site-chrome desktop-sidebar-layout min-h-screen text-neutral-100">
       <SiteHeader desktopSidebar showUsageIndicator={false}>
         <Link href="/">롱폼 → 숏폼으로 이동</Link>
       </SiteHeader>

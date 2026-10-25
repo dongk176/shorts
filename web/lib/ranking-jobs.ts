@@ -252,7 +252,7 @@ export async function rankingOperation(
 ) {
   await requireRankingProject(projectId, owner);
   rankingUuid(operationId);
-  if (rankingUsesVercel()) await syncRankingVercelOperation(projectId, operationId).catch(() => undefined);
+  const progress = rankingUsesVercel() ? await syncRankingVercelOperation(projectId, operationId).catch(() => undefined) : undefined;
   const rows =
     await getDb()`select id,status,result,error,action,executor from shorts_mvp.ranking_operations where project_id=${projectId} and id=${operationId}`;
   if (!rows[0]) throw new HttpError(404, "작업을 찾을 수 없습니다.");
@@ -272,5 +272,5 @@ export async function rankingOperation(
           }
         : { source: row.result.source as RankingSource }
       : null;
-  return { status: row.status, result, error: row.error };
+  return { status: row.status, result, error: row.error, ...(progress ? {progress} : {}) };
 }

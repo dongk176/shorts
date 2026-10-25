@@ -161,7 +161,10 @@ class Service:
         op["status"] = "running"
         data = op["data"]
         try:
-            pipeline = VercelPipeline(self.directory, egress=Egress(data.get("proxy", "")))
+            pipeline = VercelPipeline(
+                self.directory, egress=Egress(data.get("proxy", "")),
+                progress=lambda value: op.update(progress=value),
+            )
             if data["action"] != "render":
                 source = data["sourceId"]
                 if data.get("kind") == "audio":
