@@ -35,6 +35,10 @@ async function mount(element: React.ReactNode) {
 async function click(element: Element) {
   await act(async () => element.dispatchEvent(new window.Event("click", { bubbles: true })));
 }
+function handlers(element:Element) {
+  const key=Object.keys(element).find(k=>k.startsWith('__reactProps$'))!;
+  return (element as unknown as Record<string,Record<string,(value:unknown)=>void>>)[key];
+}
 
 it("opens two actions first and selects only after the explicit Shorts selection", async () => {
   const selected = vi.fn();
@@ -63,4 +67,28 @@ it("keeps ordinary popular-page actions unchanged when no ranking selection is s
   expect(container.querySelector("a")?.textContent).toContain("유튜브로");
   expect(container.textContent).not.toContain("쇼츠 선택");
   expect(container.textContent).toContain("링크 복사");
+});
+
+it("submits descriptions to the admin-only related search and keeps the chosen video selectable", async()=>{
+  const selected=vi.fn();const container=await mount(<PopularPicker onClose={()=>{}} onSelect={selected}/>);
+  const fetcher=vi.mocked(fetch);fetcher.mockResolvedValueOnce(Response.json({items:[video],updatedAt:'now',searchMode:'related'}));
+  const input=container.querySelector('input')!;
+  await act(async()=>handlers(input).onChange({target:{value:'웃긴 동물 반전'}}));
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  await act(async()=>handlers(container.querySelector('form')!).onSubmit({preventDefault(){}}));
+  expect(fetcher).toHaveBeenLastCalledWith('/api/ranking-shorts/discover',expect.objectContaining({method:'POST',body:JSON.stringify({q:'웃긴 동물 반전',category:'all',language:'all',period:'all',reusable:false})}));
+  expect(container.textContent).toContain('의미·제목·채널을 함께 검색');
+  expect(container.textContent).toContain('관련도순');
+  await click(container.querySelector('.popular-video-card button')!);
+  await click([...container.querySelectorAll('button')].find(button=>button.textContent==='쇼츠 선택')!);
+  expect(selected).toHaveBeenCalledExactlyOnceWith(video);
+});
+
+it("describes deterministic fallback without exposing provider details", async()=>{
+  const container=await mount(<PopularPicker onClose={()=>{}} onSelect={()=>{}}/>);
+  vi.mocked(fetch).mockResolvedValueOnce(Response.json({items:[video],updatedAt:'now',searchMode:'keyword'}));
+  await act(async()=>handlers(container.querySelector('input')!).onChange({target:{value:'침착맨'}}));
+  await act(async()=>handlers(container.querySelector('form')!).onSubmit({preventDefault(){}}));
+  expect(container.textContent).toContain('제목·채널 검색 결과');
+  expect(container.textContent).not.toContain('임베딩');
 });

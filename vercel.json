@@ -56,6 +56,10 @@
     {
       "path": "/api/cron/youtube-english",
       "schedule": "25 */4 * * *"
+    },
+    {
+      "path": "/api/cron/ranking-search-index",
+      "schedule": "35 * * * *"
     }
   ]
 }
