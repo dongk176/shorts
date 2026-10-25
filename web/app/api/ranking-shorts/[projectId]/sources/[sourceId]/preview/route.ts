@@ -5,6 +5,7 @@ import {
   rankingError,
   rankingBody,
 } from "@/lib/ranking-access";
+export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 export async function POST(
   request: Request,
@@ -19,7 +20,7 @@ export async function POST(
         admin.id,
         "preview",
         await rankingBody(request),
-        sourceId,
+        sourceId, new URL(request.url).origin,
       ),
       202,
     );

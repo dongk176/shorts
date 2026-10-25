@@ -21,7 +21,6 @@ import httpx
 from PIL import Image, ImageDraw, ImageFont
 
 from .errors import InvalidYouTubeUrl
-from .ingestion import PO_TOKEN_PLAYER_CLIENT, PO_TOKEN_PROVIDER_HOME, _validate_po_token_runtime
 from .url_validation import validate_youtube_url
 
 MAX_BYTES = 250 * 1024 * 1024
@@ -32,6 +31,12 @@ DESIGN = json.loads((ASSETS / "ranking_templates.json").read_text())
 LAYOUT = DESIGN["layout"]
 SOUNDS = {item["id"]: item for item in json.loads((ASSETS / "ranking_audio.json").read_text())}
 DEFAULT_STYLE = {"template": "classic", "font": "pretendard", "palette": "gold", "position": "left"}
+
+
+def _validate_po_token_runtime():
+    from .ranking_po_runtime import validate
+
+    validate()
 
 
 class RankingFailure(ValueError):
@@ -77,6 +82,7 @@ def download_failure_category(output: str, *, media: bool = False) -> str:
     if any(
         marker in value
         for marker in (
+            "instagram sent an empty media response",
             "connection refused",
             "connection reset",
             "timed out",
@@ -224,7 +230,9 @@ class RankingPipeline:
         self.deadline = time.monotonic() + DEADLINE_SECONDS
 
     def run(self, args: list[str], timeout: int = 180) -> str:
-        youtube = "yt_dlp" in args and "youtube" in args
+        youtube = "yt_dlp" in args and any(
+            platform in args for platform in ("youtube", "instagram", "tiktok")
+        )
         remaining = self.deadline - time.monotonic()
         if remaining <= 0:
             raise RankingFailure("처리 시간이 초과되었습니다. 더 짧은 영상으로 시도해 주세요.")
@@ -353,7 +361,11 @@ class RankingPipeline:
             "--use-extractors",
             platform,
         ]
+        if platform == "youtube":
+            base += ["--js-runtimes", "node"]
         if platform == "youtube" and self.po_token:
+            from .ranking_po_runtime import PO_TOKEN_PLAYER_CLIENT, PO_TOKEN_PROVIDER_HOME
+
             base.remove("--no-plugin-dirs")
             base += [
                 "--extractor-args",
@@ -361,7 +373,17 @@ class RankingPipeline:
                 "--extractor-args",
                 f"youtubepot-bgutilscript:server_home={PO_TOKEN_PROVIDER_HOME}",
             ]
-        info = json.loads(self.run([*base, "--dump-single-json", "--skip-download", normalized]))
+        # YouTube captions can make the full metadata exceed the bounded output
+        # buffer. Keep the fields used by the public-access gate, never discard it.
+        metadata_args = (
+            [
+                "--print",
+                "%(.{duration,is_live,live_status,availability,age_limit,formats,width,height})j",
+            ]
+            if platform == "youtube"
+            else ["--dump-single-json"]
+        )
+        info = json.loads(self.run([*base, *metadata_args, "--skip-download", normalized]))
         duration = info.get("duration")
         if (
             (

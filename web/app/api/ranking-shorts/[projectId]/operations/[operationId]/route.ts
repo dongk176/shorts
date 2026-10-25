@@ -31,6 +31,8 @@ export async function DELETE(
     );
     await requireRankingProject(projectId, admin.id);
     rankingUuid(operationId);
+    const {cancelRankingVercelUpload}=await import("@/lib/ranking-vercel");
+    await cancelRankingVercelUpload(projectId,operationId);
     const { getDb } = await import("@/lib/db");
     const { HttpError } = await import("@/lib/http");
     await getDb().begin(async (tx) => {

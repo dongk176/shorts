@@ -7,10 +7,25 @@ import {
   rankingRenderSchema,
   RANKING_LIMITS,
   type RankingSource,
+  type RankingRemote,
 } from "./ranking-shorts";
 import { rankingDirectRemote } from "./ranking-embed";
 import { rankingUuid, requireRankingProject } from "./ranking-access";
 import { rankingReceiverAccess, wakeRankingRuntime } from "./ranking-runtime";
+
+import { rankingUsesVercel, ensureRankingVercel, rankingVercelAccess, dispatchRankingVercel, syncRankingVercelOperation } from "./ranking-vercel";
+
+
+function rankingSourceRemote(input: string): RankingRemote | null {
+  const direct = rankingDirectRemote(input);
+  if (direct) return direct;
+  try {
+    const url = new URL(input);
+    if (url.protocol !== "https:" || url.username || url.password || url.port || !["instagram.com", "www.instagram.com"].includes(url.hostname)) return null;
+    const id = /^\/(?:reel|reels|p)\/([\w-]{5,80})\/?$/.exec(url.pathname)?.[1];
+    return id ? {platform:"instagram", videoId:id, url:`https://www.instagram.com/reel/${id}/`} : null;
+  } catch { return null; }
+}
 
 const sourceInput = z
   .object({
@@ -53,6 +68,7 @@ export async function queueRankingSource(
   projectId: string,
   owner: string,
   input: unknown,
+  origin = "https://www.easycut.co.kr",
 ) {
   const value = sourceInput.safeParse(input);
   if (!value.success)
@@ -90,14 +106,15 @@ export async function queueRankingSource(
   const instagramId = url && ["instagram.com", "www.instagram.com"].includes(new URL(url).hostname)
     ? /^\/(?:reel|reels|p)\/([\w-]{5,80})\/?$/.exec(new URL(url).pathname)?.[1] : undefined;
   await requireRankingProject(projectId, owner);
-  const ready = await wakeRankingRuntime();
+  const vercel = rankingUsesVercel();
+  const ready = vercel ? Boolean(await ensureRankingVercel(projectId, owner, origin)) : await wakeRankingRuntime();
   if (size && !ready) return { preparing: true };
   const db = getDb();
   const op = await db.begin(async (tx) => {
     await tx`select id from shorts_mvp.ranking_projects where id=${projectId} for update`;
     const existing =
-      await tx`select id,source_id from shorts_mvp.ranking_operations where project_id=${projectId} and request_id=${requestId}`;
-    if (existing[0]) return existing[0];
+      await tx`select id,source_id as "sourceId" from shorts_mvp.ranking_operations where project_id=${projectId} and request_id=${requestId}`;
+    if (existing[0]) return { id: existing[0].id, sourceId: existing[0].sourceId };
     const active =
       await tx`select id from shorts_mvp.ranking_operations where project_id=${projectId} and status in ('queued','running')`;
     if (active[0])
@@ -114,15 +131,26 @@ export async function queueRankingSource(
       );
     const id = randomUUID(),
       sourceId = randomUUID();
-    const metadata = instagramId ? { remote: { platform: "instagram", videoId: instagramId, url: `https://www.instagram.com/reel/${instagramId}/` } } : kind ? {kind} : {};
+    const metadata = instagramId ? { remote: { platform: "instagram", videoId: instagramId, url: `https://www.instagram.com/reel/${instagramId}/` } } : url && rankingDirectRemote(url) ? { remote: rankingDirectRemote(url) } : kind ? {kind} : {};
     await tx`insert into shorts_mvp.ranking_sources(id,project_id,status,remote_url,size_bytes,metadata) values(${sourceId},${projectId},${size ? "uploading" : "queued"},${url || null},${size || null},${tx.json(metadata)})`;
-    await tx`insert into shorts_mvp.ranking_operations(id,project_id,source_id,action,request_id) values(${id},${projectId},${sourceId},${size ? "import" : instagramId ? "preview" : "inspect"},${requestId})`;
+    await tx`insert into shorts_mvp.ranking_operations(id,project_id,source_id,action,request_id,executor,status) values(${id},${projectId},${sourceId},${size ? "import" : vercel || instagramId ? "preview" : "inspect"},${requestId},${vercel ? "vercel" : "ecs"},${vercel ? "running" : "queued"})`;
     return { id, sourceId };
   });
+  if (vercel) {
+    try { await dispatchRankingVercel(projectId, op.id); }
+    catch (error) {
+      if (size) {
+        await db`update shorts_mvp.ranking_operations set status='failed',error='업로드 연결을 준비하지 못했습니다.',finished_at=now() where id=${op.id} and status='running'`;
+        await db`update shorts_mvp.ranking_sources set status='failed' where id=${op.sourceId}`;
+        throw error;
+      }
+      // The admitted operation is retried idempotently by polling and the cron.
+    }
+  }
   return {
     ...operationResponse(projectId, op.id),
     ...(size
-      ? { upload: rankingReceiverAccess("PUT", projectId, op.sourceId, owner) }
+      ? { upload: vercel ? await rankingVercelAccess("PUT", projectId, op.sourceId, owner) : rankingReceiverAccess("PUT", projectId, op.sourceId, owner) }
       : {}),
   };
 }
@@ -132,6 +160,7 @@ export async function queueRankingOperation(
   action: "preview" | "render",
   input: unknown,
   sourceId?: string,
+  origin = "https://www.easycut.co.kr",
 ) {
   await requireRankingProject(projectId, owner);
   const envelope = z
@@ -149,10 +178,12 @@ export async function queueRankingOperation(
   const links = envelope.data.links || [];
   if ((action !== "render" && links.length) ||
       new Set(links.map((link) => link.sourceId)).size !== links.length ||
-      links.some((link) => !rankingDirectRemote(link.url) || !spec?.clips.some((clip) => clip.sourceId === link.sourceId)))
+      links.some((link) => !rankingSourceRemote(link.url) || !spec?.clips.some((clip) => clip.sourceId === link.sourceId)))
     throw new HttpError(400, "등록할 영상 링크를 확인해 주세요.");
   if (sourceId) rankingUuid(sourceId);
-  await wakeRankingRuntime();
+  const vercel = rankingUsesVercel();
+  if (vercel) await ensureRankingVercel(projectId, owner, origin);
+  else await wakeRankingRuntime();
   const operationId = await getDb().begin(async (tx) => {
     const locked = await tx`select id from shorts_mvp.ranking_projects where id=${projectId} and user_id=${owner} and deleted_at is null and expires_at>now() for update`;
     if (!locked[0]) throw new HttpError(404, "작업을 찾을 수 없습니다.");
@@ -178,7 +209,7 @@ export async function queueRankingOperation(
         // 'ready' also represents a registered remote link, as in worker.register_link.
         // Never trust browser duration metadata. The worker downloads, probes and
         // validates the public source and selected range before rendering.
-        const remote = rankingDirectRemote(link.url)!;
+        const remote = rankingSourceRemote(link.url)!;
         const metadata: RankingSource = {
           id, remote, duration: RANKING_LIMITS.sourceSeconds, durationKnown: false,
           previewReady: false, width: 0, height: 0, hasAudio: true,
@@ -206,11 +237,12 @@ export async function queueRankingOperation(
       }
     }
     const id = randomUUID();
-    await tx`insert into shorts_mvp.ranking_operations(id,project_id,source_id,action,payload,request_id) values(${id},${projectId},${sourceId || null},${action},${tx.json(spec || {})},${envelope.data.requestId})`;
+    await tx`insert into shorts_mvp.ranking_operations(id,project_id,source_id,action,payload,request_id,executor,status) values(${id},${projectId},${sourceId || null},${action},${tx.json(spec || {})},${envelope.data.requestId},${vercel ? "vercel" : "ecs"},${vercel ? "running" : "queued"})`;
     if (spec)
       await tx`update shorts_mvp.ranking_projects set draft=${tx.json(spec)} where id=${projectId}`;
     return id;
   });
+  if (vercel) await dispatchRankingVercel(projectId, operationId).catch(() => undefined);
   return operationResponse(projectId, operationId);
 }
 export async function rankingOperation(
@@ -220,13 +252,14 @@ export async function rankingOperation(
 ) {
   await requireRankingProject(projectId, owner);
   rankingUuid(operationId);
+  if (rankingUsesVercel()) await syncRankingVercelOperation(projectId, operationId).catch(() => undefined);
   const rows =
-    await getDb()`select id,status,result,error,action from shorts_mvp.ranking_operations where project_id=${projectId} and id=${operationId}`;
+    await getDb()`select id,status,result,error,action,executor from shorts_mvp.ranking_operations where project_id=${projectId} and id=${operationId}`;
   if (!rows[0]) throw new HttpError(404, "작업을 찾을 수 없습니다.");
   const row = rows[0];
   // A cold receiver can finish extraction before the load balancer admits media GETs.
   // Keep the existing bounded client poll active until the preview is reachable.
-  if (row.status === "succeeded" && ["preview", "import"].includes(row.action)
+  if (row.executor !== "vercel" && row.status === "succeeded" && ["preview", "import"].includes(row.action)
     && row.result?.source?.previewReady && !(await wakeRankingRuntime())) {
     return { status: "running", result: null, error: null };
   }

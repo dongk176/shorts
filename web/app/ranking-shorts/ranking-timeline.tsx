@@ -37,6 +37,8 @@ export function RankingTimeline({
     let disposed = false;
     const video = document.createElement("video");
     video.muted = true;
+    video.crossOrigin = "anonymous";
+    setFrames([]);
     video.preload = "auto";
     const canvas = document.createElement("canvas");
     canvas.width = 128;
@@ -46,8 +48,12 @@ export function RankingTimeline({
     let index = 0;
     function capture() {
       if (disposed || !context) return;
-      context.drawImage(video, 0, 0, 128, 72);
-      collected.push(canvas.toDataURL("image/jpeg", 0.65));
+      try {
+        context.drawImage(video, 0, 0, 128, 72);
+        collected.push(canvas.toDataURL("image/jpeg", 0.65));
+      } catch {
+        video.removeAttribute("src"); video.load(); return;
+      }
       index += 1;
       if (index < 10) video.currentTime = (duration * (index + 0.5)) / 10;
       else {

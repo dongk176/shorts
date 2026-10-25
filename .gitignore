@@ -69,3 +69,8 @@ htmlcov/
 /output/subtitle-safe-area/
 
 /output/community-template/
+
+/web/private/ranking-runtime/
+/output/ranking-vercel/
+
+/supabase/.temp/

@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { processRankingEmails } from "@/lib/ranking-completion-email";
+import { reconcileRankingVercel } from "@/lib/ranking-vercel";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 export async function GET(request: Request) {
@@ -14,6 +15,7 @@ export async function GET(request: Request) {
   if (process.env.RANKING_SHORTS_ENABLED !== "1")
     return Response.json({ skipped: true });
   try {
+    if (process.env.RANKING_VERCEL_SNAPSHOT_ID) await reconcileRankingVercel();
     return Response.json(await processRankingEmails());
   } catch {
     return Response.json(

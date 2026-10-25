@@ -19,10 +19,6 @@ import {
 import { RankingAudioSettings } from "./ranking-audio-settings";
 import { rankingAudioSequence, transitionSeconds, type RankingSound } from "@/lib/ranking-audio";
 import { RankingSequencePreview } from "./ranking-sequence-preview";
-import {
-  RankingRemotePlayer,
-  type RankingRemoteHandle,
-} from "./ranking-remote-player";
 import { RankingColorField } from "./ranking-color-field";
 import { RankingTimeline } from "./ranking-timeline";
 import { RankingProgressOverlay } from "./ranking-progress-overlay";
@@ -43,7 +39,7 @@ async function requestJson(url: string, init: RequestInit) {
   const response = await fetch(url, {
     ...init,
     cache: "no-store",
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.timeout(180_000),
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok)
@@ -104,8 +100,6 @@ export function RankingStudio({
   const [style, setStyle] = useState<RankingStyle>(defaultRankingStyle);
   const [subtitle, setSubtitle] = useState("오늘의 랭킹");
   const player = useRef<HTMLVideoElement>(null);
-  const remotePlayer = useRef<RankingRemoteHandle>(null);
-  const previewFallbacks = useRef(new Set<string>());
   const [current, setCurrent] = useState(0);
   const [showResult, setShowResult] = useState(false);
   const [previewPauseSignal, setPreviewPauseSignal] = useState(0);
@@ -145,12 +139,12 @@ export function RankingStudio({
   },[files]);
   function scrollProjects(){requestAnimationFrame(()=>document.getElementById("ranking-workspace-projects")?.scrollIntoView({behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"instant":"smooth",block:"start"}));}
   function resetEditor(){
-    const d=defaultRankingDraft();projectRef.current=null;setProject(null);submission.current=null;uploadedFiles.current.clear();previewFallbacks.current.clear();
+    const d=defaultRankingDraft();projectRef.current=null;setProject(null);submission.current=null;uploadedFiles.current.clear();
     setTitle(d.title);setSubtitle(d.subtitle);setStyle(d.style);setCount(d.count);setActive(0);setSlots(emptySlots());setOrderMode(d.orderMode);setCustomOrder([]);
     setSoundEnabled(false);setSound(d.sound);setMusicEnabled(false);setMusic(null);setMusicVolume(d.musicVolume);setFiles({});setResult(null);setShowResult(false);setCurrent(0);setError("");setOrderOpen(false);setDesignOpen(false);setCustomDesignOpen(false);
   }
   async function startFresh(){
-    await task("새 작업을 준비하고 있습니다…",async()=>{await draftStore.clear();resetEditor();setResetOpen(false);});
+    await task("새 작업을 준비하고 있습니다…",async()=>{if(project)await requestJson(`/api/ranking-shorts/${project}/session`,{method:"DELETE"});await draftStore.clear();resetEditor();setResetOpen(false);});
   }
   useEffect(() => {
     if (!initialProject) return;
@@ -232,12 +226,10 @@ export function RankingStudio({
     (item) => item.source?.remote && !item.source.previewReady,
   );
   const remoteSource = slot.source?.remote && !slot.source.previewReady;
-  const manualRange =
-    remoteSource && slot.source?.remote?.platform === "instagram";
   useEffect(() => {
     if (busy) {
       player.current?.pause();
-      remotePlayer.current?.pause();
+
     }
   }, [busy]);
 
@@ -276,19 +268,6 @@ export function RankingStudio({
     return id;
   }
 
-  function receiveDuration(index: number, sourceId: string, duration: number) {
-    if (!Number.isFinite(duration) || duration <= 0) return;
-    setSlots((previous) => previous.map((item, i) => {
-      if (i !== index || item.source?.id !== sourceId || !item.pendingLink) return item;
-      if (item.source.durationKnown && item.source.duration === duration) return item;
-      const start = Math.min(item.start, Math.max(0, duration - 0.5));
-      const end = Math.min(duration, Math.max(start + 0.5, item.end));
-      return { ...item, start, end, source: { ...item.source, duration, durationKnown: true } };
-    }));
-    if (duration > RANKING_LIMITS.sourceSeconds)
-      setError(`${index + 1}위 원본 영상은 20분 이하여야 합니다.`);
-  }
-
   async function importSource(file?: File) {
     if(file){
       await task(`${active+1}위 영상의 구간 선택을 준비하고 있습니다…`,async()=>{
@@ -303,17 +282,6 @@ export function RankingStudio({
     if (busyRef.current) return;
     const index = active;
     const remote = !file ? rankingDirectRemote(slots[index].link) : null;
-    if (remote) {
-      patch(index, {
-        source: {
-          id: crypto.randomUUID(), remote, duration: 0, durationKnown: false,
-          width: 0, height: 0, hasAudio: true, previewReady: false,
-        },
-        pendingLink: true, start: 0, end: 10,
-      });
-      setCurrent(0);
-      return;
-    }
     await task(
       `${index + 1}위 영상의 구간 선택을 준비하고 있습니다…`,
       async () => {
@@ -341,10 +309,10 @@ export function RankingStudio({
           );
         setBusy(`${index + 1}위 영상의 구간 선택을 준비하고 있습니다…`);
         const data = await waitForOperation(queued);
-        const source = data.source as RankingSource;
+        const source = { ...data.source, remote: remote || data.source.remote } as RankingSource;
         setCurrent(0);
         patch(index, { source, pendingLink: false, start: 0, end: Math.min(10, source.duration) });
-        if (source.durationKnown === false) {
+        if (!source.previewReady) {
           setBusy(
             `${index + 1}위 영상을 가져와 구간 선택을 준비하고 있습니다…`,
           );
@@ -365,7 +333,12 @@ export function RankingStudio({
     await task("배경음악을 준비하고 있습니다…",async()=>{await inspectLocalFile(file,"audio");const id=crypto.randomUUID();setFiles(previous=>{const next={...previous,[id]:file};if(music)delete next[music.id];return next;});setMusic({id,name:file.name});setMusicEnabled(true);invalidateAudio();});
   }
   async function uploadForRender(id:string,localId:string,file:File,kind:"video"|"audio"){
-    const cached=uploadedFiles.current.get(localId);if(cached)return cached;
+    const cached=uploadedFiles.current.get(localId);
+    if(cached){
+      const check=await fetch(`/api/ranking-shorts/${id}/media/${cached.id}`,{headers:{Range:"bytes=0-0"},signal:AbortSignal.timeout(10000)}).catch(()=>null);
+      if(check?.ok)return cached;
+      uploadedFiles.current.delete(localId);
+    }
     const input={requestId:crypto.randomUUID(),size:file.size,...(kind==="audio"?{kind}: {})};
     const queue=()=>requestJson(`/api/ranking-shorts/${id}/sources`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(input)});
     let queued=await queue();const deadline=Date.now()+300_000;
@@ -461,11 +434,6 @@ export function RankingStudio({
   }
 
   function seek(seconds: number) {
-    if (remoteSource) {
-      remotePlayer.current?.seek(seconds);
-      setCurrent(seconds);
-      return;
-    }
     const video = player.current;
     if (!video) return;
     video.pause();
@@ -951,29 +919,10 @@ export function RankingStudio({
               {slot.source ? (
                 <>
                   {remoteSource && slot.source.remote ? (
-                    <RankingRemotePlayer
-                      key={slot.source.id}
-                      ref={remotePlayer}
-                      remote={slot.source.remote}
-                      start={slot.start}
-                      label={`${active + 1}위 원본 플레이어`}
-                      suspended={Boolean(busy)}
-                      onPlaying={(value) => {
-                        if (value)
-                          setPreviewPauseSignal((previous) => previous + 1);
-                      }}
-                      onTime={setCurrent}
-                      onDuration={(duration) => receiveDuration(active, slot.source!.id, duration)}
-                      onUnavailable={() => {
-                        const sourceId = slot.source?.id;
-                        if (slot.source?.remote?.platform !== "instagram" || !project || !sourceId || busyRef.current || previewFallbacks.current.has(sourceId)) return;
-                        previewFallbacks.current.add(sourceId);
-                        void task(
-                          `${active + 1}위 영상을 가져와 구간 선택을 준비하고 있습니다…`,
-                          () => prepareSource(project, sourceId, active, slot.start, slot.end),
-                        );
-                      }}
-                    />
+                    <div className="ranking-empty-source">
+                      <strong>저장한 영상의 미리보기를 다시 연결해 주세요</strong>
+                      <button type="button" className="ranking-primary" disabled={Boolean(busy)} onClick={() => void importSource()}>영상 가져오기</button>
+                    </div>
                   ) : (
                     <div className="ranking-source-player">
                       <video
@@ -1009,14 +958,14 @@ export function RankingStudio({
                         ? "영상 준비됨"
                         : slot.pendingLink
                           ? slot.source.durationKnown === false
-                            ? "플레이어에서 재생하면 영상 길이가 표시됩니다"
-                            : "영상 만들기를 누르면 다운로드합니다"
+                            ? "영상을 가져오면 바로 구간을 고를 수 있어요"
+                            : "미리보기를 다시 연결해 주세요"
                           : slot.source.durationKnown === false
                           ? busy
                             ? "구간 선택 준비 중…"
                             : "영상을 가져오지 못했어요"
                           : remoteSource
-                            ? "영상 만들기를 누르면 다운로드합니다"
+                            ? "미리보기를 다시 연결해 주세요"
                             : "영상 준비됨"}
                     </span>
                     <span>
@@ -1035,13 +984,6 @@ export function RankingStudio({
                       </button>
                     </span>
                   </div>
-                  {manualRange && slot.source.durationKnown !== false ? (
-                    <p className="ranking-hint">
-                      릴스는 플레이어에서 장면을 확인한 뒤 아래 손잡이로 구간을
-                      지정해 주세요. 타임라인 이동은 플레이어에 반영되지
-                      않습니다.
-                    </p>
-                  ) : null}
                   {slot.source.durationKnown === false ? (
                     <div className="ranking-prepare-preview">
                       {slot.pendingLink ? null : busy ? (
@@ -1113,7 +1055,7 @@ export function RankingStudio({
               {error && <p role="alert" className="ranking-error">{error}</p>}
               </div>
               <footer><button type="button" disabled={Boolean(busy)} onClick={() => setSceneOpen(false)}>완료</button>
-                {active + 1 < count && <button type="button" disabled={Boolean(busy)} onClick={() => { player.current?.pause(); remotePlayer.current?.pause(); setActive(active + 1); setCurrent(slots[active + 1].start); setError(""); sceneDialog.current?.querySelector(".ranking-scene-scroll")?.scrollTo(0, 0); }}>다음 순위 고르기 · {active + 2}위 →</button>}
+                {active + 1 < count && <button type="button" disabled={Boolean(busy)} onClick={() => { player.current?.pause();  setActive(active + 1); setCurrent(slots[active + 1].start); setError(""); sceneDialog.current?.querySelector(".ranking-scene-scroll")?.scrollTo(0, 0); }}>다음 순위 고르기 · {active + 2}위 →</button>}
               </footer>
             </dialog>}
           </section>
@@ -1164,11 +1106,11 @@ export function RankingStudio({
               previewRank={active + 1}
               descending={descending}
               style={style}
-              suspended={Boolean(busy || (result && showResult))}
+              suspended={Boolean(busy || sceneOpen || (result && showResult))}
               pauseSignal={previewPauseSignal}
               onStart={() => {
                 player.current?.pause();
-                remotePlayer.current?.pause();
+
               }}
             />
           </div>
@@ -1211,7 +1153,7 @@ export function RankingStudio({
               disabled={!canRender}
               onClick={() => {
                 player.current?.pause();
-                remotePlayer.current?.pause();
+
                 void render();
               }}
             >

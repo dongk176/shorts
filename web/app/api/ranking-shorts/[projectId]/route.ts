@@ -7,6 +7,7 @@ import {
   rankingError,
   rankingUuid,
 } from "@/lib/ranking-access";
+import {rankingUsesVercel,syncRankingVercelProjects,stopRankingVercel} from "@/lib/ranking-vercel";
 export const dynamic = "force-dynamic";
 export async function DELETE(
   request: Request,
@@ -24,6 +25,7 @@ export async function DELETE(
         throw new HttpError(409, "진행 중인 작업이 끝난 뒤 정리해 주세요.");
       await tx`update shorts_mvp.ranking_projects set deleted_at=now() where id=${projectId} and user_id=${admin.id}`;
     });
+    if(rankingUsesVercel())await stopRankingVercel(projectId).catch(()=>undefined);
     return rankingReply({ ok: true });
   } catch (error) {
     return rankingError(error);
@@ -37,6 +39,7 @@ export async function GET(
     const admin = await requireRankingAdmin(request);
     const { projectId } = await params;
     const project = await requireRankingProject(projectId, admin.id);
+    if(rankingUsesVercel())await syncRankingVercelProjects(admin.id);
     const requestedOperation = new URL(request.url).searchParams.get(
       "operation",
     );

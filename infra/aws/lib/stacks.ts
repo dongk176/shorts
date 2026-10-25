@@ -2099,6 +2099,15 @@ export class ShortsMvpComputeStack extends cdk.Stack {
     bucket.grantDelete(vercelRole, "edit-sources/*");
     bucket.grantWrite(vercelRole, "edit-sources/*");
     bucket.grantRead(vercelRole, "outputs/*");
+    new iam.Policy(this, "RankingVercelResultsPolicy", {
+      policyName: "RankingVercelResultsOnly",
+      roles: [vercelRole],
+      statements: [new iam.PolicyStatement({
+        sid: "WriteRankingResultsOnly",
+        actions: ["s3:PutObject"],
+        resources: [bucket.arnForObjects("outputs/ranking/*")],
+      })],
+    });
     vercelRole.addToPolicy(new iam.PolicyStatement({
       sid: "ReadWriteCustomBackgroundAssetsOnly",
       actions: ["s3:GetObject", "s3:PutObject"],

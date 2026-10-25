@@ -233,7 +233,7 @@ export function RankingSequencePreview({
           labels={labels}
           descending={descending}
           revealedRanks={
-            layoutOnly || !playing
+            layoutOnly || (!playing && elapsed === 0)
               ? Array.from({ length: count }, (_, i) => i + 1)
               : clips.slice(0, index + 1).map((item) => item.rank)
           }

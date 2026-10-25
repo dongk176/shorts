@@ -4,6 +4,7 @@ const nextConfig = {
   output: "standalone",
   serverExternalPackages: ["postgres"],
   outputFileTracingIncludes: {
+    "/api/ranking-shorts/**/*": ["./private/ranking-runtime/runtime.tar.gz", "./private/ranking-runtime/manifest.json"],
     "/api/shorts-guides/*/download": ["./private/shorts-guides/**/*.pdf"],
     "/api/ebooks/*/download": ["./private/ebooks/*.pdf"],
   },

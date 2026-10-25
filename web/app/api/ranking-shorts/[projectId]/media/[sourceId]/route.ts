@@ -8,6 +8,7 @@ import {
   rankingError,
 } from "@/lib/ranking-access";
 import { rankingReceiverAccess } from "@/lib/ranking-runtime";
+import { rankingVercelAccess } from "@/lib/ranking-vercel";
 export const dynamic = "force-dynamic";
 export async function GET(
   request: Request,
@@ -41,13 +42,15 @@ export async function GET(
             ).url;
     } else {
       const sources =
-        await getDb()`select id from shorts_mvp.ranking_sources where id=${sourceId} and project_id=${projectId} and status='ready' and expires_at>now()`;
+        await getDb()`select id,task_id from shorts_mvp.ranking_sources where id=${sourceId} and project_id=${projectId} and status='ready' and expires_at>now()`;
       if (!sources[0])
         throw new HttpError(
           410,
           "미리보기가 만료되었습니다. 영상을 다시 추가해 주세요.",
         );
-      url = rankingReceiverAccess("GET", projectId, sourceId, admin.id).url;
+      url = sources[0].taskId?.startsWith("vercel:")
+        ? (await rankingVercelAccess("GET", projectId, sourceId, admin.id)).url
+        : rankingReceiverAccess("GET", projectId, sourceId, admin.id).url;
     }
     return new Response(null, {
       status: 307,
