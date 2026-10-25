@@ -41,7 +41,7 @@ export async function loadRankingProjectList(
     ) s on true
     where u.auth_user_id=${authUserId} and u.is_admin=true
       and p.deleted_at is null and p.expires_at>now()
-    order by p.created_at desc,p.id desc limit 20
+    order by p.created_at desc,p.id desc
   `;
   return rows.map((row) => ({
     id: row.id,

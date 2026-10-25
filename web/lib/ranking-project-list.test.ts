@@ -25,7 +25,7 @@ describe("ranking projects on the ordinary project page", () => {
     expect(sql).toContain("p.deleted_at is null and p.expires_at>now()");
     expect(sql).toContain("project_id=p.id and action='render'");
     expect(sql).toContain("order by created_at desc,id desc limit 1");
-    expect(sql).toContain("limit 20");
+    expect(sql).not.toContain("limit 20");
   });
   it("serializes only card metadata and exposes duration only from the latest successful render", async () => {
     vi.stubEnv("RANKING_SHORTS_ENABLED", "1");
