@@ -302,6 +302,7 @@ export async function syncRankingVercelOperation(
     result?: Record<string, unknown>;
     error?: string;
     failureCategory?: "bot_check" | "network_error" | "terminal";
+    failureReason?: string;
     progress?: unknown;
   };
   if (
@@ -322,7 +323,7 @@ export async function syncRankingVercelOperation(
   else {
     if (!op.taskId) {
       await dispatchRankingVercel(project, operation);
-      return;
+      return {stage: "preparing" as const};
     }
     const response = await fetch(`${base(session)}/operations/${operation}`, {
       headers: { Authorization: `Bearer ${secret(session)}` },
@@ -361,6 +362,13 @@ export async function syncRankingVercelOperation(
     }
   }
 
+  if (state.status === "failed" && state.failureCategory) {
+    const reason = ["rate_limited","bot_challenge","media_forbidden","connection_error","timeout","format_unavailable","restricted_or_unavailable"].includes(state.failureReason || "") ? state.failureReason : "unknown";
+    console.warn("ranking_download_failed", {operation, category:state.failureCategory, reason});
+    if (state.failureCategory === "bot_check") state.error = reason === "rate_limited"
+      ? "유튜브 요청이 일시적으로 제한됐어요. 잠시 후 다시 시도하거나 영상 파일을 넣어 주세요. 다른 순위는 계속 편집할 수 있어요."
+      : "유튜브의 봇 확인으로 영상을 가져오지 못했어요. 잠시 후 다시 시도하거나 영상 파일을 넣어 주세요. 다른 순위는 계속 편집할 수 있어요.";
+  }
   if (state.status === "succeeded") {
     try {
       state.result = rankingVercelResult(

@@ -129,11 +129,21 @@ class Service:
                     and attempt == previous["attempt"] + 1
                 ):
                     return previous
-            if any(
-                o["status"] in {"running", "uploading", "receiving"}
+            active = [
+                o
                 for o in self.operations.values()
+                if o["status"] in {"running", "uploading", "receiving"}
+            ]
+            if active and (
+                action == "render" or any(o["data"]["action"] == "render" for o in active)
             ):
                 raise RankingFailure("진행 중인 작업이 있습니다.")
+            if len(active) >= 3:
+                raise RankingFailure("동시에 준비할 수 있는 영상은 3개입니다.")
+            if action != "render" and any(
+                o["data"].get("sourceId") == data.get("sourceId") for o in active
+            ):
+                raise RankingFailure("이미 준비 중인 영상입니다.")
             if len(self.operations) >= 80:
                 raise RankingFailure("작업이 많습니다. 새로 시작해 주세요.")
             if action != "render":
@@ -162,7 +172,8 @@ class Service:
         data = op["data"]
         try:
             pipeline = VercelPipeline(
-                self.directory, egress=Egress(data.get("proxy", "")),
+                self.directory,
+                egress=Egress(data.get("proxy", "")),
                 progress=lambda value: op.update(progress=value),
             )
             if data["action"] != "render":
@@ -215,14 +226,15 @@ class Service:
         except Exception as exc:
             if isinstance(exc, RankingDownloadFailure):
                 op["failureCategory"] = exc.category
+                op["failureReason"] = exc.reason
+            if data.get("sourceId"):
+                shutil.rmtree(self.directory / data["sourceId"], ignore_errors=True)
             op.update(
                 status="failed",
                 error=str(exc)[:300]
                 if isinstance(exc, RankingFailure)
                 else "영상을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.",
             )
-            if data.get("sourceId"):
-                shutil.rmtree(self.directory / data["sourceId"], ignore_errors=True)
         finally:
             self.last_use = time.monotonic()
             # Signed output URL must not be included in status responses or retained.

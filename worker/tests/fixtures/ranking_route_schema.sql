@@ -16,7 +16,7 @@ create table shorts_mvp.ingestion_route_slots(
  last_released_at timestamptz,updated_at timestamptz,quality_reset_at timestamptz
 );
 create table shorts_mvp.runtime_feature_flags(flag_key text primary key,enabled boolean);
-create function shorts_mvp.ingestion_route_quality(text) returns table(quality_tier integer) language sql as 'select 0';
+create function shorts_mvp.ingestion_route_quality(text) returns table(quality_tier integer,success_rate numeric) language sql as 'select 0,0::numeric';
 create table shorts_mvp.project_job_outbox(id uuid primary key,job_id uuid,status text,available_at timestamptz default now(),created_at timestamptz default now(),dispatched_at timestamptz,last_error text);
 create table shorts_mvp.job_outbox(id uuid primary key,job_id uuid,status text,available_at timestamptz default now(),created_at timestamptz default now(),dispatch_batch_id uuid,dispatched_at timestamptz);
 create table shorts_mvp.dispatch_batches(id uuid primary key,kind text,item_count integer);

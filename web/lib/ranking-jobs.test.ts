@@ -89,7 +89,7 @@ describe("durable ranking render submission", () => {
 
 describe("Instagram preparation", () => {
   it("queues one validated preview instead of a redundant metadata job", async () => {
-    state.query.mockImplementation((strings: TemplateStringsArray) => Promise.resolve(strings.join("?").includes("count(*)") ? [{count: 0}] : []));
+    state.query.mockImplementation((strings: TemplateStringsArray) => Promise.resolve(strings.join("?").includes("count(*)") ? [{count: 0}] : strings.join("?").includes("for update") ? [{id:project}] : []));
     const result = await queueRankingSource(project, "owner", {requestId, url: "https://www.instagram.com/reel/DZJ9ag9SNRI/?igsh=test"});
     const queries = statements();
     expect(queries.find(q => q.sql.includes("insert into shorts_mvp.ranking_operations"))?.args).toContain("preview");

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { RankingSourceQueue } from "@/lib/ranking-source-queue";
 import { ProjectDeleteOverlay } from "@/components/project-delete-overlay";
 import type { RankingProjectSummary } from "@/lib/ranking-project-list";
 import { defaultRankingDraft,emptyRankingSlots,type RankingSlot as Slot,type RankingDraftRecord } from "@/lib/ranking-draft";
@@ -127,7 +128,8 @@ export function RankingStudio({
   const busyRef = useRef(false);
   const [sourceJobs, setSourceJobs] = useState<Record<number, SourceJob>>({});
   const pendingSources = useRef(new Set<number>());
-  const sourceQueue = useRef(Promise.resolve());
+  const sourceQueue = useRef(new RankingSourceQueue(3));
+  const creatingProject = useRef<Promise<string> | null>(null);
   const alive = useRef(true);
   const [sourceNotice, setSourceNotice] = useState<{index: number; message: string} | null>(null);
   const sourcePending = Object.values(sourceJobs).some(job => !job.error);
@@ -152,9 +154,8 @@ export function RankingStudio({
     if (busyRef.current || pendingSources.current.has(index)) return;
     pendingSources.current.add(index);
     updateSourceJob(index, {stage: "waiting"});
-    // One download at a time preserves the existing worker/IP admission limits.
-    // Other ranks can be edited and queued immediately while this runs.
-    const run = sourceQueue.current.then(async () => {
+    // Independent downloads; the server also enforces per-owner admission.
+    const run = sourceQueue.current.run(async () => {
       if (!alive.current) return;
       try {
         updateSourceJob(index, {stage: "preparing"});
@@ -166,7 +167,6 @@ export function RankingStudio({
         updateSourceJob(index, {stage: "preparing", error: failure instanceof Error ? failure.message : "영상을 가져오지 못했어요. 다시 시도해 주세요."});
       } finally { pendingSources.current.delete(index); }
     });
-    sourceQueue.current = run.catch(() => undefined);
     await run;
   }
   const [error, setError] = useState("");
@@ -319,11 +319,16 @@ export function RankingStudio({
 
   async function ensureProject() {
     if (projectRef.current) return projectRef.current;
-    const created = await requestJson("/api/ranking-shorts", { method: "POST" });
-    const id = created.id as string;
-    projectRef.current = id;
-    setProject(id);
-    return id;
+    if (!creatingProject.current) {
+      creatingProject.current = (async () => {
+        const created = await requestJson("/api/ranking-shorts", { method: "POST" });
+        const id = created.id as string;
+        projectRef.current = id;
+        setProject(id);
+        return id;
+      })().finally(() => { creatingProject.current = null; });
+    }
+    return creatingProject.current;
   }
 
   async function importSource(file?: File) {

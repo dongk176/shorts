@@ -107,17 +107,27 @@ export async function queueRankingSource(
     ? /^\/(?:reel|reels|p)\/([\w-]{5,80})\/?$/.exec(new URL(url).pathname)?.[1] : undefined;
   await requireRankingProject(projectId, owner);
   const vercel = rankingUsesVercel();
-  const ready = vercel ? Boolean(await ensureRankingVercel(projectId, owner, origin)) : await wakeRankingRuntime();
+  let ready: boolean;
+  try { ready = vercel ? Boolean(await ensureRankingVercel(projectId, owner, origin)) : await wakeRankingRuntime(); }
+  catch (error) {
+    if (vercel && error instanceof HttpError && [409,429].includes(error.status)) return { preparing: true };
+    throw error;
+  }
   if (size && !ready) return { preparing: true };
   const db = getDb();
   const op = await db.begin(async (tx) => {
-    await tx`select id from shorts_mvp.ranking_projects where id=${projectId} for update`;
+    if (vercel) await tx`select id from shorts_mvp.app_users where id=${owner} and is_admin=true for update`;
+    const locked = await tx`select id from shorts_mvp.ranking_projects where id=${projectId} and user_id=${owner} and deleted_at is null and expires_at>now() for update`;
+    if (!locked[0]) throw new HttpError(404, "작업을 찾을 수 없습니다.");
     const existing =
       await tx`select id,source_id as "sourceId" from shorts_mvp.ranking_operations where project_id=${projectId} and request_id=${requestId}`;
     if (existing[0]) return { id: existing[0].id, sourceId: existing[0].sourceId };
     const active =
-      await tx`select id from shorts_mvp.ranking_operations where project_id=${projectId} and status in ('queued','running')`;
-    if (active[0])
+      await tx`select id,action from shorts_mvp.ranking_operations where project_id=${projectId} and status in ('queued','running')`;
+    if (vercel && !active.some(o => o.action === "render")) {
+      const running = await tx`select count(*)::int as count from shorts_mvp.ranking_operations o join shorts_mvp.ranking_projects p on p.id=o.project_id where p.user_id=${owner} and o.executor='vercel' and o.status in ('queued','running')`;
+      if (running[0].count >= 3) return null;
+    } else if (active[0])
       throw new HttpError(
         409,
         "진행 중인 작업이 있습니다. 완료 후 다시 시도해 주세요.",
@@ -136,6 +146,7 @@ export async function queueRankingSource(
     await tx`insert into shorts_mvp.ranking_operations(id,project_id,source_id,action,request_id,executor,status) values(${id},${projectId},${sourceId},${size ? "import" : vercel || instagramId ? "preview" : "inspect"},${requestId},${vercel ? "vercel" : "ecs"},${vercel ? "running" : "queued"})`;
     return { id, sourceId };
   });
+  if (!op) return { preparing: true };
   if (vercel) {
     try { await dispatchRankingVercel(projectId, op.id); }
     catch (error) {

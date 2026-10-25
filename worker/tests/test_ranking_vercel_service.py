@@ -55,7 +55,7 @@ def test_browser_ranges_are_bounded():
             byte_range(value, 100)
 
 
-def test_upload_admission_is_idempotent_and_single_operation(tmp_path, monkeypatch):
+def test_upload_admission_is_idempotent_and_bounded_parallel(tmp_path, monkeypatch):
     monkeypatch.setenv("RANKING_STORAGE_ROOT", str(tmp_path))
     service = Service(dict(project=str(uuid4()), owner=str(uuid4()), secret="a" * 64, origins=[]))
     operation, source = str(uuid4()), str(uuid4())
@@ -63,8 +63,17 @@ def test_upload_admission_is_idempotent_and_single_operation(tmp_path, monkeypat
     assert service.submit(operation, data)["status"] == "uploading"
     assert service.submit(operation, data)["status"] == "uploading"
     service.operations[operation]["status"] = "receiving"
+    for _ in range(2):
+        assert (
+            service.submit(str(uuid4()), dict(action="import", sourceId=str(uuid4()), size=100))[
+                "status"
+            ]
+            == "uploading"
+        )
     with pytest.raises(RankingFailure):
         service.submit(str(uuid4()), dict(action="import", sourceId=str(uuid4()), size=100))
+    with pytest.raises(RankingFailure):
+        service.submit(str(uuid4()), dict(action="render"))
 
 
 def test_retry_only_recovers_transient_failure_and_is_idempotent(tmp_path, monkeypatch):
@@ -100,3 +109,50 @@ def test_bot_challenge_returns_for_route_failover_without_repeating_same_ip():
     with pytest.raises(RankingDownloadFailure):
         Egress("test-route").run(action, time.monotonic() + 30)
     assert calls == ["test-route"]
+
+
+def test_parallel_sources_execute_before_any_one_finishes(tmp_path, monkeypatch):
+    import threading
+
+    from shorts_worker.ranking_vercel_service import VercelPipeline
+
+    monkeypatch.setenv("RANKING_STORAGE_ROOT", str(tmp_path))
+    gate = threading.Barrier(4)
+    release = threading.Event()
+
+    def imported(self, source, url):
+        gate.wait(timeout=3)
+        release.wait(timeout=3)
+        return {"id": source}
+
+    monkeypatch.setattr(VercelPipeline, "import_source", imported)
+    service = Service(dict(project=str(uuid4()), owner=str(uuid4()), secret="a" * 64, origins=[]))
+    ids = [str(uuid4()) for _ in range(3)]
+    try:
+        for op in ids:
+            service.submit(
+                op,
+                dict(
+                    action="preview",
+                    sourceId=str(uuid4()),
+                    url="https://www.instagram.com/reel/abcde/",
+                ),
+            )
+        gate.wait(timeout=3)
+        assert all(service.operations[op]["status"] == "running" for op in ids)
+    finally:
+        release.set()
+
+
+def test_safe_failure_reasons_never_contain_credentials():
+    from shorts_worker.ranking_pipeline import download_failure_category, download_failure_reason
+
+    for message, expected in [
+        (
+            "Sign in to confirm you're not a bot https://user:password@proxy.invalid",
+            "bot_challenge",
+        ),
+        ("HTTP Error 429: Too Many Requests", "rate_limited"),
+        ("not available in your country; HTTP Error 429", "restricted_or_unavailable"),
+    ]:
+        assert download_failure_reason(message, download_failure_category(message)) == expected

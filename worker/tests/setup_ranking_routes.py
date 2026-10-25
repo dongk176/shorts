@@ -18,5 +18,7 @@ with psycopg.connect(url) as db:
     for name in [
         "20261024081212_ranking_shorts_admin.sql",
         "20261024110000_ranking_webshare_admission.sql",
+        "20261025081932_ranking_vercel_sessions.sql",
+        "20261025121506_ranking_parallel_downloads.sql",
     ]:
         db.execute((root / "supabase/migrations" / name).read_text())

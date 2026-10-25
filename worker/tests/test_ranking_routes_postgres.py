@@ -221,3 +221,90 @@ def test_simultaneous_regular_and_ranking_acquisition_share_one_slot(data):
         ).fetchone()
         assert sum(x is not None for x in row) == 1
         assert str(row[0]) == job or str(row[1]) == data[2]
+
+
+def parallel_claim(db, op):
+    return db.execute(
+        "select shorts_ranking_runtime.claim_route_parallel(%s,'task',"
+        "array['a','b','c','d','e','f'],array[]::text[])",
+        (op,),
+    ).fetchone()[0]
+
+
+def parallel_operations(data, count):
+    ids = []
+    with connect() as db:
+        db.execute(
+            "update shorts_mvp.ranking_operations set status='succeeded' where id=%s", (data[2],)
+        )
+        db.execute("insert into shorts_mvp.ingestion_route_slots(route_id) values('d'),('e'),('f')")
+        for _ in range(count):
+            op = str(uuid4())
+            db.execute(
+                "insert into shorts_mvp.ranking_operations"
+                "(id,project_id,action,status,task_id,request_id,executor) "
+                "values(%s,%s,'preview','running','task',%s,'vercel')",
+                (op, data[1], str(uuid4())),
+            )
+            ids.append(op)
+    return ids
+
+
+def test_parallel_routes_are_distinct_idempotent_and_leave_regular_capacity(data):
+    ids = parallel_operations(data, 4)
+    with connect() as db:
+        routes = [parallel_claim(db, op) for op in ids]
+        assert len(set(routes[:3])) == 3 and all(routes[:3])
+        assert routes[3] is None
+        assert parallel_claim(db, ids[0]) == routes[0]
+        job = regular(db)
+        db.execute("select * from shorts_mvp.claim_project_job_outbox_without_ingestion_circuit(1)")
+        assert (
+            db.execute(
+                "select ingestion_route_id from shorts_mvp.video_jobs where id=%s", (job,)
+            ).fetchone()[0]
+            not in routes[:3]
+        )
+
+
+def test_parallel_route_cooldown_survives_next_request(data):
+    ids = parallel_operations(data, 3)
+    with connect() as db:
+        route = parallel_claim(db, ids[0])
+        db.execute(
+            "select shorts_ranking_runtime.release_route(%s,'task',%s,'bot_check')", (ids[0], route)
+        )
+        db.execute(
+            "update shorts_mvp.ingestion_route_slots set cooldown_until=null where route_id=%s",
+            (route,),
+        )
+        assert parallel_claim(db, ids[1]) != route
+        db.execute(
+            "update shorts_mvp.ranking_route_attempts set created_at=now()-interval '6 minutes' "
+            "where operation_id=%s",
+            (ids[0],),
+        )
+        assert parallel_claim(db, ids[2]) == route
+
+
+def test_parallel_route_concurrent_poll_never_leases_two_ips_for_one_operation(data):
+    ids = parallel_operations(data, 1)
+    barrier = Barrier(4)
+
+    def run():
+        with connect() as db:
+            barrier.wait(timeout=5)
+            return parallel_claim(db, ids[0])
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(lambda _: run(), range(4)))
+    assert len(set(r for r in results if r)) == 1
+    with connect() as db:
+        assert (
+            db.execute(
+                "select count(*) from shorts_mvp.ingestion_route_slots "
+                "where ranking_operation_id=%s",
+                (ids[0],),
+            ).fetchone()[0]
+            == 1
+        )

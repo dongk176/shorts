@@ -44,8 +44,9 @@ class RankingFailure(ValueError):
 
 
 class RankingDownloadFailure(RankingFailure):
-    def __init__(self, category: str):
+    def __init__(self, category: str, reason: str = "unknown"):
         self.category = category
+        self.reason = reason
         super().__init__(
             "영상을 가져오지 못했습니다. 제한 없는 공개 영상인지 확인하거나 "
             "사용 권한이 있는 영상 파일을 넣어 주세요."
@@ -99,6 +100,18 @@ def download_failure_category(output: str, *, media: bool = False) -> str:
     ) or (media and "unable to download video data" in value and "http error 403" in value):
         return "network_error"
     return "terminal"
+
+
+def download_failure_reason(output: str, category: str) -> str:
+    """Finite diagnostic codes only: never persist extractor output or credentials."""
+    value = output.lower()
+    if category == "bot_check":
+        return "rate_limited" if "429" in value or "too many requests" in value else "bot_challenge"
+    if category == "network_error":
+        return "media_forbidden" if "http error 403" in value else "connection_error"
+    if "requested format is not available" in value:
+        return "format_unavailable"
+    return "restricted_or_unavailable"
 
 
 def ranking_style(value=None) -> dict:
@@ -210,6 +223,13 @@ def expand_short_link(value: str) -> str:
     raise RankingFailure("단축 링크를 열지 못했습니다. 전체 영상 주소를 넣어 주세요.")
 
 
+def _file_size(path):
+    try:
+        return path.stat().st_size if path.is_file() else 0
+    except FileNotFoundError:
+        return 0  # A different parallel operation may have just cleaned its directory.
+
+
 class RankingPipeline:
     def __init__(self, project: Path, egress=None, progress=None):
         self.progress = progress or (lambda value: None)
@@ -262,16 +282,14 @@ class RankingPipeline:
                 while process.poll() is None:
                     if time.monotonic() >= until:
                         if youtube:
-                            raise RankingDownloadFailure("network_error")
+                            raise RankingDownloadFailure("network_error", "timeout")
                         raise RankingFailure("영상 처리 시간이 초과되었습니다.")
                     if out.tell() > 4 * 1024 * 1024 or err.tell() > 4 * 1024 * 1024:
                         raise RankingFailure("영상 정보를 처리할 수 없습니다.")
                     # Also bounds unknown-length downloads, for which yt-dlp cannot
                     # enforce --max-filesize before receiving the response body.
                     if any(
-                        p.stat().st_size > MAX_BYTES + 4 * 1024 * 1024
-                        for p in self.project.rglob("*")
-                        if p.is_file()
+                        _file_size(p) > MAX_BYTES + 4 * 1024 * 1024 for p in self.project.rglob("*")
                     ):
                         raise RankingFailure("250MB 이하의 영상을 사용해 주세요.")
                     if "--progress-template" in args:
@@ -283,18 +301,19 @@ class RankingPipeline:
                         for line in lines:
                             match = re.search(rb"ranking-progress:\s*(\d+(?:\.\d+)?)%", line)
                             if match:
-                                self.progress({
-                                    "stage": "downloading", "percent": min(100, float(match[1]))
-                                })
+                                self.progress(
+                                    {"stage": "downloading", "percent": min(100, float(match[1]))}
+                                )
                     time.sleep(0.1)
                 if process.returncode:
                     if youtube:
                         err.seek(0)
+                        output = err.read(4 * 1024 * 1024).decode("utf8", errors="replace")
+                        category = download_failure_category(
+                            output, media="--skip-download" not in args
+                        )
                         raise RankingDownloadFailure(
-                            download_failure_category(
-                                err.read(4 * 1024 * 1024).decode("utf8", errors="replace"),
-                                media="--skip-download" not in args,
-                            )
+                            category, download_failure_reason(output, category)
                         )
                     raise RankingFailure(
                         "영상을 가져오거나 변환하지 못했습니다. 공개 영상인지 확인하거나 "

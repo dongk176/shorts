@@ -11,6 +11,13 @@ vi.mock("./ranking-runtime", () => ({
     token: "test",
   }),
 }));
+vi.mock("./ranking-vercel", () => ({
+  rankingUsesVercel: () => process.env.RANKING_EXECUTION_BACKEND === "vercel",
+  ensureRankingVercel: async () => true,
+  dispatchRankingVercel: async () => {},
+  syncRankingVercelOperation: async () => {},
+  rankingVercelAccess: async () => ({url:"https://sandbox.invalid/upload",token:"test"}),
+}));
 import {
   createRankingProject,
   queueRankingSource,
@@ -139,6 +146,25 @@ suite("ranking isolated database workflow", () => {
     expect(operation.payload.backgroundMusic).toEqual(spec.backgroundMusic);
     expect(operation.payload.transitionSound).toBe("scratch");
     await state.db`update shorts_mvp.ranking_operations set status='failed' where id=${rendered.operationId}`;
+  });
+  it("admits three concurrent sources per owner while another owner proceeds independently", async () => {
+    vi.stubEnv("RANKING_EXECUTION_BACKEND", "vercel");
+    try {
+      const p2 = (await createRankingProject(other)).id;
+      const requests = Array.from({length:4},()=>({requestId:randomUUID(),url:"https://www.instagram.com/reel/DZJ9ag9SNRI/"}));
+      const results = await Promise.all(requests.map(input=>queueRankingSource(project,owner,input)));
+      const admitted = results.filter(r=>"operationId" in r);
+      expect(admitted).toHaveLength(3);
+      expect(results.filter(r=>"preparing" in r)).toHaveLength(1);
+      const second = await queueRankingSource(p2,other,{requestId:randomUUID(),size:100});
+      expect(second).toHaveProperty("operationId");
+      const p3 = (await createRankingProject(owner)).id;
+      expect(await queueRankingSource(p3,owner,{requestId:randomUUID(),size:100})).toEqual({preparing:true});
+      await expect(queueRankingOperation(project,owner,"render",{requestId:randomUUID(),spec:{title:"blocked",descending:true,clips:[{rank:1,sourceId:randomUUID(),start:0,end:1,label:"test"}]}})).rejects.toMatchObject({status:409});
+      const index = results.findIndex(r=>"operationId" in r);
+      expect(await queueRankingSource(project,owner,requests[index])).toMatchObject({operationId:admitted[0].operationId});
+      await state.db`update shorts_mvp.ranking_operations set status='failed' where executor='vercel' and project_id in(select id from shorts_mvp.ranking_projects where user_id in (${owner},${other}))`;
+    } finally { vi.unstubAllEnvs(); }
   });
   it("sends a completion only once across concurrent cron workers", async () => {
     const send = vi.fn().mockResolvedValue("email-test");
