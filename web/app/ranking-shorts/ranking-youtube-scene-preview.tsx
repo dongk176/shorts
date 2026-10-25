@@ -31,6 +31,8 @@ export function RankingYouTubeScenePreview({ source, start, end, seek, title, su
   const intent = useRef(false);
   const [ready, setReady] = useState(false);
   const [playing, setPlaying] = useState(false);
+  const [frameReady, setFrameReady] = useState(false);
+  const [needsPlay, setNeedsPlay] = useState(false);
   const [position, setPosition] = useState(start);
   const [failure, setFailure] = useState(false);
   const [retry, setRetry] = useState(0);
@@ -57,6 +59,8 @@ export function RankingYouTubeScenePreview({ source, start, end, seek, title, su
     if (!ready || suspended) return;
     intent.current = false;
     setPlaying(false);
+    setFrameReady(false);
+    setNeedsPlay(false);
     const target = Math.max(start, Math.min(end - 1 / 30, cursor));
     setPosition(target);
     player.current?.seek(target);
@@ -65,6 +69,7 @@ export function RankingYouTubeScenePreview({ source, start, end, seek, title, su
   useEffect(() => {
     intent.current = false;
     setPlaying(false);
+    setNeedsPlay(true);
     player.current?.pause();
   }, [pauseSignal]);
   useEffect(() => {
@@ -72,6 +77,7 @@ export function RankingYouTubeScenePreview({ source, start, end, seek, title, su
     intent.current = false;
     setPlaying(false);
     setReady(false);
+    setFrameReady(false);
     player.current?.pause();
   }, [suspended]);
 
@@ -84,10 +90,11 @@ export function RankingYouTubeScenePreview({ source, start, end, seek, title, su
       return;
     }
     onStart();
-    if (position >= end - 0.08) {
-      player.current?.seek(start);
-      setPosition(start);
-    }
+    const target = position >= end - 0.08 ? start : Math.max(start, position);
+    // Keep seek+play inside the user gesture, including after autoplay was blocked.
+    player.current?.seek(target);
+    setPosition(target);
+    setNeedsPlay(false);
     intent.current = true;
     setPlaying(true);
     player.current?.play();
@@ -115,6 +122,8 @@ export function RankingYouTubeScenePreview({ source, start, end, seek, title, su
           <RankingRemotePlayer key={retry} ref={player} composition remote={source.remote!} start={start}
             label={`${rank}위 선택 구간 미리보기`} suspended={suspended}
             onReady={() => { setFailure(false); setReady(true); }}
+            onFrame={() => { setFrameReady(true); setNeedsPlay(false); }}
+            onPreviewBlocked={() => { intent.current = false; setPlaying(false); setNeedsPlay(true); }}
             onDuration={duration => onDuration?.(duration)}
             onPlaying={() => {}}
             onUnavailable={() => { intent.current = false; setPlaying(false); setFailure(true); }}
@@ -132,10 +141,10 @@ export function RankingYouTubeScenePreview({ source, start, end, seek, title, su
       <RankingOverlay title={title} subtitle={subtitle} count={count} active={rank - 1}
         labels={labels} descending={descending} style={style}
         revealedRanks={revealedRanks} />
-      {!ready && !failure ? <div className="ranking-scene-preview-loading" role="status"><span className="ranking-spinner" />장면 연결 중…</div> : null}
+      {!frameReady && !failure ? <div className="ranking-scene-preview-loading" role="status">{ready && needsPlay ? "재생을 눌러 장면을 확인하세요" : <><span className="ranking-spinner" />장면 연결 중…</>}</div> : null}
       {failure ? <div className="ranking-scene-preview-loading" role="alert">
         <p>장면을 연결하지 못했어요.</p>
-        <button type="button" onClick={() => { setFailure(false); setReady(false); setRetry(value => value + 1); }}>다시 연결</button>
+        <button type="button" onClick={() => { setFailure(false); setReady(false); setFrameReady(false); setNeedsPlay(false); setRetry(value => value + 1); }}>다시 연결</button>
       </div> : null}
       <button type="button" className="ranking-preview-toggle" disabled={!ready || suspended || failure}
         aria-label={playing ? "선택 구간 미리보기 일시 정지" : "선택 구간 미리보기 재생"} aria-keyshortcuts="Space" onClick={toggle}>

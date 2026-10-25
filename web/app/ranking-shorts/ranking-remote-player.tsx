@@ -100,9 +100,11 @@ export const RankingRemotePlayer = forwardRef<
     onUnavailable: () => void;
     composition?: boolean;
     onReady?: () => void;
+    onFrame?: () => void;
+    onPreviewBlocked?: () => void;
   }
 >(function RankingRemotePlayer(
-  { remote, start, label, onTime, onDuration, onPlaying, onUnavailable, suspended, composition = false, onReady },
+  { remote, start, label, onTime, onDuration, onPlaying, onUnavailable, suspended, composition = false, onReady, onFrame, onPreviewBlocked },
   ref,
 ) {
   const host = useRef<HTMLDivElement>(null);
@@ -110,8 +112,8 @@ export const RankingRemotePlayer = forwardRef<
   const youtube = useRef<YouTubePlayer | null>(null);
   const preview = useRef<ReturnType<typeof createYouTubePreview> | null>(null);
   const pendingSeek = useRef<number | null>(null);
-  const latest = useRef({ start, onTime, onDuration, onPlaying, onUnavailable, onReady });
-  latest.current = { start, onTime, onDuration, onPlaying, onUnavailable, onReady };
+  const latest = useRef({ start, onTime, onDuration, onPlaying, onUnavailable, onReady, onFrame, onPreviewBlocked });
+  latest.current = { start, onTime, onDuration, onPlaying, onUnavailable, onReady, onFrame, onPreviewBlocked };
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
   const [instagramHeight, setInstagramHeight] = useState(780);
@@ -221,12 +223,12 @@ export const RankingRemotePlayer = forwardRef<
                   startSeconds: latest.current.start,
                 });
                 preview.current = createYouTubePreview(instance, () => {
-                  if (alive && composition) fail();
+                  if (alive && composition) latest.current.onPreviewBlocked?.();
                   else if (alive)
                     setError(
                       "장면을 불러오지 못했습니다. 플레이어의 재생 버튼을 눌러 다시 확인해 주세요.",
                     );
-                });
+                }, () => { if (alive) latest.current.onFrame?.(); });
                 if (pendingSeek.current !== null) {
                   preview.current.seek(pendingSeek.current);
                   pendingSeek.current = null;
@@ -237,8 +239,10 @@ export const RankingRemotePlayer = forwardRef<
                   if (
                     !preview.current?.seeking &&
                     instance?.getPlayerState() === 1
-                  )
+                  ) {
+                    latest.current.onFrame?.();
                     latest.current.onTime(instance.getCurrentTime());
+                  }
                 }, composition ? 30 : 100);
               },
               onStateChange: ({ data }) => {

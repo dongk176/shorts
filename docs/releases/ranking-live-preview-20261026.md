@@ -18,6 +18,10 @@ Removed original-open link, download/status/source-duration text, and selected-d
 
 Source iframe timeouts now stay local with an explicit reconnect control instead of claiming YouTube forbids playback through a second global alert. Actual source and composition failures remain visible; reconnect recreates only that player and preserves the editor input.
 
+Production smoke check of the initial candidate `dpl_YPF9DWw6M9jVfjUBBbkcExriqVU1` found that browser-blocked muted frame preparation incorrectly disabled the explicit play control. It was reverted to baseline deployment `dpl_23DrdEgmudq8VjgLUFd8Cubatfgg` while correcting this. The successor distinguishes ready API / decoded frame / blocked automatic seek: the play button stays available after automatic seeking is blocked, and an explicit user gesture issues seek+play together. A loading cover conceals undecoded YouTube covers until a decoded frame is reported. No source download fallback is introduced. Regression coverage includes this observed blocked-autoplay case.
+
+The corrected version was tested in actual local Chrome after waiting nine seconds beyond API reconnection: the blocked-seek prompt appeared while the explicit play button remained enabled. Clicking it decoded the selected 3–6 second scene, removed the loading cover, played the actual video and stopped at 3.0 / 3.0. Corrected full frontend suite: 3,922 passed, 182 skipped, with two workers and bounded 15s tests / 30s hooks to avoid the observed host-load timeouts. Focused preview/embed/crop suite: 34 passed. Local production build including lint/type validation passed before adding the temporary harness; the harness and generated development route types were removed again after this verification.
+
 ## Verification and release method
 
 - Crop geometry unit tests compare portrait, landscape, square and missing metadata against renderer scale-to-cover geometry.

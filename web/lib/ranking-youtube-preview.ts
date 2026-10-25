@@ -14,6 +14,7 @@ export type YouTubePreviewPlayer = {
 export function createYouTubePreview(
   player: YouTubePreviewPlayer,
   onTimeout: () => void,
+  onFrame?: () => void,
 ) {
   let target: number | null = null;
   let mutedBefore = false;
@@ -26,11 +27,12 @@ export function createYouTubePreview(
   function restore() {
     if (!mutedBefore) player.unMute();
   }
-  function finish() {
+  function finish(decoded = true) {
     clear();
     player.pauseVideo();
     target = null;
     restore();
+    if (decoded) onFrame?.();
   }
   return {
     get seeking() {
@@ -57,7 +59,7 @@ export function createYouTubePreview(
             if (Date.now() - readyAt >= 120) finish();
           } else readyAt = null;
           if (target !== null && Date.now() >= deadline) {
-            finish();
+            finish(false);
             onTimeout();
           }
         }, 40);

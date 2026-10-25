@@ -133,3 +133,22 @@ it("destroys the player while a modal suspends the preview and reconnects on ret
   expect(players).toHaveLength(2);
   expect(players[1].seekTo).toHaveBeenCalledWith(3, true);
 });
+
+it("keeps user-gesture playback available after a browser blocks the initial muted seek", async () => {
+  await act(async () => root.render(<RankingYouTubeScenePreview {...props} />));
+  const player = players[0];
+  player.playVideo.mockImplementation(() => {});
+  await act(async () => vi.advanceTimersByTime(8500));
+  expect(container.textContent).toContain("재생을 눌러 장면을 확인하세요");
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(container.querySelector<HTMLButtonElement>(".ranking-preview-toggle")!.disabled).toBe(false);
+  player.time = 0;
+  player.playVideo.mockImplementation(() => { player.state = 1; player.events.onStateChange({data:1}); });
+  await clickPlay();
+  expect(player.seekTo).toHaveBeenLastCalledWith(3, true);
+  expect(player.state).toBe(1);
+  await act(async () => vi.advanceTimersByTime(40));
+  expect(container.querySelector('.ranking-scene-preview-loading')).toBeNull();
+  expect(players).toHaveLength(1);
+  expect(fetch).not.toHaveBeenCalled();
+});
