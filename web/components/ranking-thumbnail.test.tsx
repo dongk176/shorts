@@ -17,10 +17,11 @@ describe("ranking visual previews", () => {
     expect(html).toContain('https://i.ytimg.com/vi/vtQV5zRU71o/hqdefault.jpg');
     expect(html).not.toContain('<iframe');
   });
-  it("keeps TikTok's cover paused and muted", () => {
+  it("never embeds a blocked TikTok page in the composition cover", () => {
     const html = renderToStaticMarkup(<RankingThumbnail lazy={false} remote={{ platform: "tiktok", videoId: "6718335390845095173", url: "https://www.tiktok.com/@scout2015/video/6718335390845095173" }} />);
-    expect(html).toContain('autoplay=0&amp;muted=1');
-    expect(html).toContain('pointer-events:none');
+    expect(html).not.toContain('<iframe');
+    expect(html).not.toContain('tiktok.com/player');
+    expect(html).toContain('랭킹 쇼츠');
   });
   it("shows typed labels even with no source or no playback yet", () => {
     const html = renderToStaticMarkup(<RankingSequencePreview clips={[]} project={null} title="제목" subtitle="순위" count={3} labels={["첫째 장면", "둘째 장면", ""]} descending style={defaultRankingStyle} layoutOnly suspended={false} pauseSignal={0} onStart={() => {}} />);
