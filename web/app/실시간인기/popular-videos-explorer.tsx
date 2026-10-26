@@ -200,7 +200,7 @@ const popularUiCopy: Record<SiteLocale, {
   },
   en: {
     lastUpdated: "Last updated", filters: "Filters", activePlanOnly: "Active plan only",
-    englishOnly: "English only", japaneseOnly: "Japanese only", koreanOnly: "Korean only", longFormOnly: "Long-form only", reusableOnly: "Reuse allowed only",
+    englishOnly: "English only", japaneseOnly: "Japanese only", koreanOnly: "Korean only", longFormOnly: "Long-form only", reusableOnly: "Royalty-Free",
     longFormOnlyAria: "Show long-form videos only", reusableOnlyAria: "Show reusable videos only",
     categoryAria: (label) => `${label} category`,
     loadFailed: "Could not load trending videos", retry: "Try again", loadMore: "Show more",
