@@ -42,6 +42,9 @@ export const PROTECTED_APP_ROUTES = [
 // These routes are the only intentional additions relative to the currently
 // promoted production manifest. Everything else must still fail closed.
 export const ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE = [
+  // User-requested overseas-only administrator console and login (2026-10-27).
+  "/admin/easycutcutcutcutcutcut/overseas/page",
+  "/admin/easycutcutcutcutcutcut/overseas/login/page",
   // User-authorized administrator-only related Shorts search and bounded indexer (2026-10-26).
   "/api/ranking-shorts/discover/route",
   "/api/cron/ranking-search-index/route",

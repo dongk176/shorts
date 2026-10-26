@@ -359,6 +359,10 @@ export function AdminShell({
 
         <AdminNavigation key={activeTab} activeTab={activeTab} expenseAccess={expenseAccess} />
 
+        <Link href="/admin/easycutcutcutcutcutcut/overseas" prefetch={false} className={styles.navLink}>
+          해외 전용 관리자 ↗
+        </Link>
+
       </aside>
 
       <div className={styles.main}>
