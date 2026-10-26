@@ -8,6 +8,7 @@ import {
   type AdminTrendData, type AdminTrendPeriod, type AdminTrendPoint, type TrendViewport,
 } from "@/lib/admin-trends";
 import styles from "./admin-shell.module.css";
+import { formatAdminCurrency } from "@/lib/admin-paddle-contract";
 
 function money(value: number) {
   return `${value.toLocaleString("ko-KR")}원`;
@@ -19,14 +20,16 @@ function compactMoney(value: number) {
   return money(value);
 }
 
-export function AdminTrendCard({ initialData }: { initialData: AdminTrendData }) {
+export function AdminTrendCard({ initialData, endpoint = "/api/admin/trends", currency, heading }: {
+  initialData: AdminTrendData; endpoint?: string; currency?: "USD" | "JPY"; heading?: string;
+}) {
   const [data, setData] = useState(initialData);
   const [pending, setPending] = useState<AdminTrendPeriod | null>(null);
   const [failure, setFailure] = useState<{ period: AdminTrendPeriod; message: string } | null>(null);
   const requestRef = useRef<AbortController | null>(null);
   const selectId = useId();
   const sales = data.metric === "sales";
-  const title = sales ? "매출" : "회원 수 추이";
+  const title = heading || (sales ? "매출" : "회원 수 추이");
   const total = data.points.reduce((sum, point) => sum + point.value, 0);
 
   useEffect(() => () => {
@@ -47,7 +50,7 @@ export function AdminTrendCard({ initialData }: { initialData: AdminTrendData })
     setPending(period);
     const timeout = window.setTimeout(() => controller.abort(), 45_000);
     try {
-      const response = await fetch(`/api/admin/trends?metric=${data.metric}&period=${period}`, {
+      const response = await fetch(`${endpoint}?metric=${data.metric}&period=${period}${currency ? `&currency=${currency}` : ""}`, {
         cache: "no-store", signal: controller.signal,
       });
       if (!response.ok) throw new Error(response.status === 401 || response.status === 403
@@ -81,7 +84,7 @@ export function AdminTrendCard({ initialData }: { initialData: AdminTrendData })
         </div>
         <div>
           <p className={styles.chartTotal}>{sales ? "기간 합계" : "기간 신규"}
-            <strong>{sales ? compactMoney(total) : `${total.toLocaleString("ko-KR")}명`}</strong>
+            <strong>{sales ? currency ? formatAdminCurrency(total, currency) : compactMoney(total) : `${total.toLocaleString("ko-KR")}명`}</strong>
           </p>
           <p className={styles.chartLegend}>
             <span className={sales ? styles.legendDot : styles.memberLegendDot} />
@@ -95,13 +98,13 @@ export function AdminTrendCard({ initialData }: { initialData: AdminTrendData })
           <button type="button" onClick={() => void selectPeriod(failure.period)}>다시 시도</button></> : null}
       </div>
       <div aria-busy={pending !== null} style={{ opacity: pending ? 0.55 : 1 }}>
-        <InteractiveTrendChart key={`${data.period}:${data.from}:${data.to}`} data={data} title={title} />
+        <InteractiveTrendChart key={`${data.period}:${data.from}:${data.to}`} data={data} title={title} currency={currency} />
       </div>
     </article>
   );
 }
 
-function InteractiveTrendChart({ data, title }: { data: AdminTrendData; title: string }) {
+function InteractiveTrendChart({ data, title, currency }: { data: AdminTrendData; title: string; currency?: "USD" | "JPY" }) {
   const frameRef = useRef<HTMLDivElement>(null);
   const axisRef = useRef<HTMLDivElement>(null);
   const valueAxisRef = useRef<SVGGElement>(null);
@@ -140,7 +143,7 @@ function InteractiveTrendChart({ data, title }: { data: AdminTrendData; title: s
     measure();
     void document.fonts.ready.then(measure);
     return () => { canceled = true; };
-  }, [valueScale, data.metric]);
+  }, [valueScale, data.metric, currency]);
 
   useEffect(() => {
     const frame = frameRef.current;
@@ -183,7 +186,8 @@ function InteractiveTrendChart({ data, title }: { data: AdminTrendData; title: s
   )), plotWidth) : [];
   const activePoint = active === null ? null : coordinates[active - view.start];
   const zoomed = view.count < data.points.length;
-  const valueLabel = (point: AdminTrendPoint) => sales ? money(point.value) : `${point.value.toLocaleString("ko-KR")}명`;
+  const axisLabel = (value: number) => sales && currency ? formatAdminCurrency(value, currency) : trendValueLabel(value, data.metric);
+  const valueLabel = (point: AdminTrendPoint) => sales ? currency ? formatAdminCurrency(point.value, currency) : money(point.value) : `${point.value.toLocaleString("ko-KR")}명`;
 
   function zoom(factor: number) {
     setView((current) => zoomTrendViewport(current, data.points.length, factor));
@@ -281,7 +285,7 @@ function InteractiveTrendChart({ data, title }: { data: AdminTrendData; title: s
             return <g key={value}>
               <line className={styles.chartGrid} x1={padding.left} x2={chartWidth - padding.right} y1={y} y2={y} />
               <text className={styles.trendValueTick} x={0} y={y} textAnchor="start" dominantBaseline="middle">
-                {trendValueLabel(value, data.metric)}
+                {axisLabel(value)}
               </text>
             </g>;
           })}</g>
@@ -313,7 +317,7 @@ function InteractiveTrendChart({ data, title }: { data: AdminTrendData; title: s
           {activePoint ? `${activePoint.date} ${valueLabel(activePoint)}${sales ? ` ${activePoint.orderCount ?? 0}건 승인` : " 신규 가입"}` : ""}
         </span>
       </div>
-      <p className={styles.trendHint} id={instructionsId}>＋로 확대 · 좌우 드래그로 이동<span className={styles.trendSrOnly}> · 현재 Y축 범위 {trendValueLabel(0, data.metric)}부터 {trendValueLabel(valueScale.maximum, data.metric)} · 방향키로 날짜 확인 · ＋, −로 확대 및 축소 · Home으로 전체 보기</span></p>
+      <p className={styles.trendHint} id={instructionsId}>＋로 확대 · 좌우 드래그로 이동<span className={styles.trendSrOnly}> · 현재 Y축 범위 {axisLabel(0)}부터 {axisLabel(valueScale.maximum)} · 방향키로 날짜 확인 · ＋, −로 확대 및 축소 · Home으로 전체 보기</span></p>
     </>
   );
 }

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { buildAdminTrend } from "@/lib/admin-trends";
 import { renderToStaticMarkup } from "react-dom/server";
 import { OverseasDashboard } from "./overseas-dashboard";
 import { overseasPath, type OverseasData } from "@/lib/admin-overseas-contract";
@@ -8,9 +9,10 @@ vi.mock("./overseas.module.css",()=>({default:new Proxy({},{get:(_target,key)=>S
 
 const data:OverseasData = {
   filters:{tab:"overview",query:"",page:1},total:0,pages:1,rows:[],
-  metrics:{members:0,activeSubscriptions:0,projects:0,recentProjects:0},
-  sales:["USD","JPY"].map(currency=>({currency:currency as "USD"|"JPY",gross:0,refunded:0,chargeback:0,pending:0,today:0,orders:0})),
-  activity:[],
+  metrics:{members:0,todayMembers:0,activeSubscriptions:0,pastDueSubscriptions:0,inactiveSubscriptions:0,projects:0,recentProjects:0},
+  sales:["USD","JPY"].map(currency=>({currency:currency as "USD"|"JPY",gross:0,refunded:0,chargeback:0,pending:0,today:0,todayDeductions:0,orders:0})),
+  memberTrend:buildAdminTrend("members","7d","2026-10-27",[]),
+  salesTrends:{USD:buildAdminTrend("sales","7d","2026-10-27",[]),JPY:buildAdminTrend("sales","7d","2026-10-27",[])},
 };
 describe("overseas administrator interface",()=>{
   it("keeps navigation and searches within the overseas page",()=>{
@@ -21,7 +23,11 @@ describe("overseas administrator interface",()=>{
     expect(html).toContain(`action="${overseasPath}"`);
     expect(html).toContain("표시할 해외 데이터가 없습니다");
     expect(html).toContain("실제 거주 국가를 보증하지 않습니다");
-    expect(html).not.toContain("/api/admin/");
+    expect(html).not.toContain("/api/admin/trends");
+    expect(html).toContain("해외 회원 수 추이");
+    expect(html).toContain("누적 해외 매출");
+    expect(html).toContain("6개월");
+    expect(html).toContain("전체 보기");
   });
   it("escapes user text and keeps the query in pagination links",()=>{
     const html=renderToStaticMarkup(<OverseasDashboard data={{...data,filters:{tab:"projects",query:"alex",page:1},pages:2,total:31,
@@ -37,9 +43,10 @@ if(process.env.OVERSEAS_VISUAL_OUTPUT) {
   it("exports a synthetic local visual fixture",async()=>{
     const {readFileSync,writeFileSync,mkdirSync}=await import("node:fs");
     const dir=process.env.OVERSEAS_VISUAL_OUTPUT!;mkdirSync(dir,{recursive:true});
-    const fixture:OverseasData={...data,total:126,metrics:{members:126,activeSubscriptions:42,projects:389,recentProjects:3},
-      sales:[{currency:"USD",gross:287400,refunded:11900,chargeback:0,pending:0,today:15960,orders:86},{currency:"JPY",gross:198240,refunded:5900,chargeback:0,pending:0,today:5900,orders:61}],
-      activity:Array.from({length:14},(_,i)=>({date:`2026-10-${String(i+13).padStart(2,"0")}`,members:[2,4,1,7,3,5,6,4,8,5,7,9,6,10][i],projects:[5,9,4,14,8,11,15,12,17,13,18,21,15,24][i]})),
+    const fixture:OverseasData={...data,total:126,metrics:{members:126,todayMembers:8,activeSubscriptions:42,pastDueSubscriptions:2,inactiveSubscriptions:5,projects:389,recentProjects:3},
+      sales:[{currency:"USD",gross:287400,refunded:11900,chargeback:0,pending:0,today:15960,todayDeductions:100,orders:86},{currency:"JPY",gross:198240,refunded:5900,chargeback:0,pending:0,today:5900,todayDeductions:0,orders:61}],
+      memberTrend:buildAdminTrend("members","7d","2026-10-27",[{date:"2026-10-26",value:10}]),
+      salesTrends:{USD:buildAdminTrend("sales","7d","2026-10-27",[{date:"2026-10-26",value:15960,orderCount:4}]),JPY:buildAdminTrend("sales","7d","2026-10-27",[{date:"2026-10-26",value:5900,orderCount:2}])},
       rows:[{id:"demo-a",email:"alex@example.test",name:"Alex Morgan",label:"해외 이용 확인",status:"member",createdAt:"2026-10-26T15:42:00Z",currency:null,amount:null},{id:"demo-b",email:"yuki@example.test",name:"Yuki Tanaka",label:"해외 이용 확인",status:"member",createdAt:"2026-10-26T12:15:00Z",currency:null,amount:null}]};
     const css=readFileSync(new URL("../admin-shell.module.css",import.meta.url),"utf8")+readFileSync(new URL("./overseas.module.css",import.meta.url),"utf8");
     const html=renderToStaticMarkup(<OverseasDashboard data={fixture}/>);

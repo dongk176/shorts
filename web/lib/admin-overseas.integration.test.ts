@@ -5,7 +5,8 @@ vi.mock("server-only",()=>({}));
 const auth = vi.hoisted(()=>vi.fn());
 vi.mock("@/lib/admin-overseas-auth",()=>({requireOverseasAdminUser:auth}));
 vi.mock("@/lib/db",()=>({getDb:()=>sql}));
-import { loadAdminOverseas } from "./admin-overseas";
+import { kstDate, shiftTrendDate } from "./admin-trends";
+import { loadAdminOverseas, loadAdminOverseasTrend } from "./admin-overseas";
 import { overseasFilters } from "./admin-overseas-contract";
 
 type Fragment = {strings:TemplateStringsArray; values:unknown[]};
@@ -82,15 +83,51 @@ describe("overseas administrator isolation",()=>{
     await member(1,null);await member(2,null);await member(3,null);
     await pg.exec(`insert into shorts_mvp.paddle_subscriptions values('live','${uid(1)}','live','active'),('test','${uid(2)}','sandbox','active');
       insert into shorts_mvp.customer_inquiries values('${uid(3)}','${uid(3)}','person3@example.com','ja','Please help me','/ja','new',now());`);
-    const result=await loadAdminOverseas({tab:"members"});expect(result.metrics).toEqual({members:2,activeSubscriptions:1,projects:0,recentProjects:0});expect(result.rows.map(row=>row.email)).toContain("person3@example.com");
+    const result=await loadAdminOverseas({tab:"members"});expect(result.metrics).toMatchObject({members:2,activeSubscriptions:1,projects:0,recentProjects:0});expect(result.rows.map(row=>row.email)).toContain("person3@example.com");
   });
   it("scopes native currency totals, refunds, chargebacks and payment details",async()=>{
     await member(1);await member(2,"ko");
     await pg.exec(`insert into shorts_mvp.paddle_subscriptions values('good','${uid(1)}','live','active'),('bad','${uid(2)}','live','active'),('test','${uid(1)}','sandbox','active');
       insert into shorts_mvp.paddle_payments values('usd','good','${uid(1)}','USD',399,now(),'paddle_lite'),('yen','good','${uid(1)}','JPY',590,now(),'paddle_lite'),('hidden','bad','${uid(2)}','JPY',100000,now(),'paddle_lite'),('sandbox','test','${uid(1)}','USD',100000,now(),'paddle_lite');
       insert into shorts_mvp.paddle_adjustments values('usd',100,'refund','approved'),('usd',50,'refund','pending_approval'),('yen',999,'chargeback','approved');`);
-    const result=await loadAdminOverseas({tab:"billing"});expect(result.total).toBe(2);expect(result.metrics.activeSubscriptions).toBe(1);
-    expect(result.sales).toEqual([{currency:"USD",gross:399,refunded:100,chargeback:0,pending:50,today:399,orders:1},{currency:"JPY",gross:590,refunded:0,chargeback:590,pending:0,today:590,orders:1}]);
+    const result=await loadAdminOverseas({tab:"billing"});expect(result.total).toBe(3);expect(result.metrics.activeSubscriptions).toBe(2);
+    expect(result.sales).toEqual([{currency:"USD",gross:399,refunded:100,chargeback:0,pending:50,today:399,todayDeductions:100,orders:1},{currency:"JPY",gross:100590,refunded:0,chargeback:590,pending:0,today:100590,todayDeductions:590,orders:2}]);
+  });
+  it("keeps foreign payments and membership despite Korean names, projects and domestic orders",async()=>{
+    await member(1,"ko","한글 이름","KR");
+    await pg.exec(`insert into shorts_mvp.billing_orders values('${uid(1)}','toss');
+      insert into shorts_mvp.paddle_subscriptions values('live','${uid(1)}','live','active');
+      insert into shorts_mvp.paddle_payments values('real-foreign-payment','live','${uid(1)}','USD',399,now(),'paddle_lite');`);
+    const bill=await loadAdminOverseas({tab:"billing"});expect(bill.total).toBe(1);
+    expect(bill.rows[0]).toMatchObject({id:"real-foreign-payment",currency:"USD",amount:399});
+    expect(bill.sales[0].gross).toBe(399);expect(bill.metrics.members).toBe(1);
+    expect((await loadAdminOverseas({tab:"projects"})).total).toBe(0);
+    expect((await loadAdminOverseas({tab:"members"})).rows[0].label).toBe("해외 결제 회원");
+    expect(JSON.stringify(bill)).not.toContain("toss");
+  });
+  it("keeps financial history when staff and withdrawn users are excluded from members",async()=>{
+    await member(1);await member(2);
+    await pg.exec(`update shorts_mvp.app_users set is_admin=true where id='${uid(1)}';
+      update shorts_mvp.app_users set withdrawn_at=now() where id='${uid(2)}';
+      insert into shorts_mvp.paddle_subscriptions values('staff','${uid(1)}','live','active'),('former','${uid(2)}','live','canceled');
+      insert into shorts_mvp.paddle_payments values('staff-payment','staff','${uid(1)}','USD',399,now(),'paddle_lite'),('former-payment','former','${uid(2)}','USD',500,now(),'paddle_lite');`);
+    const data=await loadAdminOverseas({tab:"billing"});expect(data.total).toBe(2);expect(data.sales[0].gross).toBe(899);expect(data.metrics.members).toBe(0);
+  });
+  it("reconciles every graph period with the native ledger and KST dates",async()=>{
+    await member(1,"ko");const today=kstDate(),yesterday=shiftTrendDate(today,-1);
+    await pg.exec(`insert into shorts_mvp.paddle_subscriptions values('live','${uid(1)}','live','active');
+      insert into shorts_mvp.paddle_payments values('usd-before','live','${uid(1)}','USD',101,'${yesterday}T23:30:00+09:00','paddle_lite'),
+      ('usd-after','live','${uid(1)}','USD',299,'${today}T00:30:00+09:00','paddle_lite'),
+      ('yen','live','${uid(1)}','JPY',590,'${today}T00:30:00+09:00','paddle_lite');`);
+    for(const period of ["7d","30d","6m","all"] as const){
+      const usd=await loadAdminOverseasTrend("sales",period,"USD");
+      expect(usd.points.reduce((sum,p)=>sum+p.value,0)).toBe(400);
+      expect(usd.points.find(p=>p.date===today)?.value).toBe(299);
+      expect((await loadAdminOverseasTrend("sales",period,"JPY")).points.reduce((sum,p)=>sum+p.value,0)).toBe(590);
+      expect((await loadAdminOverseasTrend("members",period,"USD")).points.reduce((sum,p)=>sum+p.value,0)).toBe(1);
+    }
+    const data=await loadAdminOverseas({tab:"billing"});expect(data.sales[0].today).toBe(299);
+    expect(data.salesTrends.USD.points.reduce((sum,p)=>sum+(p.orderCount||0),0)).toBe(2);
   });
   it("paginates after exclusion and treats wildcard search literally",async()=>{
     for(let n=1;n<=34;n++)await member(n);

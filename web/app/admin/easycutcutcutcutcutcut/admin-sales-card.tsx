@@ -2,14 +2,16 @@
 
 import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import styles from "./admin-shell.module.css";
+import { formatAdminCurrency } from "@/lib/admin-paddle-contract";
 
 export function AdminSalesCard({
-  period, grossSales, refundedSales, icon,
+  period, grossSales, refundedSales, icon, currency,
 }: {
   period: "all" | "today";
   grossSales: number;
   refundedSales: number;
   icon: ReactNode;
+  currency?: "USD" | "JPY";
 }) {
   const [net, setNet] = useState(false);
   const [open, setOpen] = useState(false);
@@ -17,9 +19,11 @@ export function AdminSalesCard({
   const trigger = useRef<HTMLButtonElement>(null);
   const options = useRef<Array<HTMLButtonElement | null>>([]);
   const id = useId();
-  const labels = period === "today" ? ["오늘 국내 매출", "오늘 국내 순매출"] : ["누적 국내 매출", "국내 순매출"];
+  const labels = currency
+    ? period === "today" ? ["오늘 해외 매출", "오늘 해외 순매출"] : ["누적 해외 매출", "해외 순매출"]
+    : period === "today" ? ["오늘 국내 매출", "오늘 국내 순매출"] : ["누적 국내 매출", "국내 순매출"];
   const selected = net ? 1 : 0;
-  const money = (value: number) => `${value.toLocaleString("ko-KR")}원`;
+  const money = (value: number) => currency ? formatAdminCurrency(value, currency) : `${value.toLocaleString("ko-KR")}원`;
 
   useEffect(() => {
     if (!open) return;
@@ -113,8 +117,8 @@ export function AdminSalesCard({
       <p className={styles.metricValue} aria-live="polite">{money(net ? grossSales - refundedSales : grossSales)}</p>
       <p className={styles.metricHint}>
         {net
-          ? `${period === "today" ? "오늘 승인 건의" : "누적"} 환불 ${money(refundedSales)} 차감`
-          : period === "today" ? "KST 자정 이후 승인 · 환불 차감 전" : "전체 승인 금액 · 환불 차감 전"}
+          ? `${period === "today" ? currency ? "오늘 결제 건의" : "오늘 승인 건의" : "누적"} ${currency ? "환불·차지백" : "환불"} ${money(refundedSales)} 차감`
+          : currency ? (period === "today" ? "KST 자정 이후 기록 · 환불 차감 전" : "전체 실결제 금액 · 환불 차감 전") : period === "today" ? "KST 자정 이후 승인 · 환불 차감 전" : "전체 승인 금액 · 환불 차감 전"}
       </p>
     </article>
   );
