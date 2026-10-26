@@ -1,5 +1,6 @@
 import { transitionSeconds, rankingSoundSchema, rankingMusicSchema } from "./ranking-audio";
 import { z } from "zod";
+import { rankingFramingSchema } from "./ranking-framing";
 import { defaultRankingStyle, rankingStyleSchema } from "./ranking-templates";
 
 export const RANKING_LIMITS = {
@@ -51,6 +52,7 @@ export const rankingRenderSchema = z
             label: z.string().trim().max(60),
             start: z.number().finite().min(0),
             end: z.number().finite().positive(),
+            framing: rankingFramingSchema.optional(),
           })
           .strict(),
       )

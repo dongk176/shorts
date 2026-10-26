@@ -133,6 +133,49 @@ def ranking_style(value=None) -> dict:
     return style
 
 
+
+def ranking_framing(value=None) -> dict:
+    if value is None:
+        return {"top": 0, "bottom": 0, "zoom": 1, "panY": 0}
+    bounds = {"top": (0, .6), "bottom": (0, .6), "zoom": (1, 2.5), "panY": (-1, 1)}
+    if not isinstance(value, dict) or set(value) != set(bounds):
+        raise RankingFailure("영상 화면 조정값을 확인해 주세요.")
+    for key, (low, high) in bounds.items():
+        number = value[key]
+        if (
+            type(number) not in (int, float)
+            or not math.isfinite(number)
+            or not low <= number <= high
+        ):
+            raise RankingFailure("영상 화면 조정값을 확인해 주세요.")
+    if value["top"] + value["bottom"] > .8:
+        raise RankingFailure("영상의 일부 영역은 남겨 주세요.")
+    return value
+
+
+def ranking_video_filter(value=None) -> str:
+    framing = ranking_framing(value)
+    height = LAYOUT["height"] - LAYOUT["headerHeight"]
+    # Keep the stable default filter unchanged for older projects.
+    if framing == {"top": 0, "bottom": 0, "zoom": 1, "panY": 0}:
+        return (f"scale=720:{height}:force_original_aspect_ratio=increase:"
+                f"force_divisible_by=2,crop=720:{height}")
+    filters = ["setsar=1"]
+    # Mask source pixels first; cuts never affect scale or automatically recenter.
+    if framing["top"] > 0:
+        filters.append(f"drawbox=x=0:y=0:w=iw:h='max(1,ceil(ih*{framing['top']:.10f}))':color=black:t=fill")
+    if framing["bottom"] > 0:
+        bottom = framing["bottom"]
+        filters.append(f"drawbox=x=0:y='min(ih-1,floor(ih*(1-{bottom:.10f})))':"
+                       f"w=iw:h='max(1,ceil(ih*{bottom:.10f}))':color=black:t=fill")
+    zoom = framing["zoom"]
+    factor = f"max(720/iw,{height}/ih)*{zoom:.10f}"
+    filters.append(f"scale=w='ceil(iw*{factor}/2)*2':h='ceil(ih*{factor}/2)*2'")
+    pan = framing["panY"]
+    filters.append(f"crop=720:{height}:(iw-ow)/2:(ih-oh)*(1-{pan:.10f})/2")
+    return ",".join(filters)
+
+
 def checked_id(value: str) -> str:
     if str(UUID(value, version=4)) != value or UUID(value).version != 4:
         raise RankingFailure("잘못된 영상 번호입니다.")
@@ -737,6 +780,7 @@ class RankingPipeline:
         sound, _ = self.audio_settings(spec)
         total = (sound["duration"] if sound else 0) * (len(clips) - 1)
         for clip in clips:
+            ranking_framing(clip.get("framing"))
             source_id = checked_id(clip["sourceId"])
             source = self.project / source_id / "source.mp4"
             if source_id not in registered or source.is_symlink():
@@ -926,9 +970,7 @@ class RankingPipeline:
                         "-i",
                         str(overlay),
                         "-filter_complex",
-                        f"[0:v]scale=720:{1280 - LAYOUT['headerHeight']}:"
-                        "force_original_aspect_ratio=increase:force_divisible_by=2,"
-                        f"crop=720:{1280 - LAYOUT['headerHeight']},"
+                        f"[0:v]{ranking_video_filter(clip.get('framing'))},"
                         f"pad=720:1280:0:{LAYOUT['headerHeight']}:"
                         "color=black,setsar=1,fps=30[base];[base][1:v]overlay=0:0:format=auto,"
                         "scale=in_range=auto:out_range=tv,format=yuv420p,setparams=range=limited[v]",

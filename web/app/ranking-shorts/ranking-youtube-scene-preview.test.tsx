@@ -152,3 +152,14 @@ it("keeps user-gesture playback available after a browser blocks the initial mut
   expect(players).toHaveLength(1);
   expect(fetch).not.toHaveBeenCalled();
 });
+
+
+it("simulates source cuts without downloading and keeps playback below the composition", async () => {
+  await act(async () => root.render(<RankingYouTubeScenePreview {...props} controlsBelow framing={{top:.2,bottom:.15,zoom:1.2,panY:.3}} />));
+  await act(async () => vi.advanceTimersByTime(400));
+  const button = container.querySelector(".ranking-preview-toggle")!;
+  expect(button.closest(".ranking-composition")).toBeNull();
+  expect(container.querySelector(".ranking-framed-original")!.getAttribute("style")).toContain("clip-path:inset(20% 0 15% 0)");
+  expect(container.querySelectorAll("iframe")).toHaveLength(1);
+  expect(fetch).not.toHaveBeenCalled();
+});

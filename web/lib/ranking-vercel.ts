@@ -14,6 +14,7 @@ import {
   releaseRankingVercelRoutes,
 } from "./ranking-vercel-egress";
 import { rankingVercelResult } from "./ranking-vercel-contract";
+import { requireRankingFramingCapability } from "./ranking-framing-runtime";
 export const rankingUsesVercel = () =>
   process.env.RANKING_EXECUTION_BACKEND === "vercel";
 const LIFETIME = 30 * 60_000;
@@ -53,6 +54,12 @@ export async function rankingVercelSession(
   const rows =
     await getDb()`select * from shorts_mvp.ranking_vercel_sessions where project_id=${rankingUuid(project)} and status='ready' and expires_at>now()+interval '30 seconds'`;
   return (rows[0] as Session) || null;
+}
+export async function requireRankingVercelFraming(session: Session) {
+  const response = await fetch(`${base(session)}/health`, {
+    signal: AbortSignal.timeout(5000), cache: "no-store",
+  });
+  requireRankingFramingCapability(response.ok ? await response.json() : null);
 }
 export async function ensureRankingVercel(
   project: string,

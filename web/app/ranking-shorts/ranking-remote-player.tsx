@@ -99,12 +99,13 @@ export const RankingRemotePlayer = forwardRef<
     onPlaying: (playing: boolean) => void;
     onUnavailable: () => void;
     composition?: boolean;
+    controlsHidden?: boolean;
     onReady?: () => void;
     onFrame?: () => void;
     onPreviewBlocked?: () => void;
   }
 >(function RankingRemotePlayer(
-  { remote, start, label, onTime, onDuration, onPlaying, onUnavailable, suspended, composition = false, onReady, onFrame, onPreviewBlocked },
+  { remote, start, label, onTime, onDuration, onPlaying, onUnavailable, suspended, composition = false, controlsHidden = false, onReady, onFrame, onPreviewBlocked },
   ref,
 ) {
   const host = useRef<HTMLDivElement>(null);
@@ -194,7 +195,7 @@ export const RankingRemotePlayer = forwardRef<
           embed.searchParams.set("origin", window.location.origin);
           embed.searchParams.set("playsinline", "1");
           embed.searchParams.set("rel", "0");
-          if (composition) {
+          if (composition || controlsHidden) {
             embed.searchParams.set("controls", "0");
             embed.searchParams.set("disablekb", "1");
           }
@@ -300,7 +301,7 @@ export const RankingRemotePlayer = forwardRef<
       instance?.destroy();
       youtube.current = null;
     };
-  }, [remote.platform, remote.videoId, suspended, url, composition, attempt]);
+  }, [remote.platform, remote.videoId, suspended, url, composition, controlsHidden, attempt]);
 
   return (
     <div className={`ranking-remote-player is-${remote.platform}${composition ? " is-composition" : ""}`}>

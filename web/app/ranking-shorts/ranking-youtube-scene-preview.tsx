@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import type { RankingFraming } from "@/lib/ranking-framing";
+import { RankingFramedMedia } from "./ranking-framed-media";
 import { rankingCropSize } from "@/lib/ranking-crop";
 import { rankingDesign, type RankingStyle } from "@/lib/ranking-templates";
 import { rankingTime, type RankingSource } from "@/lib/ranking-shorts";
@@ -10,7 +12,9 @@ import { RankingOverlay } from "./ranking-overlay";
 export type RankingPreviewSeek = { sourceId: string; time: number; revision: number };
 
 // Selected scene only. Playback stays inside YouTube; no resolve/prepare/media API.
-export function RankingYouTubeScenePreview({ source, start, end, seek, title, subtitle, count, labels, rank, descending, style, suspended, pauseSignal, onStart, onDuration }: {
+export function RankingYouTubeScenePreview({ source, start, end, seek, title, subtitle, count, labels, rank, descending, style, suspended, pauseSignal, onStart, onDuration, framing, controlsBelow = false }: {
+  framing?: RankingFraming;
+  controlsBelow?: boolean;
   source: RankingSource;
   start: number;
   end: number;
@@ -114,12 +118,7 @@ export function RankingYouTubeScenePreview({ source, start, end, seek, title, su
     return () => window.removeEventListener("keydown", keydown);
   }, [ready, suspended, failure]);
 
-  const compositionStyle = { "--ranking-video-top": `${rankingDesign.layout.headerHeight / rankingDesign.layout.height * 100}%` } as CSSProperties;
-  return <div className="ranking-sequence-preview ranking-youtube-scene-preview">
-    <div className="ranking-composition" style={compositionStyle}>
-      <div className="ranking-youtube-crop">
-        <div className="ranking-youtube-crop-frame" style={rankingCropSize(aspect.width, aspect.height)}>
-          <RankingRemotePlayer key={retry} ref={player} composition remote={source.remote!} start={start}
+  const remotePlayerElement = (<RankingRemotePlayer key={retry} ref={player} composition remote={source.remote!} start={start}
             label={`${rank}위 선택 구간 미리보기`} suspended={suspended}
             onReady={() => { setFailure(false); setReady(true); }}
             onFrame={() => { setFrameReady(true); setNeedsPlay(false); }}
@@ -135,9 +134,18 @@ export function RankingYouTubeScenePreview({ source, start, end, seek, title, su
                 player.current?.pause();
                 setPosition(end);
               }
-            }} />
+            }} />);
+  const compositionStyle = { "--ranking-video-top": `${rankingDesign.layout.headerHeight / rankingDesign.layout.height * 100}%` } as CSSProperties;
+  return <div className="ranking-sequence-preview ranking-youtube-scene-preview">
+    <div className="ranking-composition" style={compositionStyle}>
+      {controlsBelow ? <RankingFramedMedia width={aspect.width} height={aspect.height} framing={framing}>
+        {remotePlayerElement}
+      </RankingFramedMedia> : (<div className="ranking-youtube-crop">
+        <div className="ranking-youtube-crop-frame" style={rankingCropSize(aspect.width, aspect.height)}>
+          {remotePlayerElement}
         </div>
-      </div>
+      </div>)}
+
       <RankingOverlay title={title} subtitle={subtitle} count={count} active={rank - 1}
         labels={labels} descending={descending} style={style}
         revealedRanks={revealedRanks} />
@@ -146,11 +154,16 @@ export function RankingYouTubeScenePreview({ source, start, end, seek, title, su
         <p>장면을 연결하지 못했어요.</p>
         <button type="button" onClick={() => { setFailure(false); setReady(false); setFrameReady(false); setNeedsPlay(false); setRetry(value => value + 1); }}>다시 연결</button>
       </div> : null}
-      <button type="button" className="ranking-preview-toggle" disabled={!ready || suspended || failure}
+      {!controlsBelow && (<button type="button" className="ranking-preview-toggle" disabled={!ready || suspended || failure}
         aria-label={playing ? "선택 구간 미리보기 일시 정지" : "선택 구간 미리보기 재생"} aria-keyshortcuts="Space" onClick={toggle}>
         <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">{playing ? <path d="M7 5h4v14H7zm6 0h4v14h-4z" fill="currentColor" /> : <path d="m9 5 11 7-11 7z" fill="currentColor" />}</svg>
-      </button>
+      </button>)}
     </div>
+    {controlsBelow && <div className="ranking-preview-transport"><button type="button" className="ranking-preview-toggle" disabled={!ready || suspended || failure}
+        aria-label={playing ? "선택 구간 미리보기 일시 정지" : "선택 구간 미리보기 재생"} aria-keyshortcuts="Space" onClick={toggle}>
+        <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">{playing ? <path d="M7 5h4v14H7zm6 0h4v14h-4z" fill="currentColor" /> : <path d="m9 5 11 7-11 7z" fill="currentColor" />}</svg>
+      </button></div>}
+
     <div className="ranking-sequence-controls"><span>{rank}위 선택 구간 · {rankingTime(Math.max(0, position - start))} / {rankingTime(end - start)}</span></div>
   </div>;
 }

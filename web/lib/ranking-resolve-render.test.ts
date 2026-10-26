@@ -5,7 +5,7 @@ import type { RankingRender, RankingSource } from "./ranking-shorts";
 const spec: RankingRender = {
   title: "제목", subtitle: "둘째 줄", style: defaultRankingStyle, descending: false,
   rankCount: 5, playbackOrder: [3, 1], clips: [
-    {rank: 1, sourceId: "local-1", label: "첫 영상", start: 3.25, end: 7.5},
+    {rank: 1, sourceId: "local-1", label: "첫 영상", start: 3.25, end: 7.5, framing:{top:.2,bottom:.1,zoom:1.3,panY:-.4}},
     {rank: 3, sourceId: "local-3", label: "다음 영상", start: 1, end: 4},
   ],
 };

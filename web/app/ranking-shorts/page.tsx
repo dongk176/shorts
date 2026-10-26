@@ -7,6 +7,7 @@ import { RankingStudio } from "./ranking-studio";
 import "./ranking-shorts.css";
 import "./ranking-popular-picker.css";
 import "./ranking-editor-ui.css";
+import "./ranking-framing.css";
 import { FixedPreview } from "./ranking-fixed-preview";
 export const dynamic = "force-dynamic";
 export const metadata = {

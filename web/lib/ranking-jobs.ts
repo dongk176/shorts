@@ -13,7 +13,8 @@ import { rankingDirectRemote } from "./ranking-embed";
 import { rankingUuid, requireRankingProject } from "./ranking-access";
 import { rankingReceiverAccess, wakeRankingRuntime } from "./ranking-runtime";
 
-import { rankingUsesVercel, ensureRankingVercel, rankingVercelAccess, dispatchRankingVercel, syncRankingVercelOperation } from "./ranking-vercel";
+import { rankingUsesVercel, ensureRankingVercel, rankingVercelAccess, dispatchRankingVercel, syncRankingVercelOperation, requireRankingVercelFraming } from "./ranking-vercel";
+import { rankingNeedsFraming } from "./ranking-framing-runtime";
 
 
 function rankingSourceRemote(input: string): RankingRemote | null {
@@ -186,8 +187,13 @@ export async function queueRankingOperation(
     throw new HttpError(400, "등록할 영상 링크를 확인해 주세요.");
   if (sourceId) rankingUuid(sourceId);
   const vercel = rankingUsesVercel();
-  if (vercel) await ensureRankingVercel(projectId, owner, origin);
-  else await wakeRankingRuntime();
+  if (vercel) {
+    const session = await ensureRankingVercel(projectId, owner, origin);
+    if (rankingNeedsFraming(spec)) await requireRankingVercelFraming(session);
+  } else {
+    if (rankingNeedsFraming(spec)) throw new HttpError(503, "화면 조정을 지원하는 제작기를 준비 중입니다. 입력 내용은 그대로 유지됩니다.");
+    await wakeRankingRuntime();
+  }
   const operationId = await getDb().begin(async (tx) => {
     if (vercel) await tx`select id from shorts_mvp.app_users where id=${owner} and is_admin=true for update`;
     const locked = await tx`select id from shorts_mvp.ranking_projects where id=${projectId} and user_id=${owner} and deleted_at is null and expires_at>now() for update`;

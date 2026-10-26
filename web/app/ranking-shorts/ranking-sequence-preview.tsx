@@ -14,6 +14,8 @@ import {
   rankingPlaybackPosition,
   type RankingPlaybackClip,
 } from "@/lib/ranking-playback";
+import type { RankingFraming } from "@/lib/ranking-framing";
+import { RankingFramedMedia } from "./ranking-framed-media";
 import { RankingOverlay } from "./ranking-overlay";
 
 export function RankingSequencePreview({
@@ -34,7 +36,11 @@ export function RankingSequencePreview({
   previewSource,
   previewStart = 0,
   previewRank = 1,
+  framedSources,
+  controlsBelow = false,
 }: {
+  framedSources?: Record<string, {width:number;height:number;framing?:RankingFraming}>;
+  controlsBelow?: boolean;
   clips: RankingPlaybackClip[];
   localMedia?: Record<string,string>;
   backgroundMusic?: {sourceId: string; volume: number} | null;
@@ -202,17 +208,35 @@ export function RankingSequencePreview({
       if (intent.current) void media.play().catch(() => { intent.current = false; setPlaying(false); setError("재생 버튼을 다시 눌러 주세요."); });
     }
   }, [index, clipStart]);
+  const framed = Boolean(framedSources);
+  const selectedSourceId = previewSource?.id;
+  const firstClipStart = clips[0]?.start;
+  useEffect(() => {
+    if (!framed) return;
+    intent.current = false; transitioning.current = false;
+    mediaElements.current.forEach(media => media.pause());
+    setPlaying(false); setElapsed(0); setIndex(0);
+    const first = mediaElements.current.get(0);
+    pendingSeek.current = firstClipStart ?? null;
+    if (first && first.readyState >= 1 && firstClipStart !== undefined) {
+      first.currentTime = firstClipStart; video.current = first; pendingSeek.current = null;
+    }
+  }, [framed, selectedSourceId, previewStart, previewRank, firstClipStart]);
   const videoStyle = {
     "--ranking-video-top": `${(rankingDesign.layout.headerHeight / rankingDesign.layout.height) * 100}%`,
   } as CSSProperties;
+  const playButton = (<button type="button" className="ranking-preview-toggle" disabled={!clip || suspended}
+          aria-label={playing ? "전체 미리보기 일시 정지" : "전체 미리보기 재생"} aria-keyshortcuts="Space" onClick={toggle}>
+          <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">{playing ? <path d="M7 5h4v14H7zm6 0h4v14h-4z" fill="currentColor" /> : <path d="m9 5 11 7-11 7z" fill="currentColor" />}</svg>
+        </button>);
   return (
     <div className="ranking-sequence-preview">
       {backgroundMusic && (project || localMedia[backgroundMusic.sourceId]) && !layoutOnly ? <audio ref={music} loop preload="auto"
         src={localMedia[backgroundMusic.sourceId] || `/api/ranking-shorts/${project}/media/${backgroundMusic.sourceId}`}
         onLoadedMetadata={syncMusic} onError={() => setError("배경음악 미리보기가 만료되었습니다. 음악을 다시 추가해 주세요.")} /> : null}
       <div className={`ranking-composition${clip?.transitionUrl ? " is-transition" : ""}`} style={videoStyle}>
-        {clips.length > 0 && !layoutOnly ? clips.map((item, itemIndex) => (
-          <video
+        {clips.length > 0 && !layoutOnly ? clips.map((item, itemIndex) => {
+          const media = (<video
             key={`${item.sourceId}:${item.rank}`}
             ref={element => { if (element) { mediaElements.current.set(itemIndex, element); if (itemIndex === index) video.current = element; } else mediaElements.current.delete(itemIndex); }}
             className={itemIndex === index ? "is-current" : "is-buffered"}
@@ -239,15 +263,25 @@ export function RankingSequencePreview({
               music.current?.pause(); intent.current = false; setPlaying(false);
               setError("미리보기를 불러오지 못했습니다. 영상을 다시 가져와 주세요.");
             }}
-          />
-        )) : <div className="ranking-composition-empty" />}
+          />);
+          if (!framedSources) return media;
+          const geometry = framedSources[item.sourceId];
+          return <div key={`${item.sourceId}:${item.rank}`} className={`ranking-sequence-scene${itemIndex !== index ? " is-buffered" : ""}${item.transitionUrl ? " is-transition" : ""}`}>
+            {item.transitionUrl ? media : <RankingFramedMedia width={geometry?.width || 0} height={geometry?.height || 0} framing={geometry?.framing}>{media}</RankingFramedMedia>}
+          </div>;
+        }) : <div className="ranking-composition-empty" />}
         {!clip?.transitionUrl && previewSource && (layoutOnly || (!playing && elapsed === 0)) ? (
-          <div className="ranking-composition-still">
+          framedSources ? <div className="ranking-sequence-still"><RankingFramedMedia width={previewSource.width} height={previewSource.height} framing={framedSources[previewSource.id]?.framing}>
             <RankingThumbnail key={previewSource.id}
               lazy={false} portrait remote={previewSource.remote} time={previewStart}
               videoUrl={localMedia[previewSource.id] || (project && (!previewSource.remote || previewSource.previewReady)
                 ? `/api/ranking-shorts/${project}/media/${previewSource.id}` : undefined)} />
-          </div>
+          </RankingFramedMedia></div> : (<div className="ranking-composition-still">
+            <RankingThumbnail key={previewSource.id}
+              lazy={false} portrait remote={previewSource.remote} time={previewStart}
+              videoUrl={localMedia[previewSource.id] || (project && (!previewSource.remote || previewSource.previewReady)
+                ? `/api/ranking-shorts/${project}/media/${previewSource.id}` : undefined)} />
+          </div>)
         ) : null}
         {!clip?.transitionUrl && <RankingOverlay
           title={title}
@@ -263,11 +297,10 @@ export function RankingSequencePreview({
           }
           style={style}
         />}
-        {!layoutOnly && <button type="button" className="ranking-preview-toggle" disabled={!clip || suspended}
-          aria-label={playing ? "전체 미리보기 일시 정지" : "전체 미리보기 재생"} aria-keyshortcuts="Space" onClick={toggle}>
-          <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">{playing ? <path d="M7 5h4v14H7zm6 0h4v14h-4z" fill="currentColor" /> : <path d="m9 5 11 7-11 7z" fill="currentColor" />}</svg>
-        </button>}
+        {!layoutOnly && !controlsBelow && playButton}
       </div>
+      {!layoutOnly && controlsBelow && <div className="ranking-preview-transport">{playButton}</div>}
+
       {layoutOnly ? (
         <p className="ranking-hint">
           {previewSource?.remote?.platform === "youtube" && !previewSource.previewReady

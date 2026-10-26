@@ -334,7 +334,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/health":
-            return self.reply(200, {"ok": True})
+            return self.reply(200, {"ok": True, "capabilities": ["source-framing-v1"]})
         match = re.fullmatch(r"/operations/([0-9a-f-]{36})", self.path)
         if match:
             if not self.internal():

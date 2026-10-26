@@ -9,6 +9,17 @@ from shorts_worker.ranking_pipeline import RankingFailure
 from shorts_worker.ranking_vercel_service import Service, byte_range, verify_token
 
 
+def test_health_advertises_framing_support_without_changing_operations():
+    from shorts_worker.ranking_vercel_service import Handler
+
+    handler = Handler.__new__(Handler)
+    handler.path = "/health"
+    replies = []
+    handler.reply = lambda status, body: replies.append((status, body))
+    handler.do_GET()
+    assert replies == [(200, {"ok": True, "capabilities": ["source-framing-v1"]})]
+
+
 def token(secret, method, project, source, owner, expires):
     body = (
         base64.urlsafe_b64encode(

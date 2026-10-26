@@ -1,15 +1,16 @@
 import { z } from "zod";
+import { rankingFramingSchema, type RankingFraming } from "./ranking-framing";
 import { rankingStyleSchema, defaultRankingStyle } from "./ranking-templates";
 import { rankingSoundSchema } from "./ranking-audio";
 import type { RankingSource } from "./ranking-shorts";
 
-export type RankingSlot = { link: string; label: string; source: RankingSource | null; pendingLink?: boolean; start: number; end: number };
+export type RankingSlot = { link: string; label: string; source: RankingSource | null; pendingLink?: boolean; start: number; end: number; framing?: RankingFraming };
 export const emptyRankingSlots = (): RankingSlot[] => Array.from({length:10}, () => ({link:"",label:"",source:null,start:0,end:0}));
 const sourceSchema = z.object({id:z.uuid(),duration:z.number().finite().nonnegative(),durationKnown:z.boolean().optional(),width:z.number(),height:z.number(),hasAudio:z.boolean(),previewReady:z.boolean().optional(),remote:z.object({url:z.string().max(2048),platform:z.enum(["youtube","tiktok","instagram"]),videoId:z.string().max(100)}).optional()});
 export const rankingDraftSchema = z.object({
   version:z.literal(1), title:z.string().max(80), subtitle:z.string().max(60), style:rankingStyleSchema,
   count:z.number().int().min(1).max(10), active:z.number().int().min(0).max(9),
-  slots:z.array(z.object({link:z.string().max(4096),label:z.string().max(60),source:sourceSchema.nullable(),pendingLink:z.boolean().optional(),start:z.number().finite().nonnegative(),end:z.number().finite().nonnegative()})).length(10),
+  slots:z.array(z.object({link:z.string().max(4096),label:z.string().max(60),source:sourceSchema.nullable(),pendingLink:z.boolean().optional(),start:z.number().finite().nonnegative(),end:z.number().finite().nonnegative(),framing:rankingFramingSchema.optional()})).length(10),
   orderMode:z.enum(["desc","asc","custom"]),customOrder:z.array(z.number().int().min(1).max(10)).max(10),
   soundEnabled:z.boolean(),sound:rankingSoundSchema,musicEnabled:z.boolean(),music:z.object({id:z.uuid(),name:z.string().max(512)}).nullable(),musicVolume:z.number().min(0).max(1),
 });
