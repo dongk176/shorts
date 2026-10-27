@@ -13,8 +13,8 @@ describe("welcome overlay queue", () => {
       "sidebar-navigation",
       "shorts-event",
       "marketing-email",
-      "feedback",
       "ranking-launch",
+      "feedback",
       "done",
     ]);
     expect(nextWelcomeOverlayStage("youtube-launch")).toBe("onboarding");
@@ -22,8 +22,8 @@ describe("welcome overlay queue", () => {
     expect(nextWelcomeOverlayStage("existing-welcome")).toBe("sidebar-navigation");
     expect(nextWelcomeOverlayStage("sidebar-navigation")).toBe("marketing-email");
     expect(nextWelcomeOverlayStage("shorts-event")).toBe("marketing-email");
-    expect(nextWelcomeOverlayStage("marketing-email")).toBe("feedback");
-    expect(nextWelcomeOverlayStage("feedback")).toBe("ranking-launch");
-    expect(nextWelcomeOverlayStage("ranking-launch")).toBe("done");
+    expect(nextWelcomeOverlayStage("marketing-email")).toBe("ranking-launch");
+    expect(nextWelcomeOverlayStage("feedback")).toBe("done");
+    expect(nextWelcomeOverlayStage("ranking-launch")).toBe("feedback");
   });
 });

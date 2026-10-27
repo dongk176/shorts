@@ -16,6 +16,7 @@ import {
 
 type WelcomeOverlayQueueContextValue = {
   stage: WelcomeOverlayStage;
+  requestRankingEntry: () => void;
   complete: (stage: Exclude<WelcomeOverlayStage, "done">) => void;
 };
 
@@ -48,9 +49,13 @@ export function WelcomeOverlayQueueProvider({
     [identity],
   );
 
+  const requestRankingEntry = useCallback(() => {
+    setQueue(current => current.identity === identity && ["feedback", "done"].includes(current.stage)
+      ? { ...current, stage: "ranking-launch" } : current);
+  }, [identity]);
   const value = useMemo(
-    () => ({ stage, complete }),
-    [complete, stage],
+    () => ({ stage, complete, requestRankingEntry }),
+    [complete, stage, requestRankingEntry],
   );
 
   return (
@@ -79,4 +84,5 @@ export function useWelcomeOverlayStage(
   };
 }
 
-export function useWelcomeOverlayFinished() { return useContext(WelcomeOverlayQueueContext)?.stage === "done"; }
+
+export function useRequestRankingEntry() { return useContext(WelcomeOverlayQueueContext)!.requestRankingEntry; }

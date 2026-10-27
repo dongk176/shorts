@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "@/lib/i18n/navigation";
 import { useUsageState } from "./usage-provider";
-import { useWelcomeOverlayStage, useWelcomeOverlayFinished } from "./welcome-overlay-queue";
+import { useWelcomeOverlayStage, useRequestRankingEntry } from "./welcome-overlay-queue";
 import { createPortal } from "react-dom";
 import { useEffect, useRef, useState } from "react";
 import { FeatureGuideOverlay, type FeatureGuideStep } from "./feature-guide-overlay";
@@ -30,7 +30,7 @@ export function RankingOnboarding({ mode, ownerId }: { mode: "home" | "studio"; 
   const pathname = usePathname();
   const { accountId, authenticated, rankingAvailable } = useUsageState();
   const { active: queueActive, complete } = useWelcomeOverlayStage("ranking-launch");
-  const queueFinished = useWelcomeOverlayFinished();
+  const requestRankingEntry = useRequestRankingEntry();
   const identity = ownerId || accountId;
   const remember = (key: string) => mark(`${identity}:${key}`);
   const [stage, setStage] = useState<Stage>("idle");
@@ -41,6 +41,8 @@ export function RankingOnboarding({ mode, ownerId }: { mode: "home" | "studio"; 
 
   useEffect(() => {
     if (mode !== "home" || !queueActive) return;
+    // The studio instance owns this stage on its page.
+    if (pathname === "/ranking-shorts") return;
     if (pathname !== "/" || !authenticated) { complete(); return; }
     if (!identity || rankingAvailable === undefined) return;
     if (!rankingAvailable || seen(`${identity}:launch`)) { complete(); return; }
@@ -54,8 +56,14 @@ export function RankingOnboarding({ mode, ownerId }: { mode: "home" | "studio"; 
   }, [mode, queueActive, pathname, authenticated, identity, rankingAvailable, complete]);
 
   useEffect(() => {
-    if (mode === "studio" && identity && queueFinished && !seen(`${identity}:beta`)) setStage("beta");
-  }, [mode, identity, queueFinished]);
+    if (mode === "studio" && identity && !seen(`${identity}:beta`)) requestRankingEntry();
+  }, [mode, identity, requestRankingEntry]);
+
+  useEffect(() => {
+    if (mode !== "studio" || !identity || !queueActive) return;
+    if (seen(`${identity}:beta`)) { complete(); return; }
+    setStage("beta");
+  }, [mode, identity, queueActive, complete]);
   useEffect(() => {
     const media = matchMedia("(max-width: 850px)");
     const resize = () => setMobile(media.matches);
@@ -81,11 +89,12 @@ export function RankingOnboarding({ mode, ownerId }: { mode: "home" | "studio"; 
 
   function dismiss() {
     remember(stage === "launch" ? "launch" : "beta");
-    if (stage === "launch") complete();
+    complete();
     setStage("idle");
   }
   function startTour() {
     remember("beta");
+    complete();
     setTourKey(value => value + 1);
     setStage("tour");
   }

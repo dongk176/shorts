@@ -29,7 +29,7 @@ async function setup(authenticated: boolean, accountId: string | null) {
   return async (advance = true) => {
     await act(async () => root.render(<WelcomeOverlayQueueProvider>
       <YoutubeLaunchAnnouncement />
-      {(["onboarding", "existing-welcome", "sidebar-navigation", "marketing-email", "feedback"] as const).map(stage =>
+      {(["onboarding", "existing-welcome", "sidebar-navigation", "marketing-email", "ranking-launch", "feedback"] as const).map(stage =>
         <Stage key={stage} stage={stage} advance={advance && stage !== "feedback"} />)}
     </WelcomeOverlayQueueProvider>));
     return document.body.textContent;
@@ -71,7 +71,7 @@ describe("welcome queue feedback reachability", () => {
     vi.stubGlobal("fetch", fetcher);
     await act(async () => root.render(<WelcomeOverlayQueueProvider>
       <YoutubeLaunchAnnouncement />
-      {(["onboarding", "existing-welcome", "sidebar-navigation", "marketing-email"] as const).map(stage =>
+      {(["onboarding", "existing-welcome", "sidebar-navigation", "marketing-email", "ranking-launch"] as const).map(stage =>
         <Stage key={stage} stage={stage} advance />)}
       <ProjectFeedbackOverlay />
     </WelcomeOverlayQueueProvider>));

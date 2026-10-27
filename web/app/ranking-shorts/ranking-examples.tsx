@@ -36,7 +36,7 @@ export function RankingExamples() {
     setError("");
     void fetch("/api/ranking-shorts/examples", { signal: controller.signal, cache: "no-store" })
       .then(async (response) => {
-        if (!response.ok) throw new Error("예시를 불러오지 못했습니다. 관리자 로그인을 확인해 주세요.");
+        if (!response.ok) throw new Error("예시를 불러오지 못했습니다. 로그인 상태를 확인한 뒤 다시 시도해 주세요.");
         return response.json() as Promise<Catalog>;
       }).then(setCatalog).catch((cause: unknown) => {
         if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "예시를 불러오지 못했습니다.");
