@@ -1,5 +1,6 @@
 "use client";
 
+import { rankingSounds, type RankingSound } from "@/lib/ranking-audio";
 import { useEffect, useRef, useState } from "react";
 import { useUsageState } from "./usage-provider";
 import { useRouter } from "next/navigation";
@@ -74,15 +75,19 @@ export function RankingProjectList({ projects, embedded = false, onOpen }: { pro
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [hasActive]);
-  const retryRequest = useRef<{operation:string;requestId:string}|null>(null);
-  async function retryRender(project: RankingProjectSummary) {
+  const [soundProject,setSoundProject]=useState<RankingProjectSummary|null>(null);
+  const [replacementSound,setReplacementSound]=useState<RankingSound|null>("lip-bass");
+  const soundDialog=useRef<HTMLDialogElement>(null);
+  useEffect(()=>{if(!soundProject)return;const el=soundDialog.current;const focus=document.activeElement as HTMLElement|null;const overflow=document.body.style.overflow;document.body.style.overflow="hidden";el?.showModal();return()=>{el?.close();document.body.style.overflow=overflow;focus?.focus();};},[soundProject]);
+  const retryRequest = useRef<{operation:string;requestId:string;sound?:RankingSound|null}|null>(null);
+  async function retryRender(project: RankingProjectSummary, transitionSound?: RankingSound|null) {
     if (inFlight.current || !project.operationId) return;
     inFlight.current = true; setPending(true); setError("");
-    if (retryRequest.current?.operation !== project.operationId) retryRequest.current={operation:project.operationId,requestId:crypto.randomUUID()};
+    if (retryRequest.current?.operation !== project.operationId || retryRequest.current.sound !== transitionSound) retryRequest.current={operation:project.operationId,requestId:crypto.randomUUID(),sound:transitionSound};
     try {
-      const response=await fetch(`/api/ranking-shorts/${project.id}/render`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({requestId:retryRequest.current.requestId,retryOperationId:project.operationId}),signal:AbortSignal.timeout(300000)});
+      const response=await fetch(`/api/ranking-shorts/${project.id}/render`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({requestId:retryRequest.current.requestId,retryOperationId:project.operationId,...(transitionSound!==undefined?{transitionSound}: {})}),signal:AbortSignal.timeout(300000)});
       const data=await response.json(); if(!response.ok)throw new Error(data.error || "제작을 다시 시작하지 못했습니다.");
-      setItems(previous=>previous.map(p=>p.id===project.id?{...p,status:"running",busy:true,operationId:data.operationId}:p));setMenu(null);void usageRefresh.current();
+      setItems(previous=>previous.map(p=>p.id===project.id?{...p,status:"running",busy:true,operationId:data.operationId}:p));setMenu(null);setSoundProject(null);void usageRefresh.current();
     } catch(cause) {setError(cause instanceof Error?cause.message:"다시 시도해 주세요.");}
     finally {inFlight.current=false;setPending(false);}
   }
@@ -162,6 +167,7 @@ export function RankingProjectList({ projects, embedded = false, onOpen }: { pro
                     다운로드 <span className="ml-2" aria-hidden="true">↓</span>
                   </a>
                 ) : null}
+                {complete ? <button type="button" disabled={pending || project.busy} onClick={()=>{setMenu(null);setError("");setSoundProject(project);}} className="min-h-11 rounded-xl px-4 text-sm text-white hover:bg-white/10">효과음 바꿔 만들기</button>:null}
                 <button type="button" disabled={project.busy} aria-label={`${title} 삭제`}
                   title={project.busy ? "진행 중인 작업은 완료 후 삭제할 수 있습니다." : undefined}
                   onClick={() => { setError(""); setDeleting(project); }}
@@ -172,6 +178,12 @@ export function RankingProjectList({ projects, embedded = false, onOpen }: { pro
           );
         })}
       </div>
+      {soundProject ? <dialog ref={soundDialog} className="m-auto w-[min(420px,calc(100vw-32px))] rounded-2xl border border-white/15 bg-neutral-900 p-6 text-white backdrop:bg-black/70" onCancel={(e)=>{if(pending)e.preventDefault();else setSoundProject(null);}} onClick={e=>{if(e.target===e.currentTarget&&!pending)setSoundProject(null);}} aria-label="효과음 바꿔 만들기">
+        <h2 className="text-lg font-bold">효과음 바꿔 만들기</h2><p className="mt-2 text-sm text-neutral-400">장면과 제목은 그대로 두고, 효과음만 바꿔요.</p>
+        <label className="mt-5 block text-sm">효과음<select aria-label="바꿀 효과음" disabled={pending} value={replacementSound||"none"} onChange={e=>setReplacementSound(e.target.value==="none"?null:e.target.value as RankingSound)} className="mt-2 block min-h-11 w-full rounded-lg border border-white/20 bg-neutral-800 px-3"><option value="none">없음</option>{rankingSounds.map(sound=><option key={sound.id} value={sound.id}>{sound.label}</option>)}</select></label>
+        {error?<p role="alert" className="mt-3 text-sm text-red-300">{error}</p>:null}
+        <p className="mt-3 text-xs text-neutral-400">영상 1개당 5분 차감</p><div className="mt-5 flex gap-3"><button type="button" disabled={pending} onClick={()=>setSoundProject(null)} className="min-h-11 flex-1 rounded-lg border border-white/20">취소</button><button type="button" disabled={pending} onClick={()=>void retryRender(soundProject,replacementSound)} className="min-h-11 flex-1 rounded-lg bg-violet-600 font-bold disabled:opacity-50">{pending?"준비 중…":"다시 만들기"}</button></div>
+      </dialog>:null}
       <ProjectDeleteOverlay open={Boolean(deleting)} state={error ? "error" : "confirm"}
         statusLabel="랭킹 쇼츠 삭제" title={error ? "삭제하지 못했습니다" : "이 작업을 삭제할까요?"}
         message={error || `${deleting?.title?.trim() || "제목 없는 랭킹 쇼츠"}\n프로젝트 목록에서 제거되며 영상 링크를 사용할 수 없게 됩니다.`}

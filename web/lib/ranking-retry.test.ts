@@ -13,7 +13,7 @@ it('uses the owner-checked saved spec and normal idempotent billing/dispatch pat
  state.query.mockResolvedValue([{payload}]);state.queue.mockResolvedValue({operationId:'new'});
  await expect(retryRankingRender(project,'owner',body,'https://www.easycut.co.kr')).resolves.toEqual({operationId:'new'});
  expect(state.owner).toHaveBeenCalledWith(project,'owner');
- expect(state.query.mock.calls[0][0].join('?')).toContain("and action='render' and status='failed'");
+ expect(state.query.mock.calls[0][0].join('?')).toContain("and action='render' and status in ('failed','succeeded')");
  expect(state.queue).toHaveBeenCalledWith(project,'owner','render',{requestId:body.requestId,spec:payload},undefined,'https://www.easycut.co.kr');
 });
 it('never reads or queues another owner project',async()=>{
@@ -24,4 +24,16 @@ it('rejects missing or successful operations and arbitrary payload overrides',as
  state.query.mockResolvedValue([]);
  await expect(retryRankingRender(project,'owner',body,'https://www.easycut.co.kr')).rejects.toMatchObject({status:404});
  await expect(retryRankingRender(project,'owner',{...body,spec:{}},'https://www.easycut.co.kr')).rejects.toMatchObject({status:400});expect(state.queue).not.toHaveBeenCalled();
+});
+
+it('changes only the requested sound on an owned completed result',async()=>{
+ const payload={title:'football',clips:[{rank:1,start:6.583,end:17.741}],playbackOrder:[1],transitionSound:null};
+ state.query.mockResolvedValue([{payload,status:'succeeded'}]);
+ await retryRankingRender(project,'owner',{...body,transitionSound:'lip-bass'},'https://www.easycut.co.kr');
+ expect(state.queue.mock.calls[0][3].spec).toEqual({...payload,transitionSound:'lip-bass',transitionVersion:2});
+ expect(payload.transitionSound).toBe(null);
+});
+it('requires an explicit sound change for completed renders',async()=>{
+ state.query.mockResolvedValue([{payload:{},status:'succeeded'}]);
+ await expect(retryRankingRender(project,'owner',body,'https://www.easycut.co.kr')).rejects.toMatchObject({status:404});expect(state.queue).not.toHaveBeenCalled();
 });
