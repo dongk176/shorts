@@ -1,4 +1,5 @@
 import "server-only";
+import { reserveRankingUsage } from "./ranking-usage";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { getDb } from "./db";
@@ -253,6 +254,7 @@ export async function queueRankingOperation(
     }
     const id = randomUUID();
     await tx`insert into shorts_mvp.ranking_operations(id,project_id,source_id,action,payload,request_id,executor,status) values(${id},${projectId},${sourceId || null},${action},${tx.json(spec || {})},${envelope.data.requestId},${vercel ? "vercel" : "ecs"},${vercel ? "running" : "queued"})`;
+    if (action === "render") await reserveRankingUsage(tx, id, owner);
     if (spec)
       await tx`update shorts_mvp.ranking_projects set draft=${tx.json(spec)} where id=${projectId}`;
     return id;

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { AnchorHTMLAttributes } from "react";
+vi.mock("./usage-provider", () => ({ useUsageState: () => ({ refreshUsage: vi.fn() }) }));
 const menuState = vi.hoisted(() => ({ open: false }));
 vi.mock("react", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react")>();

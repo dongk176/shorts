@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useUsageState } from "./usage-provider";
 import { useRouter } from "next/navigation";
 import Link from "@/lib/i18n/navigation";
 import type { RankingProjectSummary } from "@/lib/ranking-project-list";
@@ -18,6 +19,10 @@ const statusLabels = {
 
 export function RankingProjectList({ projects, embedded = false, onOpen }: { projects: RankingProjectSummary[]; embedded?: boolean; onOpen?: (project: RankingProjectSummary) => void }) {
   const router = useRouter();
+  const { refreshUsage } = useUsageState();
+  const usageRefresh = useRef(refreshUsage);
+  usageRefresh.current = refreshUsage;
+  const wasActive = useRef(false);
   const [items, setItems] = useState(projects);
   useEffect(() => setItems(projects), [projects]);
   const [removed, setRemoved] = useState<string[]>([]);
@@ -38,6 +43,10 @@ export function RankingProjectList({ projects, embedded = false, onOpen }: { pro
   const inFlight = useRef(false);
   const visible = items.filter((project) => !removed.includes(project.id) && (!embedded || project.status !== "draft"));
   const hasActive = visible.some((project) => project.busy || ["queued", "running"].includes(project.status));
+  useEffect(() => {
+    if (wasActive.current && !hasActive) void usageRefresh.current();
+    wasActive.current = hasActive;
+  }, [hasActive]);
   useEffect(() => {
     if (!hasActive) return;
     const controller = new AbortController();

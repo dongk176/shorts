@@ -10,6 +10,7 @@ import { ProjectDeleteOverlay } from "@/components/project-delete-overlay";
 import type { RankingProjectSummary } from "@/lib/ranking-project-list";
 import { defaultRankingDraft,emptyRankingSlots,type RankingSlot as Slot,type RankingDraftRecord } from "@/lib/ranking-draft";
 import { useRankingDraft } from "./use-ranking-draft";
+import { useUsageState } from "@/components/usage-provider";
 import { RankingWorkspaceProjects } from "./ranking-workspace-projects";
 import { RankingExamples } from "./ranking-examples";
 import { RankingSelect } from "./ranking-select";
@@ -86,6 +87,7 @@ export function RankingStudio({
   initialOperation?: string | null;
 }) {
 
+  const { refreshUsage } = useUsageState();
   const submission = useRef<{ key: string; requestId: string } | null>(null);
   const [popularRank, setPopularRank] = useState<number | null>(null);
   const [popularSelection, setPopularSelection] = useState<string | null>(null);
@@ -509,6 +511,7 @@ export function RankingStudio({
       if (draftClearFailed) setError("영상 제작은 접수됐습니다. 브라우저의 이전 임시 저장 내용을 지우지 못했어요.");
     });
     setSending(false);
+    void refreshUsage();
   }
 
   async function prepareSource(
@@ -920,6 +923,7 @@ export function RankingStudio({
                   ) : null}
                 </div>
               ) : null}
+              <div className="ranking-guide-controls">
               <div className="ranking-options">
                 <div>
                   <span className="ranking-field-label">순위</span>
@@ -975,6 +979,7 @@ export function RankingStudio({
                 onUpload={uploadMusic} onRemove={() => {setMusic(null); invalidateAudio();}}
                 volume={musicVolume} onVolume={(value) => {setMusicVolume(value); invalidateAudio();}}
                 disabled={Boolean(busy)} project={project} localUrl={music ? localMedia[music.id] : undefined} />
+              </div>
             </fieldset>
           </section>
 
@@ -1351,6 +1356,7 @@ export function RankingStudio({
               <span>↗</span>
             </button>
           )}
+          {!result && <p className="ranking-usage-note">영상 1개당 5분 차감 · 제작 실패 시 반환</p>}
         </aside>
       </div>
       {sourceNotice && <div className="ranking-source-toast" role="status">

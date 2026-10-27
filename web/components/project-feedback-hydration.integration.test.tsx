@@ -9,6 +9,7 @@ import { UserOnboardingOverlay } from "./user-onboarding-overlay";
 import { EditorLaunchAnnouncementOverlay } from "./editor-launch-announcement-overlay";
 import { SidebarNavigationAnnouncement } from "./sidebar-navigation-announcement";
 import { MarketingEmailPreferenceOverlay } from "./marketing-email-preference-overlay";
+import { RankingOnboarding } from "./ranking-onboarding-preview";
 import { ProjectFeedbackOverlay } from "./project-feedback-overlay";
 import { PROJECT_FEEDBACK_PROJECT_VIEWED_STORAGE_KEY, markCompletedProjectViewedForFeedback } from "@/lib/project-feedback-client";
 
@@ -33,7 +34,8 @@ async function hydrate(authenticated = true) {
   const storage = { getItem: (key: string) => values.get(key) ?? null,
     setItem: (key: string, value: string) => values.set(key, value), removeItem: (key: string) => values.delete(key) };
   Object.defineProperty(window, "sessionStorage", { configurable: true, value: storage });
-  Object.defineProperty(window, "matchMedia", { configurable: true, value: () => ({ matches: false }) });
+  vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener(){}, removeEventListener(){} }));
+  Object.defineProperty(window, "matchMedia", { configurable: true, value: () => ({ matches: false, addEventListener(){}, removeEventListener(){} }) });
   Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
   // This is the session marker retained across ProjectPage's location.assign back to home.
   markCompletedProjectViewedForFeedback("account-a", 123, storage);
@@ -53,12 +55,12 @@ async function hydrate(authenticated = true) {
     <UsageProvider initialState={{ authenticated, accountId: null, isEnterprise: false, usage: null }}>
       <WelcomeOverlayQueueProvider>
         <YoutubeLaunchAnnouncement /><UserOnboardingOverlay /><EditorLaunchAnnouncementOverlay />
-        <SidebarNavigationAnnouncement /><MarketingEmailPreferenceOverlay /><ProjectFeedbackOverlay />
+        <SidebarNavigationAnnouncement /><MarketingEmailPreferenceOverlay /><RankingOnboarding mode="home"/><ProjectFeedbackOverlay />
       </WelcomeOverlayQueueProvider>
     </UsageProvider>,
   ));
   return { storage, fetcher, resolve: async (accountId: string) => {
-    await act(async () => resolveUsage(Response.json({ authenticated: true, accountId, isEnterprise: false,
+    await act(async () => resolveUsage(Response.json({ authenticated: true, accountId, isEnterprise: false, rankingAvailable: false,
       usage: { usedSeconds: 1, reservedSeconds: 0, remainingSeconds: 1800 } } as UsageState)));
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 1000)); });
   } };

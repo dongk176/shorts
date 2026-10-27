@@ -47,8 +47,8 @@ it("lets studio own the stage on direct entry and starts the guide",async()=>{
   state.path="/ranking-shorts";
   await render(true);
   expect(document.querySelectorAll("dialog[open]")).toHaveLength(1);
-  expect(document.querySelector("dialog")?.textContent).toContain("시작하기 전에");
-  await act(async()=>Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(x=>x.textContent?.includes("1분 사용법 보기"))!.click());
+  expect(document.querySelector("dialog")?.textContent).toContain("랭킹 쇼츠 베타");
+  await act(async()=>Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(x=>x.textContent?.includes("시작하기"))!.click());
   expect(document.querySelector("dialog")).toBeNull();
   expect(document.body.textContent).toContain("ranking guide");
 });
@@ -58,5 +58,5 @@ it("opens beta after client navigation from a dismissed home launch",async()=>{
   await act(async()=>document.querySelector<HTMLButtonElement>('button[aria-label="안내 닫기"]')!.click());
   state.path="/ranking-shorts";
   await render(true);
-  expect(document.querySelector("dialog[open]")?.textContent).toContain("시작하기 전에");
+  expect(document.querySelector("dialog[open]")?.textContent).toContain("랭킹 쇼츠 베타");
 });

@@ -23,7 +23,7 @@ export type FeatureGuideStep = {
   title: string;
   description: string;
   targetSelector: string | null;
-  placement?: "auto" | "right" | "left" | "above" | "below";
+  placement?: "auto" | "right" | "left" | "above" | "below" | "center";
   scrollBlock?: "nearest" | "center";
 };
 
@@ -274,7 +274,7 @@ export function FeatureGuideOverlay({
     }
 
     const width = Math.min(isLastStep ? 340 : 400, window.innerWidth - 32);
-    if (!targetRect) {
+    if (!targetRect || step.placement === "center") {
       return {
         left: "50%",
         top: "50%",

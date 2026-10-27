@@ -26,3 +26,20 @@ it.each(["close","confirm","escape","primary"])("remembers %s after remount with
  await act(async()=>render());await act(async()=>vi.advanceTimersByTime(400));
  expect(document.querySelector('[role="dialog"]')).toBeNull();
 });
+it('centers a preview guide while retaining its measured spotlight',async()=>{
+ const {window,document}=parseHTML('<html><body><div id="app"></div><aside class="preview"></aside></body></html>');
+ vi.stubGlobal('window',window);vi.stubGlobal('document',document);vi.stubGlobal('HTMLElement',window.HTMLElement);vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);
+ Object.defineProperty(window,'innerWidth',{configurable:true,value:390});Object.defineProperty(window,'innerHeight',{configurable:true,value:844});
+ Object.defineProperty(window,'getComputedStyle',{configurable:true,value:()=>({borderTopLeftRadius:'8px'})});
+ Object.defineProperty(window,'requestAnimationFrame',{configurable:true,value:(cb:FrameRequestCallback)=>setTimeout(cb,0)});
+ Object.defineProperty(window,'cancelAnimationFrame',{configurable:true,value:clearTimeout});
+ vi.stubGlobal('MutationObserver',class{observe(){}disconnect(){}});vi.stubGlobal('ResizeObserver',class{observe(){}disconnect(){}});
+ const target=document.querySelector('.preview')!;Object.assign(target,{getBoundingClientRect:()=>({top:70,left:50,right:340,bottom:770,width:290,height:700}),scrollIntoView(){}});
+ vi.useFakeTimers();root=createRoot(document.getElementById('app')!);
+ await act(async()=>root!.render(<FeatureGuideOverlay enabled closeAriaLabel="닫기" steps={[{id:'preview',eyebrow:'미리보기',title:'제목 확인',description:'장면 확인',targetSelector:'.preview',placement:'center'}]}/>));
+ await act(async()=>vi.advanceTimersByTime(400));await act(async()=>vi.advanceTimersByTime(10));
+ const card=document.querySelector('section')!;
+ expect(card.style.left).toBe('50%');expect(card.style.top).toBe('50%');expect(card.style.transform).toBe('translate(-50%, -50%)');
+ const spotlight=document.querySelector('[aria-hidden="true"]') as HTMLElement;
+ expect(spotlight.style.width).toBe('308px');expect(spotlight.style.height).toBe('718px');
+});

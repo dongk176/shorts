@@ -42,6 +42,8 @@
 }
 .ranking-refreshed .ranking-subtitle-input > span { background: transparent; color: #b6a58a; font-size: 12px; }
 .ranking-refreshed .ranking-design-panel { grid-column: 1 / -1; }
+.ranking-guide-controls { display: contents; }
+.ranking-refreshed .ranking-guide-controls { display: grid; grid-column: 1 / -1; grid-template-columns: inherit; gap: inherit; align-items: start; min-width: 0; }
 .ranking-refreshed .ranking-options { display: contents; }
 .ranking-refreshed .ranking-options > div > .ranking-field-label { display: none; }
 .ranking-refreshed .ranking-order-field { padding: 0; margin: 0; align-self: start; }
@@ -456,3 +458,5 @@
 @media(max-width:850px){.ranking-refreshed .ranking-preview-column{max-width:300px;width:min(100%,300px)}}
 
 .ranking-guide-reopen{padding:7px 12px;border:1px solid #ffffff25;border-radius:9px;color:#ccc6d5;background:#ffffff06;font-size:13px;cursor:pointer}.ranking-guide-reopen:hover{background:#ffffff10}
+
+.ranking-usage-note { margin: 10px 0 0; text-align: center; color: #aaa8b3; font-size: 12px; line-height: 1.5; }
