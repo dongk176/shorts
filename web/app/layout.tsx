@@ -13,6 +13,7 @@ import { SidebarNavigationAnnouncement } from "@/components/sidebar-navigation-a
 import { UserOnboardingOverlay } from "@/components/user-onboarding-overlay";
 import { YoutubeLaunchAnnouncement } from "@/components/youtube-launch-announcement";
 import { WelcomeOverlayQueueProvider } from "@/components/welcome-overlay-queue";
+import { RankingOnboarding } from "@/components/ranking-onboarding-preview";
 import { UsageProvider, type UsageState } from "@/components/usage-provider";
 import { I18nProvider } from "@/lib/i18n/provider";
 import { getRequestLocale, getRequestMessages } from "@/lib/i18n/server";
@@ -133,6 +134,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
                 <SidebarNavigationAnnouncement />
                 <MarketingEmailPreferenceOverlay />
                 <ProjectFeedbackOverlay />
+                <RankingOnboarding mode="home" />
                 <PaymentMethodRemediationGate
                   initialAction={null}
                   authenticated={initialUsageState.authenticated}

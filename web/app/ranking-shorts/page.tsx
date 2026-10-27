@@ -1,8 +1,9 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { SiteHeader } from "@/components/site-header";
-import { requireRankingAdmin } from "@/lib/ranking-access";
+import { requireRankingUser } from "@/lib/ranking-access";
 import { HttpError } from "@/lib/http";
+import { RankingOnboarding } from "@/components/ranking-onboarding-preview";
 import { RankingStudio } from "./ranking-studio";
 import "./ranking-shorts.css";
 import "./ranking-popular-picker.css";
@@ -21,9 +22,10 @@ export default async function RankingShortsPage({
 }) {
   let ownerId: string;
   try {
-    ownerId = (await requireRankingAdmin()).id;
+    ownerId = (await requireRankingUser()).id;
   } catch (error) {
-    if (error instanceof HttpError && [401, 403, 404].includes(error.status))
+    if (error instanceof HttpError && error.status === 401) redirect("/auth/sign-in?next=%2Franking-shorts");
+    if (error instanceof HttpError && [403, 404].includes(error.status))
       notFound();
     throw error;
   }
@@ -41,6 +43,7 @@ export default async function RankingShortsPage({
         initialOperation={operation || null}
       />
       <FixedPreview />
+      <RankingOnboarding mode="studio" ownerId={ownerId} />
     </div>
   );
 }

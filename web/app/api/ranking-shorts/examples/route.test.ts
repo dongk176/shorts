@@ -1,15 +1,16 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
-vi.mock("@/lib/admin", () => ({ requireAdminUser: vi.fn() }));
+vi.mock("@/lib/supabase/server", () => ({ getAuthenticatedUser: vi.fn() }));
 vi.mock("@/lib/db", () => ({ getDb: vi.fn() }));
-import { requireAdminUser } from "@/lib/admin";
+import { getAuthenticatedUser } from "@/lib/supabase/server";
+import { getDb } from "@/lib/db";
 import { HttpError } from "@/lib/http";
 import { GET } from "./route";
 const request = () => new Request("https://www.easycut.co.kr/api/ranking-shorts/examples");
-beforeEach(() => { vi.resetAllMocks(); vi.stubEnv("RANKING_SHORTS_ENABLED", "1"); });
+beforeEach(() => { vi.resetAllMocks(); vi.mocked(getDb).mockReturnValue(vi.fn().mockResolvedValue([{id:"owner",authUserId:"auth"}]) as unknown as ReturnType<typeof getDb>); vi.stubEnv("RANKING_SHORTS_ENABLED", "1"); });
 afterEach(() => vi.unstubAllEnvs());
 it.each([401, 403])("does not disclose the example catalog to a denied user (%i)", async (status) => {
-  vi.mocked(requireAdminUser).mockRejectedValue(new HttpError(status, "denied"));
+  vi.mocked(getAuthenticatedUser).mockRejectedValue(new HttpError(status, "denied"));
   const response = await GET(request());
   expect(response.status).toBe(status);
   expect(await response.json()).not.toHaveProperty("items");
@@ -18,10 +19,10 @@ it.each([401, 403])("does not disclose the example catalog to a denied user (%i)
 it("keeps examples unavailable when the ranking feature is disabled", async () => {
   vi.stubEnv("RANKING_SHORTS_ENABLED", "0");
   expect((await GET(request())).status).toBe(404);
-  expect(requireAdminUser).not.toHaveBeenCalled();
+  expect(getAuthenticatedUser).not.toHaveBeenCalled();
 });
-it("returns the imported, unique allowlisted catalog only after admin authorization", async () => {
-  vi.mocked(requireAdminUser).mockResolvedValue({id:"admin",authUserId:"auth",email:"admin@example.test",displayName:null});
+it("returns the imported, unique allowlisted catalog only after account authorization", async () => {
+  vi.mocked(getAuthenticatedUser).mockResolvedValue({id:"auth",email:"admin@example.test"} as Awaited<ReturnType<typeof getAuthenticatedUser>>);
   const response = await GET(request());
   expect(response.status).toBe(200);
   expect(response.headers.get("cache-control")).toBe("private, no-store");

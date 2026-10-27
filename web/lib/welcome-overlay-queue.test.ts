@@ -14,6 +14,7 @@ describe("welcome overlay queue", () => {
       "shorts-event",
       "marketing-email",
       "feedback",
+      "ranking-launch",
       "done",
     ]);
     expect(nextWelcomeOverlayStage("youtube-launch")).toBe("onboarding");
@@ -22,6 +23,7 @@ describe("welcome overlay queue", () => {
     expect(nextWelcomeOverlayStage("sidebar-navigation")).toBe("marketing-email");
     expect(nextWelcomeOverlayStage("shorts-event")).toBe("marketing-email");
     expect(nextWelcomeOverlayStage("marketing-email")).toBe("feedback");
-    expect(nextWelcomeOverlayStage("feedback")).toBe("done");
+    expect(nextWelcomeOverlayStage("feedback")).toBe("ranking-launch");
+    expect(nextWelcomeOverlayStage("ranking-launch")).toBe("done");
   });
 });

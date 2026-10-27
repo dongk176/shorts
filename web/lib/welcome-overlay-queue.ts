@@ -6,6 +6,7 @@ export const welcomeOverlayStages = [
   "shorts-event",
   "marketing-email",
   "feedback",
+  "ranking-launch",
   "done",
 ] as const;
 

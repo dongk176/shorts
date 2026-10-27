@@ -1,6 +1,6 @@
 import { queueRankingOperation } from "@/lib/ranking-jobs";
 import {
-  requireRankingAdmin,
+  requireRankingUser,
   rankingReply,
   rankingError,
   rankingBody,
@@ -12,7 +12,7 @@ export async function POST(
   { params }: { params: Promise<{ projectId: string }> },
 ) {
   try {
-    const admin = await requireRankingAdmin(request);
+    const admin = await requireRankingUser(request);
     const { projectId } = await params;
     return rankingReply(
       await queueRankingOperation(

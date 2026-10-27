@@ -39,7 +39,7 @@ suite("ranking isolated database workflow", () => {
     )
       throw new Error("Local disposable ranking test database only");
     state.db = postgres(url!, { max: 3, transform: postgres.camel });
-    await state.db`insert into shorts_mvp.app_users(id,is_admin,email) values(${owner},true,'admin@example.test'),(${other},true,'other@example.test')`;
+    await state.db`insert into shorts_mvp.app_users(id,is_admin,email) values(${owner},false,'admin@example.test'),(${other},false,'other@example.test')`;
     project = (await createRankingProject(owner)).id;
   });
   afterAll(async () => {
@@ -195,11 +195,11 @@ suite("ranking isolated database workflow", () => {
       await state.db`select status from shorts_mvp.ranking_completion_emails where operation_id=${op}`;
     expect(rows[0].status).toBe("failed");
   });
-  it("skips a completion after administrator access is revoked", async () => {
+  it("skips a completion after its project is deleted", async () => {
     const op = randomUUID();
     await state.db`insert into shorts_mvp.ranking_operations(id,project_id,action,status,request_id) values(${op},${project},'render','succeeded',${randomUUID()})`;
     await state.db`insert into shorts_mvp.ranking_completion_emails(operation_id) values(${op})`;
-    await state.db`update shorts_mvp.app_users set is_admin=false where id=${owner}`;
+    await state.db`update shorts_mvp.ranking_projects set deleted_at=now() where id=${project}`;
     const send = vi.fn();
     await processRankingEmails(send);
     expect(send).not.toHaveBeenCalled();

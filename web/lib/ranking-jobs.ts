@@ -45,8 +45,8 @@ const sourceInput = z
 export async function createRankingProject(userId: string) {
   const db = getDb();
   return db.begin(async (tx) => {
-    // Serializes only this administrator's admissions; never locks ordinary jobs.
-    await tx`select id from shorts_mvp.app_users where id=${userId} and is_admin=true for update`;
+    // Serializes only this user's admissions; never locks ordinary jobs.
+    await tx`select id from shorts_mvp.app_users where id=${userId} for update`;
     const id = randomUUID();
     await tx`insert into shorts_mvp.ranking_projects(id,user_id) values(${id},${userId})`;
     return { id };
@@ -110,7 +110,7 @@ export async function queueRankingSource(
   if (size && !ready) return { preparing: true };
   const db = getDb();
   const op = await db.begin(async (tx) => {
-    if (vercel) await tx`select id from shorts_mvp.app_users where id=${owner} and is_admin=true for update`;
+    if (vercel) await tx`select id from shorts_mvp.app_users where id=${owner} for update`;
     const locked = await tx`select id from shorts_mvp.ranking_projects where id=${projectId} and user_id=${owner} and deleted_at is null and expires_at>now() for update`;
     if (!locked[0]) throw new HttpError(404, "작업을 찾을 수 없습니다.");
     const existing =
@@ -195,7 +195,7 @@ export async function queueRankingOperation(
     await wakeRankingRuntime();
   }
   const operationId = await getDb().begin(async (tx) => {
-    if (vercel) await tx`select id from shorts_mvp.app_users where id=${owner} and is_admin=true for update`;
+    if (vercel) await tx`select id from shorts_mvp.app_users where id=${owner} for update`;
     const locked = await tx`select id from shorts_mvp.ranking_projects where id=${projectId} and user_id=${owner} and deleted_at is null and expires_at>now() for update`;
     if (!locked[0]) throw new HttpError(404, "작업을 찾을 수 없습니다.");
     const existing =

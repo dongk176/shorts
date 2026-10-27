@@ -2542,3 +2542,7 @@ main#top > section#results { border: 0; border-radius: 0; padding: 0; background
     font-size: 16px !important;
   }
 }
+
+.ranking-launch-new{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;width:17px;height:17px;margin-left:6px;border-radius:50%;background:#ef4444;color:#fff;font-size:10px;font-weight:800;line-height:1;animation:ranking-launch-pulse 1.8s ease-in-out infinite}
+@keyframes ranking-launch-pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 #ef444433}50%{opacity:.65;box-shadow:0 0 0 4px #ef444400}}
+@media(prefers-reduced-motion:reduce){.ranking-launch-new{animation:none}}

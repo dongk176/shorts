@@ -24,7 +24,7 @@ export async function leaseRankingVercelRoute(operation: string, task: string) {
   const row =
     held[0] ||
     (
-      await db`select shorts_ranking_runtime.claim_route_parallel(${operation}::uuid,${task},${allowed.map((r) => r.id)}::text[],${previous.map((r) => r.routeId)}::text[]) as route_id`
+      await db`select shorts_ranking_runtime.claim_route_beta(${operation}::uuid,${task},${allowed.map((r) => r.id)}::text[],${previous.map((r) => r.routeId)}::text[]) as route_id`
     )[0];
   const match = allowed.find((r) => r.id === row?.routeId);
   return match ? match.proxy_url : null;

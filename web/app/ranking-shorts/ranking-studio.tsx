@@ -639,7 +639,7 @@ export function RankingStudio({
       <main className="ranking-studio ranking-completed">
         <header className="ranking-heading">
           <div>
-            <div className="ranking-eyebrow">관리자 전용</div>
+            <div className="ranking-eyebrow">BETA</div>
             <h1>{title}</h1>
             <p>{subtitle}</p>
           </div>
@@ -683,9 +683,9 @@ export function RankingStudio({
       <header className="ranking-heading">
         <div>
           <div className="ranking-eyebrow">
-            CREATIVE STUDIO <span>관리자 전용</span>
+            CREATIVE STUDIO <span>BETA</span>
           </div>
-          <div className="ranking-title-row"><h1>랭킹 쇼츠</h1><RankingExamples /></div>
+          <div className="ranking-title-row"><h1>랭킹 쇼츠</h1><button type="button" className="ranking-guide-reopen" onClick={() => window.dispatchEvent(new Event("ranking-onboarding-guide"))}>사용법</button><RankingExamples /></div>
 
         </div>
         <div className="ranking-draft-actions">

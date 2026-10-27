@@ -2,7 +2,7 @@ import { getDb } from "@/lib/db";
 import { HttpError } from "@/lib/http";
 import { getShortDownloadUrl, getShortPlaybackAccess } from "@/lib/aws";
 import {
-  requireRankingAdmin,
+  requireRankingUser,
   requireRankingProject,
   rankingUuid,
   rankingError,
@@ -15,7 +15,7 @@ export async function GET(
   { params }: { params: Promise<{ projectId: string; sourceId: string }> },
 ) {
   try {
-    const admin = await requireRankingAdmin(request);
+    const admin = await requireRankingUser(request);
     const { projectId, sourceId } = await params;
     const project = await requireRankingProject(projectId, admin.id);
     rankingUuid(sourceId);

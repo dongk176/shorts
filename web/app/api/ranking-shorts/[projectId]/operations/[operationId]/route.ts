@@ -1,6 +1,6 @@
 import { rankingOperation } from "@/lib/ranking-jobs";
 import {
-  requireRankingAdmin,
+  requireRankingUser,
   rankingReply,
   rankingError,
 } from "@/lib/ranking-access";
@@ -10,7 +10,7 @@ export async function GET(
   { params }: { params: Promise<{ projectId: string; operationId: string }> },
 ) {
   try {
-    const admin = await requireRankingAdmin(request);
+    const admin = await requireRankingUser(request);
     const { projectId, operationId } = await params;
     return rankingReply(
       await rankingOperation(projectId, operationId, admin.id),
@@ -24,7 +24,7 @@ export async function DELETE(
   { params }: { params: Promise<{ projectId: string; operationId: string }> },
 ) {
   try {
-    const admin = await requireRankingAdmin(request);
+    const admin = await requireRankingUser(request);
     const { projectId, operationId } = await params;
     const { requireRankingProject, rankingUuid } = await import(
       "@/lib/ranking-access"

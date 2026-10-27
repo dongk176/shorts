@@ -217,8 +217,8 @@ export async function rankingVercelAccess(
 async function prepareRenderSources(project: string, operation: string, task: string) {
   const db = getDb();
   const children = await db.begin(async tx => {
-    const owners = await tx`select u.id from shorts_mvp.app_users u join shorts_mvp.ranking_projects p on p.user_id=u.id where p.id=${project} and u.is_admin=true for update of u`;
-    if (!owners[0]) throw new HttpError(403, "관리자 전용 기능입니다.");
+    const owners = await tx`select u.id from shorts_mvp.app_users u join shorts_mvp.ranking_projects p on p.user_id=u.id where p.id=${project} for update of u`;
+    if (!owners[0]) throw new HttpError(403, "작업 소유자를 확인할 수 없습니다.");
     await tx`select id from shorts_mvp.ranking_projects where id=${project} for update`;
     const parents = await tx`select * from shorts_mvp.ranking_operations where id=${operation} and status='running'`;
     const parent = parents[0];
@@ -273,7 +273,7 @@ export async function dispatchRankingVercel(
 ) {
   const db = getDb();
   const rows =
-    await db`select o.*,p.user_id from shorts_mvp.ranking_operations o join shorts_mvp.ranking_projects p on p.id=o.project_id join shorts_mvp.app_users u on u.id=p.user_id where o.id=${operation} and o.project_id=${project} and o.executor='vercel' and o.status='running' and p.deleted_at is null and p.expires_at>now() and u.is_admin=true`;
+    await db`select o.*,p.user_id from shorts_mvp.ranking_operations o join shorts_mvp.ranking_projects p on p.id=o.project_id join shorts_mvp.app_users u on u.id=p.user_id where o.id=${operation} and o.project_id=${project} and o.executor='vercel' and o.status='running' and p.deleted_at is null and p.expires_at>now()`;
   if (!rows[0]) return;
   const op = rows[0],
     session = await rankingVercelSession(project);
@@ -345,7 +345,7 @@ export async function syncRankingVercelOperation(
 ) {
   const db = getDb();
   const rows =
-    await db`select o.*,p.deleted_at,p.expires_at,u.is_admin from shorts_mvp.ranking_operations o join shorts_mvp.ranking_projects p on p.id=o.project_id join shorts_mvp.app_users u on u.id=p.user_id where o.id=${operation} and o.project_id=${project} and executor='vercel' and o.status='running'`;
+    await db`select o.*,p.deleted_at,p.expires_at from shorts_mvp.ranking_operations o join shorts_mvp.ranking_projects p on p.id=o.project_id join shorts_mvp.app_users u on u.id=p.user_id where o.id=${operation} and o.project_id=${project} and executor='vercel' and o.status='running'`;
   if (!rows[0]) return;
   const op = rows[0],
     session = await rankingVercelSession(project);
@@ -361,7 +361,6 @@ export async function syncRankingVercelOperation(
   if (
     !session ||
     op.deletedAt ||
-    !op.isAdmin ||
     new Date(op.expiresAt).getTime() < Date.now()
   )
     state = {

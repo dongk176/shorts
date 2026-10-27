@@ -13,7 +13,7 @@ describe("ranking projects on the ordinary project page", () => {
     expect(await loadRankingProjectList(null)).toEqual([]);
     expect(state.query).not.toHaveBeenCalled();
   });
-  it("binds the authenticated identity and filters current admin ownership, deletion and expiry", async () => {
+  it("binds the authenticated identity and filters current account ownership, deletion and expiry", async () => {
     vi.stubEnv("RANKING_SHORTS_ENABLED", "1");
     state.query.mockResolvedValue([]);
     expect(await loadRankingProjectList("authenticated-owner")).toEqual([]);
@@ -21,7 +21,8 @@ describe("ranking projects on the ordinary project page", () => {
     const sql = strings.join("?");
     expect(identity).toBe("authenticated-owner");
     expect(sql).toContain("p.user_id=u.id");
-    expect(sql).toContain("u.auth_user_id=? and u.is_admin=true");
+    expect(sql).not.toContain("is_admin");
+    expect(sql).toContain("u.auth_user_id=?");
     expect(sql).toContain("p.deleted_at is null and p.expires_at>now()");
     expect(sql).toContain("project_id=p.id and action='render'");
     expect(sql).toContain("order by created_at desc,id desc limit 1");

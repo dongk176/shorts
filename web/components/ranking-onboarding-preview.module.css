@@ -1,0 +1,46 @@
+.dialog{position:fixed;inset:0;margin:auto;width:min(740px,calc(100vw - 32px));max-height:calc(100dvh - 40px);padding:0;border:1px solid #ffffff21;border-radius:24px;background:#191a1f;color:#f7f5fa;box-shadow:0 28px 100px #0008;overflow:auto}
+.dialog::backdrop{background:#07080cc9;backdrop-filter:blur(8px)}
+.close{position:absolute;top:12px;right:12px;z-index:2;width:44px;height:44px;padding:0;display:grid;place-items:center;border:0;border-radius:50%;background:transparent;color:#c9c6d1;cursor:pointer;transition:background .15s,color .15s}.close:hover{background:#ffffff0d;color:#fff}.close svg{display:block;flex-shrink:0}.dialog:focus{outline:none}
+.launch{display:grid;grid-template-columns:1.25fr .85fr;gap:28px;padding:44px 40px;align-items:center}
+.copy{min-width:0}.badge{display:inline-flex;align-items:center;padding:5px 9px;border:1px solid #c5a0ff44;border-radius:7px;background:#9b6be613;color:#d5b8ff;font-size:11px;letter-spacing:.08em;font-weight:800}
+.dialog h2{font-size:clamp(25px,3vw,32px);font-weight:800;line-height:1.3;letter-spacing:-1.1px;margin:19px 0 14px;word-break:keep-all}
+.copy>p{font-size:15px;line-height:1.8;color:#bbb7c5;margin:0;word-break:keep-all}.chips{display:flex;gap:7px;margin:22px 0}.chips span{font-size:12px;color:#d8cde5;padding:6px 9px;border-radius:7px;background:#ffffff06;border:1px solid #ffffff13}
+.copy .betaNote{font-size:12px;color:#aaa1b6;margin:24px 0 14px}
+.primary{display:flex;align-items:center;justify-content:center;gap:18px;min-height:48px;width:100%;border:1px solid #bc91ff50;border-radius:12px;padding:12px 17px;background:linear-gradient(115deg,#7741c4,#9868e5);color:#fff;font-size:14px;font-weight:750;text-decoration:none;cursor:pointer}.primary:hover{filter:brightness(1.1)}
+.later{display:block;min-height:42px;width:100%;margin-top:6px;padding:10px 8px;border:0;background:transparent;color:#a8a1b1;font-size:13px;cursor:pointer}.later:hover{color:#ece4f4}.launch .later{margin:0 0 6px}
+.movie{padding-top:12px;max-width:220px;justify-self:center}.movie video{display:block;width:100%;aspect-ratio:9/16;border-radius:15px;background:#000;box-shadow:0 14px 40px #0006}
+.beta{padding:38px 42px 24px;max-width:560px;margin:auto}.dialog:has(.beta){width:min(560px,calc(100vw - 32px))}.intro{font-size:14px;line-height:1.7;color:#b2acbd;word-break:keep-all;margin-bottom:24px}.points{list-style:none;margin:0 0 26px;padding:0;display:grid;gap:20px}.points li{display:flex;gap:13px}.points li>span{font-size:11px;color:#baa2d6;line-height:22px;flex-shrink:0}.points strong{font-size:14px;font-weight:650;color:#e5e0ec}.points p{font-size:13px;line-height:1.65;color:#aaa4b4;margin:5px 0 0;word-break:keep-all}
+.localTools{display:flex;justify-content:center;flex-wrap:wrap;gap:10px 16px;padding:18px 24px;margin:20px auto 48px;color:#8f8999;font-size:12px}.localTools button,.localTools a{background:none;border:0;text-decoration:underline;text-underline-offset:3px;color:#c8b3df;cursor:pointer}
+.notice{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:150;width:min(520px,calc(100vw - 32px));display:flex;align-items:center;gap:16px;background:#282330;border:1px solid #ffffff25;padding:16px 20px;border-radius:14px;box-shadow:0 10px 40px #0006;color:#e0d7e9;font-size:14px}.notice button{border:0;background:none;color:#c2b5d0;font-size:24px;cursor:pointer}
+.dialog button:focus-visible,.dialog a:focus-visible,.localTools button:focus-visible,.localTools a:focus-visible{outline:2px solid #d5b6ff;outline-offset:3px}
+@media(max-width:600px){.dialog{max-height:calc(100dvh - 24px);border-radius:20px}.launch{padding:32px 24px 20px;gap:20px;grid-template-columns:1fr}.copy h2 br{display:none}.copy h2{font-size:27px;padding-right:12px}.copy>p br{display:none}.movie{grid-row:1;width:auto;max-width:100%;padding-top:0;justify-self:center;height:clamp(240px,35dvh,320px);aspect-ratio:9/16;overflow:hidden;border-radius:12px;background:#000}.movie video{width:100%;height:100%;aspect-ratio:9/16;object-fit:contain;border-radius:12px}.chips{margin:16px 0}.copy .betaNote{margin:10px 0 12px}.dialog .beta{padding:34px 24px 18px}.beta h2{font-size:26px}.points{gap:17px}.notice{font-size:13px;bottom:16px}.localTools{margin-bottom:30px}}
+
+/* Keep the launch headline on one line without crowding the portrait example. */
+@media(min-width:601px){
+  .dialog:has(.launch){width:min(820px,calc(100vw - 32px))}
+  .launch{grid-template-columns:240px minmax(0,1fr);gap:24px;padding:30px}
+  .launch h2{font-size:clamp(22px,3.2vw,30px);white-space:nowrap;letter-spacing:-1px}
+  .movie{width:240px;max-width:100%}
+}
+@media(min-width:601px) and (max-width:740px){
+  .launch{grid-template-columns:150px minmax(0,1fr);gap:20px;padding:30px 24px}
+  .movie{width:150px}
+}
+@media(max-width:600px){
+  .launch{padding:20px 20px 18px;gap:10px}
+  .movie{height:clamp(224px,34dvh,288px)}
+  .launch h2{font-size:24px;margin:0 0 10px;padding-right:0}
+  .copy>p{font-size:14px;line-height:1.6}
+  .launch .chips{display:none}
+  .copy .betaNote{margin:10px 0 4px}
+  .launch .later{min-height:36px;padding:8px;margin:0 0 4px}
+}
+
+/* Reserve a clear header area so closing the dialog is separate from the video. */
+.dialog:has(.launch){padding-top:56px;background:radial-gradient(ellipse at 95% 0%,#a470ed15,transparent 70%),#191a1f}
+.dialog:has(.launch) .close{top:6px;right:10px}
+.dialog .launch{padding-top:0}
+.launch .movie{padding-top:0}
+
+@media(min-width:601px){.launch .movie{grid-column:1;grid-row:1}.launch .copy{grid-column:2;grid-row:1}}
+

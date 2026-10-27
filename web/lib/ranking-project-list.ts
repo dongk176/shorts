@@ -15,7 +15,7 @@ export type RankingProjectSummary = {
 };
 
 // This optional list must never broaden the ordinary projects page's access.
-// Match the authenticated identity to its current administrator row in SQL.
+// Match the authenticated identity to its current account row in SQL.
 export async function loadRankingProjectList(
   authUserId: string | null,
 ): Promise<RankingProjectSummary[]> {
@@ -39,7 +39,7 @@ export async function loadRankingProjectList(
       select remote_url from shorts_mvp.ranking_sources
       where project_id=p.id order by created_at,id limit 1
     ) s on true
-    where u.auth_user_id=${authUserId} and u.is_admin=true
+    where u.auth_user_id=${authUserId}
       and p.deleted_at is null and p.expires_at>now()
     order by p.created_at desc,p.id desc
   `;

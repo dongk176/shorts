@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 const state = vi.hoisted(() => ({ admin: vi.fn(), owner: vi.fn(), query: vi.fn(), begin: vi.fn() }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({ begin: state.begin }) }));
-vi.mock("@/lib/ranking-access", async (original) => ({ ...await original<typeof import("@/lib/ranking-access")>(), requireRankingAdmin: state.admin, requireRankingProject: state.owner }));
+vi.mock("@/lib/ranking-access", async (original) => ({ ...await original<typeof import("@/lib/ranking-access")>(), requireRankingUser: state.admin, requireRankingProject: state.owner }));
 import { HttpError } from "@/lib/http";
 import { DELETE } from "./route";
 const request = () => new Request("https://www.easycut.co.kr/api/ranking-shorts/project", { method: "DELETE" });

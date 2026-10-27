@@ -32,6 +32,7 @@ import Image from "next/image";
 import Link from "@/lib/i18n/navigation";
 import { AuthControls } from "@/components/auth-controls";
 import { UploadSelectionError } from "@/components/upload-selection-error";
+import { RankingShowroom } from "@/components/ranking-showroom";
 import { BackgroundShowcase } from "@/components/background-showcase";
 import { BackgroundAssetPicker } from "@/components/background-asset-picker";
 import { BrandColorPicker } from "@/components/brand-color-picker";
@@ -15082,6 +15083,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
         <p>{t(homeProjects.status === "error" ? "home.projectsLoadError" : "home.projectsLoading")}</p>
         {homeProjects.status === "error" ? <button type="button" onClick={homeProjects.retry} className="min-h-11 rounded-lg border border-white/20 px-4 font-semibold">{t("common.retry")}</button> : null}
       </div> : null}
+      <RankingShowroom />
       {!state?.user && stateLoadStatus === "ready" ? <BackgroundShowcase /> : null}
       {error && <div role="alert" className="rounded-xl border border-red-900 bg-red-950/50 p-4 text-sm text-red-200">{ui(error)}</div>}
       {stateLoadStatus === "error" && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-900 bg-amber-950/40 p-4 text-sm text-amber-100"><div><p>{t("home.serviceLoadError")}</p>{stateLoadError && <p className="mt-1 text-xs text-amber-300">{stateLoadError}</p>}</div><button type="button" onClick={retryStateLoad} className="rounded-lg border border-amber-300/30 px-3 py-2 font-semibold">{t("common.retry")}</button></div>}

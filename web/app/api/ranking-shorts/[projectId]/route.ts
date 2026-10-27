@@ -1,7 +1,7 @@
 import { getDb } from "@/lib/db";
 import { HttpError } from "@/lib/http";
 import {
-  requireRankingAdmin,
+  requireRankingUser,
   requireRankingProject,
   rankingReply,
   rankingError,
@@ -14,7 +14,7 @@ export async function DELETE(
   { params }: { params: Promise<{ projectId: string }> },
 ) {
   try {
-    const admin = await requireRankingAdmin(request);
+    const admin = await requireRankingUser(request);
     const { projectId } = await params;
     await requireRankingProject(projectId, admin.id);
     await getDb().begin(async (tx) => {
@@ -36,7 +36,7 @@ export async function GET(
   { params }: { params: Promise<{ projectId: string }> },
 ) {
   try {
-    const admin = await requireRankingAdmin(request);
+    const admin = await requireRankingUser(request);
     const { projectId } = await params;
     const project = await requireRankingProject(projectId, admin.id);
     if(rankingUsesVercel())await syncRankingVercelProjects(admin.id);

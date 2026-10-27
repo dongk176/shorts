@@ -1,5 +1,5 @@
 import "server-only";
-import { requireAdminUser } from "@/lib/admin";
+import { getAuthenticatedUser } from "@/lib/supabase/server";
 import { getDb } from "@/lib/db";
 import { HttpError } from "@/lib/http";
 
@@ -26,11 +26,14 @@ export function requireRankingOrigin(request: Request) {
     throw new HttpError(403, "요청 출처를 확인해 주세요.");
   }
 }
-export async function requireRankingAdmin(request?: Request) {
+export async function requireRankingUser(request?: Request) {
   if (!rankingEnabled()) throw new HttpError(404, "찾을 수 없습니다.");
-  const admin = await requireAdminUser();
+  const auth = await getAuthenticatedUser();
+  if (!auth || auth.is_anonymous) throw new HttpError(401, "로그인이 필요합니다.");
   if (request) requireRankingOrigin(request);
-  return admin;
+  const rows = await getDb()`select id,auth_user_id,email,display_name from shorts_mvp.app_users where auth_user_id=${auth.id} limit 1`;
+  if (!rows[0]) throw new HttpError(403, "계정 정보를 확인해 주세요. 다시 로그인해 주세요.");
+  return { id: rows[0].id as string, authUserId: auth.id, email: String(rows[0].email || auth.email || ""), displayName: rows[0].displayName || null };
 }
 export async function requireRankingProject(id: string, userId: string) {
   rankingUuid(id);

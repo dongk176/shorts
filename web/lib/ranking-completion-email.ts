@@ -15,7 +15,7 @@ export function rankingEmailContent(claim: RankingEmail) {
   );
   return {
     subject: "[이지컷] 랭킹 쇼츠가 완성됐어요",
-    text: `랭킹 쇼츠 제작이 완료됐습니다.\n\n관리자 계정으로 로그인해 영상을 확인하고 다운로드하세요.\n${url}\n\n완성 영상은 작업 생성일로부터 30일간 보관됩니다.`,
+    text: `랭킹 쇼츠 제작이 완료됐습니다.\n\n제작한 계정으로 로그인해 영상을 확인하고 다운로드하세요.\n${url}\n\n완성 영상은 작업 생성일로부터 30일간 보관됩니다.`,
   };
 }
 export async function processRankingEmails(
@@ -24,17 +24,17 @@ export async function processRankingEmails(
   const db = getDb();
   await db`update shorts_mvp.ranking_completion_emails set status='failed',claimed_at=null,last_error='EmailDeliveryAttemptsExhausted'
     where status='processing' and attempt_count>=5 and claimed_at<now()-interval '5 minutes'`;
-  // Recheck administrative membership and ownership at delivery, not only enqueue.
+  // Recheck ownership and retention at delivery, not only enqueue.
   await db`update shorts_mvp.ranking_completion_emails e set status='skipped',claimed_at=null
     from shorts_mvp.ranking_operations o,shorts_mvp.ranking_projects p,shorts_mvp.app_users u
     where e.operation_id=o.id and o.project_id=p.id and p.user_id=u.id and e.status in ('pending','processing')
-    and (u.is_admin is not true or p.deleted_at is not null or p.expires_at<=now() or coalesce(u.email,'')='')`;
+    and (p.deleted_at is not null or p.expires_at<=now() or coalesce(u.email,'')='')`;
   const claims = await db.begin(async (tx) => {
     const rows =
       await tx`select e.operation_id,p.id as project_id,u.email,e.attempt_count
       from shorts_mvp.ranking_completion_emails e join shorts_mvp.ranking_operations o on o.id=e.operation_id
       join shorts_mvp.ranking_projects p on p.id=o.project_id join shorts_mvp.app_users u on u.id=p.user_id
-      where o.status='succeeded' and u.is_admin=true and p.deleted_at is null and p.expires_at>now()
+      where o.status='succeeded' and p.deleted_at is null and p.expires_at>now()
       and e.attempt_count<5 and ((e.status='pending' and e.available_at<=now()) or (e.status='processing' and e.claimed_at<now()-interval '5 minutes'))
       order by e.available_at for update of e skip locked limit 5`;
     for (const row of rows)

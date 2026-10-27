@@ -42,6 +42,7 @@ export const PROTECTED_APP_ROUTES = [
 // These routes are the only intentional additions relative to the currently
 // promoted production manifest. Everything else must still fail closed.
 export const ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE = [
+  "/api/ranking-shorts/welcome/route",
   // Overseas-only period graphs use the existing restricted role.
   "/api/admin/overseas/trends/route",
   // User-requested overseas-only administrator console and login (2026-10-27).

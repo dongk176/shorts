@@ -454,3 +454,5 @@
 .ranking-source-remove:focus-visible{outline:2px solid #c9b2ee;outline-offset:3px}
 .ranking-source-reconnect{margin-inline-start:12px;text-decoration:underline;font-weight:700}
 @media(max-width:850px){.ranking-refreshed .ranking-preview-column{max-width:300px;width:min(100%,300px)}}
+
+.ranking-guide-reopen{padding:7px 12px;border:1px solid #ffffff25;border-radius:9px;color:#ccc6d5;background:#ffffff06;font-size:13px;cursor:pointer}.ranking-guide-reopen:hover{background:#ffffff10}

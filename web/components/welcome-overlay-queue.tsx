@@ -78,3 +78,5 @@ export function useWelcomeOverlayStage(
     complete: completeRequestedStage,
   };
 }
+
+export function useWelcomeOverlayFinished() { return useContext(WelcomeOverlayQueueContext)?.stage === "done"; }
