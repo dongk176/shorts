@@ -1,3 +1,4 @@
+import { AdminRankingFeedback } from "./admin-ranking-feedback";
 import { loadAdminCancellationFeedback } from "@/lib/admin-cancellation-feedback";
 import { AdminCancellationFeedbackDashboard } from "./admin-cancellation-feedback";
 import { AdminUpdates } from "./admin-updates";
@@ -454,6 +455,15 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
         `,
       ])
     : [{ members: [], totalCount: 0, hasMore: false, nextOffset: 0 }, []];
+  const rankingFeedbackRows = tab === "feedback" ? await db`
+    select f.operation_id,f.rating,f.comment,f.created_at,u.display_name,
+      o.project_id
+    from shorts_mvp.ranking_feedback f
+    join shorts_mvp.app_users u on u.id=f.user_id
+    join shorts_mvp.ranking_operations o on o.id=f.operation_id
+    where f.rating is not null and (${query}='' or coalesce(u.display_name,'') ilike ${`%${query}%`} or f.comment ilike ${`%${query}%`})
+    order by f.created_at desc limit 100
+  ` : [];
   const feedbackRows = tab === "feedback" ? await db`
       select f.id,f.satisfaction_rating,f.disappointment_reason,f.improvement_text,
         f.prompt_completion_count,f.completed_project_count,f.reward_seconds,f.created_at,
@@ -811,6 +821,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
           }}
         />
       ) : tab === "feedback" ? (
+        <><AdminRankingFeedback rows={rankingFeedbackRows.map(row => ({ operationId: row.operationId, name: row.displayName, rating: row.rating, comment: row.comment, createdAt: String(row.createdAt) }))} />
         <AdminFeedbackDashboard
           feedback={feedback}
           metrics={feedbackMetrics}
@@ -819,7 +830,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
             count: Number(row.count),
           }))}
           query={query}
-        />
+        /></>
       ) : tab === "onboarding" ? (
         <AdminOnboardingDashboard
           responses={onboardingResponses}

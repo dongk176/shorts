@@ -1,0 +1,17 @@
+import { beforeEach, expect, it, vi } from "vitest";
+vi.mock("server-only", () => ({}));
+const mocks = vi.hoisted(() => ({ user:vi.fn(), project:vi.fn(), db:vi.fn() }));
+vi.mock("@/lib/db", () => ({getDb:()=>mocks.db}));
+vi.mock("@/lib/ranking-access",async original=>({...await original<typeof import("@/lib/ranking-access")>(),requireRankingUser:mocks.user,requireRankingProject:mocks.project}));
+import {GET,POST} from "./route";
+import {HttpError} from "@/lib/http";
+const id="c7852a91-2a2c-4c3f-bd0d-fcd5d3176b76";
+const context={params:Promise.resolve({projectId:"dbda49ac-4033-4f4a-838d-98bfbf3daa90"})};
+const post=(data:unknown)=>new Request("https://www.easycut.co.kr/api/ranking-shorts/project/feedback",{method:"POST",body:JSON.stringify(data)});
+beforeEach(()=>{vi.resetAllMocks();mocks.user.mockResolvedValue({id:"user"});mocks.project.mockResolvedValue({});mocks.db.mockResolvedValue([{id}]);});
+it("does not query results or write for another user's project",async()=>{mocks.project.mockRejectedValue(new HttpError(404,"not found"));expect((await POST(post({operationId:id,rating:"good"}),context)).status).toBe(404);expect(mocks.db).not.toHaveBeenCalled();});
+it("requires a completed render",async()=>{mocks.db.mockResolvedValueOnce([]);expect((await POST(post({operationId:id,rating:"good"}),context)).status).toBe(404);expect(mocks.db).toHaveBeenCalledTimes(1);});
+it("rejects unbounded and invalid responses",async()=>{for(const data of [{operationId:id,rating:"bad"},{operationId:id,rating:"good",comment:"a".repeat(1001)}])expect((await POST(post(data),context)).status).toBe(400);expect(mocks.db).not.toHaveBeenCalled();});
+it("stores feedback idempotently without billing changes",async()=>{expect((await POST(post({operationId:id,rating:"poor",comment:"  너무 느려요  "}),context)).status).toBe(200);const [sql,...values]=mocks.db.mock.calls[1];expect(sql.join(" ")).toContain("on conflict (operation_id) do nothing");expect(values).toEqual([id,"user","poor","너무 느려요"]);});
+it("records a skipped response without an opinion",async()=>{await POST(post({operationId:id,rating:null,comment:"ignored"}),context);expect(mocks.db.mock.calls[1].slice(1)).toEqual([id,"user",null,""]);});
+it("suppresses completed or skipped prompts",async()=>{const r=await GET(new Request(`https://www.easycut.co.kr/api/ranking-shorts/project/feedback?operation=${id}`),context);expect(await r.json()).toEqual({handled:true});});

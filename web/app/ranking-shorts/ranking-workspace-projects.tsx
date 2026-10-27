@@ -1,5 +1,6 @@
 "use client";
 import { useEffect,useMemo,useRef,useState } from "react";
+import { RankingResultPlayer } from "./ranking-result-player";
 import { useRankingBackdrop } from "./use-ranking-backdrop";
 import { RankingProjectList } from "@/components/ranking-project-list";
 import type { RankingProjectSummary } from "@/lib/ranking-project-list";
@@ -18,7 +19,7 @@ export function RankingWorkspaceProjects({revision,submitted,preparing}:{revisio
   {items.length?<RankingProjectList projects={items} embedded onOpen={setSelected}/>:<div className="ranking-projects-empty">{loading?"프로젝트를 불러오고 있어요…":"영상을 만들면 여기에 차곡차곡 모여요."}</div>}
   {selected&&<dialog ref={dialog} {...backdrop} className="ranking-project-view" aria-label={selected.title||"랭킹 쇼츠 영상"} onCancel={()=>setSelected(null)}>
    <header><h2>{selected.title||"랭킹 쇼츠"}</h2><button type="button" aria-label="영상 닫기" onClick={()=>setSelected(null)}>×</button></header>
-   {detailError?<p role="alert">{detailError}</p>:!detail?<p role="status">영상을 불러오고 있어요…</p>:detail.result?<><video controls playsInline src={detail.result.url} aria-label="완성된 랭킹 쇼츠"/><a href={`${detail.result.url}&download=1`} className="ranking-download-button">영상 다운로드 ↓</a></>:<p role="status">{detail.error||"영상을 만들고 있어요. 완료되면 프로젝트에서 확인할 수 있습니다."}</p>}
+   {detailError?<p role="alert">{detailError}</p>:!detail?<p role="status">영상을 불러오고 있어요…</p>:detail.result?<><RankingResultPlayer url={detail.result.url}/><a href={`${detail.result.url}&download=1`} className="ranking-download-button">영상 다운로드 ↓</a></>:<p role="status">{detail.error||"영상을 만들고 있어요. 완료되면 프로젝트에서 확인할 수 있습니다."}</p>}
   </dialog>}
  </section>;
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import Link from "next/link";
+import { RankingResultPlayer } from "./ranking-result-player";
 import dynamic from "next/dynamic";
 const PopularPicker = dynamic(() => import("./ranking-popular-picker"));
 import { useRankingBackdrop } from "./use-ranking-backdrop";
@@ -650,13 +651,8 @@ export function RankingStudio({
             새 랭킹 만들기
           </Link>
         </header>
-        <div className="ranking-output-player">
-          <video
-            controls
-            playsInline
-            src={result.url}
-            aria-label="완성된 랭킹 쇼츠"
-          />
+        <div className="ranking-result-output">
+          <RankingResultPlayer url={result.url} />
         </div>
         <p>{result.duration.toFixed(1)}초 · 720 × 1280 · MP4</p>
         <a
@@ -1263,13 +1259,8 @@ export function RankingStudio({
             <span>{result && showResult ? "렌더 완료" : "9:16"}</span>
           </div>
           {result && showResult ? (
-            <div className="ranking-output-player">
-              <video
-                controls
-                playsInline
-                src={result.url}
-                aria-label="완성된 랭킹 쇼츠"
-              />
+            <div className="ranking-result-output">
+              <RankingResultPlayer url={result.url} />
             </div>
           ) : null}
           <div hidden={Boolean(result && showResult)}>
