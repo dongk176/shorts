@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 import { MetaApi } from "./api";
 import type { MetaConfig } from "./config";
-const config: MetaConfig = {platform:"instagram", clientId:"123", clientSecret:"never-log-app-secret", graphVersion:"v26.0", origin:"https://www.easycut.co.kr", appKey:"instagram:123", redirectUri:"https://www.easycut.co.kr/api/social/instagram/oauth/callback", scopes:["instagram_business_basic","instagram_business_content_publish"], oauthReady:true};
+const config: MetaConfig = {platform:"instagram", publicEnabled:false, clientId:"123", clientSecret:"never-log-app-secret", graphVersion:"v26.0", origin:"https://www.easycut.co.kr", appKey:"instagram:123", redirectUri:"https://www.easycut.co.kr/api/social/instagram/oauth/callback", scopes:["instagram_business_basic","instagram_business_content_publish"], oauthReady:true};
 describe("Meta OAuth diagnostics", () => {
   it.each([
     ["live string array", ["instagram_business_basic", "instagram_business_content_publish"]],

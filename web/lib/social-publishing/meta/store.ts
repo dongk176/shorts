@@ -13,7 +13,10 @@ export type PostRow = { id: string; userId: string; connectionId: string; connec
 const missing = () => new HttpError(404, "The connected account or finished video is unavailable.", "META_NOT_FOUND");
 
 export class MetaStore {
-  constructor(readonly db: Sql, readonly appKey: string) {}
+  readonly publicEnabled: boolean;
+  constructor(readonly db: Sql, readonly appKey: string, publicEnabled = false) {
+    this.publicEnabled = publicEnabled && appKey === "instagram:1116489420856814";
+  }
   async source(userId: string, shortId: string, db: Db = this.db) {
     const grant = metaReviewerGrant();
     const rows = await db`select s.id,j.project_number,s.output_s3_key,s.render_version
@@ -23,7 +26,7 @@ export class MetaStore {
         and s.status='ready' and s.deleted_at is null and s.output_s3_key is not null
         and (s.expires_at is null or s.expires_at>now())
         and exists(select 1 from shorts_mvp.app_users u where u.id=${userId} and u.withdrawn_at is null
-          and (u.is_admin=true or (u.id=${grant?.userId ?? null} and s.id=${grant?.shortId ?? null}
+          and (${this.publicEnabled} or u.is_admin=true or (u.id=${grant?.userId ?? null} and s.id=${grant?.shortId ?? null}
             and clock_timestamp()<${grant?.expiresAt ?? null}::timestamptz)))
       for share of s,j`;
     if (!rows[0]) throw missing();
@@ -33,7 +36,7 @@ export class MetaStore {
     uuid.parse(userId);
     const grant = metaReviewerGrant();
     if (!(await tx`select id from shorts_mvp.app_users where id=${userId} and withdrawn_at is null
-      and (is_admin=true or (id=${grant?.userId ?? null} and clock_timestamp()<${grant?.expiresAt ?? null}::timestamptz)) for update`).length) throw missing();
+      and (${this.publicEnabled} or is_admin=true or (id=${grant?.userId ?? null} and clock_timestamp()<${grant?.expiresAt ?? null}::timestamptz)) for update`).length) throw missing();
     await tx`insert into shorts_mvp.meta_owners(user_id) values(${userId}) on conflict do nothing`;
     return (await tx`select epoch,greatest(0,ceil(extract(epoch from disconnect_until-now())))::int as retry_after from shorts_mvp.meta_owners where user_id=${userId} for update`)[0];
   }

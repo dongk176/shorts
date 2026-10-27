@@ -11,11 +11,11 @@ import { hash, secret, MetaVault } from "./vault";
 import { metaReviewerGrant } from "./reviewer-access";
 
 export class MetaPublishing {
-  constructor(readonly store: MetaStore, private vault: MetaVault, private api: MetaApi, private media: TikTokMediaAccess, private config: MetaConfig, private admin: (id: string) => Promise<void>) {}
+  constructor(readonly store: MetaStore, private vault: MetaVault, private api: MetaApi, private media: TikTokMediaAccess, private config: MetaConfig, private accountAccess: (id: string) => Promise<void>, private publishAccess: (id: string) => Promise<void> = accountAccess) {}
   private async actor(actor: Actor) {
     uuid.parse(actor.userId);
     if (!actor.sessionId) throw new HttpError(401, "Please sign in.", "META_SIGN_IN");
-    await this.admin(actor.userId);
+    await this.accountAccess(actor.userId);
   }
   private async source(actor: Actor, shortId: string) { await this.actor(actor); uuid.parse(shortId); return this.store.source(actor.userId, shortId); }
   async list(actor: Actor, shortId: string) {
@@ -82,6 +82,7 @@ export class MetaPublishing {
   async create(actor: Actor, raw: unknown) {
     const input = postInput.parse(raw), source = await this.source(actor, input.shortId);
     if (this.config.platform === "threads" && [...input.title].length > 500) throw new HttpError(400, "The caption is too long.", "META_CAPTION_TOO_LONG");
+    await this.publishAccess(actor.userId);
     const media = await this.media.inspect(source.outputS3Key), id = randomUUID(), capability = secret();
     if (media.duration < 3 || media.duration > (this.config.platform === "threads" ? 300 : 900)) throw new HttpError(400, "Unsupported video duration.", "META_VIDEO_DURATION");
     const inserted = await this.access(actor, input.connectionId, async (tx, link, token) => {
@@ -175,11 +176,11 @@ export class MetaPublishing {
       join shorts_mvp.app_users u on u.id=p.user_id where p.media_hash=${hash(capability)} and p.media_expires_at>now()
         and p.status in ('initiating','processing','unknown') and c.app_key=${this.config.appKey} and c.user_id=p.user_id
         and c.status='active' and c.version=p.connection_version and u.withdrawn_at is null
-        and (u.is_admin=true or (u.id=${grant?.userId ?? null} and p.short_id=${grant?.shortId ?? null}
+        and (${this.store.publicEnabled} or u.is_admin=true or (u.id=${grant?.userId ?? null} and p.short_id=${grant?.shortId ?? null}
           and clock_timestamp()<${grant?.expiresAt ?? null}::timestamptz))`;
     if (!rows[0]) throw new HttpError(404, "Media unavailable.");
     const post = rows[0] as PostRow;
-    await this.admin(post.userId);
+    await this.accountAccess(post.userId);
     const source = await this.store.source(post.userId, post.shortId);
     if (source.renderVersion !== post.renderVersion || source.outputS3Key !== post.sourceKey || post.sourceHash !== await this.media.fingerprint((await this.media.file(post.sourceKey)).file)) throw new HttpError(404, "Media unavailable.");
     return this.media.file(post.sourceKey);

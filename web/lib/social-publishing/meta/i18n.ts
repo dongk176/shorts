@@ -23,6 +23,7 @@ const copy = {
   unavailable: ["요청을 완료하지 못했습니다. 잠시 후 다시 확인해 주세요.", "The request could not be completed. Please check again shortly.", "リクエストを完了できませんでした。しばらくして再度確認してください。"],
   reconnect: ["계정을 다시 연결하고 게시 권한을 허용해 주세요.", "Reconnect the account and allow publishing access.", "アカウントを再連携し、投稿権限を許可してください。"],
   video: ["영상이 변경되었거나 지원하지 않는 형식입니다. 완성된 영상을 다시 확인해 주세요.", "The video changed or its format is unsupported. Check your finished video.", "動画が変更されたか、非対応の形式です。完成した動画を確認してください。"],
+  paid: ["게시 기능은 유료 이용권이 필요합니다.", "A paid plan is required to publish.", "投稿には有料プランが必要です。"],
   professional: ["Instagram 비즈니스 또는 크리에이터 계정으로 연결해 주세요.", "Connect an Instagram business or creator account.", "Instagramのビジネスまたはクリエイターアカウントを連携してください。"],
   wait: ["연결 해제를 처리 중입니다. 표시된 시간이 지난 뒤 다시 연결해 주세요.", "Disconnection is being processed. Reconnect after the displayed wait.", "連携解除を処理中です。表示された時間の後で再連携してください。"],
   limit: ["플랫폼의 요청 한도에 도달했습니다. 잠시 후 상태를 확인해 주세요.", "The platform's request limit was reached. Check the status again later.", "プラットフォームの制限に達しました。後で状態を確認してください。"],
@@ -30,6 +31,6 @@ const copy = {
 export type MetaText = keyof typeof copy;
 export const metaText = (locale: string) => (key: MetaText) => copy[key][locale === "en" ? 1 : locale === "ja" ? 2 : 0];
 export function metaError(code: string, locale: string) {
-  const key: MetaText = code === "META_SETUP_REQUIRED" ? "setup" : ["META_RECONNECT_REQUIRED", "META_PERMISSION_REQUIRED", "META_STATE_EXPIRED"].includes(code) ? "reconnect" : code === "META_PROFESSIONAL_REQUIRED" ? "professional" : code === "META_RECONNECT_WAIT" ? "wait" : code === "META_RATE_LIMIT" ? "limit" : ["META_MEDIA_UNAVAILABLE", "META_SOURCE_CHANGED", "META_VIDEO_DURATION", "META_PROCESSING_FAILED"].includes(code) ? "video" : "unavailable";
+  const key: MetaText = code === "META_PAID_PLAN_REQUIRED" ? "paid" : code === "META_SETUP_REQUIRED" ? "setup" : ["META_RECONNECT_REQUIRED", "META_PERMISSION_REQUIRED", "META_STATE_EXPIRED"].includes(code) ? "reconnect" : code === "META_PROFESSIONAL_REQUIRED" ? "professional" : code === "META_RECONNECT_WAIT" ? "wait" : code === "META_RATE_LIMIT" ? "limit" : ["META_MEDIA_UNAVAILABLE", "META_SOURCE_CHANGED", "META_VIDEO_DURATION", "META_PROCESSING_FAILED"].includes(code) ? "video" : "unavailable";
   return metaText(locale)(key);
 }

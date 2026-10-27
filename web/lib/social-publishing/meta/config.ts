@@ -11,11 +11,16 @@ export function metaConfig(platform: MetaPlatform, env: NodeJS.ProcessEnv = proc
     throw new HttpError(503, "Publishing environment is not allowed.", "META_SETUP_REQUIRED");
   }
   const clientId = env[`${platform.toUpperCase()}_APP_ID`] || "";
+  const publicEnabled = platform === "instagram" && env.INSTAGRAM_PUBLISHING_MODE === "public";
+  // Instagram product ID within Meta app 2307294366687280; permissions approved 2026-10-25.
+  if (publicEnabled && (env.INSTAGRAM_APP_REVIEW_APPROVED !== "true" || clientId !== "1116489420856814")) {
+    throw new HttpError(503, "Instagram approval is required.", "META_SETUP_REQUIRED");
+  }
   const clientSecret = env[`${platform.toUpperCase()}_APP_SECRET`] || "";
   const graphVersion = env.META_GRAPH_VERSION || "";
   const origin = "https://www.easycut.co.kr";
   return {
-    platform, clientId, clientSecret, graphVersion, origin, appKey: `${platform}:${clientId}`,
+    platform, publicEnabled, clientId, clientSecret, graphVersion, origin, appKey: `${platform}:${clientId}`,
     redirectUri: `${origin}/api/social/${platform}/oauth/callback`,
     scopes: platform === "instagram" ? ["instagram_business_basic", "instagram_business_content_publish"] : ["threads_basic", "threads_content_publish"],
     oauthReady: /^\d+$/.test(clientId) && Boolean(clientSecret) && (platform === "threads" || /^v\d+\.0$/.test(graphVersion)),

@@ -159,3 +159,26 @@ describe('Meta administrator and reviewer restoration',()=>{
   expect(document.querySelector(`[data-platform="${platform}"]`)).toBeNull(); expect(fetcher).not.toHaveBeenCalled();
  });
 });
+
+
+describe('public Instagram tab isolation',()=>{
+ it('opens Instagram without enabling Threads or YouTube',async()=>{
+  const {document,click,fetcher}=await render({adminEnabled:false,instagramEnabled:true});
+  await click('.publish-trigger');
+  expect(document.querySelector('[data-platform="instagram"]')).not.toBeNull();
+  await click('.publish-tabs button:nth-child(4)');
+  expect(document.querySelector('[data-platform="threads"]')).toBeNull();
+  expect(document.body.textContent).toContain('This platform is coming soon.');
+  await click('.publish-tabs button:nth-child(1)');
+  expect(document.body.textContent).toContain('Uploads are temporarily unavailable');
+  expect(fetcher).not.toHaveBeenCalled();
+ });
+ it('restores Instagram after OAuth with only the Instagram grant',async()=>{
+  const {document}=await render({adminEnabled:false,instagramEnabled:true},'instagram');
+  expect(document.querySelector('[data-platform="instagram"]')).not.toBeNull();
+ });
+ it('cannot obtain Threads access through its callback URL',async()=>{
+  const {document}=await render({adminEnabled:false,instagramEnabled:true},'threads');
+  expect(document.querySelector('[data-platform="threads"]')).toBeNull();
+ });
+});

@@ -13,6 +13,7 @@ import { ProjectPage } from "../../shorts-app";
 import { canUseYoutubePublishing, youtubeReviewerShortForProject } from "@/lib/youtube-accounts/review-access";
 import { canUseAdminPublishing, metaReviewerShortForProject } from "@/lib/social-publishing/access";
 
+import { canUseInstagramPublishing } from "@/lib/social-publishing/meta/access";
 import { canUseTikTokPublishing } from "@/lib/social-publishing/tiktok/access";
 
 export const dynamic = "force-dynamic";
@@ -65,18 +66,20 @@ export default async function ProjectNumberPage({
       && adminSubtitleLayoutEnabled;
   }
 
-  const [adminPublishingEnabled, metaReviewerShortId, youtubeReviewerShortId, youtubePublishingEnabled, tiktokPublishingEnabled] = await Promise.all([
+  const [adminPublishingEnabled, metaReviewerShortId, youtubeReviewerShortId, youtubePublishingEnabled, tiktokPublishingEnabled, instagramPublishingEnabled] = await Promise.all([
     canUseAdminPublishing(db, projectAccess.appUserId),
     metaReviewerShortForProject(db, projectAccess.appUserId, projectNumber),
     youtubeReviewerShortForProject(db, projectAccess.appUserId, projectNumber),
     canUseYoutubePublishing(db, projectAccess.appUserId),
     canUseTikTokPublishing(db, projectAccess.appUserId),
+    canUseInstagramPublishing(db, projectAccess.appUserId),
   ]);
 
   return <ProjectPage
     projectNumber={projectNumber}
     adminPublishingEnabled={adminPublishingEnabled}
     tiktokPublishingEnabled={tiktokPublishingEnabled}
+    instagramPublishingEnabled={instagramPublishingEnabled}
     metaReviewerShortId={metaReviewerShortId}
     youtubeReviewerShortId={youtubeReviewerShortId}
     youtubePublishingEnabled={youtubePublishingEnabled}

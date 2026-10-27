@@ -52,3 +52,22 @@ describe("administrator publishing rollout boundary", () => {
     expect(state.db).not.toHaveBeenCalled();
   });
 });
+
+
+describe("Instagram approval gates", () => {
+  const publicEnv = {...production, INSTAGRAM_APP_ID:"1116489420856814", INSTAGRAM_PUBLISHING_MODE:"public", INSTAGRAM_APP_REVIEW_APPROVED:"true"};
+  it("requires the approved Instagram client and production identities", () => {
+    expect(metaConfig("instagram",publicEnv).publicEnabled).toBe(true);
+    expect(metaConfig("threads",publicEnv).publicEnabled).toBe(false);
+    for(const override of [{INSTAGRAM_APP_ID:"123"},{INSTAGRAM_APP_REVIEW_APPROVED:""},{META_PUBLISHING_MODE:""},{VERCEL_ENV:"preview"},{VERCEL_PROJECT_ID:"lab"},{DATABASE_URL:"postgres://local@localhost/db"}]) {
+      expect(()=>metaConfig("instagram",{...publicEnv,...override})).toThrow();
+    }
+    expect(metaConfig("instagram",{...publicEnv,INSTAGRAM_PUBLISHING_MODE:""}).publicEnabled).toBe(false);
+  });
+  it("keeps all Threads endpoints private with Instagram public flags",async()=>{
+    for(const [key,value] of Object.entries(publicEnv)) vi.stubEnv(key,value);
+    const req=new Request("https://www.easycut.co.kr/api/social/threads");
+    expect((await connectionsGet(req,{params:Promise.resolve({platform:"threads"})})).status).toBe(403);
+    expect(state.db.mock.calls.every(([strings])=>strings.join("").includes("is_admin=true"))).toBe(true);
+  });
+});

@@ -5,13 +5,16 @@ import os from "node:os";
 import type { Sql } from "postgres";
 import { PGlite } from "../../../../test-tools/node_modules/@electric-sql/pglite/dist/index.js";
 vi.mock("server-only", () => ({}));
+const billingState = vi.hoisted(() => ({ paid: true }));
+vi.mock("@/lib/billing", () => ({ getBillingSummary: async () => ({ activeProducts: billingState.paid ? ["creator"] : [] }) }));
 import { MetaApi } from "./api";
 import { MetaStore } from "./store";
 import { MetaVault } from "./vault";
 import { TikTokMedia } from "@/test-tools/tiktok-local-media";
 import { MetaPublishing } from "./service";
+import { requireMetaAccountAccess, requireMetaPublishingAccess } from "./access";
 import { metaConfig } from "./config";
-import { canUseAdminPublishing, metaReviewerShortForProject, requireAdminPublishing, requireMetaAdminPublishing } from "../access";
+import { canUseAdminPublishing, metaReviewerShortForProject, requireAdminPublishing } from "../access";
 
 
 const A = { userId: "11111111-1111-4111-8111-111111111111", sessionId: "review-session-a" };
@@ -19,10 +22,11 @@ const B = { userId: "22222222-2222-4222-8222-222222222222", sessionId: "review-s
 const shortId = "33333333-3333-4333-8333-333333333333", otherShort = "44444444-4444-4444-8444-444444444444";
 const jobA = "55555555-5555-4555-8555-555555555555", jobB = "66666666-6666-4666-8666-666666666666";
 
-const configFor = (platform: "instagram" | "threads") => metaConfig(platform, {
+const configFor = (platform: "instagram" | "threads", publicEnabled = false) => metaConfig(platform, {
   NODE_ENV: "test", META_PUBLISHING_MODE: "admin-review", VERCEL_ENV: "production", VERCEL_PROJECT_ID: "prj_bQyHRVC3Pfzq2dvUnAqEDlw66GOw",
   DATABASE_URL: "postgres://postgres.mvcprswvfybudtopepuj:fake@aws-1-ap-northeast-2.pooler.supabase.com/postgres",
-  INSTAGRAM_APP_ID: "123", INSTAGRAM_APP_SECRET: "test-secret", THREADS_APP_ID: "456", THREADS_APP_SECRET: "test-secret", META_GRAPH_VERSION: "v25.0",
+  INSTAGRAM_PUBLISHING_MODE: publicEnabled ? "public" : "", INSTAGRAM_APP_REVIEW_APPROVED: "true",
+  INSTAGRAM_APP_ID: publicEnabled ? "1116489420856814" : "123", INSTAGRAM_APP_SECRET: "test-secret", THREADS_APP_ID: "456", THREADS_APP_SECRET: "test-secret", META_GRAPH_VERSION: "v25.0",
 });
 let config = configFor("instagram"), pg: PGlite, store: MetaStore, service: MetaPublishing, media: TikTokMedia, root: string;
 let vault: MetaVault;
@@ -91,14 +95,15 @@ beforeEach(async () => {
     insert into shorts_mvp.app_users values('${A.userId}',null,true),('${B.userId}',null,false);
     insert into shorts_mvp.video_jobs values('${jobA}','${A.userId}',1,'complete',false,null),('${jobB}','${B.userId}',2,'complete',false,null);
     insert into shorts_mvp.generated_shorts values('${shortId}','${jobA}','${A.userId}','ready',null,null,'outputs/owned.mp4',1),('${otherShort}','${jobB}','${B.userId}','ready',null,null,'outputs/other.mp4',1);`);
+  billingState.paid=true;
   containerFails=false;partial=false;status="FINISHED";loseContainer=false;losePublish=false;revokeFails=false;longFails=false;containers=0;publishes=0;revokes=0;lastUrl="";
   fs.writeFileSync(path.join(root,"outputs/owned.mp4"),Buffer.alloc(64,1));
   setup("instagram");
 });
-function setup(platform: "instagram" | "threads") {
-  config=configFor(platform); store=new MetaStore(tag(pg),config.appKey); vault=new MetaVault(Buffer.alloc(32,9),config.appKey); media=new TikTokMedia(root);
+function setup(platform: "instagram" | "threads", publicEnabled = false) {
+  config=configFor(platform,publicEnabled); store=new MetaStore(tag(pg),config.appKey,config.publicEnabled); vault=new MetaVault(Buffer.alloc(32,9),config.appKey); media=new TikTokMedia(root);
   vi.spyOn(media,"inspect").mockImplementation(async key => { const file=await media.file(key); return {...file,duration:15,hash:await media.fingerprint(file.file)}; });
-  service=new MetaPublishing(store,vault,new MetaApi(config,fetcher),media,config,userId => requireMetaAdminPublishing(tag(pg),userId));
+  service=new MetaPublishing(store,vault,new MetaApi(config,fetcher),media,config,userId => requireMetaAccountAccess(tag(pg),userId,config),userId => requireMetaPublishingAccess(tag(pg),userId,config));
 }
 afterEach(() => vi.unstubAllEnvs());
 afterAll(async () => { await pg.close(); fs.rmSync(root,{recursive:true,force:true}); });
@@ -181,14 +186,16 @@ describe("Meta publishing with real isolated PostgreSQL and provider protocol",(
   });
   it("revokes partial grants and failed exchange; cancelled or expired states do not connect",async () => {
     partial=true;expect((await service.callback(A,new URLSearchParams({state:await start(),code:"x"}))).outcome).toBe("META_PERMISSION_REQUIRED");expect(revokes).toBe(1);
-    containerFails=false;partial=false;longFails=true;expect((await service.callback(A,new URLSearchParams({state:await start(),code:"x"}))).outcome).not.toBe("connected");expect(revokes).toBe(2);
+    billingState.paid=true;
+  containerFails=false;partial=false;longFails=true;expect((await service.callback(A,new URLSearchParams({state:await start(),code:"x"}))).outcome).not.toBe("connected");expect(revokes).toBe(2);
     expect((await service.callback(A,new URLSearchParams({state:await start(),error:"access_denied"}))).outcome).toBe("cancelled");
     const state=await start();await pg.exec("update shorts_mvp.meta_oauth set expires_at=now()-interval '1 second'");await expect(service.callback(A,new URLSearchParams({state,code:"x"}))).rejects.toThrow();
     expect((await service.list(A,shortId)).connections).toEqual([]);
   });
   it("allows a new explicit attempt only after a definitive failure, keeping history",async () => {
     const c=await connect();containerFails=true;const failed=await service.create(A,intent(c.id));expect(failed.status).toBe("failed");
-    containerFails=false;const retry=await service.create(A,intent(c.id));expect(retry.status).toBe("processing");expect(retry.id).not.toBe(failed.id);
+    billingState.paid=true;
+  containerFails=false;const retry=await service.create(A,intent(c.id));expect(retry.status).toBe("processing");expect(retry.id).not.toBe(failed.id);
     expect(containers).toBe(2);expect((await service.listPosts(A,shortId))).toHaveLength(2);
   });
   it("does not repeat a container or publish when Meta's response is lost",async () => {
@@ -224,5 +231,54 @@ describe("Meta publishing with real isolated PostgreSQL and provider protocol",(
     await pg.exec(`update shorts_mvp.app_users set withdrawn_at=now() where id='${A.userId}'`);
     expect((await pg.query("select * from shorts_mvp.meta_connections")).rows).toEqual([]);
     expect((await pg.query("select * from shorts_mvp.meta_oauth")).rows).toEqual([]);
+  });
+});
+
+
+describe("approved Instagram public release", () => {
+  beforeEach(async () => {
+    setup("instagram", true);
+    await pg.query("update shorts_mvp.app_users set is_admin=false where id=$1", [A.userId]);
+  });
+  it("lets an ordinary paid owner connect, publish once and disconnect, retaining owner isolation", async () => {
+    const connection = await connect();
+    await expect(service.list(B, shortId)).rejects.toMatchObject({status:404});
+    await expect(service.create(B, intent(connection.id))).rejects.toMatchObject({status:404});
+    await expect(service.disconnect(B, connection.id)).rejects.toMatchObject({status:404});
+    await expect(service.create(A, {...intent(connection.id), publishConfirmed:false})).rejects.toThrow();
+    expect(containers).toBe(0);
+    const post = await service.create(A, intent(connection.id));
+    await expect(service.publicMedia(capability())).resolves.toHaveProperty("file");
+    await expect(service.check(B, post.id)).rejects.toMatchObject({status:404});
+    expect(await service.check(A, post.id)).toMatchObject({status:"complete"});
+    await resetCheck(); await service.check(A, post.id);
+    expect(containers).toBe(1); expect(publishes).toBe(1);
+    await service.disconnect(A, connection.id);
+    expect((await service.list(A,shortId)).connections).toEqual([]);
+  });
+  it("blocks unpaid publishing before provider calls, while preserving account disconnection", async () => {
+    const connection = await connect(); billingState.paid=false;
+    await expect(service.create(A,intent(connection.id))).rejects.toMatchObject({status:402,code:"META_PAID_PLAN_REQUIRED"});
+    expect(containers).toBe(0); expect(publishes).toBe(0);
+    await expect(service.disconnect(A,connection.id)).resolves.toMatchObject({deleted:true});
+  });
+  it("revokes public media and account access for withdrawn users", async () => {
+    const connection = await connect(); await service.create(A,intent(connection.id));
+    await pg.query("update shorts_mvp.app_users set withdrawn_at=now() where id=$1",[A.userId]);
+    await expect(service.publicMedia(capability())).rejects.toMatchObject({status:404});
+    await expect(service.list(A,shortId)).rejects.toMatchObject({status:403});
+  });
+  it("keeps Threads role-restricted even when Instagram is public", async () => {
+    setup("threads",true);
+    expect(config.publicEnabled).toBe(false);
+    await expect(service.start(A,{returnPath:"/projects/1",shortId})).rejects.toMatchObject({status:403,code:"META_DISABLED"});
+    await expect(new MetaStore(tag(pg),"threads:456",true).source(A.userId,shortId)).rejects.toMatchObject({status:404});
+  });
+  it.each(["expired","deleted","example","rerendering"])("rejects %s source media for public members",async kind=>{
+    if(kind==="expired") await pg.query("update shorts_mvp.generated_shorts set expires_at=now()-interval '1 second' where id=$1",[shortId]);
+    if(kind==="deleted") await pg.query("update shorts_mvp.video_jobs set user_deleted_at=now() where id=$1",[jobA]);
+    if(kind==="example") await pg.query("update shorts_mvp.video_jobs set is_example=true where id=$1",[jobA]);
+    if(kind==="rerendering") await pg.query("update shorts_mvp.generated_shorts set status='rerendering' where id=$1",[shortId]);
+    await expect(service.start(A,{returnPath:"/projects/1",shortId})).rejects.toMatchObject({status:404});
   });
 });
