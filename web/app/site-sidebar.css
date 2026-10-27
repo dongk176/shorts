@@ -492,4 +492,5 @@
 .nav-new-update-badge{display:inline-flex;align-items:center;justify-content:center;flex:none;width:18px;height:18px;border-radius:50%;background:#dc2626;color:#fff;font-size:11px;font-weight:800;line-height:1;letter-spacing:0;animation:nav-new-update-fade 3.2s ease-in-out infinite}
 @keyframes nav-new-update-fade{0%,100%{opacity:1}50%{opacity:.4}}
 .grouped-site-sidebar.is-collapsed .sidebar-nav-link .nav-new-update-badge{position:absolute;top:2px;right:1px;width:15px;height:15px;font-size:9px}
+.grouped-site-sidebar.is-collapsed .sidebar-nav-link .ranking-launch-new{position:absolute;top:2px;right:1px;width:15px;height:15px;margin-left:0;font-size:9px}
 @media(prefers-reduced-motion:reduce){.nav-new-update-badge{animation:none}}
