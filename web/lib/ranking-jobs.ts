@@ -1,4 +1,5 @@
 import "server-only";
+import { rankingSourceEnd } from "./ranking-source-range";
 import { reserveRankingUsage } from "./ranking-usage";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -247,6 +248,8 @@ export async function queueRankingOperation(
           continue;
         }
         const source = sources.find((s) => s.id === clip.sourceId);
+        if (source?.metadata?.durationKnown !== false)
+          clip.end = rankingSourceEnd(clip.start, clip.end, source?.metadata?.duration);
         if (!source || source.status !== "ready" || !source.metadata || source.metadata.kind === "audio" ||
             (source.metadata.durationKnown === false ? !source.remoteUrl : clip.end > source.metadata.duration))
           throw new HttpError(400, `${clip.rank}위 영상의 구간을 다시 확인해 주세요.`);

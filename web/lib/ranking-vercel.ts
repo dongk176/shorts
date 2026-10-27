@@ -1,5 +1,6 @@
 import { rankingVercelProgress } from "./ranking-vercel-contract";
 import "server-only";
+import { rankingSourceEnd } from "./ranking-source-range";
 import { Sandbox } from "@vercel/sandbox";
 import { createHash, createHmac, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -303,7 +304,9 @@ export async function dispatchRankingVercel(
     op.action === "render"
       ? {
           action: "render",
-          spec: op.payload,
+          spec: {...op.payload, clips: op.payload.clips.map((clip: {sourceId:string;start:number;end:number}) => ({...clip,
+            end: rankingSourceEnd(clip.start, clip.end, sources.find(s=>s.id===clip.sourceId)?.metadata?.duration),
+          }))},
           sources: sources
             .filter(
               (s) =>

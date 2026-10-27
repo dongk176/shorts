@@ -74,6 +74,18 @@ export function RankingProjectList({ projects, embedded = false, onOpen }: { pro
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [hasActive]);
+  const retryRequest = useRef<{operation:string;requestId:string}|null>(null);
+  async function retryRender(project: RankingProjectSummary) {
+    if (inFlight.current || !project.operationId) return;
+    inFlight.current = true; setPending(true); setError("");
+    if (retryRequest.current?.operation !== project.operationId) retryRequest.current={operation:project.operationId,requestId:crypto.randomUUID()};
+    try {
+      const response=await fetch(`/api/ranking-shorts/${project.id}/render`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({requestId:retryRequest.current.requestId,retryOperationId:project.operationId}),signal:AbortSignal.timeout(300000)});
+      const data=await response.json(); if(!response.ok)throw new Error(data.error || "제작을 다시 시작하지 못했습니다.");
+      setItems(previous=>previous.map(p=>p.id===project.id?{...p,status:"running",busy:true,operationId:data.operationId}:p));setMenu(null);void usageRefresh.current();
+    } catch(cause) {setError(cause instanceof Error?cause.message:"다시 시도해 주세요.");}
+    finally {inFlight.current=false;setPending(false);}
+  }
   async function remove() {
     if (!deleting || inFlight.current) return;
     inFlight.current = true;
@@ -139,6 +151,7 @@ export function RankingProjectList({ projects, embedded = false, onOpen }: { pro
                   <span className="sr-only">완료되면 자동으로 갱신됩니다.</span>
                 </div>
               ) : null}
+              {project.status === "failed" && project.operationId ? <button type="button" disabled={pending || project.busy} onClick={()=>void retryRender(project)} className="mt-3 min-h-11 rounded-xl bg-violet-600 px-4 text-sm font-bold text-white disabled:opacity-50" aria-label={`${title} 다시 만들기`}>{pending?"제작 준비 중…":"다시 만들기"}</button>:null}
               <button data-ranking-menu={project.id} type="button" aria-label={`${title} 메뉴`} aria-expanded={menu === project.id} onClick={() => setMenu(menu === project.id ? null : project.id)} className="absolute right-2 top-2 flex h-10 w-10 items-center justify-center rounded-xl border border-white/20 bg-black/80 text-white">•••</button>
               {menu === project.id && <div data-ranking-menu={project.id} className="absolute right-2 top-14 z-10 flex flex-col gap-1 rounded-xl border border-white/20 bg-neutral-900 p-2 shadow-xl" onKeyDown={(event) => { if (event.key === "Escape") setMenu(null); }}>
                 {!["queued", "running"].includes(project.status) ? <Link href={href} onClick={onOpen ? (event) => { event.preventDefault(); onOpen(project); } : undefined} prefetch={false} aria-label={`${title} ${complete ? "영상 보기" : "작업 열기"}`} className="inline-flex min-h-11 items-center justify-center rounded-xl bg-white/10 px-4 text-sm font-bold text-white hover:bg-white/15">

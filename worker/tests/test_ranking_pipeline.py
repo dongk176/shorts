@@ -589,3 +589,17 @@ def test_download_progress_is_read_without_disturbing_child_output(tmp_path, mon
     assert {"stage": "downloading", "percent": 42.5} in events
     assert {"stage": "downloading", "percent": 87.0} in events
     assert "42.5%" in output and "87.0%" in output
+
+
+def test_download_duration_tail_discrepancy_is_clamped(ranking_project, monkeypatch):
+    pipeline = RankingPipeline(ranking_project)
+    source = str(uuid4())
+    (ranking_project / "sources.json").write_text(json.dumps([{"id": source}]))
+    monkeypatch.setattr(pipeline, "probe", lambda _: {"duration": 17.741})
+    clip = {"rank": 1, "sourceId": source, "label": "goal", "start": 6.583, "end": 17.915}
+    spec = {"title": "football", "descending": True, "clips": [clip]}
+    assert pipeline.validate_render(spec)[0]["end"] == 17.741
+    assert clip["start"] == 6.583
+    for start, end in [(6.583, 18.3), (17.4, 17.915), (0, float("nan"))]:
+        with pytest.raises(RankingFailure, match="1위"):
+            pipeline.validate_render({**spec, "clips": [{**clip, "start": start, "end": end}]})

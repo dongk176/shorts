@@ -787,6 +787,11 @@ class RankingPipeline:
                 raise RankingFailure("등록된 영상을 선택해 주세요.")
             duration = self.probe(source)["duration"]
             start, end = float(clip["start"]), float(clip["end"])
+            # Embedded players and downloaded containers can differ by a few frames.
+            # Clamp only a small tail discrepancy; never expand the selected scene.
+            if math.isfinite(end) and math.isfinite(duration) and 0 < end - duration <= 0.5:
+                end = duration
+                clip["end"] = end
             if (
                 not math.isfinite(start)
                 or not math.isfinite(end)
@@ -794,7 +799,10 @@ class RankingPipeline:
                 or end > duration
                 or not 0.5 <= end - start <= 60
             ):
-                raise RankingFailure("원본 안에서 0.5~60초 구간을 선택해 주세요.")
+                raise RankingFailure(
+                    f"{clip['rank']}위 영상의 구간을 확인해 주세요. "
+                    "원본 안에서 0.5~60초를 선택해 주세요."
+                )
             if not isinstance(clip.get("label"), str) or len(clip["label"]) > 60:
                 raise RankingFailure("순위 이름은 60자 이내로 입력해 주세요.")
             total += end - start
