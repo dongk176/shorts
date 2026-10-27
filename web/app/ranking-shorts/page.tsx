@@ -1,5 +1,7 @@
 import { notFound, redirect } from "next/navigation";
-import Link from "next/link";
+import { ProjectAuthControls } from "@/components/project-login-gate";
+import { authProfile } from "@/lib/session";
+import { getAuthenticatedUser } from "@/lib/supabase/server";
 import { SiteHeader } from "@/components/site-header";
 import { requireRankingUser } from "@/lib/ranking-access";
 import { HttpError } from "@/lib/http";
@@ -30,10 +32,11 @@ export default async function RankingShortsPage({
     throw error;
   }
   const { project, operation } = await searchParams;
+  const user = await getAuthenticatedUser();
   return (
     <div className="app-shell ranking-refreshed ranking-page-shell site-chrome desktop-sidebar-layout min-h-screen text-neutral-100">
-      <SiteHeader desktopSidebar showUsageIndicator={false}>
-        <Link href="/">롱폼 → 숏폼으로 이동</Link>
+      <SiteHeader desktopSidebar>
+        <ProjectAuthControls user={user ? authProfile(user) : null} next="/ranking-shorts" />
       </SiteHeader>
       <RankingStudio
         refreshedDesign

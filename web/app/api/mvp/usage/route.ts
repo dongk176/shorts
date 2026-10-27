@@ -12,7 +12,7 @@ export async function GET() {
     const authenticatedUser = await getAuthenticatedUser();
     if (!authenticatedUser) {
       return NextResponse.json(
-        { authenticated: false, accountId: null, isEnterprise: false, usage: null },
+        { authenticated: false, accountId: null, isEnterprise: false, rankingAvailable: process.env.RANKING_SHORTS_ENABLED === "1", usage: null },
         { headers: { "Cache-Control": "private, no-store" } },
       );
     }

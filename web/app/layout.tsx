@@ -103,6 +103,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
     authenticated: false,
     accountId: null,
     isEnterprise: false,
+    rankingAvailable: process.env.RANKING_SHORTS_ENABLED === "1",
     usage: null,
   };
   const authenticatedUser = await getAuthenticatedUser();

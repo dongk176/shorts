@@ -63,7 +63,7 @@ export function UsageProvider({
         authenticated: body.authenticated,
         accountId: body.authenticated ? body.accountId : null,
         isEnterprise: body.authenticated && body.isEnterprise === true,
-        rankingAvailable: body.authenticated && body.rankingAvailable === true,
+        rankingAvailable: body.rankingAvailable === true,
         usage: body.authenticated ? body.usage : null,
       });
       lastSuccessfulLoadAt.current = Date.now();

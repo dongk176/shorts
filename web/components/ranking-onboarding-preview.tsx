@@ -113,8 +113,9 @@ export function RankingOnboarding({ mode, ownerId }: { mode: "home" | "studio"; 
         <div className={styles.movie}><video src="/ranking-showroom-20/dogs.mp4" poster="/ranking-showroom-20/dogs.jpg" muted playsInline loop aria-label="랭킹 쇼츠 예시" /></div>
       </div> : <div className={styles.beta}>
         <h2 id="ranking-welcome-title">랭킹 쇼츠 베타</h2>
-        <p className={styles.intro}>현재 베타 버전으로 제공하고 있어요.</p>
-        <button type="button" className={styles.primary} onClick={startTour}>시작하기 <span aria-hidden="true">→</span></button>
+        <p className={styles.intro}>여러 영상에서 원하는 장면을 골라, 하나의 랭킹 쇼츠로 만들어 보세요.</p>
+        <p className={styles.betaNote}>베타 기능 · 영상 1개당 5분 사용 · 제작 실패 시 반환</p>
+        <button type="button" className={styles.primary} onClick={startTour}>사용법 보고 시작하기 <span aria-hidden="true">→</span></button>
       </div>}
     </dialog>, document.body)}
     {stage === "tour" && <FeatureGuideOverlay key={tourKey} enabled steps={guideSteps(mobile)} closeAriaLabel="랭킹 쇼츠 사용법 닫기" tone="coral" smoothTransitions lastStepBack lastStepPrimaryLabel="직접 만들어 보기" onClose={() => { remember("tour"); setStage("idle"); }} onLastStepPrimaryAction={() => document.querySelector(".ranking-heading")?.scrollIntoView({ behavior: "smooth", block: "start" })} />}
