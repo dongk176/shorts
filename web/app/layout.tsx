@@ -31,6 +31,7 @@ import "./payment-checkout.css";
 const baseMetadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   applicationName: SITE_NAME,
+  verification: { other: { "msvalidate.01": "BB907419E95912D166B8D50495AD7404" } },
   title: {
     default: "AI 쇼츠 자동 제작 | 유튜브 링크로 숏폼 만들기 - 이지컷",
     template: "%s | 이지컷",
