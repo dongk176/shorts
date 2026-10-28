@@ -12,6 +12,15 @@ describe("TikTok channel management", () => {
     expect(html).toContain("Instagram · Threads");
     expect(html).not.toContain("Instagram · TikTok · Threads");
   });
+  it("offers the approved Instagram project flow without advertising it as coming soon", () => {
+    const html = renderToStaticMarkup(<ChannelConnectionsPage instagramEnabled tiktokEnabled/>);
+    expect(html).toContain('aria-label="Instagram"');
+    expect(html).toContain('href="/en/projects"');
+    expect(html).toContain("Connect from a project");
+    expect(html).not.toContain("Instagram · Threads");
+    expect(html).toContain("Threads");
+    expect(html).toContain('data-platform="youtube-existing"');
+  });
   it("does not expose TikTok to an unrelated administrator grant or by default", () => {
     for (const props of [{}, { adminEnabled: true }]) {
       const html = renderToStaticMarkup(<ChannelConnectionsPage {...props}/>);

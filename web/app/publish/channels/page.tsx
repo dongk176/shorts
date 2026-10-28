@@ -5,6 +5,7 @@ import { accountContext } from "@/lib/youtube-accounts/runtime";
 import { ChannelConnectionsPage } from "@/components/channel-connections-page";
 import { SiteHeader } from "@/components/site-header";
 import { AuthControls } from "@/components/auth-controls";
+import { canUseInstagramPublishing } from "@/lib/social-publishing/meta/access";
 import { canUseTikTokPublishing } from "@/lib/social-publishing/tiktok/access";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 import { authProfile } from "@/lib/session";
@@ -16,11 +17,14 @@ export default async function Channels() {
   const user = await getAuthenticatedUser();
   if (!user) redirect(await localizedRedirectPath("/auth/sign-in?next=/publish/channels"));
   const session = await requireAuthenticatedMvpSession({ allowPaymentMethodRemediation: true });
-  const tiktokEnabled = await canUseTikTokPublishing(getDb(), session.userId);
+  const [tiktokEnabled, instagramEnabled] = await Promise.all([
+    canUseTikTokPublishing(getDb(), session.userId),
+    canUseInstagramPublishing(getDb(), session.userId),
+  ]);
   let adminEnabled = false;
-  try { const { actor } = await accountContext(true); adminEnabled = await canUseYoutubeAdminPublishing(getDb(), actor.userId); } catch { if (!tiktokEnabled) notFound(); }
+  try { const { actor } = await accountContext(true); adminEnabled = await canUseYoutubeAdminPublishing(getDb(), actor.userId); } catch { if (!tiktokEnabled && !instagramEnabled) notFound(); }
   return <div className="app-shell site-chrome desktop-sidebar-layout min-h-screen overflow-visible text-neutral-100">
     <SiteHeader desktopSidebar><AuthControls user={authProfile(user)} next="/publish/channels" /></SiteHeader>
-    <ChannelConnectionsPage adminEnabled={adminEnabled} tiktokEnabled={tiktokEnabled} />
+    <ChannelConnectionsPage adminEnabled={adminEnabled} tiktokEnabled={tiktokEnabled} instagramEnabled={instagramEnabled} />
   </div>;
 }
