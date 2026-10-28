@@ -1,3 +1,4 @@
+import { ShortsWorkflowGuide } from "@/components/shorts-workflow-guide";
 import { createUiText } from "@/lib/i18n/ui-text";
 import { getRequestLocale } from "@/lib/i18n/server";
 import { createLocalizedPageMetadata } from "@/lib/i18n/metadata";
@@ -31,7 +32,7 @@ export default async function AiShortsMakerPage() {
     : locale === "en" ? ["How to turn YouTube videos", "into AI Shorts"]
     : ["YouTube動画から", "AIショート動画を作る方法"];
   const searchCopy = seoCopyForPath(PAGE_PATH, locale) ?? { title: "유튜브 영상으로 AI 쇼츠 만드는 방법", description: "유튜브 링크 입력부터 AI 하이라이트 분석, 쇼츠 편집과 다운로드까지 설명하는 이지컷 가이드" };
-  const articleData = localizedArticle(locale, PAGE_PATH, searchCopy.title, searchCopy.description, PUBLISHED_DATE, PUBLISHED_DATE);
+  const articleData = localizedArticle(locale, PAGE_PATH, searchCopy.title, searchCopy.description, PUBLISHED_DATE, "2026-10-28");
   const breadcrumbData = localizedBreadcrumb(locale, PAGE_PATH, searchCopy.title.split(" | ")[0]);
   return (
     <div className="app-shell site-chrome desktop-sidebar-layout min-h-screen text-neutral-100">
@@ -47,6 +48,7 @@ export default async function AiShortsMakerPage() {
 
         <div className="space-y-10">
           <AiShortsGuideContent />
+          <ShortsWorkflowGuide locale={locale} />
         </div>
 
         <section aria-labelledby="guide-next-title" className="mt-10 text-center">

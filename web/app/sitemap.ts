@@ -41,7 +41,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         ...Object.fromEntries(searchLocalesForPath(path).map((language) => [language, absoluteUrl(localizedHref(path, language))])),
         "x-default": absoluteUrl(localizedHref(path, "ko")),
       } } } : {}),
-      ...(["/", "/ai-shorts-maker", "/compare/ai-shorts-tools", "/popular"].includes(path) ? { lastModified: "2026-10-01" } : {}),
+      ...(["/", "/ai-shorts-maker", "/compare/ai-shorts-tools", "/popular"].includes(path) ? { lastModified: path === "/" || path === "/ai-shorts-maker" ? "2026-10-28" : "2026-10-01" } : {}),
       changeFrequency,
       priority,
     })));

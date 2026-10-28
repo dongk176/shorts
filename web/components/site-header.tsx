@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import Image from "next/image";
 import Link from "@/lib/i18n/navigation";
 import { usePathname } from "@/lib/i18n/navigation";
@@ -122,6 +124,7 @@ function NavigationLinks({ pathname, onNavigate, mobile = false, isEnterprise }:
   isEnterprise: boolean;
 }) {
   const { t } = useI18n();
+  const ui = useUiText();
   const hasRecentUpdate = useRecentUpdates();
   let decodedPathname = pathname;
   try {
@@ -150,7 +153,7 @@ function NavigationLinks({ pathname, onNavigate, mobile = false, isEnterprise }:
           </Link>
         );
       })}
-      {rankingAvailable ? <Link href="/ranking-shorts" prefetch={false} className={mobile ? "rounded-xl px-4 py-3" : "nav-link"} onClick={onNavigate}><NavigationIcon path="/ranking-shorts" />랭킹 쇼츠<span className="ranking-launch-new" aria-label="신규 기능">N</span></Link> : null}
+      {rankingAvailable ? <Link href="/ranking-shorts" prefetch={false} className={mobile ? "rounded-xl px-4 py-3" : "nav-link"} onClick={onNavigate}><NavigationIcon path="/ranking-shorts" />{ui("랭킹 쇼츠")}<span className="ranking-launch-new" aria-label={ui("신규 기능")}>N</span></Link> : null}
       {!isEnterprise ? (
         <Link
           href="/easycut-private"
@@ -275,6 +278,7 @@ function GroupedNavigation({ collapsed, groupsOpen, onToggle, onNavigate, isEnte
   pathname: string;
 }) {
   const { t } = useI18n();
+  const ui = useUiText();
   const hasRecentUpdate = useRecentUpdates();
   const id = useId();
   const { rankingAvailable } = useUsageState();
@@ -291,7 +295,7 @@ function GroupedNavigation({ collapsed, groupsOpen, onToggle, onNavigate, isEnte
           </button>
         </h2>
         <div id={`${id}-${group.id}`} className="sidebar-group-items" hidden={!open}>
-          {group.id === "creation" && rankingAvailable ? <Link href="/ranking-shorts" prefetch={false} className="sidebar-nav-link" aria-label="랭킹 쇼츠" aria-current={pathname === "/ranking-shorts" ? "page" : undefined} onClick={onNavigate}><NavigationIcon path="/ranking-shorts" /><span className="sidebar-link-label">랭킹 쇼츠</span><span className="ranking-launch-new" aria-label="신규 기능">N</span></Link> : null}
+          {group.id === "creation" && rankingAvailable ? <Link href="/ranking-shorts" prefetch={false} className="sidebar-nav-link" aria-label={ui("랭킹 쇼츠")} aria-current={pathname === "/ranking-shorts" ? "page" : undefined} onClick={onNavigate}><NavigationIcon path="/ranking-shorts" /><span className="sidebar-link-label">{ui("랭킹 쇼츠")}</span><span className="ranking-launch-new" aria-label={ui("신규 기능")}>N</span></Link> : null}
           {items.map(item => {
             const label = item.labelKey ? t(item.labelKey) : "EASYCUT PRIVATE";
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`);

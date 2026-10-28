@@ -1,3 +1,5 @@
+import { RankingShowroom } from "@/components/ranking-showroom";
+import { ShortsWorkflowGuide } from "@/components/shorts-workflow-guide";
 import { SnsShortEditor } from "@/components/sns-short-editor";
 import { SnsTemplatePreview } from "@/components/sns-template-preview";
 import { TemplateLibrary } from "@/app/templates/template-library";
@@ -57,6 +59,13 @@ const guestState: PricingState = {
 
 
 describe("localized first render without browser effects", () => {
+  it.each(["en", "ja"] as const)("renders public ranking samples and workflow guidance in %s before hydration", locale => {
+    const html = render(<><RankingShowroom /><ShortsWorkflowGuide locale={locale} /></>, locale);
+    expect(html).not.toMatch(/[가-힣]/);
+    expect(html).toContain(locale === "en" ? "Ranking Shorts" : "ランキングショート");
+    expect(html).toContain('preload="none"');
+    expect(html).toContain('loading="lazy"');
+  });
   it.each(["en", "ja"] as const)("localizes %s social and community sample content in every aspect ratio", (locale) => {
     for (const community of [false, true]) {
       for (const ratio of ["16:9", "5:4", "1:1", "4:5", "9:16"] as const) {

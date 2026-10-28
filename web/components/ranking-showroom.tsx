@@ -1,6 +1,9 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+
 import Link from "next/link";
+import Image from "next/image";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import samples from "./ranking-showroom-data.json";
 import styles from "./ranking-showroom.module.css";
@@ -16,6 +19,7 @@ function SoundIcon({ muted }: { muted: boolean }) {
 }
 
 function SourceStrip({ sources }: { sources: (typeof samples)[number]["sources"] }) {
+  const ui = useUiText();
   const strip = useRef<HTMLDivElement>(null);
   const track = useRef<HTMLDivElement>(null);
   const animation = useRef<Animation | null>(null);
@@ -102,12 +106,11 @@ function SourceStrip({ sources }: { sources: (typeof samples)[number]["sources"]
   }, [move]);
 
   return <div className={styles.sources}>
-    <div className={styles.mediaLabel}>원본 영상 <span>{sources.length}개</span></div>
-    <div ref={strip} className={styles.sourceStrip} tabIndex={0} role="region" aria-label={`원본 영상 ${sources.length}개, 좌우로 넘겨보기`} data-flowing={flowing} onPointerDown={event => { if (!flowing || event.button !== 0) return; hold(); drag.current = { id: event.pointerId, x: event.clientX }; event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={event => { const previous = drag.current; if (!previous || previous.id !== event.pointerId) return; move(previous.x - event.clientX); previous.x = event.clientX; }} onPointerUp={() => { drag.current = null; hold(); }} onPointerCancel={() => { drag.current = null; hold(); }} onFocus={event => setFocused(event.currentTarget.matches(":focus-visible"))} onBlur={() => setFocused(false)} onKeyDown={event => { if (event.key === "ArrowRight" || event.key === "ArrowLeft") { event.preventDefault(); move(event.key === "ArrowRight" ? 120 : -120); } }}>
+    <div className={styles.mediaLabel}>{ui("원본 영상")}<span>{ui(`${sources.length}개`)}</span></div>
+    <div ref={strip} className={styles.sourceStrip} tabIndex={0} role="region" aria-label={`${ui("원본 영상")} ${sources.length}, ${ui("좌우로 넘겨보기")}`} data-flowing={flowing} onPointerDown={event => { if (!flowing || event.button !== 0) return; hold(); drag.current = { id: event.pointerId, x: event.clientX }; event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={event => { const previous = drag.current; if (!previous || previous.id !== event.pointerId) return; move(previous.x - event.clientX); previous.x = event.clientX; }} onPointerUp={() => { drag.current = null; hold(); }} onPointerCancel={() => { drag.current = null; hold(); }} onFocus={event => setFocused(event.currentTarget.matches(":focus-visible"))} onBlur={() => setFocused(false)} onKeyDown={event => { if (event.key === "ArrowRight" || event.key === "ArrowLeft") { event.preventDefault(); move(event.key === "ArrowRight" ? 120 : -120); } }}>
       <div ref={track} className={styles.sourceTrack}>
         {[0, ...(flowing ? [1] : [])].map(copy => sources.map(source => <div className={styles.sourceFrame} key={`${copy}-${source.id}`} aria-hidden={copy === 1 ? true : undefined}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={`/ranking-showroom-20/sources/${source.id}.jpg`} alt={copy === 1 ? "" : `${source.label} 원본 장면`} width="360" height="640" loading="eager" decoding="async" draggable={false} />
+          <Image src={`/ranking-showroom-20/sources/${source.id}.jpg`} alt={copy === 1 ? "" : `${ui("원본 장면")} ${source.rank}`} width={360} height={640} sizes="(max-width: 640px) 202px, 240px" loading="lazy" decoding="async" draggable={false} />
         </div>))}
       </div>
     </div>
@@ -115,6 +118,7 @@ function SourceStrip({ sources }: { sources: (typeof samples)[number]["sources"]
 }
 
 export function RankingShowroom() {
+  const ui = useUiText();
   const id = useId();
   const [selected, setSelected] = useState(0);
   const [visible, setVisible] = useState(false);
@@ -155,13 +159,13 @@ export function RankingShowroom() {
 
   return <section id="ranking-showroom" className={styles.section} aria-labelledby={`${id}-title`}>
     <header className={styles.header}>
-      <h2 id={`${id}-title`} className={styles.title}><RankingIcon /><span className={styles.titleText}>랭킹 쇼츠</span></h2>
-      <div className={styles.navigation} aria-label="다른 랭킹 보기">
-        <button type="button" aria-label="이전 랭킹" onClick={() => choose((selected - 1 + samples.length) % samples.length)}><Arrow /></button>
-        <button type="button" aria-label="다음 랭킹" onClick={() => choose((selected + 1) % samples.length)}><Arrow right /></button>
+      <h2 id={`${id}-title`} className={styles.title}><RankingIcon /><span className={styles.titleText}>{ui("랭킹 쇼츠")}</span></h2>
+      <div className={styles.navigation} aria-label={ui("다른 랭킹 보기")}>
+        <button type="button" aria-label={ui("이전 랭킹")} onClick={() => choose((selected - 1 + samples.length) % samples.length)}><Arrow /></button>
+        <button type="button" aria-label={ui("다음 랭킹")} onClick={() => choose((selected + 1) % samples.length)}><Arrow right /></button>
       </div>
     </header>
-    <div className={styles.tabs} role="tablist" aria-label="랭킹 쇼츠 종류">
+    <div className={styles.tabs} role="tablist" aria-label={ui("랭킹 쇼츠 종류")}>
       {samples.map((item, index) => <button key={item.name} ref={node => { tabs.current[index] = node; }} id={`${id}-tab-${index}`} type="button" role="tab" aria-controls={`${id}-panel`} aria-selected={index === selected} tabIndex={index === selected ? 0 : -1} onClick={() => choose(index)} onKeyDown={event => {
         let next: number | undefined;
         if (event.key === "ArrowRight") next = (index + 1) % samples.length;
@@ -169,25 +173,25 @@ export function RankingShowroom() {
         if (event.key === "Home") next = 0;
         if (event.key === "End") next = samples.length - 1;
         if (next !== undefined) { event.preventDefault(); choose(next, true); }
-      }}>{item.subtitle}</button>)}
+      }}>{ui(item.subtitle)}</button>)}
     </div>
     <div id={`${id}-panel`} role="tabpanel" aria-labelledby={`${id}-tab-${selected}`} className={styles.stage}>
       <SourceStrip key={sample.name} sources={sample.sources} />
       <div className={styles.mergeArrow} aria-hidden="true"><svg width="46" height="30" viewBox="0 0 46 30" fill="none"><path d="M2 15h40M29 2l13 13-13 13" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" /></svg></div>
       <div ref={result} className={styles.result}>
-        <div className={styles.mediaLabel}>랭킹 쇼츠 <span>1개</span></div>
+        <div className={styles.mediaLabel}>{ui("랭킹 쇼츠")}<span>{ui("1개")}</span></div>
         <div className={styles.resultFrame}>
-          <video key={`${sample.name}-${retry}`} ref={video} src={`/ranking-showroom-20/${sample.name}.mp4`} poster={`/ranking-showroom-20/${sample.name}.jpg`} muted={muted} loop playsInline preload="metadata" aria-label={`${sample.subtitle} 완성 영상`} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onError={() => setFailed(true)} />
-          {failed && <div className={styles.error}><span>영상을 불러오지 못했어요.</span><button type="button" onClick={() => { setFailed(false); setRetry(value => value + 1); }}>다시 재생</button></div>}
+          <video key={`${sample.name}-${retry}`} ref={video} src={`/ranking-showroom-20/${sample.name}.mp4`} poster={`/ranking-showroom-20/${sample.name}.jpg`} muted={muted} loop playsInline preload="none" aria-label={`${ui(sample.subtitle)} — ${ui("완성 영상")}`} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onError={() => setFailed(true)} />
+          {failed && <div className={styles.error}><span>{ui("영상을 불러오지 못했어요.")}</span><button type="button" onClick={() => { setFailed(false); setRetry(value => value + 1); }}>{ui("다시 재생")}</button></div>}
         </div>
         <div className={styles.controls}>
-          <button type="button" aria-label={playing ? "랭킹 영상 일시정지" : "랭킹 영상 재생"} onClick={() => { if (playing) setPaused(true); else { setPaused(false); void video.current?.play().catch(() => setPlaying(false)); } }}>
+          <button type="button" aria-label={playing ? ui("랭킹 영상 일시정지") : ui("랭킹 영상 재생")} onClick={() => { if (playing) setPaused(true); else { setPaused(false); void video.current?.play().catch(() => setPlaying(false)); } }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{playing ? <path d="M6 4h4v16H6zm8 0h4v16h-4z" /> : <path d="m7 3 15 9-15 9z" />}</svg>
           </button>
-          <button type="button" aria-pressed={!muted} onClick={() => setMuted(value => !value)}><SoundIcon muted={muted} /><span>{muted ? "음소거 해제" : "음소거"}</span></button>
+          <button type="button" aria-pressed={!muted} onClick={() => setMuted(value => !value)}><SoundIcon muted={muted} /><span>{muted ? ui("음소거 해제") : ui("음소거")}</span></button>
         </div>
       </div>
     </div>
-    <div className={styles.footer}><Link className={styles.createButton} href="/ranking-shorts" prefetch={false}>랭킹 쇼츠 만들기<Arrow right /></Link></div>
+    <div className={styles.footer}><Link className={styles.createButton} href="/ranking-shorts" prefetch={false}>{ui("랭킹 쇼츠 만들기")}<Arrow right /></Link></div>
   </section>;
 }
