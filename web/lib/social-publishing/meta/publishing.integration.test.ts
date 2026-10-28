@@ -114,6 +114,26 @@ const capability = () => new URL(lastUrl).pathname.split("/").at(-1)!;
 async function resetCheck() { await pg.exec("update shorts_mvp.meta_posts set checked_at=null"); }
 
 describe("Meta publishing with real isolated PostgreSQL and provider protocol",() => {
+  it.each(["/publish/channels", "/en/publish/channels", "/jp/publish/channels"])("connects a public Instagram user without any project and returns to %s", async returnPath => {
+    setup("instagram", true);
+    await pg.exec("delete from shorts_mvp.generated_shorts; delete from shorts_mvp.video_jobs;");
+    const before = await service.list(B, "");
+    expect(before.connections).toEqual([]);
+    const state = new URL(await service.start(B, { returnPath })).searchParams.get("state")!;
+    expect(await service.callback(B, new URLSearchParams({ state, code: "owned" }))).toEqual({ returnPath, outcome: "connected" });
+    expect((await service.list(B, "")).connections).toHaveLength(1);
+    expect((await service.list(A, "")).connections).toHaveLength(0);
+    await expect(service.callback(A, new URLSearchParams({ state, code: "owned" }))).rejects.toThrow();
+    expect(containers).toBe(0); expect(publishes).toBe(0);
+  });
+  it("keeps the channel OAuth path bounded and Threads restricted to a finished short", async () => {
+    for (const returnPath of ["https://evil.test", "//evil.test", "/projects/1", "/settings", "/publish/channels/../settings", "/en/publish/channels?next=https://evil.test"]) {
+      await expect(service.start(A, { returnPath })).rejects.toThrow();
+    }
+    setup("threads");
+    await expect(service.start(A, { returnPath: "/publish/channels" })).rejects.toThrow();
+    await expect(service.list(A, "")).rejects.toThrow();
+  });
   it.each(["instagram","threads"] as const)("%s reviewer can publish only its assigned owned clip, without admin or TikTok access", async platform => {
     setup(platform);
     await pg.query("update shorts_mvp.app_users set is_admin=false where id=$1",[A.userId]);

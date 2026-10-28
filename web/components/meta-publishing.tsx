@@ -15,14 +15,14 @@ async function request(platform: MetaPlatform, path: string, body?: unknown, met
 const display = (platform: MetaPlatform) => platform === "instagram" ? "Instagram" as const : "Threads" as const;
 const feedbackFor = (post: Post, locale: string, account?: string): PublishingFeedback => ({ id: post.id, phase: post.status === "initiating" ? "processing" : post.status, title: post.title, account, url: post.url || undefined, detail: post.errorCode ? metaError(post.errorCode, locale) : undefined });
 
-export function MetaPublishingPanel({ platform, shortId, title }: { platform: MetaPlatform; shortId: string; title: string }) {
+export function MetaPublishingPanel({ platform, shortId, title = "" }: { platform: MetaPlatform; shortId?: string; title?: string }) {
   const { locale } = useI18n(), t = metaText(locale);
   const [connections, setConnections] = useState<Connection[]>([]), [loaded, setLoaded] = useState(false), [ready, setReady] = useState(false);
   const [selected, setSelected] = useState(""), [busy, setBusy] = useState(false), [managing, setManaging] = useState(false), [confirm, setConfirm] = useState("");
   const [message, setMessage] = useState(""), [cooldown, setCooldown] = useState(0), [revision, setRevision] = useState(0);
   useEffect(() => {
     let active = true;
-    void request(platform, `?shortId=${shortId}`).then(data => { if (active) { setConnections(data.connections); setReady(data.oauthReady); setCooldown(data.retryAfterSeconds); } }).catch(error => { if (active) setMessage(metaError(error.message, locale)); }).finally(() => { if (active) setLoaded(true); });
+    void request(platform, shortId ? `?shortId=${encodeURIComponent(shortId)}` : "").then(data => { if (active) { setConnections(data.connections); setReady(data.oauthReady); setCooldown(data.retryAfterSeconds); } }).catch(error => { if (active) setMessage(metaError(error.message, locale)); }).finally(() => { if (active) setLoaded(true); });
     return () => { active = false; };
   }, [platform, shortId, revision, locale]);
   useEffect(() => { if (!cooldown) return; const timer = setTimeout(() => setCooldown(v => Math.max(0, v-1)), 1000); return () => clearTimeout(timer); }, [cooldown]);
@@ -35,7 +35,7 @@ export function MetaPublishingPanel({ platform, shortId, title }: { platform: Me
   }, [platform, locale]); // Locale copy is derived from the current route.
   async function connect() {
     setBusy(true); setMessage("");
-    try { const result = await request(platform, "/oauth/start", { shortId, returnPath: window.location.pathname }); window.location.assign(result.authorizationUrl); }
+    try { const result = await request(platform, "/oauth/start", { ...(shortId ? { shortId } : {}), returnPath: window.location.pathname }); window.location.assign(result.authorizationUrl); }
     catch (error) { setMessage(metaError(error instanceof Error ? error.message : "", locale)); setBusy(false); }
   }
   async function disconnect() {
@@ -45,6 +45,14 @@ export function MetaPublishingPanel({ platform, shortId, title }: { platform: Me
   }
   const active = connections.filter(c => c.status === "active"), current = active.find(c => c.id === selected) || active[0];
   const notice = message && <p className="publish-notice" role="status">{message}</p>;
+  if (!shortId) return <section className="publish-channel-card" aria-label={display(platform)} data-i18n-skip>
+    <div className="publish-card-heading"><h2><PlatformIcon name={display(platform)}/>{display(platform)}</h2><button type="button" className="publish-outline" disabled={!loaded || busy || !ready || cooldown > 0} onClick={() => void connect()}>{cooldown ? `${cooldown}s` : t("connect")}</button></div>
+    {notice}
+    <p className="publish-note">{t("professional")}</p>
+    {!loaded ? <p role="status" className="publish-note">{t("loading")}</p> : !ready ? <p className="publish-note">{t("setup")}</p> : !connections.length ? <p className="publish-muted">{t("notConnected")}</p> : null}
+    <ul className="publish-channel-list">{connections.map(c => <li key={c.id}><span className="publish-channel-name"><strong data-i18n-content>{c.nickname}</strong><small>@{c.username} · {t(c.status === "active" ? "active" : "reconnect")}</small></span><button type="button" className="publish-text-button" disabled={busy} onClick={() => setConfirm(c.id)}>{t("disconnect")}</button></li>)}</ul>
+    {confirm && <div className="publish-notice" role="group" aria-label={t("disconnect")}><p>{t("disconnectHelp")}</p><button type="button" className="publish-outline" disabled={busy} onClick={() => setConfirm("")}>{t("cancel")}</button>{" "}<button type="button" className="publish-primary" disabled={busy} onClick={() => void disconnect()}>{t("disconnect")}</button></div>}
+  </section>;
   if (!loaded) return <p role="status" className="publish-note">{t("loading")}</p>;
   if (managing) return <div data-i18n-skip className="publish-manage"><button type="button" className="publish-text-button" onClick={() => setManaging(false)}>{t("back")}</button>{notice}<div className="publish-channel-card"><div className="publish-card-heading"><span><PlatformIcon name={display(platform)}/>{display(platform)}</span><button type="button" className="publish-outline" disabled={busy || !ready || cooldown > 0} onClick={() => void connect()}>{cooldown ? `${cooldown}s` : t("connect")}</button></div><ul className="publish-channel-list">{connections.map(c => <li key={c.id}><span className="publish-channel-name"><strong data-i18n-content>{c.nickname}</strong><small>@{c.username}</small></span><button type="button" className="publish-text-button" disabled={busy} onClick={() => setConfirm(c.id)}>{t("disconnect")}</button></li>)}</ul>{confirm && <div className="publish-notice" role="group" aria-label={t("disconnect")}><p>{t("disconnectHelp")}</p><button type="button" className="publish-outline" disabled={busy} onClick={() => setConfirm("")}>{t("cancel")}</button>{" "}<button type="button" className="publish-primary" disabled={busy} onClick={() => void disconnect()}>{t("disconnect")}</button></div>}</div></div>;
   if (!current) return <div data-i18n-skip>{notice}<div className="publish-connect-layout"><div className="publish-empty"><PlatformIcon name={display(platform)}/><h3>{display(platform)} · {t("connect")}</h3><p>{t("intro")}</p><button type="button" className="publish-primary" disabled={busy || !ready || cooldown > 0} onClick={() => void connect()}>{cooldown ? `${cooldown}s` : t("connect")}</button>{!ready && <p>{t("setup")}</p>}{connections.length > 0 && <button type="button" className="publish-text-button" onClick={() => setManaging(true)}>{t("manage")}</button>}</div><aside className="publish-preview"><video src={`/api/social/${platform}/preview/${shortId}`} controls playsInline preload="metadata"/><strong data-i18n-content>{title}</strong></aside></div></div>;

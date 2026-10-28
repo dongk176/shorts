@@ -1,4 +1,6 @@
 const copy = {
+  notConnected: ["연결된 계정이 없습니다.", "No connected accounts.", "連携済みアカウントはありません。"],
+  active: ["연결됨", "Connected", "連携済み"],
   connect: ["계정 연결", "Connect account", "アカウントを連携"],
   intro: ["영상을 게시할 계정을 연결해 주세요.", "Connect the account you want to post to.", "投稿先のアカウントを連携してください。"],
   loading: ["불러오는 중…", "Loading…", "読み込み中…"],

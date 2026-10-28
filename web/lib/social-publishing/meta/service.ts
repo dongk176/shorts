@@ -18,13 +18,19 @@ export class MetaPublishing {
     await this.accountAccess(actor.userId);
   }
   private async source(actor: Actor, shortId: string) { await this.actor(actor); uuid.parse(shortId); return this.store.source(actor.userId, shortId); }
+  private async channelActor(actor: Actor) {
+    await this.actor(actor);
+    if (this.config.platform !== "instagram") throw new HttpError(400, "Choose a finished video.", "META_INVALID_POST");
+  }
   async list(actor: Actor, shortId: string) {
-    await this.source(actor, shortId);
+    if (shortId) await this.source(actor, shortId);
+    else await this.channelActor(actor);
     return { connections: await this.store.list(actor.userId), oauthReady: this.config.oauthReady, retryAfterSeconds: await this.store.retryAfter(actor.userId) };
   }
   async start(actor: Actor, raw: unknown) {
     const input = startInput.parse(raw);
-    await this.source(actor, input.shortId);
+    if (input.shortId) await this.source(actor, input.shortId);
+    else await this.channelActor(actor);
     if (!this.config.oauthReady) throw new HttpError(503, "The connection is not configured.", "META_SETUP_REQUIRED");
     const state = `${this.config.platform}_${secret()}`;
     await this.store.start(actor, input, state);
@@ -39,8 +45,9 @@ export class MetaPublishing {
     let tokens: Tokens | undefined;
     try {
       const code = query.get("code");
-      if (!code || code.length > 4096 || !pending.shortId) throw new Error("Invalid code");
-      await this.source(actor, pending.shortId);
+      if (!code || code.length > 4096) throw new Error("Invalid code");
+      if (pending.shortId) await this.source(actor, pending.shortId);
+      else await this.channelActor(actor);
       tokens = await this.api.exchange(code);
       const profile = await this.api.profile(tokens.accessToken);
       // Instagram's OAuth ID and profile ID may belong to different ID namespaces.
