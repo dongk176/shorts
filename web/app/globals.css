@@ -1194,7 +1194,7 @@ body:has(.editor-page) .language-selector-floating { display: none; }
 .editor-layer-order-control button svg { width: 20px; height: 20px; flex: none; }
 .pricing-page { --pricing-red: #ff715e; --pricing-red-strong: #f04435; --pricing-red-soft: #ffb4a8; --pricing-purple: #a078ff; --pricing-purple-soft: #d0bcff; --pricing-surface: rgba(25,28,30,.76); --pricing-surface-raised: rgba(30,30,32,.86); --pricing-border: rgba(255,255,255,.1); --pricing-muted: #979b9d; overflow: visible; }
 .pricing-main { position: relative; width: min(1180px,calc(100% - 40px)); margin: 0 auto; padding: 40px 0 104px; }
-.pricing-main::before { content: ""; position: absolute; z-index: -1; inset: -100px -10vw; pointer-events: none; background: radial-gradient(ellipse 62% 34% at 2% 16%,rgba(255,85,64,.105) 0%,rgba(255,85,64,.052) 34%,rgba(255,85,64,.016) 58%,transparent 76%),radial-gradient(ellipse 68% 38% at 98% 78%,rgba(160,120,255,.11) 0%,rgba(160,120,255,.052) 35%,rgba(160,120,255,.015) 60%,transparent 78%); }
+.pricing-main::before { content: none; }
 .pricing-main::after { content: none; }
 .pricing-hero { max-width: 760px; margin: 0 auto 28px; text-align: center; }
 .pricing-hero h1 { margin-top: 0; color: #e0e3e4; font-size: clamp(1.5rem,3vw,2.35rem); line-height: 1.18; font-weight: 900; letter-spacing: -.04em; }
