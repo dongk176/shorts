@@ -1,5 +1,6 @@
 "use client";
 import Script from "next/script";
+import { CreditAllowance } from "@/components/credit-info";
 import { formatChangeAmount } from "@/lib/paddle/change-policy";
 import Link from "next/link";
 import { SubscriptionCancellationDialog } from "@/components/subscription-cancellation-dialog";
@@ -522,8 +523,8 @@ export function PaddlePricing({
                   {p.billingMonths !== 1 && <span>{t.includedTax}</span>}
                 </div>
                 <ul>
-                  {[t.minutes(p.minutes), t.clips(Math.floor(p.minutes * .8)), t.jobs(p.jobs), t.retention, t.popular].map((feature) => (
-                    <li key={feature}><span>✓</span><span>{feature}</span></li>
+                  {[t.minutes(p.minutes), t.clips(Math.floor(p.minutes * .8)), t.jobs(p.jobs), t.retention, t.popular].map((feature, index) => (
+                    <li key={feature}><span>✓</span><span>{index === 0 ? <CreditAllowance minutes={p.minutes} /> : feature}</span></li>
                   ))}
                 </ul>
                 <button type="button" onClick={() => void (current ? changePlan(p.code) : checkout(p.code))}

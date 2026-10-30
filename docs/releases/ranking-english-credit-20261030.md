@@ -13,3 +13,5 @@ Validation: 136 focused locale, ranking-draft, reference-ordering and pricing te
 Ordinary bounded test cost: local rendering of 20 existing examples and one unaliased Vercel build plus static asset storage/transfer on the existing service; no fixed recurring resource. Promote the exact verified deployment without rebuilding. Preserve all publishing maintenance gates and existing route inventory.
 
 Additional approved guide copy from /private/tmp/easycut-guide-copy-20261030 (uncommitted branch codex/guide-copy-20261030, baseline d747b8ba): remove the wait-time sentence, shorten the completion eyebrow and description, update matching English/Japanese phrase keys. Preserve storage key v2, step order/targets/placement, activation and dismissal logic. No timing or charge calculation changes.
+
+Candidate browser inspection identified the separate overseas Paddle pricing surface. Apply the same Credit allowance component to that surface too, preserving all provider catalog values, amount calculations and checkout handlers.
