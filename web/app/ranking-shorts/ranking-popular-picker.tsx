@@ -1,5 +1,4 @@
 'use client';
-import { useNavigationLocale } from "@/lib/i18n/provider";
 import { useUiText } from "@/lib/i18n/use-ui-text";
 import { useEffect, useRef, useState } from 'react';
 import { useRankingBackdrop } from "./use-ranking-backdrop";
@@ -19,11 +18,10 @@ async function pickerRequest(params: string, search: string | null, signal: Abor
 
 export default function PopularPicker({onClose,onSelect}:{onClose:()=>void;onSelect:(video:PopularVideo)=>void}) {
   const ui = useUiText();
-  const locale = useNavigationLocale();
   const backdrop = useRankingBackdrop(onClose);
   const dialog=useRef<HTMLDialogElement>(null);
   const [category,setCategory]=useState<PopularVideoCategory>('all');
-  const [language,setLanguage]=useState(locale === 'en' ? 'en' : 'all');
+  const [language,setLanguage]=useState('all');
   const [period,setPeriod]=useState<PopularDiscoveryPeriod>('all');
   const [order,setOrder]=useState<'trending'|'views'>('trending');
   const [reusable,setReusable]=useState(false);
