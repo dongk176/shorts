@@ -1,8 +1,10 @@
 "use client";
+import { useUiText } from "@/lib/i18n/use-ui-text";
 
 import { useEffect, useId, useRef } from "react";
 
 export function RankingProgressOverlay({ message }: { message: string }) {
+  const ui = useUiText();
   const dialog = useRef<HTMLDialogElement>(null);
   const messageId = useId();
 
@@ -22,7 +24,7 @@ export function RankingProgressOverlay({ message }: { message: string }) {
     <dialog
       ref={dialog}
       className="ranking-progress-overlay"
-      aria-label="영상 처리 중"
+      aria-label={ui("영상 처리 중")}
       aria-describedby={messageId}
       onCancel={(event) => event.preventDefault()}
     >

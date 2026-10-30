@@ -1,3 +1,4 @@
+import { rankingEnglish, rankingDynamicEnglish } from "./ranking-en";
 import type { SiteLocale } from "./config";
 
 type Phrase = readonly [ko: string, en: string, ja: string];
@@ -5,6 +6,7 @@ type Phrase = readonly [ko: string, en: string, ja: string];
 // Legacy page copy is kept here while the product moves to semantic message keys.
 // User-provided and generated content is intentionally excluded from this table.
 const phrases: readonly Phrase[] = [
+  ["매월 크레딧", "Monthly Credit", "毎月のCredit"],
   ["랭킹 쇼츠", "Ranking Shorts", "ランキングショート"],
   ["신규 기능", "New feature", "新機能"],
   ["원본 영상", "Source videos", "元動画"],
@@ -451,7 +453,7 @@ const phrases: readonly Phrase[] = [
   ["템플릿 기본 배경", "Default template background", "テンプレートの標準背景"],
   ["조각", "Clip", "クリップ"],
   ["3분을 넘는 영상은 YouTube에서 Shorts로 분류되지 않을 수 있지만 저장할 수 있습니다.", "Videos longer than 3 minutes can be saved, but YouTube may not classify them as Shorts.", "3分を超える動画も保存できますが、YouTubeではショート動画として扱われない場合があります。"],
-  ["양쪽 손잡이를 드래그해 전사·분석할 범위를 정하세요. 4분부터 60분까지 선택할 수 있습니다.", "Drag the handles to choose a 4–60 minute range for transcription and analysis.", "両端のハンドルをドラッグして、文字起こし・分析する範囲を4〜60分で選択してください。"],
+  ["양쪽 손잡이를 드래그해 쇼츠를 만들 범위를 정하세요. 4분부터 60분까지 선택할 수 있습니다.", "Drag the handles to choose the part to turn into Shorts. Select 4–60 minutes.", "両端のハンドルをドラッグして、ショート動画にする範囲を選んでください。4〜60分で選択できます。"],
   ["선택 범위 초기화", "Reset selected range", "選択範囲をリセット"],
   ["내 프로젝트를 확인해볼까요?", "View your projects", "マイプロジェクトを確認しましょう"],
   ["로그인하면 내가 만든 프로젝트를 바로 이어서 확인할 수 있어요.", "Log in to pick up where you left off.", "ログインすると、作成したプロジェクトを引き続き確認できます。"],
@@ -2057,6 +2059,8 @@ export function translateLegacyText(value: string, locale: SiteLocale) {
   if (locale === "ko" || !/[가-힣]/.test(value)) return value;
   const exact = phraseMaps[locale].get(value.trim());
   if (exact) return withOriginalWhitespace(value, exact);
+  if (locale === "en") { const ranking = rankingEnglish[value.trim()] ?? rankingDynamicEnglish(value.trim()); if (ranking !== null && ranking !== undefined) return withOriginalWhitespace(value, ranking); }
+
   return translateDynamicText(value, locale) || value;
 }
 

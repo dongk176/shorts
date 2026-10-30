@@ -1,5 +1,6 @@
 "use client";
 
+import { CreditAllowance } from "@/components/credit-info";
 import { useUiText } from "@/lib/i18n/use-ui-text";
 
 import { formatSeoulDate } from "@/lib/i18n/format";
@@ -362,7 +363,7 @@ export function TossPricingClient({
                 {features(plan).map((feature, index) => (
                   <li key={feature} className={index === 5 && !plan.guidebookIncluded ? "pricing-feature-unavailable" : ""}>
                     <span>{index === 5 && !plan.guidebookIncluded ? "–" : "✓"}</span>
-                    <span>{index === 0 ? <strong>{ui(feature.replace(" 원본 영상 처리", ""))}</strong> : ui(feature)}{ui(index === 0 ? " 원본 영상 처리" : "")}</span>
+                    <span>{index === 0 ? <CreditAllowance minutes={Number(feature.match(/매월 (\d+)분/)?.[1] || 0)} /> : ui(feature)}</span>
                   </li>
                 ))}
               </ul>
@@ -423,7 +424,7 @@ export function TossPricingClient({
                         <li key={feature}>
                           <span>✓</span>
                           <span>{index === 0
-                            ? <><strong>{ui(feature.replace(" 원본 영상 처리", ""))}</strong> {ui(" 원본 영상 처리")}</>
+                            ? <CreditAllowance minutes={Number(feature.match(/매월 (\d+)분/)?.[1] || 0)} />
                             : ui(feature)}</span>
                         </li>
                       ))}

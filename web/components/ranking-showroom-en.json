@@ -1,0 +1,562 @@
+[
+  {
+    "name": "soccer",
+    "title": "Blink and you'll miss it",
+    "subtitle": "Football skills",
+    "duration": 28.733333,
+    "rankCount": 3,
+    "sources": [
+      {
+        "id": "UxD2TYKh7Zk",
+        "rank": 3,
+        "label": "A silky touch"
+      },
+      {
+        "id": "bLqT7KXDvUQ",
+        "rank": 2,
+        "label": "Spotting the gap"
+      },
+      {
+        "id": "Ffm_Td3PEt0",
+        "rank": 1,
+        "label": "Second chance"
+      }
+    ]
+  },
+  {
+    "name": "dogs",
+    "title": "Too cute to stay mad",
+    "subtitle": "Dog moments",
+    "duration": 21.933333,
+    "rankCount": 3,
+    "sources": [
+      {
+        "id": "iTsmjiVYIa8",
+        "rank": 3,
+        "label": "Offbeat moves"
+      },
+      {
+        "id": "cT52Q7Frbnk",
+        "rank": 2,
+        "label": "Center of attention"
+      },
+      {
+        "id": "7RyaE6phQUo",
+        "rank": 1,
+        "label": "Hugs over workouts"
+      }
+    ]
+  },
+  {
+    "name": "cats",
+    "title": "Cats win. Humans lose.",
+    "subtitle": "Life with cats",
+    "duration": 17.433333,
+    "rankCount": 3,
+    "sources": [
+      {
+        "id": "TVqgKT4tw6I",
+        "rank": 3,
+        "label": "Static surprise"
+      },
+      {
+        "id": "_A35I-ZzNG8",
+        "rank": 2,
+        "label": "Gaming buddy"
+      },
+      {
+        "id": "IveJnnLLT5A",
+        "rank": 1,
+        "label": "One more scratch"
+      }
+    ]
+  },
+  {
+    "name": "cake",
+    "title": "That's actually cake?",
+    "subtitle": "Cake reveals",
+    "duration": 18.233333,
+    "rankCount": 3,
+    "sources": [
+      {
+        "id": "Um3ZxcYbVfk",
+        "rank": 3,
+        "label": "The kettle reveal"
+      },
+      {
+        "id": "D23TrtUnemQ",
+        "rank": 2,
+        "label": "Strawberry or cake?"
+      },
+      {
+        "id": "h5lteN1q9sg",
+        "rank": 1,
+        "label": "Even the sofa!"
+      }
+    ]
+  },
+  {
+    "name": "travel",
+    "title": "Wish you were here",
+    "subtitle": "Beautiful places",
+    "duration": 20.533333,
+    "rankCount": 3,
+    "sources": [
+      {
+        "id": "ZAPyBd7OU5w",
+        "rank": 3,
+        "label": "River through the peaks"
+      },
+      {
+        "id": "0doGKIdlJls",
+        "rank": 2,
+        "label": "Carved by nature"
+      },
+      {
+        "id": "9KqGJDnB3Ow",
+        "rank": 1,
+        "label": "Autumn from above"
+      }
+    ]
+  },
+  {
+    "name": "dance",
+    "title": "Feel that beat",
+    "subtitle": "Dance moments",
+    "duration": 21.533333,
+    "rankCount": 3,
+    "sources": [
+      {
+        "id": "UzOZm0lAaZM",
+        "rank": 3,
+        "label": "In sync on the street"
+      },
+      {
+        "id": "qVtPsKnSFaI",
+        "rank": 2,
+        "label": "Challenge gone funny"
+      },
+      {
+        "id": "t58SwAmuA4g",
+        "rank": 1,
+        "label": "Hands steal the show"
+      }
+    ]
+  },
+  {
+    "name": "basketball",
+    "title": "How did that go in?",
+    "subtitle": "Basketball shots",
+    "duration": 22.933333,
+    "rankCount": 3,
+    "sources": [
+      {
+        "id": "rHnQJJ3A8l8",
+        "rank": 3,
+        "label": "From the stands"
+      },
+      {
+        "id": "gnnRPNowMOA",
+        "rank": 2,
+        "label": "Off the roof"
+      },
+      {
+        "id": "Kcz3iAY3PQE",
+        "rank": 1,
+        "label": "First bucket with Dad"
+      }
+    ]
+  },
+  {
+    "name": "10-style",
+    "title": "One outfit changes it all",
+    "subtitle": "Everyday style",
+    "duration": 42.633333,
+    "rankCount": 4,
+    "sources": [
+      {
+        "id": "su_K--JDRuM",
+        "rank": 4,
+        "label": "White jeans & blazer"
+      },
+      {
+        "id": "zxlZDZyBjoI",
+        "rank": 3,
+        "label": "Classic navy"
+      },
+      {
+        "id": "pCvN64SIHLU",
+        "rank": 2,
+        "label": "A touch of olive"
+      },
+      {
+        "id": "hKPqxzk7X1I",
+        "rank": 1,
+        "label": "Easy linen"
+      }
+    ]
+  },
+  {
+    "name": "09-hair",
+    "title": "The finishing touch",
+    "subtitle": "Hair details",
+    "duration": 54.733333,
+    "rankCount": 5,
+    "sources": [
+      {
+        "id": "II-HNiQzYAE",
+        "rank": 5,
+        "label": "Short cut, sharp finish"
+      },
+      {
+        "id": "itsII7ue0Lk",
+        "rank": 4,
+        "label": "Bold buzz cut"
+      },
+      {
+        "id": "aWr-C3WVe0o",
+        "rank": 3,
+        "label": "Clean sides"
+      },
+      {
+        "id": "dzAHZ8hy3GQ",
+        "rank": 2,
+        "label": "The perfect taper"
+      },
+      {
+        "id": "GzYN2IylsZU",
+        "rank": 1,
+        "label": "Volume unlocked"
+      }
+    ]
+  },
+  {
+    "name": "05-craft",
+    "title": "From idea to real life",
+    "subtitle": "Creative DIY",
+    "duration": 56.179,
+    "rankCount": 8,
+    "sources": [
+      {
+        "id": "i-4r_uMePaU",
+        "rank": 8,
+        "label": "Handmade bracelet"
+      },
+      {
+        "id": "to4KLN68hNs",
+        "rank": 7,
+        "label": "Bottle flower art"
+      },
+      {
+        "id": "aBPOuzPoy-4",
+        "rank": 6,
+        "label": "Tissue paper rose"
+      },
+      {
+        "id": "vMLdxQR8-Vw",
+        "rank": 5,
+        "label": "Corn husk art"
+      },
+      {
+        "id": "RGH8EnjPX5k",
+        "rank": 4,
+        "label": "Basket bookshelf"
+      },
+      {
+        "id": "zPJJyDMKrWI",
+        "rank": 3,
+        "label": "Sunflower case"
+      },
+      {
+        "id": "drMafsOhRxM",
+        "rank": 2,
+        "label": "Fluffy jacket"
+      },
+      {
+        "id": "qTBOZf5rjCo",
+        "rank": 1,
+        "label": "Balloon dress"
+      }
+    ]
+  },
+  {
+    "name": "04-makeover",
+    "title": "They made THAT?",
+    "subtitle": "Big transformations",
+    "duration": 51.37,
+    "rankCount": 5,
+    "sources": [
+      {
+        "id": "IaOlnh1M42I",
+        "rank": 5,
+        "label": "Homemade fire truck"
+      },
+      {
+        "id": "7HByINbh0h8",
+        "rank": 4,
+        "label": "Giant tank"
+      },
+      {
+        "id": "vjuO4JTofjc",
+        "rank": 3,
+        "label": "Bathroom makeover"
+      },
+      {
+        "id": "NCmTRVauyOs",
+        "rank": 2,
+        "label": "Oversized dessert"
+      },
+      {
+        "id": "6suLzX0o0I4",
+        "rank": 1,
+        "label": "Dollar sofa"
+      }
+    ]
+  },
+  {
+    "name": "art",
+    "title": "Wait for the final stroke",
+    "subtitle": "Art reveals",
+    "duration": 30.733333,
+    "rankCount": 3,
+    "sources": [
+      {
+        "id": "Fn0LWLRj72w",
+        "rank": 3,
+        "label": "Crayon landscape"
+      },
+      {
+        "id": "R3FdervMwh8",
+        "rank": 2,
+        "label": "Cat in ink"
+      },
+      {
+        "id": "AlCyMyD6AKo",
+        "rank": 1,
+        "label": "Just a few lines"
+      }
+    ]
+  },
+  {
+    "name": "skate",
+    "title": "Balance on another level",
+    "subtitle": "Street riding",
+    "duration": 25.933333,
+    "rankCount": 3,
+    "sources": [
+      {
+        "id": "3huZ0cdjg5E",
+        "rank": 3,
+        "label": "Carving through the air"
+      },
+      {
+        "id": "cTN3sMJxpRQ",
+        "rank": 2,
+        "label": "Freestyle on two feet"
+      },
+      {
+        "id": "eZRTbtBcTz4",
+        "rank": 1,
+        "label": "Effortless bunny hop"
+      }
+    ]
+  },
+  {
+    "name": "06-bikes",
+    "title": "It's all in the details",
+    "subtitle": "Custom MTB",
+    "duration": 57.533333,
+    "rankCount": 7,
+    "sources": [
+      {
+        "id": "_T1aX4fo5dE",
+        "rank": 7,
+        "label": "Bronson details"
+      },
+      {
+        "id": "RLMut_F8SDk",
+        "rank": 6,
+        "label": "Fresh grips"
+      },
+      {
+        "id": "H0nMNhyU-0I",
+        "rank": 5,
+        "label": "Skull mudguard"
+      },
+      {
+        "id": "i8mkYE9Vo7M",
+        "rank": 4,
+        "label": "E-MTB close-up"
+      },
+      {
+        "id": "PrN0lVeKfks",
+        "rank": 3,
+        "label": "Purple accents"
+      },
+      {
+        "id": "_DqzzTfemWo",
+        "rank": 2,
+        "label": "Red frame"
+      },
+      {
+        "id": "SDumbLbFiZs",
+        "rank": 1,
+        "label": "Neon downhill"
+      }
+    ]
+  },
+  {
+    "name": "rc",
+    "title": "Small but mighty",
+    "subtitle": "Mini RC",
+    "duration": 28.933333,
+    "rankCount": 4,
+    "sources": [
+      {
+        "id": "noE1R94Lxmc",
+        "rank": 4,
+        "label": "Palm-sized racer"
+      },
+      {
+        "id": "PYPp-VbIL8I",
+        "rank": 3,
+        "label": "Underwater drive"
+      },
+      {
+        "id": "FCBulLAqIuQ",
+        "rank": 2,
+        "label": "Camera boat"
+      },
+      {
+        "id": "rfnHoke1pk4",
+        "rank": 1,
+        "label": "Pocket speedster"
+      }
+    ]
+  },
+  {
+    "name": "robots",
+    "title": "Better than expected",
+    "subtitle": "Robot moments",
+    "duration": 24.633333,
+    "rankCount": 3,
+    "sources": [
+      {
+        "id": "5C5VRzPRr0U",
+        "rank": 3,
+        "label": "Robot greetings"
+      },
+      {
+        "id": "EK7b1EhZEPw",
+        "rank": 2,
+        "label": "A helping hand"
+      },
+      {
+        "id": "sBZxqsdB7YY",
+        "rank": 1,
+        "label": "Still learning to run"
+      }
+    ]
+  },
+  {
+    "name": "miniatures",
+    "title": "Tiny world. Real detail.",
+    "subtitle": "Miniature art",
+    "duration": 29.233333,
+    "rankCount": 3,
+    "sources": [
+      {
+        "id": "t_9nRo11Z-E",
+        "rank": 3,
+        "label": "Tiny kitchen"
+      },
+      {
+        "id": "1bxFnMKD8wc",
+        "rank": 2,
+        "label": "Blue armor reveal"
+      },
+      {
+        "id": "5UTdP9osYa8",
+        "rank": 1,
+        "label": "Red armor details"
+      }
+    ]
+  },
+  {
+    "name": "machines",
+    "title": "Oddly satisfying skills",
+    "subtitle": "How it's made",
+    "duration": 29.633333,
+    "rankCount": 4,
+    "sources": [
+      {
+        "id": "JR0ZDXxEyNA",
+        "rank": 4,
+        "label": "A perfect spiral"
+      },
+      {
+        "id": "82GyYcWVfHg",
+        "rank": 3,
+        "label": "Steel in seconds"
+      },
+      {
+        "id": "gJIqVAZYDB0",
+        "rank": 2,
+        "label": "From clay to brick"
+      },
+      {
+        "id": "zRkanWjKRSg",
+        "rank": 1,
+        "label": "Stretching a spring"
+      }
+    ]
+  },
+  {
+    "name": "wood",
+    "title": "That perfect fit",
+    "subtitle": "Woodworking",
+    "duration": 22.433333,
+    "rankCount": 3,
+    "sources": [
+      {
+        "id": "I2LwT3S8EEs",
+        "rank": 3,
+        "label": "Seamless joint"
+      },
+      {
+        "id": "q6RP2LqB-Bs",
+        "rank": 2,
+        "label": "Shaped by hand"
+      },
+      {
+        "id": "_gsc5pkmz2c",
+        "rank": 1,
+        "label": "The hidden connection"
+      }
+    ]
+  },
+  {
+    "name": "sewing",
+    "title": "One stitch changes it",
+    "subtitle": "Sewing ideas",
+    "duration": 26.533333,
+    "rankCount": 3,
+    "sources": [
+      {
+        "id": "oVbF7BcBKk8",
+        "rank": 3,
+        "label": "A clean slit finish"
+      },
+      {
+        "id": "xMgSmPenN3Q",
+        "rank": 2,
+        "label": "A little lace"
+      },
+      {
+        "id": "_Uo22svgJYM",
+        "rank": 1,
+        "label": "Pleats and buttons"
+      }
+    ]
+  }
+]

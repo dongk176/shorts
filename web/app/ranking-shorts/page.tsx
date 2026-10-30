@@ -13,20 +13,21 @@ import "./ranking-editor-ui.css";
 import "./ranking-framing.css";
 import { FixedPreview } from "./ranking-fixed-preview";
 export const dynamic = "force-dynamic";
-export const metadata = {
-  title: "랭킹 쇼츠 | EasyCut",
-  robots: { index: false, follow: false },
-};
+import { getRequestLocale } from "@/lib/i18n/server";
+import { localizedHref } from "@/lib/i18n/routing";
+export async function generateMetadata() { return { title: (await getRequestLocale()) === "en" ? "Ranking Shorts | EasyCut" : "랭킹 쇼츠 | EasyCut", robots: { index: false, follow: false } }; }
 export default async function RankingShortsPage({
   searchParams,
 }: {
   searchParams: Promise<{ project?: string; operation?: string }>;
 }) {
+  const locale = await getRequestLocale();
+  const next = localizedHref("/ranking-shorts", locale);
   let ownerId: string;
   try {
     ownerId = (await requireRankingUser()).id;
   } catch (error) {
-    if (error instanceof HttpError && error.status === 401) redirect("/auth/sign-in?next=%2Franking-shorts");
+    if (error instanceof HttpError && error.status === 401) redirect(`/auth/sign-in?next=${encodeURIComponent(next)}`);
     if (error instanceof HttpError && [403, 404].includes(error.status))
       notFound();
     throw error;
@@ -36,7 +37,7 @@ export default async function RankingShortsPage({
   return (
     <div className="app-shell ranking-refreshed ranking-page-shell site-chrome desktop-sidebar-layout min-h-screen text-neutral-100">
       <SiteHeader desktopSidebar>
-        <ProjectAuthControls user={user ? authProfile(user) : null} next="/ranking-shorts" />
+        <ProjectAuthControls user={user ? authProfile(user) : null} next={next} />
       </SiteHeader>
       <RankingStudio
         refreshedDesign

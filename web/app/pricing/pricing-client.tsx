@@ -1,5 +1,6 @@
 "use client";
 
+import { CreditAllowance } from "@/components/credit-info";
 import { useUiText } from "@/lib/i18n/use-ui-text";
 
 import { useEffect, useState } from "react";
@@ -412,7 +413,7 @@ export function PricingClient({
     (product) => getPricingV2Plan(product.planCode)?.kind === "package",
   ) || activePricingProduct?.kind === "package";
   const comparisonRows = [
-    { label: "월 원본 영상 처리시간", values: [minuteLabel(60, locale), minuteLabel(200, locale), minuteLabel(600, locale)] },
+    { label: "매월 크레딧", values: [minuteLabel(60, locale), minuteLabel(200, locale), minuteLabel(600, locale)] },
     {
       label: "예상 쇼츠 제작량",
       values: [
@@ -756,13 +757,13 @@ export function PricingClient({
         </div>
         <p className="pricing-billing">{ui(plan.billing)}</p>
         <ul>
-          {plan.features.map((feature) => (
+          {plan.features.map((feature, index) => (
             <li
               key={feature.text}
               className={feature.unavailable ? "pricing-feature-unavailable" : ""}
             >
               <span aria-hidden="true">{feature.unavailable ? "×" : "✓"}</span>
-              <div>{featureContent(ui(feature.text), feature.strong ? ui(feature.strong) : undefined)}</div>
+              <div>{index === 0 ? <CreditAllowance minutes={Number((feature.strong || feature.text).match(/[\d,]+/)?.[0]?.replaceAll(",", "") || 0)} /> : featureContent(ui(feature.text), feature.strong ? ui(feature.strong) : undefined)}</div>
             </li>
           ))}
         </ul>
@@ -856,12 +857,7 @@ export function PricingClient({
                   </div>
                   <h3>{product.displayName}</h3>
                   <div className={styles.activeProductBenefit}>
-                    <strong>{locale === "ko"
-                      ? `매월 ${priceFormatter.format(Math.floor(product.monthlySourceSeconds / 60))}분`
-                      : locale === "en"
-                        ? `${priceFormatter.format(Math.floor(product.monthlySourceSeconds / 60))} min/month`
-                        : `毎月${priceFormatter.format(Math.floor(product.monthlySourceSeconds / 60))}分`}</strong>
-                    <span>{ui("원본 영상 처리")}</span>
+                    <CreditAllowance minutes={Math.floor(product.monthlySourceSeconds / 60)} />
                   </div>
                   <p>{scheduleLabel}</p>
                   {!isPackage && product.cancelAtPeriodEnd && (

@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/lib/i18n/use-ui-text";
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { RankingFraming } from "@/lib/ranking-framing";
@@ -31,6 +32,7 @@ export function RankingYouTubeScenePreview({ source, start, end, seek, title, su
   onStart: () => void;
   onDuration?: (duration: number) => void;
 }) {
+  const ui = useUiText();
   const player = useRef<RankingRemoteHandle>(null);
   const intent = useRef(false);
   const [ready, setReady] = useState(false);
@@ -119,7 +121,7 @@ export function RankingYouTubeScenePreview({ source, start, end, seek, title, su
   }, [ready, suspended, failure]);
 
   const remotePlayerElement = (<RankingRemotePlayer key={retry} ref={player} composition remote={source.remote!} start={start}
-            label={`${rank}위 선택 구간 미리보기`} suspended={suspended}
+            label={ui(`${rank}위 선택 구간 미리보기`)} suspended={suspended}
             onReady={() => { setFailure(false); setReady(true); }}
             onFrame={() => { setFrameReady(true); setNeedsPlay(false); }}
             onPreviewBlocked={() => { intent.current = false; setPlaying(false); setNeedsPlay(true); }}
@@ -137,7 +139,7 @@ export function RankingYouTubeScenePreview({ source, start, end, seek, title, su
             }} />);
   const compositionStyle = { "--ranking-video-top": `${rankingDesign.layout.headerHeight / rankingDesign.layout.height * 100}%` } as CSSProperties;
   return <div className="ranking-sequence-preview ranking-youtube-scene-preview">
-    <div className="ranking-composition" style={compositionStyle}>
+    <div data-i18n-content className="ranking-composition" style={compositionStyle}>
       {controlsBelow ? <RankingFramedMedia width={aspect.width} height={aspect.height} framing={framing}>
         {remotePlayerElement}
       </RankingFramedMedia> : (<div className="ranking-youtube-crop">
@@ -149,21 +151,21 @@ export function RankingYouTubeScenePreview({ source, start, end, seek, title, su
       <RankingOverlay title={title} subtitle={subtitle} count={count} active={rank - 1}
         labels={labels} descending={descending} style={style}
         revealedRanks={revealedRanks} />
-      {!frameReady && !failure ? <div className="ranking-scene-preview-loading" role="status">{ready && needsPlay ? "재생을 눌러 장면을 확인하세요" : <><span className="ranking-spinner" />장면 연결 중…</>}</div> : null}
+      {!frameReady && !failure ? <div className="ranking-scene-preview-loading" role="status">{ready && needsPlay ? ui("재생을 눌러 장면을 확인하세요") : <><span className="ranking-spinner" />{ui("장면 연결 중…")}</>}</div> : null}
       {failure ? <div className="ranking-scene-preview-loading" role="alert">
-        <p>장면을 연결하지 못했어요.</p>
-        <button type="button" onClick={() => { setFailure(false); setReady(false); setFrameReady(false); setNeedsPlay(false); setRetry(value => value + 1); }}>다시 연결</button>
+        <p>{ui("장면을 연결하지 못했어요.")}</p>
+        <button type="button" onClick={() => { setFailure(false); setReady(false); setFrameReady(false); setNeedsPlay(false); setRetry(value => value + 1); }}>{ui("다시 연결")}</button>
       </div> : null}
       {!controlsBelow && (<button type="button" className="ranking-preview-toggle" disabled={!ready || suspended || failure}
-        aria-label={playing ? "선택 구간 미리보기 일시 정지" : "선택 구간 미리보기 재생"} aria-keyshortcuts="Space" onClick={toggle}>
+        aria-label={playing ? ui("선택 구간 미리보기 일시 정지") : ui("선택 구간 미리보기 재생")} aria-keyshortcuts="Space" onClick={toggle}>
         <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">{playing ? <path d="M7 5h4v14H7zm6 0h4v14h-4z" fill="currentColor" /> : <path d="m9 5 11 7-11 7z" fill="currentColor" />}</svg>
       </button>)}
     </div>
     {controlsBelow && <div className="ranking-preview-transport"><button type="button" className="ranking-preview-toggle" disabled={!ready || suspended || failure}
-        aria-label={playing ? "선택 구간 미리보기 일시 정지" : "선택 구간 미리보기 재생"} aria-keyshortcuts="Space" onClick={toggle}>
+        aria-label={playing ? ui("선택 구간 미리보기 일시 정지") : ui("선택 구간 미리보기 재생")} aria-keyshortcuts="Space" onClick={toggle}>
         <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">{playing ? <path d="M7 5h4v14H7zm6 0h4v14h-4z" fill="currentColor" /> : <path d="m9 5 11 7-11 7z" fill="currentColor" />}</svg>
       </button></div>}
 
-    <div className="ranking-sequence-controls"><span>{rank}위 선택 구간 · {rankingTime(Math.max(0, position - start))} / {rankingTime(end - start)}</span></div>
+    <div className="ranking-sequence-controls"><span>{rank}{ui("위 선택 구간 ·")}{rankingTime(Math.max(0, position - start))} / {rankingTime(end - start)}</span></div>
   </div>;
 }

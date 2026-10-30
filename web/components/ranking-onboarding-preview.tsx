@@ -1,8 +1,9 @@
 "use client";
 
+import { useNavigationLocale } from "@/lib/i18n/provider";
 import { useUiText } from "@/lib/i18n/use-ui-text";
 
-import Link from "next/link";
+import Link from "@/lib/i18n/navigation";
 import { usePathname } from "@/lib/i18n/navigation";
 import { useUsageState } from "./usage-provider";
 import { useWelcomeOverlayStage, useRequestRankingEntry } from "./welcome-overlay-queue";
@@ -30,6 +31,8 @@ function guideSteps(mobile: boolean): FeatureGuideStep[] {
 
 export function RankingOnboarding({ mode, ownerId }: { mode: "home" | "studio"; ownerId?: string }) {
   const ui = useUiText();
+  const locale = useNavigationLocale();
+  const mediaRoot = locale === "en" ? "/ranking-showroom-en" : "/ranking-showroom-20";
   const pathname = usePathname();
   const { accountId, authenticated, rankingAvailable } = useUsageState();
   const { active: queueActive, complete } = useWelcomeOverlayStage("ranking-launch");
@@ -113,14 +116,14 @@ export function RankingOnboarding({ mode, ownerId }: { mode: "home" | "studio"; 
           <button type="button" className={styles.later} onClick={dismiss}>{ui("나중에 볼게요")}</button>
           <Link href="/ranking-shorts" className={styles.primary} onClick={() => { remember("launch"); complete(); setStage("idle"); }}>{ui("랭킹 쇼츠 시작하기")}<span aria-hidden="true">→</span></Link>
         </div>
-        <div className={styles.movie}><video src="/ranking-showroom-20/dogs.mp4" poster="/ranking-showroom-20/dogs.jpg" muted playsInline loop aria-label={ui("랭킹 쇼츠 예시")} /></div>
+        <div className={styles.movie}><video src={`${mediaRoot}/dogs.mp4`} poster={`${mediaRoot}/dogs.jpg`} muted playsInline loop aria-label={ui("랭킹 쇼츠 예시")} /></div>
       </div> : <div className={styles.beta}>
         <h2 id="ranking-welcome-title">{ui("랭킹 쇼츠 베타")}</h2>
         <p className={styles.intro}>{ui("여러 영상에서 원하는 장면을 골라, 하나의 랭킹 쇼츠로 만들어 보세요.")}</p>
-        <p className={styles.betaNote}>{ui("베타 기능 · 영상 1개당 5분 사용 · 제작 실패 시 반환")}</p>
+        <p className={styles.betaNote}>{ui("베타 기능 · 영상 1개당 5분 크레딧 사용 · 제작 실패 시 반환")}</p>
         <button type="button" className={styles.primary} onClick={startTour}>{ui("사용법 보고 시작하기")}<span aria-hidden="true">→</span></button>
       </div>}
     </dialog>, document.body)}
-    {stage === "tour" && <FeatureGuideOverlay key={tourKey} enabled steps={guideSteps(mobile)} closeAriaLabel={ui("랭킹 쇼츠 사용법 닫기")} tone="coral" smoothTransitions lastStepBack lastStepPrimaryLabel={ui("직접 만들어 보기")} onClose={() => { remember("tour"); setStage("idle"); }} onLastStepPrimaryAction={() => document.querySelector(".ranking-heading")?.scrollIntoView({ behavior: "smooth", block: "start" })} />}
+    {stage === "tour" && <FeatureGuideOverlay key={tourKey} enabled steps={guideSteps(mobile).map(step => ({...step, eyebrow: ui(step.eyebrow), title: ui(step.title), description: ui(step.description)}))} closeAriaLabel={ui("랭킹 쇼츠 사용법 닫기")} tone="coral" smoothTransitions lastStepBack lastStepPrimaryLabel={ui("직접 만들어 보기")} onClose={() => { remember("tour"); setStage("idle"); }} onLastStepPrimaryAction={() => document.querySelector(".ranking-heading")?.scrollIntoView({ behavior: "smooth", block: "start" })} />}
   </>;
 }

@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/lib/i18n/use-ui-text";
 
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { rankingTime } from "@/lib/ranking-shorts";
@@ -22,6 +23,7 @@ export function RankingTimeline({
   onChange: (start: number, end: number) => void;
   onSeek: (seconds: number) => void;
 }) {
+  const ui = useUiText();
   const track = useRef<HTMLDivElement>(null);
   const drag = useRef<{
     edge: "start" | "end";
@@ -195,7 +197,7 @@ export function RankingTimeline({
                 type="button"
                 role="slider"
                 disabled={disabled}
-                aria-label={edge === "start" ? "시작점" : "끝점"}
+                aria-label={edge === "start" ? ui("시작점") : ui("끝점")}
                 aria-valuemin={
                   edge === "start" ? Math.max(0, end - 60) : start + 0.5
                 }
@@ -273,8 +275,7 @@ export function RankingTimeline({
         </div>
       </div>
       <p className="ranking-hint">
-        양끝 손잡이를 드래그해 장면을 고르세요. 순위당 최대 60초.
-      </p>
+        {ui("양끝 손잡이를 드래그해 장면을 고르세요. 순위당 최대 60초.")}</p>
     </div>
   );
 }

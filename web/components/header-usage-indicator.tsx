@@ -55,10 +55,10 @@ export function HeaderUsageIndicator({ mobile = false }: { mobile?: boolean } = 
   if (!usageState.authenticated || !usageState.usage) return null;
   const label = t("common.remainingMinutes", { minutes: displayedMinutes });
   const compactLabel = locale === "ko"
-    ? `남은 ${displayedMinutes}분`
+    ? `크레딧 ${displayedMinutes}`
     : locale === "ja"
-      ? `残り${displayedMinutes}分`
-      : `${displayedMinutes} min left`;
+      ? `${displayedMinutes} Credit`
+      : `${displayedMinutes} Credit`;
 
   return (
     <Link

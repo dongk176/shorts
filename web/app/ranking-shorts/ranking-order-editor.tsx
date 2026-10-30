@@ -1,4 +1,6 @@
 "use client";
+import { useNavigationLocale } from "@/lib/i18n/provider";
+import { useUiText } from "@/lib/i18n/use-ui-text";
 
 import { useEffect, useId, useRef, useState } from "react";
 import { useRankingBackdrop } from "./use-ranking-backdrop";
@@ -11,6 +13,8 @@ type OrderProps = {
 };
 
 export function RankingOrderControls({ order, labels, onChange }: OrderProps) {
+  const ui = useUiText();
+  const locale = useNavigationLocale();
   const container = useRef<HTMLDivElement>(null);
   const drag = useRef<{ rank: number; target: number } | null>(null);
   const [target, setTarget] = useState<number | null>(null);
@@ -43,19 +47,18 @@ export function RankingOrderControls({ order, labels, onChange }: OrderProps) {
           type="button"
           onClick={() => onChange(shuffleRankingOrder(order))}
         >
-          랜덤
-        </button>
+          {ui("랜덤")}</button>
       </div>
-      <ol className="ranking-order-chips" aria-label="재생 순서 목록">
+      <ol className="ranking-order-chips" aria-label={ui("재생 순서 목록")}>
         {order.map((rank, index) => (
           <li key={rank}>
             <button
               type="button"
               data-order-rank={rank}
               className={target === rank ? "is-target" : ""}
-              aria-label={`${rank}위 순서 이동`}
+              aria-label={ui(`${rank}위 순서 이동`)}
               title={
-                labels[rank - 1] || `${rank}위 · 드래그하거나 방향키로 이동`
+                labels[rank - 1] || ui(`${rank}위 · 드래그하거나 방향키로 이동`)
               }
               onPointerDown={(event) => {
                 if (event.button !== 0) return;
@@ -99,7 +102,7 @@ export function RankingOrderControls({ order, labels, onChange }: OrderProps) {
               }}
             >
               {rank}
-              <small>위</small>
+              <small>{locale === "en" ? "" : ui("위")}</small>
             </button>
             {index < order.length - 1 ? (
               <span aria-hidden="true">›</span>
@@ -107,7 +110,7 @@ export function RankingOrderControls({ order, labels, onChange }: OrderProps) {
           </li>
         ))}
       </ol>
-      <p className="ranking-order-hint">드래그해서 순서 변경</p>
+      <p className="ranking-order-hint">{ui("드래그해서 순서 변경")}</p>
     </div>
   );
 }
@@ -116,6 +119,7 @@ export function RankingOrderEditor({
   onClose,
   ...props
 }: OrderProps & { onClose: () => void }) {
+  const ui = useUiText();
   const dialog = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const backdrop = useRankingBackdrop(onClose);
@@ -144,8 +148,8 @@ export function RankingOrderEditor({
     >
       <div className="ranking-sheet-grip" aria-hidden="true" />
       <header>
-        <h2 id={titleId}>재생 순서</h2>
-        <button type="button" aria-label="재생 순서 닫기" onClick={onClose}>
+        <h2 id={titleId}>{ui("재생 순서")}</h2>
+        <button type="button" aria-label={ui("재생 순서 닫기")} onClick={onClose}>
           ×
         </button>
       </header>

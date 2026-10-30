@@ -104,6 +104,11 @@ export async function middleware(request: NextRequest) {
     && (PUBLIC_ASSETS.has(pathname) || PUBLIC_ASSET_DIRECTORY.test(pathname))) {
     return NextResponse.next();
   }
+  if (route.locale === "ja" && route.pathname === "/ranking-shorts") {
+    const destination = request.nextUrl.clone();
+    destination.pathname = "/en/ranking-shorts";
+    return NextResponse.redirect(destination, 307);
+  }
   pathname = route.pathname;
   // Always overwrite a supplied header; the page URL decides its language.
   const requestHeaders = new Headers(request.headers);
@@ -145,7 +150,7 @@ export async function middleware(request: NextRequest) {
 
   // These pages must use the URL locale during server rendering. Concrete aliases
   // avoid a second middleware pass on shared routes resetting them to Korean.
-  if (route.prefixed && (["/pricing", "/settings/plan", "/billing/paddle", "/shorts-monetization", "/saved-videos", "/updates"].includes(pathname) || pathname.startsWith("/updates/"))) {
+  if (route.prefixed && (["/ranking-shorts", "/pricing", "/settings/plan", "/billing/paddle", "/shorts-monetization", "/saved-videos", "/updates"].includes(pathname) || pathname.startsWith("/updates/"))) {
     return refreshSupabaseSession(request, undefined, requestHeaders);
   }
   const destination = request.nextUrl.clone();

@@ -1,5 +1,6 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
 import { useEffect, useId, useRef, useState } from "react";
 
 type Option = { value: string; label: string };
@@ -17,6 +18,7 @@ export function RankingSelect({
   disabled?: boolean;
   onChange: (value: string) => void;
 }) {
+  const ui = useUiText();
   const id = useId();
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -76,7 +78,7 @@ export function RankingSelect({
         ref={trigger}
         type="button"
         role="combobox"
-        aria-label={label}
+        aria-label={ui(label)}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? id : undefined}
@@ -93,7 +95,7 @@ export function RankingSelect({
           }
         }}
       >
-        <span>{options.find((option) => option.value === value)?.label}</span>
+        <span>{ui(options.find((option) => option.value === value)?.label)}</span>
         <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
           <path
             d="m5 7 5 5 5-5"
@@ -107,7 +109,7 @@ export function RankingSelect({
         <div
           id={id}
           role="listbox"
-          aria-label={label}
+          aria-label={ui(label)}
           className={`ranking-select-menu ${above ? "is-above" : ""}`}
         >
           {options.map((option, index) => (
@@ -143,7 +145,7 @@ export function RankingSelect({
                 }
               }}
             >
-              <span>{option.label}</span>
+              <span>{ui(option.label)}</span>
               {option.value === value ? (
                 <span aria-hidden="true">✓</span>
               ) : null}

@@ -13,8 +13,9 @@ export type RankingExample = {
 
 export function sortRankingExamples(items: RankingExample[], locale: string, sort = "views") {
   return [...items].sort((a, b) => {
-    if (locale.split("-")[0] === "ko") {
-      const priority = Number(b.language === "한국어") - Number(a.language === "한국어");
+    if (["ko", "en"].includes(locale.split("-")[0])) {
+      const language = locale.split("-")[0] === "ko" ? "한국어" : "영어";
+      const priority = Number(b.language === language) - Number(a.language === language);
       if (priority) return priority;
     }
     return (sort === "recent" ? b.publishedAt.localeCompare(a.publishedAt) : b.views - a.views)

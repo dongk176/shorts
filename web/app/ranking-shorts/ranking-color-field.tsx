@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/lib/i18n/use-ui-text";
 
 import { useEffect, useId, useRef, useState } from "react";
 
@@ -25,6 +26,7 @@ export function RankingColorField({
   onChange: (value: string) => void;
   disabled: boolean;
 }) {
+  const ui = useUiText();
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const more = useRef<HTMLButtonElement>(null);
@@ -64,7 +66,7 @@ export function RankingColorField({
     >
       <span className="ranking-field-label">{label}</span>
       <div className="ranking-color-swatches">
-        {swatch("현재 색상", value)}
+        {swatch(ui("현재 색상"), value)}
         {colors
           .filter(([, color]) => color.toLowerCase() !== value.toLowerCase())
           .slice(0, 2)
@@ -73,7 +75,7 @@ export function RankingColorField({
           ref={more}
           type="button"
           className="ranking-color-more"
-          aria-label={`${label} 더 보기`}
+          aria-label={ui(`${label} 더 보기`)}
           aria-expanded={open}
           aria-controls={id}
           onClick={() => setOpen(!open)}
@@ -86,17 +88,16 @@ export function RankingColorField({
           id={id}
           className="ranking-color-popover"
           role="group"
-          aria-label={`${label} 선택`}
+          aria-label={ui(`${label} 선택`)}
         >
           <div className="ranking-color-swatches">
             {colors.map(([name, color]) => swatch(name, color))}
           </div>
           <div className="ranking-color-custom">
             <label>
-              직접 선택
-              <input
+              {ui("직접 선택")}<input
                 type="color"
-                aria-label={`${label} 직접 선택`}
+                aria-label={ui(`${label} 직접 선택`)}
                 value={value}
                 onChange={(event) => onChange(event.target.value)}
               />

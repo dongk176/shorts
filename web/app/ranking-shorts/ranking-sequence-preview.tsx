@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/lib/i18n/use-ui-text";
 
 import {
   useCallback,
@@ -59,6 +60,7 @@ export function RankingSequencePreview({
   pauseSignal: number;
   onStart: () => void;
 }) {
+  const ui = useUiText();
   const video = useRef<HTMLVideoElement>(null);
   const music = useRef<HTMLAudioElement>(null);
   const mediaElements = useRef(new Map<number, HTMLVideoElement>());
@@ -137,14 +139,14 @@ export function RankingSequencePreview({
     if (intent.current) void audio.play().catch((cause: unknown) => {
       // A clip change or pause can cancel an outstanding play request normally.
       if (cause instanceof DOMException && cause.name === "AbortError") return;
-      if (intent.current) setError("배경음악 재생 버튼을 다시 눌러 주세요.");
+      if (intent.current) setError(ui("배경음악 재생 버튼을 다시 눌러 주세요."));
     });
   }
   function play(media: HTMLVideoElement) {
     void media.play().catch(() => {
       intent.current = false;
       setPlaying(false);
-      setError("재생 버튼을 다시 눌러 주세요.");
+      setError(ui("재생 버튼을 다시 눌러 주세요."));
     });
   }
   function seek(seconds: number) {
@@ -205,9 +207,9 @@ export function RankingSequencePreview({
       media.currentTime = pendingSeek.current ?? clipStart;
       pendingSeek.current = null;
       transitioning.current = false;
-      if (intent.current) void media.play().catch(() => { intent.current = false; setPlaying(false); setError("재생 버튼을 다시 눌러 주세요."); });
+      if (intent.current) void media.play().catch(() => { intent.current = false; setPlaying(false); setError(ui("재생 버튼을 다시 눌러 주세요.")); });
     }
-  }, [index, clipStart]);
+  }, [index, clipStart, ui]);
   const framed = Boolean(framedSources);
   const selectedSourceId = previewSource?.id;
   const firstClipStart = clips[0]?.start;
@@ -226,15 +228,15 @@ export function RankingSequencePreview({
     "--ranking-video-top": `${(rankingDesign.layout.headerHeight / rankingDesign.layout.height) * 100}%`,
   } as CSSProperties;
   const playButton = (<button type="button" className="ranking-preview-toggle" disabled={!clip || suspended}
-          aria-label={playing ? "전체 미리보기 일시 정지" : "전체 미리보기 재생"} aria-keyshortcuts="Space" onClick={toggle}>
+          aria-label={playing ? ui("전체 미리보기 일시 정지") : ui("전체 미리보기 재생")} aria-keyshortcuts="Space" onClick={toggle}>
           <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">{playing ? <path d="M7 5h4v14H7zm6 0h4v14h-4z" fill="currentColor" /> : <path d="m9 5 11 7-11 7z" fill="currentColor" />}</svg>
         </button>);
   return (
     <div className="ranking-sequence-preview">
       {backgroundMusic && (project || localMedia[backgroundMusic.sourceId]) && !layoutOnly ? <audio ref={music} loop preload="auto"
         src={localMedia[backgroundMusic.sourceId] || `/api/ranking-shorts/${project}/media/${backgroundMusic.sourceId}`}
-        onLoadedMetadata={syncMusic} onError={() => setError("배경음악 미리보기가 만료되었습니다. 음악을 다시 추가해 주세요.")} /> : null}
-      <div className={`ranking-composition${clip?.transitionUrl ? " is-transition" : ""}`} style={videoStyle}>
+        onLoadedMetadata={syncMusic} onError={() => setError(ui("배경음악 미리보기가 만료되었습니다. 음악을 다시 추가해 주세요."))} /> : null}
+      <div data-i18n-content className={`ranking-composition${clip?.transitionUrl ? " is-transition" : ""}`} style={videoStyle}>
         {clips.length > 0 && !layoutOnly ? clips.map((item, itemIndex) => {
           const media = (<video
             key={`${item.sourceId}:${item.rank}`}
@@ -244,7 +246,7 @@ export function RankingSequencePreview({
             playsInline
             preload={itemIndex >= index && itemIndex <= index + 2 ? "auto" : "none"}
             src={item.transitionUrl || localMedia[item.sourceId] || `/api/ranking-shorts/${project}/media/${item.sourceId}`}
-            aria-label="전체 미리보기 영상"
+            aria-label={ui("전체 미리보기 영상")}
             data-rank={item.rank}
             onLoadedMetadata={(event) => {
               const media = event.currentTarget;
@@ -261,7 +263,7 @@ export function RankingSequencePreview({
             onError={() => {
               if (itemIndex !== index) return;
               music.current?.pause(); intent.current = false; setPlaying(false);
-              setError("미리보기를 불러오지 못했습니다. 영상을 다시 가져와 주세요.");
+              setError(ui("미리보기를 불러오지 못했습니다. 영상을 다시 가져와 주세요."));
             }}
           />);
           if (!framedSources) return media;
@@ -304,8 +306,8 @@ export function RankingSequencePreview({
       {layoutOnly ? (
         <p className="ranking-hint">
           {previewSource?.remote?.platform === "youtube" && !previewSource.previewReady
-            ? "유튜브 표지 미리보기예요. 선택한 장면은 원본 플레이어에서 확인하세요."
-            : "선택한 영상의 표지와 배치를 보여드려요. 전체 영상은 제작 후 재생할 수 있습니다."}
+            ? ui("유튜브 표지 미리보기예요. 선택한 장면은 원본 플레이어에서 확인하세요.")
+            : ui("선택한 영상의 표지와 배치를 보여드려요. 전체 영상은 제작 후 재생할 수 있습니다.")}
         </p>
       ) : (
         <div className="ranking-sequence-controls">
@@ -317,7 +319,7 @@ export function RankingSequencePreview({
       {!layoutOnly ? (
         <input
           className="ranking-sequence-scrubber"
-          aria-label="전체 미리보기 위치"
+          aria-label={ui("전체 미리보기 위치")}
           type="range"
           min="0"
           max={total || 1}

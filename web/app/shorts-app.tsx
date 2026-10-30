@@ -13397,7 +13397,7 @@ function SourceRangeSelector({
         <div>
           <h2 className="text-lg font-extrabold text-white">{ui("사용할 영상 구간")}</h2>
           <p className="mt-1 text-sm leading-6 text-neutral-400">
-            {ui("양쪽 손잡이를 드래그해 전사·분석할 범위를 정하세요. 4분부터 60분까지 선택할 수 있습니다.")}</p>
+            {ui("양쪽 손잡이를 드래그해 쇼츠를 만들 범위를 정하세요. 4분부터 60분까지 선택할 수 있습니다.")}</p>
         </div>
         <strong className="font-mono text-sm tabular-nums text-[#ffb4aa] sm:text-base">
           {formatTimestamp(startSeconds)} – {formatTimestamp(endSeconds)}

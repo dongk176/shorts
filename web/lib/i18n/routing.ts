@@ -5,7 +5,7 @@ const prefixes: Record<SiteLocale, string> = { ko: "", en: "/en", ja: "/jp" };
 // Only page routes belong here. APIs, auth callbacks, admin and static files
 // retain their original addresses, including future publishing endpoints.
 const pageRoots = new Set([
-  "ai-shorts-maker", "popular", "templates", "support", "team", "compare",
+  "ranking-shorts", "ai-shorts-maker", "popular", "templates", "support", "team", "compare",
   "easycut-private", "guidebook", "refund", "blog", "account", "pricing",
   "pricing-2", "terms", "settings", "faq", "enterprise", "purchase-terms",
   "privacy", "projects", "billing", "실시간인기", "shorts-monetization", "saved-videos", "updates",
@@ -44,6 +44,8 @@ export function localizedHref(href: string, locale: SiteLocale): string {
     return href;
   }
   if (!isLocalizedPage(pathname)) return href;
+  // Ranking currently ships in Korean and English; use English for Japanese navigation.
+  if (pathname === "/ranking-shorts" && locale === "ja") return `/en/ranking-shorts${tail}`;
   return `${prefixes[locale]}${pathname === "/" ? (locale === "ko" ? "/" : "") : pathname}${tail}`;
 }
 

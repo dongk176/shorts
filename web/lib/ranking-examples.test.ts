@@ -12,10 +12,12 @@ it("shows all 100 Korean examples first, with descending views inside both group
   expect(items[0].id).toBe("FjpLxP6tsj0");
 });
 
-it("sorts other locales by views across the whole catalog without mutating it", () => {
+it("prioritizes English examples and sorts each group by views without mutating the catalog", () => {
   const before = catalog.items.map(item => item.id);
   const items = sortRankingExamples(catalog.items, "en");
-  expect(items.map(item => item.views)).toEqual(items.map(item => item.views).sort((a,b) => b-a));
+  const english = items.filter(item => item.language === "영어");
+  expect(items.slice(0, english.length)).toEqual(english);
+  for (const group of [english, items.filter(item => item.language !== "영어")]) expect(group.map(item => item.views)).toEqual(group.map(item => item.views).sort((a,b) => b-a));
   expect(catalog.items.map(item => item.id)).toEqual(before);
 });
 

@@ -2,10 +2,12 @@
 
 import { useUiText } from "@/lib/i18n/use-ui-text";
 
-import Link from "next/link";
+import Link from "@/lib/i18n/navigation";
 import Image from "next/image";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import samples from "./ranking-showroom-data.json";
+import englishSamples from "./ranking-showroom-en.json";
+import { useNavigationLocale } from "@/lib/i18n/provider";
+import originalSamples from "./ranking-showroom-data.json";
 import styles from "./ranking-showroom.module.css";
 
 function Arrow({ right = false }: { right?: boolean }) {
@@ -18,7 +20,7 @@ function SoundIcon({ muted }: { muted: boolean }) {
   return <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m11 5-5 4H3v6h3l5 4V5Z" />{muted ? <path d="m16 9 5 6m0-6-5 6" /> : <><path d="M15 8a6 6 0 0 1 0 8" /><path d="M18 5a10 10 0 0 1 0 14" /></>}</svg>;
 }
 
-function SourceStrip({ sources }: { sources: (typeof samples)[number]["sources"] }) {
+function SourceStrip({ sources }: { sources: (typeof originalSamples)[number]["sources"] }) {
   const ui = useUiText();
   const strip = useRef<HTMLDivElement>(null);
   const track = useRef<HTMLDivElement>(null);
@@ -118,6 +120,9 @@ function SourceStrip({ sources }: { sources: (typeof samples)[number]["sources"]
 }
 
 export function RankingShowroom() {
+  const locale = useNavigationLocale();
+  const samples = locale === "en" ? englishSamples : originalSamples;
+  const mediaRoot = locale === "en" ? "/ranking-showroom-en" : "/ranking-showroom-20";
   const ui = useUiText();
   const id = useId();
   const [selected, setSelected] = useState(0);
@@ -181,7 +186,7 @@ export function RankingShowroom() {
       <div ref={result} className={styles.result}>
         <div className={styles.mediaLabel}>{ui("랭킹 쇼츠")}<span>{ui("1개")}</span></div>
         <div className={styles.resultFrame}>
-          <video key={`${sample.name}-${retry}`} ref={video} src={`/ranking-showroom-20/${sample.name}.mp4`} poster={`/ranking-showroom-20/${sample.name}.jpg`} muted={muted} loop playsInline preload="none" aria-label={`${ui(sample.subtitle)} — ${ui("완성 영상")}`} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onError={() => setFailed(true)} />
+          <video key={`${sample.name}-${retry}`} ref={video} src={`${mediaRoot}/${sample.name}.mp4`} poster={`${mediaRoot}/${sample.name}.jpg`} muted={muted} loop playsInline preload="none" aria-label={`${ui(sample.subtitle)} — ${ui("완성 영상")}`} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onError={() => setFailed(true)} />
           {failed && <div className={styles.error}><span>{ui("영상을 불러오지 못했어요.")}</span><button type="button" onClick={() => { setFailed(false); setRetry(value => value + 1); }}>{ui("다시 재생")}</button></div>}
         </div>
         <div className={styles.controls}>
