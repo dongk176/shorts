@@ -17,9 +17,9 @@ const sourceRangeGuideSource = readFileSync(
 
 describe("source range guide", () => {
   it("uses the approved concise guide copy in all three languages", () => {
-    expect(sourceRangeGuideSteps[2].description).toBe("원본 영상 전체가 아니라 선택한 구간의 길이만큼 사용량이 차감됩니다. 예상 쇼츠 수도 선택한 길이를 기준으로 계산돼요.");
+    expect(sourceRangeGuideSteps[2].description).toBe("원본 영상 전체가 아니라 선택한 구간의 길이만큼 크레딧이 차감됩니다. 예상 쇼츠 수도 선택한 길이를 기준으로 계산돼요.");
     expect(sourceRangeGuideSteps[3].eyebrow).toBe("구간 선택 완료");
-    expect(sourceRangeGuideSteps[3].description).toBe("선택 시간과 차감 시간을 확인하고 쇼츠 생성을 시작하면 됩니다.");
+    expect(sourceRangeGuideSteps[3].description).toBe("선택한 구간과 차감될 크레딧을 확인하고 쇼츠 생성을 시작하면 됩니다.");
     for (const locale of ["en", "ja"] as const) for (const step of sourceRangeGuideSteps) {
       expect(translateLegacyText(step.eyebrow, locale)).not.toMatch(/[가-힣]/);
       expect(translateLegacyText(step.description, locale)).not.toMatch(/[가-힣]/);
@@ -36,7 +36,7 @@ describe("source range guide", () => {
     expect(sourceRangeGuideSteps[1].targetSelector).toBe('[data-source-range-guide="end-handle"]');
     expect(sourceRangeGuideSteps[0].scrollBlock).toBe("center");
     expect(sourceRangeGuideSteps[1].scrollBlock).toBe("center");
-    expect(sourceRangeGuideSteps[2].description).toContain("선택한 구간의 길이만큼 사용량이 차감");
+    expect(sourceRangeGuideSteps[2].description).toContain("선택한 구간의 길이만큼 크레딧이 차감");
     expect(sourceRangeGuideSteps.at(-1)?.targetSelector).toBeNull();
   });
 
