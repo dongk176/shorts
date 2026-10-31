@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import styles from "./admin-shell.module.css";
 import { AdminTrendCard } from "./admin-trend-card";
+import { AdminSubscriptionBillingCard } from "./admin-subscription-billing-card";
 import { AdminSalesCard } from "./admin-sales-card";
 import type { AdminTrendData } from "@/lib/admin-trends";
 
@@ -331,13 +332,6 @@ export function AdminShell({
       color: "#68a5ff",
     },
     {
-      label: "활성 구독 결제액",
-      value: money(metrics.activeSubscriptionBillingKrw),
-      hint: `이지컷 프로 ${metrics.activeProSubscriptions.toLocaleString("ko-KR")}건 · 월 기준`,
-      icon: "billing" as const,
-      color: "#5fd1b3",
-    },
-    {
       label: "운영 확인",
       value: `${totalReviewCount.toLocaleString("ko-KR")}건`,
       hint: `누적 환불 ${compactMoney(metrics.refundedSales)}`,
@@ -417,6 +411,7 @@ export function AdminShell({
             <div className={styles.metricGrid} aria-label="운영 요약">
               <AdminSalesCard period="all" grossSales={metrics.grossSales} refundedSales={metrics.refundedSales} icon={<AdminIcon name="billing" />} />
               <AdminSalesCard period="today" grossSales={metrics.todaySales} refundedSales={metrics.todayRefundedSales} icon={<AdminIcon name="onboarding" />} />
+              <AdminSubscriptionBillingCard icon={<AdminIcon name="billing" />} />
               {summaryCards.map((card) => (
                 <article
                   className={styles.metricCard}

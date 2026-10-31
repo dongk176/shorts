@@ -2,16 +2,18 @@ import { NextResponse } from "next/server";
 import { requireAdminUser } from "@/lib/admin";
 import { ensureReadDbReady } from "@/lib/db";
 import { apiError } from "@/lib/http";
+import { loadAdminSubscriptionBilling } from "@/lib/admin-subscription-billing";
 import { loadAdminOverview } from "@/lib/admin-overview";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     await ensureReadDbReady();
     await requireAdminUser();
-    const overview = await loadAdminOverview();
+    const overview = new URL(request.url).searchParams.get("view") === "subscription-billing"
+      ? await loadAdminSubscriptionBilling() : await loadAdminOverview();
     return NextResponse.json(overview, {
       headers: { "Cache-Control": "private, no-store" },
     });
