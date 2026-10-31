@@ -9,7 +9,7 @@ export async function loadAdminSubscriptionBilling(): Promise<SubscriptionBillin
   const catalog = TOSS_PLAN_CATALOG.map(plan => ({ code: plan.code, amount: plan.priceKrw, months: plan.contractMonths }));
   const rows = await getDb()`
     with catalog as (
-      select * from jsonb_to_recordset(${JSON.stringify(catalog)}::jsonb)
+      select * from jsonb_to_recordset(${JSON.stringify(catalog)}::text::jsonb)
         as c(code text,amount integer,months integer)
     ), scheduled as (
       select s.next_charge_at,
