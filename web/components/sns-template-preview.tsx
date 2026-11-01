@@ -48,7 +48,7 @@ export function SnsTemplatePreview({ community = false, ratio, brandColor, chann
   const offsetY = portrait ? 0 : 150;
   if (community) return <CommunityTemplatePreview {...playback} {...{ ratio, brandColor, channelName, channelThumbnailUrl, thumbnailUrl, content, videoUrl, videoStart, videoEnd, language }} />;
   return (
-      <svg data-i18n-content="" viewBox="0 0 1080 1920" role="img" aria-label={ui(`${ratio} SNS 템플릿 예시`)}
+      <svg data-i18n-content="" viewBox="0 0 1080 1920" role="img" aria-label={ui("SNS 템플릿")}
         className="aspect-[9/16] w-full overflow-hidden rounded-lg" style={{ fontFamily: snsFontFamily(language, 700) }}>
         <defs>
           <clipPath id={clipId}><rect x={x} y={y} width={width} height={height} rx={30} /></clipPath>

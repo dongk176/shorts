@@ -2111,7 +2111,6 @@ function TemplatePicker({
   brandColor,
   onBrandColorChange,
   settingsBelowRail,
-  translationNotice,
   communityTemplateAvailable = false,
   communityTemplateActive = false,
   onCommunityTemplateSelect,
@@ -2142,7 +2141,6 @@ function TemplatePicker({
   brandColor: TemplatePresetColor;
   onBrandColorChange: (value: TemplatePresetColor) => void;
   settingsBelowRail: boolean;
-  translationNotice?: string | null;
   communityTemplateAvailable?: boolean;
   communityTemplateActive?: boolean;
   onCommunityTemplateSelect?: () => void;
@@ -2240,11 +2238,6 @@ function TemplatePicker({
         <h2 className="text-xl font-bold">{ui("템플릿")}</h2>
         <span data-i18n-skip={!selectedSubtitleTemplate && Boolean(selectedCustom) || undefined} className="text-xs font-semibold text-red-300">{communityTemplateActive ? "커뮤니티 템플릿" : snsTemplateActive ? "SNS 템플릿" : selectedSubtitleTemplate?.name || selectedCustom?.name || selectedPresetDisplayName}</span>
       </div>
-      {!snsTemplateActive && translationNotice && (
-        <p role="status" data-subtitle-translation-notice className="mt-3 rounded-xl border border-[#ff715e]/25 bg-[#ff715e]/[.07] px-4 py-3 text-sm leading-6 text-neutral-200">
-          {translationNotice}
-        </p>
-      )}
       {!settingsBelowRail && templateSettings}
       <div
         aria-label={ui("템플릿 선택 레일")}
@@ -15221,8 +15214,6 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
               setTemplateId("white-yellow");
             }}
             sourceThumbnailUrl={selectedSource.thumbnailUrl}
-            translationNotice={languageTestActive && (sourceLanguage === "auto" || sourceLanguage !== outputLanguage)
-              ? languageText.translation : null}
             value={templateId}
             onChange={(nextTemplateId) => {
               setSnsTemplateSelected(false); setCommunityTemplateSelected(false);
