@@ -94,3 +94,12 @@ it('still rejects a partially returned nonempty payment history',async()=>{
  vi.mocked(paypalRequest).mockImplementation(async(path)=>path.includes('/transactions?')?{transactions,total_items:2}:sub);
  await expect(syncPayPalSubscription(id,db(pg))).rejects.toThrow('Incomplete PayPal payment history');expect((await pg.query('select * from shorts_mvp.usage_grants')).rows).toHaveLength(0);
 });
+
+it('does not acknowledge a payment-completed webhook before its canonical sale is visible',async()=>{
+ const event={id:'WH-PAYMENT-DELAY123',event_type:'PAYMENT.SALE.COMPLETED',resource:{id:'SALE1234567890123',billing_agreement_id:id}};
+ vi.mocked(paypalRequest).mockImplementation(async(path)=>path.includes('/transactions?')?{}:sub);
+ await expect(processPayPalEvent(event,db(pg))).rejects.toThrow('confirmation pending');
+ expect((await pg.query('select * from shorts_mvp.paypal_webhook_events')).rows).toHaveLength(0);expect((await pg.query('select * from shorts_mvp.usage_grants')).rows).toHaveLength(0);
+ vi.mocked(paypalRequest).mockImplementation(async(path)=>path.includes('/transactions?')?{transactions,total_items:transactions.length}:sub);
+ await processPayPalEvent(event,db(pg));await processPayPalEvent(event,db(pg));expect((await pg.query('select * from shorts_mvp.paypal_payments')).rows).toHaveLength(1);expect((await pg.query('select * from shorts_mvp.paypal_webhook_events')).rows).toHaveLength(1);expect((await pg.query('select * from shorts_mvp.usage_grants')).rows).toHaveLength(3);
+});

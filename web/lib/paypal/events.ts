@@ -14,7 +14,13 @@ export async function processPayPalEvent(event:PayPalEvent,db=getDb()) {
   } else if(kind==="PAYMENT.SALE.COMPLETED") {
     const id=event.resource.billing_agreement_id;
     if(!id)throw Error("Missing subscription reference");
+    const saleId=event.resource.id;
+    if(!saleId || !/^[A-Z0-9]{10,32}$/.test(saleId))throw Error("Missing payment reference");
     await syncPayPalSubscription(id,db);
+    const [confirmed]=await db`select transaction_id from shorts_mvp.paypal_payments where transaction_id=${saleId} and paypal_subscription_id=${id}`;
+    // A completed notification can arrive before transaction-history replication.
+    // Leave it unprocessed so PayPal can retry after the canonical sale is visible.
+    if(!confirmed)throw Error("PayPal payment confirmation pending");
   } else if(kind==="PAYMENT.SALE.REFUNDED" || kind==="PAYMENT.SALE.REVERSED") {
     const refundId=kind==="PAYMENT.SALE.REFUNDED"?event.resource.id:null;
     const saleId=kind==="PAYMENT.SALE.REFUNDED"?event.resource.sale_id:event.resource.id;
