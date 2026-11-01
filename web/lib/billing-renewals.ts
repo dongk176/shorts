@@ -375,7 +375,7 @@ export async function processBillingRenewals(db: Sql) {
   const quotaRows = await db`
     select id from shorts_mvp.user_subscriptions
     where status='active'
-      and coalesce(payment_provider,'thepayone') not in ('toss','paddle')
+      and coalesce(payment_provider,'thepayone') not in ('toss','paddle','paypal')
       and billing_cycle='yearly' and next_quota_at <= clock_timestamp()
       and current_period_end > next_quota_at
     order by next_quota_at limit 100
@@ -386,7 +386,7 @@ export async function processBillingRenewals(db: Sql) {
   const dueRows = await db`
     select * from shorts_mvp.user_subscriptions
     where status='active'
-      and coalesce(payment_provider,'thepayone') not in ('toss','paddle')
+      and coalesce(payment_provider,'thepayone') not in ('toss','paddle','paypal')
       and next_charge_at is not null
       and (
         (cancel_at_period_end and current_period_end <= clock_timestamp())

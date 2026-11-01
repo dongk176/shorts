@@ -23,7 +23,7 @@ export function blocksAccountWithdrawal(subscription: WithdrawalSubscription) {
   if (!["trialing", "active", "past_due"].includes(subscription.status)) return false;
   // Paddle does not use a local saved-card row. Wait for its actual cancellation
   // webhook so an account cannot disappear while remote billing remains active.
-  if (subscription.paymentProvider === "paddle") return true;
+  if (["paddle","paypal"].includes(subscription.paymentProvider || "")) return true;
   if (subscription.billingCycle !== "monthly" || !subscription.paymentMethodId) return false;
   return !(
     subscription.cancelAtPeriodEnd

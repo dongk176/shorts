@@ -1,3 +1,6 @@
+import { PayPalPage } from "@/components/paypal-page";
+import { paypalEnabled } from "@/lib/paypal/api";
+import { getPayPalState } from "@/lib/paypal/service";
 import { getRequestLocale } from "@/lib/i18n/server";
 import { paddleConfigured } from "@/lib/paddle/config";
 import { getPaddleState } from "@/lib/paddle/service";
@@ -109,6 +112,10 @@ export default async function PlanManagementPage() {
         today={seoulToday()}
       />
     );
+  }
+  if (process.env.PAYPAL_ENVIRONMENT) {
+    const state = await getPayPalState(session.userId);
+    if (state) return <PayPalPage user={authProfile(user)} locale={await getRequestLocale()} enabled={paypalEnabled()} subscription={state} managementOnly/>;
   }
   if (paddleConfigured()) {
     const state = await getPaddleState(session.userId);

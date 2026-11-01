@@ -135,7 +135,7 @@ export type BillingSummary = {
   cardNumberMasked: string | null;
   cardLast4: string | null;
   hasStoredPayerTel: boolean;
-  paymentProvider: "thepayone" | "nicepay" | "toss" | "paddle" | null;
+  paymentProvider: "thepayone" | "nicepay" | "toss" | "paddle" | "paypal" | null;
   providerScheduleStatus: "none" | "active" | "paused" | "disposed" | "manual_review";
   requiresManualReview: boolean;
   canCreateJobs: boolean;

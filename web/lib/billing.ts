@@ -254,7 +254,7 @@ export async function getBillingSummary(db: BillingDb, userId: string | null): P
       exists (
         select 1 from shorts_mvp.billing_orders
         where user_id=${userId} and status='succeeded' and amount_krw > 0
-      ) or exists (select 1 from shorts_mvp.user_subscriptions where user_id=${userId} and payment_provider='paddle') as has_payment_history,
+      ) or exists (select 1 from shorts_mvp.user_subscriptions where user_id=${userId} and payment_provider in ('paddle','paypal')) as has_payment_history,
       coalesce((
         select array_agg(distinct package_order.product_code order by package_order.product_code)
         from shorts_mvp.billing_orders package_order
@@ -461,7 +461,7 @@ export async function getBillingSummary(db: BillingDb, userId: string | null): P
     hasStoredPayerTel: history?.defaultPaymentProvider
       ? Boolean(history.defaultHasStoredPayerTel)
       : Boolean(row.hasStoredPayerTel),
-    paymentProvider: row.paymentProvider === "paddle" ? "paddle" : history?.defaultPaymentProvider || row.paymentProvider || null,
+    paymentProvider: ["paddle","paypal"].includes(row.paymentProvider) ? row.paymentProvider : history?.defaultPaymentProvider || row.paymentProvider || null,
     providerScheduleStatus: row.providerScheduleStatus || "none",
     requiresManualReview: row.billingReviewStatus === "manual_review",
     canCreateJobs,

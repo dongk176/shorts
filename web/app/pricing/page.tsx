@@ -1,3 +1,6 @@
+import { PayPalPage } from "@/components/paypal-page";
+import { paypalEnabled } from "@/lib/paypal/api";
+import { getPayPalState } from "@/lib/paypal/service";
 import { getRequestLocale } from "@/lib/i18n/server";
 import { paddleEnabled, paddleConfigured } from "@/lib/paddle/config";
 import { getPaddleState } from "@/lib/paddle/service";
@@ -33,6 +36,13 @@ export default async function PricingPage() {
   const user = await getAuthenticatedUser();
   const profile = user ? authProfile(user) : null;
   const locale = await getRequestLocale();
+  if (paypalEnabled() && locale !== "ko") {
+    const session = user ? await requireMvpSession(user, { createIfMissing: false }) : null;
+    const billing = session?.userId ? await getBillingSummary(getDb(), session.userId) : null;
+    const state = session?.userId ? await getPayPalState(session.userId) : null;
+    return <PayPalPage user={profile} locale={locale} enabled subscription={state}
+      blocked={Boolean(session?.isEnterprise || (billing && billing.paymentProvider !== "paypal" && ["pending","active","past_due"].includes(billing.status)))}/>;
+  }
   if (paddleConfigured()) {
     const session = user ? await requireMvpSession(user, { createIfMissing: false }) : null;
     const billing = session?.userId ? await getBillingSummary(getDb(), session.userId) : null;

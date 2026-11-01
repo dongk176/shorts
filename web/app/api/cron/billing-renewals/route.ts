@@ -1,3 +1,4 @@
+import { reconcilePayPal } from "@/lib/paypal/service";
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { processBillingRenewals } from "@/lib/billing-renewals";
@@ -22,7 +23,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ detail: "Unauthorized" }, { status: 401 });
   }
   const db = getDb();
-  const failedEngines: Array<"legacy" | "toss" | "creator-support"> = [];
+  const failedEngines: Array<"legacy" | "toss" | "creator-support" | "paypal"> = [];
   let legacy: Awaited<ReturnType<typeof processBillingRenewals>> | null = null;
   let toss: Awaited<ReturnType<typeof processTossBillingRenewals>> | null = null;
 
@@ -51,8 +52,11 @@ export async function GET(request: Request) {
     console.error("creator_support_maintenance_failed", { errorName: error instanceof Error ? error.name : "UnknownError" });
   }
 
+  let paypal: Awaited<ReturnType<typeof reconcilePayPal>> | null = null;
+  try { paypal = await reconcilePayPal(db); if (paypal.failed) failedEngines.push("paypal"); }
+  catch { failedEngines.push("paypal"); console.error("paypal_reconciliation_failed"); }
   return NextResponse.json(
-    { legacy, toss, creatorSupport, failedEngines },
+    { legacy, toss, creatorSupport, paypal, failedEngines },
     { status: failedEngines.length > 0 ? 500 : 200 },
   );
 }
