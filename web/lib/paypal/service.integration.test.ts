@@ -83,3 +83,14 @@ it('does not treat failed uncharged attempts as prior payment history',async()=>
 it('PayPal payments do not move a new international customer back to legacy pricing',async()=>{
  await syncPayPalSubscription(id,db(pg));expect(await hasLegacyPaymentHistory(user,db(pg))).toBe(false);
 });
+
+it('treats PayPal HTTP 200 empty history as pending without granting, then reconciles once',async()=>{
+ vi.mocked(paypalRequest).mockImplementation(async(path)=>path.includes('/transactions?')?{}:sub);
+ await syncPayPalSubscription(id,db(pg));expect((await pg.query('select * from shorts_mvp.usage_grants')).rows).toHaveLength(0);
+ vi.mocked(paypalRequest).mockImplementation(async(path)=>path.includes('/transactions?')?{transactions,total_items:transactions.length}:sub);
+ await syncPayPalSubscription(id,db(pg));await syncPayPalSubscription(id,db(pg));expect((await pg.query('select * from shorts_mvp.paypal_payments')).rows).toHaveLength(1);expect((await pg.query('select * from shorts_mvp.usage_grants')).rows).toHaveLength(3);
+});
+it('still rejects a partially returned nonempty payment history',async()=>{
+ vi.mocked(paypalRequest).mockImplementation(async(path)=>path.includes('/transactions?')?{transactions,total_items:2}:sub);
+ await expect(syncPayPalSubscription(id,db(pg))).rejects.toThrow('Incomplete PayPal payment history');expect((await pg.query('select * from shorts_mvp.usage_grants')).rows).toHaveLength(0);
+});

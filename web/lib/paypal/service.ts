@@ -91,9 +91,13 @@ export async function syncPayPalSubscription(id:string,db=getDb()) {
   // Recent transaction history is independently read from PayPal, not browser or webhook claims.
   const from=new Date(Math.max(Date.parse(sub.create_time)-60000,Date.now()-179*86400000));
   const query=new URLSearchParams({start_time:from.toISOString(),end_time:new Date(Date.now()+60000).toISOString()});
-  const history=await paypalRequest<{transactions:Transaction[];total_items?:number}>(`/v1/billing/subscriptions/${id}/transactions?${query}`);
-  if(!Array.isArray(history.transactions) || history.transactions.length>100 || Number(history.total_items??history.transactions.length)>history.transactions.length)throw Error("Incomplete PayPal payment history");
-  const completed=history.transactions.filter(t=>t.status==="COMPLETED").sort((a,b)=>Date.parse(a.time)-Date.parse(b.time));
+  const history=await paypalRequest<{transactions?:Transaction[];total_items?:number}>(`/v1/billing/subscriptions/${id}/transactions?${query}`);
+  // PayPal returns HTTP 200 with {} when the requested range has no transactions,
+  // including the short interval between buyer approval and payment-history availability.
+  // No transaction means no allowance; retry canonical lookup when history catches up.
+  const listed=history.transactions ?? (Object.keys(history).length===0?[]:undefined);
+  if(!Array.isArray(listed) || listed.length>100 || Number(history.total_items??listed.length)>listed.length)throw Error("Incomplete PayPal payment history");
+  const completed=listed.filter(t=>t.status==="COMPLETED").sort((a,b)=>Date.parse(a.time)-Date.parse(b.time));
   for(const t of completed)validatePayPalPayment(t,plan);
   return db.begin(async tx=>{
     await tx`select pg_advisory_xact_lock(hashtextextended(${checkout.userId},0))`;
