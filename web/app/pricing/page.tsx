@@ -1,6 +1,5 @@
-import { PayPalPage } from "@/components/paypal-page";
 import { paypalEnabled } from "@/lib/paypal/api";
-import { getPayPalState } from "@/lib/paypal/service";
+import { hasLegacyPaymentHistory } from "@/lib/paypal/eligibility";
 import { getRequestLocale } from "@/lib/i18n/server";
 import { paddleEnabled, paddleConfigured } from "@/lib/paddle/config";
 import { getPaddleState } from "@/lib/paddle/service";
@@ -36,14 +35,11 @@ export default async function PricingPage() {
   const user = await getAuthenticatedUser();
   const profile = user ? authProfile(user) : null;
   const locale = await getRequestLocale();
-  if (paypalEnabled() && locale !== "ko") {
-    const session = user ? await requireMvpSession(user, { createIfMissing: false }) : null;
-    const billing = session?.userId ? await getBillingSummary(getDb(), session.userId) : null;
-    const state = session?.userId ? await getPayPalState(session.userId) : null;
-    return <PayPalPage user={profile} locale={locale} enabled subscription={state}
-      blocked={Boolean(session?.isEnterprise || (billing && billing.paymentProvider !== "paypal" && ["pending","active","past_due"].includes(billing.status)))}/>;
-  }
-  if (paddleConfigured()) {
+  const paypalSession = user && paypalEnabled() && locale !== "ko"
+    ? await requireMvpSession(user, { createIfMissing: false }) : null;
+  const paypalCheckout = paypalEnabled() && locale !== "ko" && !paypalSession?.isEnterprise
+    && (!user || Boolean(paypalSession?.userId && !(await hasLegacyPaymentHistory(paypalSession.userId))));
+  if (!paypalCheckout && paddleConfigured()) {
     const session = user ? await requireMvpSession(user, { createIfMissing: false }) : null;
     const billing = session?.userId ? await getBillingSummary(getDb(), session.userId) : null;
     const paddle = billing?.paymentProvider === "paddle";
@@ -78,19 +74,21 @@ export default async function PricingPage() {
       ? await requireMvpSession(user, { createIfMissing: false })
       : null;
     const appUserId = session?.userId ?? null;
-    if (!user) {
-      const runtime = await loadTossBillingRuntimeState(db);
-      tossExperience = runtime.effective.assignments && runtime.effective.charges;
-      if (tossExperience) guestTossCatalog = publicTossCatalog();
-    } else if (appUserId) {
-      const cohort = await resolveBillingCustomerCohort(appUserId, db);
-      tossExperience = shouldUseTossBillingExperience(cohort);
-      if (tossExperience && session?.userId) {
-        initialTossState = await getTossBillingState({
-          userId: session.userId,
-          session: session as typeof session & { userId: string },
-          db,
-        });
+    if (!paypalCheckout) {
+      if (!user) {
+        const runtime = await loadTossBillingRuntimeState(db);
+        tossExperience = runtime.effective.assignments && runtime.effective.charges;
+        if (tossExperience) guestTossCatalog = publicTossCatalog();
+      } else if (appUserId) {
+        const cohort = await resolveBillingCustomerCohort(appUserId, db);
+        tossExperience = shouldUseTossBillingExperience(cohort);
+        if (tossExperience && session?.userId) {
+          initialTossState = await getTossBillingState({
+            userId: session.userId,
+            session: session as typeof session & { userId: string },
+            db,
+          });
+        }
       }
     }
     initialState = {
@@ -105,6 +103,7 @@ export default async function PricingPage() {
   return (
     <PricingPageShell
       user={profile}
+      paypalCheckout={paypalCheckout}
       initialState={initialState}
       tossExperience={tossExperience}
       initialTossState={initialTossState}

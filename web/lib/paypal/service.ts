@@ -5,6 +5,7 @@ import { getDb } from "@/lib/db";
 import { HttpError } from "@/lib/http";
 import { paypalPlan, addPayPalMonths, usdMinor, type PayPalPlan } from "./catalog";
 import { paypalEnabled, paypalEnvironment, paypalPlanId, paypalRequest } from "./api";
+import { assertPayPalNewCustomer } from "./eligibility";
 type Db = Sql | TransactionSql;
 export type PayPalSubscription = { id:string; plan_id:string; custom_id?:string; status:string; quantity?:string; plan_overridden?:boolean; create_time:string; status_update_time?:string; billing_info?:{next_billing_time?:string}; links?:{rel:string;href:string}[] };
 type Transaction = { id:string; status:string; time:string; amount_with_breakdown:{gross_amount:{currency_code:string;value:string}} };
@@ -25,6 +26,7 @@ export function validatePayPalPayment(t:Transaction, plan:PayPalPlan) {
   return new Date(t.time);
 }
 async function noConflicts(tx:Db,userId:string) {
+  await assertPayPalNewCustomer(userId,tx);
   const [active]=await tx`select id from shorts_mvp.user_subscriptions where user_id=${userId} and status in ('pending','trialing','active','past_due') and (current_period_end is null or current_period_end>now() or cancel_at_period_end=false) limit 1`;
   const [order]=await tx`select id from shorts_mvp.billing_orders where user_id=${userId} and (status in ('processing','unknown','manual_review') or (status='pending' and (checkout_expires_at is null or checkout_expires_at>now()))) limit 1`;
   const [toss]=await tx`select id from shorts_mvp.billing_toss_checkout_intents where user_id=${userId} and status in ('pending','processing','unknown','manual_review') and (expires_at is null or expires_at>now()) limit 1`;
@@ -39,6 +41,7 @@ export async function preparePayPalCheckout(userId:string,code:string,locale:"en
   validatePayPalPlan(remote,plan,planId);
   const checkout=await db.begin(async tx=>{
     await tx`select pg_advisory_xact_lock(hashtextextended(${userId},0))`;
+    await assertPayPalNewCustomer(userId,tx);
     const [existing]=await tx<Checkout[]>`select * from shorts_mvp.paypal_checkouts where user_id=${userId} and environment=${environment} and status in ('creating','ready','unknown') order by created_at desc limit 1 for update`;
     if(existing) {
       if(existing.planCode!==code || existing.status!=="ready")throw new HttpError(409,"Resolve the previous checkout first.","CHECKOUT_UNCONFIRMED");

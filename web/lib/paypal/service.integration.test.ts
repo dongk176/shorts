@@ -9,6 +9,7 @@ import { paypalRequest } from './api';
 import { preparePayPalCheckout,syncPayPalSubscription,validatePayPalPayment,validatePayPalPlan } from './service';
 import { paypalPlan } from './catalog';
 import { processPayPalEvent } from './events';
+import { hasLegacyPaymentHistory } from './eligibility';
 let pg:PGlite;
 const user='00000000-0000-4000-8000-000000000001',other='00000000-0000-4000-8000-000000000002',checkout='00000000-0000-4000-8000-000000000003';
 const id='I-123456789012';
@@ -20,17 +21,18 @@ function db(engine:Pick<PGlite,'query'>):Sql{
 const payment=(sale='SALE1234567890123',time='2026-11-01T00:00:00Z',amount='87.00')=>({id:sale,status:'COMPLETED',time,amount_with_breakdown:{gross_amount:{currency_code:'USD',value:amount}}});
 beforeAll(async()=>{pg=new PGlite();await pg.exec(`create schema shorts_mvp;create role anon;create role authenticated;create role service_role;
 create table shorts_mvp.app_users(id uuid primary key,withdrawn_at timestamptz);
-create table shorts_mvp.billing_orders(id uuid primary key default gen_random_uuid(),user_id uuid,status text,checkout_expires_at timestamptz);
+create table shorts_mvp.billing_orders(id uuid primary key default gen_random_uuid(),user_id uuid,status text,checkout_expires_at timestamptz,provider text,amount_krw int,approved_at timestamptz,provider_transaction_id text);
 create table shorts_mvp.billing_toss_checkout_intents(id uuid primary key default gen_random_uuid(),user_id uuid,status text,expires_at timestamptz);
 create table shorts_mvp.paddle_checkouts(id uuid primary key,user_id uuid,status text);
-create table shorts_mvp.user_subscriptions(id uuid primary key,user_id uuid,plan_code text,status text,billing_cycle text,payment_provider text constraint user_subscriptions_payment_provider_check check(payment_provider in ('toss','paddle','thepayone')),current_period_start timestamptz,current_period_end timestamptz,cancel_at_period_end boolean default false,next_charge_at timestamptz,updated_at timestamptz default now());
+create table shorts_mvp.paddle_payments(transaction_id text primary key,user_id uuid);
+create table shorts_mvp.user_subscriptions(id uuid primary key,user_id uuid,plan_code text,status text,billing_cycle text,payment_method_id uuid,payment_provider text constraint user_subscriptions_payment_provider_check check(payment_provider in ('toss','paddle','thepayone')),current_period_start timestamptz,current_period_end timestamptz,cancel_at_period_end boolean default false,next_charge_at timestamptz,updated_at timestamptz default now());
 create table shorts_mvp.usage_grants(id uuid primary key default gen_random_uuid(),user_id uuid,subscription_id uuid,kind text,product_code text,total_seconds int,credited_seconds int,carried_seconds int,reserved_seconds int default 0,consumed_seconds int default 0,valid_from timestamptz,expires_at timestamptz,status text default 'active',updated_at timestamptz default now(),check(reserved_seconds+consumed_seconds<=total_seconds));
 create unique index base_once on shorts_mvp.usage_grants(subscription_id,valid_from,kind) where subscription_id is not null and kind='base';`);
 const migration=fs.readFileSync('../supabase/migrations/20261101070715_paypal_billing.sql','utf8');await pg.exec(migration);await pg.exec(migration);
 },30000);
 beforeEach(async()=>{
  vi.useFakeTimers({toFake:['Date']});vi.setSystemTime(new Date('2026-11-01T00:10:00Z'));
- await pg.exec(`truncate shorts_mvp.paypal_webhook_events,shorts_mvp.paypal_refunds,shorts_mvp.paypal_payment_grants,shorts_mvp.paypal_payments,shorts_mvp.paypal_subscriptions,shorts_mvp.paypal_checkouts,shorts_mvp.user_subscriptions,shorts_mvp.usage_grants,shorts_mvp.app_users,shorts_mvp.billing_orders,shorts_mvp.billing_toss_checkout_intents,shorts_mvp.paddle_checkouts cascade;
+ await pg.exec(`truncate shorts_mvp.paypal_webhook_events,shorts_mvp.paypal_refunds,shorts_mvp.paypal_payment_grants,shorts_mvp.paypal_payments,shorts_mvp.paypal_subscriptions,shorts_mvp.paypal_checkouts,shorts_mvp.user_subscriptions,shorts_mvp.usage_grants,shorts_mvp.app_users,shorts_mvp.billing_orders,shorts_mvp.billing_toss_checkout_intents,shorts_mvp.paddle_checkouts,shorts_mvp.paddle_payments cascade;
 insert into shorts_mvp.app_users(id)values('${user}'),('${other}');
 insert into shorts_mvp.paypal_checkouts(id,user_id,environment,plan_code,provider_plan_id,provider_subscription_id,locale,status)values('${checkout}','${user}','sandbox','starter_3m','${planId}','${id}','en','ready');`);
  sub={id,plan_id:planId,custom_id:checkout,status:'ACTIVE',quantity:'1',create_time:'2026-11-01T00:00:00Z',billing_info:{next_billing_time:'2027-02-01T00:00:00Z'}};
@@ -63,3 +65,21 @@ it('rejects provider subscription ownership mismatch without adding paid access'
 it('full reversal revokes every monthly allowance without violating consumed balances',async()=>{await syncPayPalSubscription(id,db(pg));await pg.exec('update shorts_mvp.usage_grants set consumed_seconds=100');vi.mocked(paypalRequest).mockImplementation(async(path)=>{if(path.startsWith('/v1/payments/sale/'))return {id:'SALE1234567890123',state:'reversed',amount:{currency:'USD',total:'87.00'}};return sub;});await processPayPalEvent({id:'WH-REVERSAL123456',event_type:'PAYMENT.SALE.REVERSED',resource:{id:'SALE1234567890123'}},db(pg));const grants=(await pg.query<{status:string;total_seconds:number}>('select * from shorts_mvp.usage_grants')).rows;expect(grants.every(g=>g.status==='revoked'&&g.total_seconds===100)).toBe(true);});
 
 it('rejects a correctly priced plan attached to another product',()=>{const r=remote as unknown as Parameters<typeof validatePayPalPlan>[0];r.product_id='PROD-4M935244FP7175734';expect(()=>validatePayPalPlan(r,paypalPlan('starter_3m'),planId)).toThrow('catalog mismatch');});
+
+it.each(['toss','thepayone','nicepay'])('blocks new PayPal checkout after a refunded historical %s payment',async(provider)=>{
+ await pg.exec(`update shorts_mvp.paypal_checkouts set status='canceled';insert into shorts_mvp.billing_orders(user_id,status,provider,amount_krw,approved_at) values('${user}','refunded','${provider}',9900,now()-interval '1 year');update shorts_mvp.paypal_checkouts set status='ready'`);
+ expect(await hasLegacyPaymentHistory(user,db(pg))).toBe(true);
+ await expect(preparePayPalCheckout(user,'starter_3m','en',db(pg))).rejects.toThrow('existing payment provider');
+});
+it('keeps expired Paddle payers on their prior experience',async()=>{
+ await pg.exec(`insert into shorts_mvp.paddle_payments(transaction_id,user_id)values('txn_historical','${user}')`);
+ expect(await hasLegacyPaymentHistory(user,db(pg))).toBe(true);
+ await expect(preparePayPalCheckout(user,'starter_3m','en',db(pg))).rejects.toThrow('existing payment provider');
+});
+it('does not treat failed uncharged attempts as prior payment history',async()=>{
+ await pg.exec(`update shorts_mvp.paypal_checkouts set status='canceled';insert into shorts_mvp.billing_orders(user_id,status,provider,amount_krw)values('${user}','failed','toss',9900)`);
+ expect(await hasLegacyPaymentHistory(user,db(pg))).toBe(false);
+});
+it('PayPal payments do not move a new international customer back to legacy pricing',async()=>{
+ await syncPayPalSubscription(id,db(pg));expect(await hasLegacyPaymentHistory(user,db(pg))).toBe(false);
+});

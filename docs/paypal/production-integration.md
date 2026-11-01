@@ -1,6 +1,11 @@
 # PayPal international subscriptions
 
-English and Japanese pricing use the server-side PayPal catalog when PAYPAL_ENABLED=true.
+English and Japanese pricing keep the existing PricingPageShell/PricingClient UI.
+Only customers without prior Paddle/Toss/ThePayOne payment history use the USD PayPal catalog
+when PAYPAL_ENABLED=true. Canceled, expired and refunded historical payments still exclude them.
+The same history guard runs inside the checkout transaction, including resumed checkouts.
+PayPal customers keep PayPal after their own payments. Korean new customers retain the existing
+Toss cohort assignment and runtime rollout controls. Guests are reclassified after login.
 Japanese prices also use USD. Korean pricing and existing Paddle subscriptions keep their providers.
 Production baseline for this release: 93bd096473bff545b39e8c8f7ad1da05f51d63e5.
 
