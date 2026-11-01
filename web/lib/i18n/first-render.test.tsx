@@ -181,7 +181,7 @@ describe("localized first render without browser effects", () => {
   it.each(["en", "ja"] as const)("renders the live Toss catalog in %s without relying on the DOM bridge", (locale) => {
     const html = render(<TossPricingClient initialState={null} guestCatalog={[...TOSS_SALE_PLAN_CATALOG]} onRequireLogin={noop} />, locale);
     expect(html).not.toMatch(/[가-힣]/);
-    for (const amount of ["9,900", "119,400", "288,000"]) expect(html).toContain(amount);
+    for (const amount of ["19,900", "119,400", "288,000"]) expect(html).toContain(amount);
     expect(html).toContain(locale === "en" ? "About 48 Shorts per month" : "毎月ショート動画約48本");
     expect(html).toContain(locale === "en" ? "Subscribe to Easy Cut Pro" : "Easy Cut Proを申し込む");
     const ui = createUiText(locale);

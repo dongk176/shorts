@@ -3,7 +3,7 @@ import { localizedHref } from "./i18n/routing";
 import { seoBrand, seoDescriptions } from "./seo-localization";
 import { SITE_URL, absoluteUrl } from "./seo";
 import { paddlePlan } from "./paddle/catalog";
-import { tossPlan } from "./toss-subscription";
+import { tossPlan, TOSS_NEW_PRO_PLAN_CODE } from "./toss-subscription";
 
 export function websiteStructuredData(locale: SiteLocale) {
   return {
@@ -36,7 +36,7 @@ export function publicMonthlyOffer(locale: SiteLocale, internationalPricing: boo
       priceCurrency: locale === "ja" ? "JPY" : "USD", url: absoluteUrl(localizedHref("/pricing", locale)),
     };
   }
-  const plan = tossPlan("toss_easycut_pro_1m");
+  const plan = tossPlan(TOSS_NEW_PRO_PLAN_CODE);
   return { "@type": "Offer", name: plan.displayName, description: "월간 구독 · 매월 결제", price: String(plan.priceKrw), priceCurrency: "KRW", url: absoluteUrl("/pricing") };
 }
 

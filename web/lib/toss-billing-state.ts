@@ -3,7 +3,7 @@ import { assertPersistedTossBillingCustomer } from "@/lib/billing-cohort";
 import { getDb } from "@/lib/db";
 import type { MvpSession } from "@/lib/session";
 import { loadTossBillingRuntimeState } from "@/lib/toss-billing-runtime";
-import { TOSS_SALE_PLAN_CATALOG, classifyTossSubscriptionChange, quoteImmediateTossChange, tossPlan, type TossPlanCode } from "@/lib/toss-subscription";
+import { tossCatalogForSubscription, classifyTossSubscriptionChange, quoteImmediateTossChange, tossPlan, type TossPlanCode } from "@/lib/toss-subscription";
 import { getUsageSnapshot } from "@/lib/usage";
 
 type StateSubscriptionRow = {
@@ -21,8 +21,8 @@ type StateSubscriptionRow = {
   issuerCode: string | null;
 };
 
-export function publicTossCatalog() {
-  return TOSS_SALE_PLAN_CATALOG.map((plan) => ({ ...plan }));
+export function publicTossCatalog(currentPlanCode?: TossPlanCode) {
+  return tossCatalogForSubscription(currentPlanCode).map((plan) => ({ ...plan }));
 }
 
 export async function getTossBillingState(input: {
@@ -48,7 +48,7 @@ export async function getTossBillingState(input: {
     loadTossBillingRuntimeState(db),
   ]);
   const subscription = rows[0] as StateSubscriptionRow | undefined;
-  const catalog = publicTossCatalog();
+  const catalog = publicTossCatalog(subscription?.planCode);
   const paymentRestrictions = {
     hanaCardAvailable: runtime.effective.hanaCard,
   };

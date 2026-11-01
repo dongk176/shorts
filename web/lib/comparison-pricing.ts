@@ -1,13 +1,13 @@
 import type { SiteLocale } from "./i18n/config";
 import { formatPaddlePrice, paddlePlan, paddlePackageTerms, newPaddlePlanCode } from "./paddle/catalog";
-import { tossPlan } from "./toss-subscription";
+import { tossPlan, TOSS_NEW_PRO_PLAN_CODE } from "./toss-subscription";
 
 export function comparisonPricing(locale: SiteLocale, internationalEnabled: boolean) {
   if (locale !== "ko" && !internationalEnabled) return [];
   return (["pro", "starter", "expert"] as const).map((tier) => {
     const title = tier === "pro" ? "이지컷 프로" : tier === "starter" ? "스타터 패키지" : "전문가 패키지";
     if (locale === "ko") {
-      const plan = tossPlan(tier === "pro" ? "toss_easycut_pro_1m" : `toss_${tier}_1m`);
+      const plan = tossPlan(tier === "pro" ? TOSS_NEW_PRO_PLAN_CODE : `toss_${tier}_1m`);
       const priceLines = tier === "pro" ? [`월 ${plan.priceKrw.toLocaleString("ko-KR")}원 · 매월 자동결제`] : paddlePackageTerms.map(months => {
         const pack = tossPlan(`toss_${tier}_${months}m`);
         return `${months}개월 총 ${pack.priceKrw.toLocaleString("ko-KR")}원 (월 환산 ${pack.monthlyEquivalentKrw.toLocaleString("ko-KR")}원)`;

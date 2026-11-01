@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   TOSS_PLAN_CATALOG,
+  TOSS_NEW_PRO_PLAN_CODE,
+  tossCatalogForSubscription,
   TOSS_SALE_PLAN_CATALOG,
   classifyTossSubscriptionChange,
   isTossPlanCode,
@@ -12,7 +14,7 @@ import {
 describe("Toss subscription catalog", () => {
   it("sells only Pro monthly and the exact 3, 6, and 12 month package totals", () => {
     expect(TOSS_SALE_PLAN_CATALOG.map((plan) => [plan.code, plan.priceKrw])).toEqual([
-      ["toss_easycut_pro_1m", 9_900],
+      [TOSS_NEW_PRO_PLAN_CODE, 19_900],
       ["toss_starter_3m", 70_965],
       ["toss_starter_6m", 119_400],
       ["toss_starter_12m", 198_000],
@@ -66,7 +68,7 @@ describe("Toss subscription catalog", () => {
         }
       }
     }
-    expect(counts).toEqual({ unchanged: 11, immediate: 55, scheduled: 55 });
+    expect(counts).toEqual({ unchanged: 12, immediate: 66, scheduled: 66 });
   });
 
   it("charges only the contract-value difference for an immediate change at period start", () => {
@@ -103,4 +105,12 @@ describe("Toss subscription catalog", () => {
     expect(quote.unusedCreditKrw).toBe(29_500);
     expect(quote.chargeAmountKrw).toBe(tossPlan("toss_starter_12m").priceKrw - 29_500);
   });
+});
+
+it("preserves existing Pro renewal identity and price while new purchases use 19,900", () => {
+ expect(tossPlan("toss_easycut_pro_1m").priceKrw).toBe(9900);
+ expect(isTossSalePlanCode("toss_easycut_pro_1m")).toBe(false);
+ expect(tossPlan(TOSS_NEW_PRO_PLAN_CODE)).toMatchObject({priceKrw:19900,monthlyEquivalentKrw:19900,monthlyQuotaSeconds:3600,maxActiveJobs:1});
+ expect(tossCatalogForSubscription("toss_easycut_pro_1m").find(p=>p.tier==='easycut_pro')).toMatchObject({code:'toss_easycut_pro_1m',priceKrw:9900});
+ expect(tossCatalogForSubscription().find(p=>p.tier==='easycut_pro')).toMatchObject({code:TOSS_NEW_PRO_PLAN_CODE,priceKrw:19900});
 });

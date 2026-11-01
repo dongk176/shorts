@@ -1,8 +1,11 @@
+export const TOSS_NEW_PRO_PLAN_CODE = "toss_easycut_pro_1m_20261101" as const;
+
 export const TOSS_CONTRACT_MONTHS = [1, 3, 6, 12] as const;
 export type TossContractMonths = (typeof TOSS_CONTRACT_MONTHS)[number];
 export type TossPlanTier = "easycut_pro" | "starter" | "expert";
 
 export type TossPlanCode =
+  | typeof TOSS_NEW_PRO_PLAN_CODE
   | "toss_easycut_pro_1m"
   | "toss_easycut_pro_6m"
   | "toss_easycut_pro_12m"
@@ -35,6 +38,7 @@ export type TossCatalogPlan = {
  */
 export const TOSS_PLAN_CATALOG: readonly TossCatalogPlan[] = [
   { code: "toss_easycut_pro_1m", tier: "easycut_pro", displayName: "이지컷 프로", contractMonths: 1, monthlyQuotaSeconds: 3_600, maxActiveJobs: 1, priceKrw: 9_900, monthlyEquivalentKrw: 9_900, discountPercent: 0, guidebookIncluded: false },
+  { code: TOSS_NEW_PRO_PLAN_CODE, tier: "easycut_pro", displayName: "이지컷 프로", contractMonths: 1, monthlyQuotaSeconds: 3_600, maxActiveJobs: 1, priceKrw: 19_900, monthlyEquivalentKrw: 19_900, discountPercent: 0, guidebookIncluded: false },
   { code: "toss_easycut_pro_6m", tier: "easycut_pro", displayName: "이지컷 프로", contractMonths: 6, monthlyQuotaSeconds: 3_600, maxActiveJobs: 1, priceKrw: 53_400, monthlyEquivalentKrw: 8_900, discountPercent: 10, guidebookIncluded: false },
   { code: "toss_easycut_pro_12m", tier: "easycut_pro", displayName: "이지컷 프로", contractMonths: 12, monthlyQuotaSeconds: 3_600, maxActiveJobs: 1, priceKrw: 82_800, monthlyEquivalentKrw: 6_900, discountPercent: 30, guidebookIncluded: false },
   { code: "toss_starter_1m", tier: "starter", displayName: "스타터 패키지", contractMonths: 1, monthlyQuotaSeconds: 12_000, maxActiveJobs: 2, priceKrw: 24_900, monthlyEquivalentKrw: 24_900, discountPercent: 0, guidebookIncluded: true },
@@ -48,7 +52,7 @@ export const TOSS_PLAN_CATALOG: readonly TossCatalogPlan[] = [
 ] as const;
 
 export const TOSS_SALE_PLAN_CATALOG = TOSS_PLAN_CATALOG.filter((plan) => (
-  plan.code === "toss_easycut_pro_1m"
+  plan.code === TOSS_NEW_PRO_PLAN_CODE
   || ((plan.tier === "starter" || plan.tier === "expert")
     && (plan.contractMonths === 3 || plan.contractMonths === 6 || plan.contractMonths === 12))
 ));
@@ -112,4 +116,12 @@ export function quoteImmediateTossChange(input: {
     unusedCreditKrw,
     chargeAmountKrw: Math.max(0, target.priceKrw - unusedCreditKrw),
   } as const;
+}
+
+/** Keep the current legacy monthly Pro card at its contracted price. */
+export function tossCatalogForSubscription(currentPlanCode?: TossPlanCode) {
+  return TOSS_SALE_PLAN_CATALOG.map(plan => (
+    currentPlanCode === "toss_easycut_pro_1m" && plan.code === TOSS_NEW_PRO_PLAN_CODE
+      ? tossPlan(currentPlanCode) : plan
+  ));
 }
