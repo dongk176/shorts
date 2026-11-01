@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { downloadableEbookSlugs } from "@/lib/ebook-entitlements";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { createHash } from "node:crypto";
+import { ebookRelativePdfPath } from "@/lib/ebook-catalog";
+import { requireAuthenticatedMvpSession } from "@/lib/session";
+import { getBillingSummary } from "@/lib/billing";
+import { HttpError } from "@/lib/http";
 
 const mocks = vi.hoisted(() => ({
   db: vi.fn(),
@@ -34,8 +41,44 @@ import { GET } from "./route";
 
 describe("ebook download route", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     mocks.db.mockReset();
     mocks.db.mockResolvedValue([{ downloadCount: 1 }]);
+  });
+
+  it("delivers every exact localized PDF and keeps the shared per-book download counter", async () => {
+    for (const slug of downloadableEbookSlugs) {
+      for (const locale of ["en", "ja"] as const) {
+        const response = await GET(new Request(`http://localhost/api/ebooks/${slug}/download?lang=${locale}`), { params: Promise.resolve({ slug }) });
+        expect(response.status).toBe(200);
+        expect(response.headers.get("content-language")).toBe(locale);
+        expect(response.headers.get("cache-control")).toContain("private, no-store");
+        const expected = await readFile(path.join(process.cwd(), "private/ebooks", ebookRelativePdfPath(slug, locale)));
+        const digest = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
+        expect(digest(new Uint8Array(await response.arrayBuffer()))).toBe(digest(expected));
+        const counterValues = mocks.db.mock.calls.at(-1)?.slice(1);
+        expect(counterValues).toContain(slug);
+        expect(counterValues).not.toContain(locale);
+      }
+    }
+  });
+
+  it("rejects invalid language and slug paths before auth or download counts", async () => {
+    for (const [slug, locale] of [["viral-formula", "../../ko"], ["../title-300", "en"], ["viral-formula", "fr"]]) {
+      const response = await GET(new Request(`http://localhost/api/ebooks/test/download?lang=${encodeURIComponent(locale)}`), { params: Promise.resolve({ slug }) });
+      expect(response.status).toBe(400);
+    }
+    expect(requireAuthenticatedMvpSession).not.toHaveBeenCalled();
+    expect(mocks.db).not.toHaveBeenCalled();
+  });
+
+  it("denies translated files to guests and accounts without ebook access without consuming a download", async () => {
+    vi.mocked(requireAuthenticatedMvpSession).mockRejectedValueOnce(new HttpError(401, "Sign in"));
+    const context = { params: Promise.resolve({ slug: "viral-formula" }) };
+    expect((await GET(new Request("http://localhost/api/ebooks/viral-formula/download?lang=ja"), context)).status).toBe(401);
+    vi.mocked(getBillingSummary).mockResolvedValueOnce({ activeProducts: [] } as never);
+    expect((await GET(new Request("http://localhost/api/ebooks/viral-formula/download?lang=en"), context)).status).toBe(403);
+    expect(mocks.db).not.toHaveBeenCalled();
   });
 
   it.each(downloadableEbookSlugs)("returns the original PDF for %s", async (slug) => {

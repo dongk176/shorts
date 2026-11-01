@@ -77,3 +77,7 @@ htmlcov/
 /output/ranking-audio-test.mp4
 
 /supabase/.temp/
+
+# Local ebook renders and translation request cache.
+/tmp/pricing-ebooks/
+/tmp/ebook-translation/

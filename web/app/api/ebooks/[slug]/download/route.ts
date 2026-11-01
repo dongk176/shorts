@@ -6,8 +6,9 @@ import { getDb } from "@/lib/db";
 import {
   assertEbookDownloadAccess,
   downloadableEbookSlugs,
-  type DownloadableEbookSlug,
 } from "@/lib/ebook-entitlements";
+import { ebookDownloadName, ebookRelativePdfPath } from "@/lib/ebook-catalog";
+import { siteLocales } from "@/lib/i18n/config";
 import { claimEbookDownload } from "@/lib/ebook-downloads";
 import { apiError } from "@/lib/http";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
@@ -15,35 +16,30 @@ import { requireAuthenticatedMvpSession } from "@/lib/session";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const paramsSchema = z.object({ slug: z.enum(downloadableEbookSlugs) });
-const downloadNames = {
-  "monetization-7": "Easy_Cut_쇼츠_수익화_7가지_방법.pdf",
-  "multi-platform": "Easy_Cut_유튜브_릴스_틱톡_동시_공략법.pdf",
-  "copyright-survival": "Easy_Cut_쇼츠_저작권_생존_가이드.pdf",
-  "monetization-playbook": "Easy_Cut_숏폼_수익화_실전_가이드.pdf",
-  "viral-formula": "Easy_Cut_조회수_터지는_쇼츠의_공식.pdf",
-  "low-views-diagnosis": "Easy_Cut_조회수가_안_나오는_쇼츠_진단서.pdf",
-  "title-300": "Easy_Cut_클릭을_부르는_쇼츠_제목_300선.pdf",
-} satisfies Record<DownloadableEbookSlug, string>;
+const paramsSchema = z.object({ slug: z.enum(downloadableEbookSlugs), locale: z.enum(siteLocales) });
 
 type Context = { params: Promise<{ slug: string }> };
 
-export async function GET(_request: Request, context: Context) {
+export async function GET(request: Request, context: Context) {
   try {
-    const { slug } = paramsSchema.parse(await context.params);
+    const { slug, locale } = paramsSchema.parse({
+      ...(await context.params),
+      locale: new URL(request.url).searchParams.get("lang") ?? "ko",
+    });
     const session = await requireAuthenticatedMvpSession();
     const db = getDb();
     const billing = await getBillingSummary(db, session.userId);
     assertEbookDownloadAccess(billing);
-    const file = await readFile(path.join(process.cwd(), "private", "ebooks", `${slug}.pdf`));
+    const file = await readFile(path.join(process.cwd(), "private", "ebooks", ebookRelativePdfPath(slug, locale)));
     const download = await claimEbookDownload(db, session.userId, slug);
-    const encodedName = encodeURIComponent(downloadNames[slug]);
+    const encodedName = encodeURIComponent(ebookDownloadName(slug, locale));
     return new Response(new Uint8Array(file), {
       headers: {
         "Cache-Control": "private, no-store, max-age=0",
         "Content-Disposition": `attachment; filename="easy-cut-shortform-guide.pdf"; filename*=UTF-8''${encodedName}`,
         "Content-Length": String(file.byteLength),
         "Content-Type": "application/pdf",
+        "Content-Language": locale,
         "X-Content-Type-Options": "nosniff",
         "X-Ebook-Downloads-Limit": String(download.limit),
         "X-Ebook-Downloads-Remaining": String(download.remaining),

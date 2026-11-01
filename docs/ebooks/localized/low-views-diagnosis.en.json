@@ -1,0 +1,187 @@
+{
+  "slug": "low-views-diagnosis",
+  "locale": "en",
+  "reviewed": "2026-11-01",
+  "pages": [
+    {
+      "number": 1,
+      "title": "Shorts Diagnosis Cover",
+      "body": "From exposure to conversion, identify weak points and transform your next video with a single targeted fix."
+    },
+    {
+      "number": 2,
+      "title": "Read This First",
+      "body": "Low views are a symptom, not the root cause.\n\nIf your views are low and you overhaul your entire editing style, you may miss the real reason and lose any lessons learned.\n\n1. Start with clear definitions.\nEach platform counts views, reach, and active views differently.\n\n2. Compare like with like.\nCompare videos from the same channel, with similar length, format, and time frame.\n\n3. Focus on patterns, not just numbers.\nInstead of reacting to a single outlier, look for recurring weak points across your last 10 videos.\n\n4. Change one thing at a time.\nOnly adjust one element—topic, opening shot, structure, or reward—so you can track what caused any change.\n\nThe sections, timeframes, and scores in this book are practical frameworks for creators. They are not platform guarantees or absolute standards."
+    },
+    {
+      "number": 3,
+      "title": "Contents",
+      "body": "Diagnosis starts from the beginning\n\n00 Diagnosis Principles\nBreaking down a single view count into five steps\n04-07\n\n01 Low Exposure\nFeed, search, recommendation eligibility, topic demand\n08-13\n\n02 No Pause When Shown\nOpening shot, promise, Hook A/B/C\n14-19\n\n03 Drop-off After Start\nRetention curve, scene structure, readability\n20-25\n\n04 No Spread Even With Completion\nReward, sharing, comments, CTA\n26-29\n\n05 Prescribe and Measure Again\nSingle-variable experiments, 14-day improvement plan\n30-36\n"
+    },
+    {
+      "number": 4,
+      "title": "Five Key Symptoms",
+      "body": "Divide possible causes into five steps:\n\n1. Exposure\nBarely appears in feeds\nTopic, eligibility, source\n\n2. Pause\nShown but instantly skipped\nOpening shot, hook, promise\n\n3. Retention\nViewers drop off after the start\nStructure, rhythm, clarity\n\n4. Reaction\nPeople finish but don’t share\nReward, sharing, comments\n\n5. Conversion\nThere’s engagement, but no subscriptions\nChannel promise, CTA\n\nIf a step is blocked, you won’t have enough data to interpret metrics from later steps."
+    },
+    {
+      "number": 5,
+      "title": "The Diagnosis Map",
+      "body": "Look for bottlenecks before fixating on view counts.\n\nFind the weakest metric, review the scenes where it drops, and change only one variable in your next video.\n\nSIGNAL\nWhich metric is underperforming?\n\nSCENE\nWhere in the video does the drop-off occur?\n\nTEST\nWhat single element will you change in the next upload?\n\nThe goal of diagnosis isn’t to blame past videos, but to narrow down your options for the next one."
+    },
+    {
+      "number": 6,
+      "title": "Decision Tree for Diagnosis",
+      "body": "Start with the first question where you fail, not where you succeed:\n\n1. Did your video appear in enough feeds?\nNo → Diagnose exposure\n\n2. Did people who saw it choose to watch?\nNo → Diagnose pause\n\n3. Did viewers stay until the promised reward?\nNo → Diagnose retention\n\n4. Did they have a reason to share or save it?\nNo → Diagnose reaction\n\n5. Did they have a reason to revisit your channel?\nNo → Diagnose conversion\n\nBegin your fix at the first 'No' you encounter, not the first 'Yes.'"
+    },
+    {
+      "number": 7,
+      "title": "How to Use This Book",
+      "body": "You only need to apply one page per video.\n\n1. Set Your Baseline\nGroup your latest 10 videos by similar format and length, then write down the median value.\n\n2. Find the First Drop-Off Point\nReview in order: exposure → drop-off → retention → engagement → conversion.\n\n3. Check by Scene\nRewatch the sentence, screen, or transition just before the graph dips.\n\n4. Choose One Solution\nPick only one to try: first frame, hook sentence, middle structure, or reward.\n\n5. Record and Repeat\nSummarize the initial, 24-hour, and 7-day performance and what you learned in one line.\n\nIf your diagnosis shows two possible causes, experiment starting with the earlier stage that has more impact."
+    },
+    {
+      "number": 8,
+      "title": "Part 01: Low Exposure",
+      "body": "Start by checking if your video had a chance to appear in the feed.\n\nFirst question of this part:\nDid your video have an opportunity to show up in the feed?\n\nDiagnosis order: Check signals → Check scenes → Apply one variable solution."
+    },
+    {
+      "number": 9,
+      "title": "Part 01: Baseline",
+      "body": "Turn 'low' into numbers.\n\nDon’t compare to a single viral hit. Instead, compare to the median of your last 10 videos.\n\n1. Comparison Group\nSame channel, similar length, same format.\n\n2. Observation Window\nInitial signals, 24 hours, and 7-day totals.\n\n3. Representative Value\nMedian of your last 10 videos + range of your top 3 videos.\n\n4. Diagnosis Statement\nInstead of 'low views,' say 'feed exposure is half the baseline.'\n\nThe median is less affected by one or two big successes or failures, making it a good operating standard for small channels."
+    },
+    {
+      "number": 10,
+      "title": "Part 01: Traffic Source",
+      "body": "Distinguish between lack of exposure and traffic structure issues.\n\nShorts Feed\nCore area for recommendation testing.\nShown in feed or chosen for viewing.\n\nSearch\nLong-term value for question/problem-solving topics.\nMatch keywords and titles.\n\nHome/Recommendations\nConnects to previous viewing history and topic.\nRepeat topics or series.\n\nChannel/Subscribers\nReturn visits from people who already know you.\nSubscriber response and channel consistency.\n\nExternal\nShares, embeds, other social media.\n\nViewing Quality by Source\nIf feed exposure is low, before changing just the first frame, check your topic, eligibility for recommendations, and repeatable format."
+    },
+    {
+      "number": 11,
+      "title": "Part 01: Recommendation Eligibility",
+      "body": "First, check if your content is eligible for recommendations.\n\n- Account and post are public, with age and region settings matching your intent.\n- No warning about account status or recommendation eligibility on the platform.\n- No copyright, community, or recommendation guideline violation notices.\n- Doesn’t appear to be a watermark, low-quality reupload, or repeated duplicate.\n- Title, hashtags, and description match the actual video content.\n- No excessive sensitive or misleading scenes on the first screen.\n- No technical issues with upload processing, music restrictions, or visibility settings.\n\nBeing eligible doesn’t guarantee recommendations, but eligibility restrictions are the top priority when diagnosing exposure issues."
+    },
+    {
+      "number": 12,
+      "title": "Part 01: Topic Demand Score",
+      "body": "Score your topic for watch-worthiness before editing.\n\n1/5 Clarity of Problem\nOne sentence describing who faces what problem.\n\n2/5 Timeliness\nA topic people are currently asking or searching for repeatedly.\n\n3/5 Evidence\nAble to show results, screens, numbers, or examples.\n\n4/5 Difference\nA new perspective, verification, or selection criteria compared to existing answers.\n\n5/5 Expandability\nCan be continued into at least three follow-up videos.\n\nThe score isn’t a pass/fail line, but a tool to pick the top 3 out of 10 topic candidates to make first."
+    },
+    {
+      "number": 13,
+      "title": "Exposure Remedies by Symptom",
+      "body": "Choose your initial remedy based on the specific symptom.\n\nSymptom: Very low feed exposure\nPossible causes: Eligibility, topic, or repetitive format issues\nFirst remedy: Create a 3-part series with the same format\n\nSymptom: Only getting search traffic\nPossible causes: Weak tension or opening visuals for recommendations\nFirst remedy: Start with results or contrasting scenes\n\nSymptom: Only subscribers are watching\nPossible causes: Lack of context for non-subscribers\nFirst remedy: Start with the problem instead of specific names\n\nSymptom: Mostly external traffic\nPossible causes: Mismatch with internal platform demand\nFirst remedy: Check internal search terms and feed response\n\nPrescription log: For the next 3 videos, keep ___ / change ___ / success metric ___\n"
+    },
+    {
+      "number": 14,
+      "title": "Check If Viewers Stop Early",
+      "body": "Make sure the topic and reason to watch are clear in the very first moments.\n\nFirst question for this section:\nDid the opening instantly communicate the topic and why to watch?\n\nDiagnosis steps: Check the signals → Review the opening scene → Apply one variable remedy\n"
+    },
+    {
+      "number": 15,
+      "title": "Diagnosing Missed First Impressions",
+      "body": "If your video appears in the feed but isn't watched, review the opening moments.\n\n\"Shown in feed\" means you got the opportunity; \"chosen to watch\" is the viewer's first judgment.\n\n1. Topic isn't clear\nViewers can't tell what the video is about from the first frame.\n\n2. Outcome isn't clear\nIt's unclear what change, answer, or feeling viewers will get by watching to the end.\n\n3. Target audience isn't clear\nThe first sentence doesn't say who the information is for.\n\n4. Trust isn't established\nExaggeration, vague statements, or clickbait appear before any evidence.\n\nYouTube Studio's 'How many chose to view' shows both the view rate and the skip rate.\n"
+    },
+    {
+      "number": 16,
+      "title": "Aligning Title, Visuals, and Opening",
+      "body": "Your title, first visual, and opening line must all make the same promise.\n\nTitle\nWhat problem are you solving, and for whom?\nExample: Why beginner Shorts creators get stuck at zero views\n\nFirst visual\nDo you show the result, contrast, or action first?\nExample: The sharp drop point on the retention curve\n\nFirst caption\nAre you starting to prove your point, not just copying the title?\nExample: The real issue isn't views, it's right here\n\nFirst spoken line\nDo you start with conflict, conclusion, or an experiment—without greetings?\nExample: I compared my last 10 uploads\n\nCapture your first frame and place it next to your title. If they seem like different promises, redesign them for consistency.\n"
+    },
+    {
+      "number": 17,
+      "title": "Six-Point Hook Checklist",
+      "body": "Check your first two seconds with these six questions:\n\n- Can you tell the topic just by looking at the first frame?\n- Does the first sentence include a result, problem, or difference?\n- Can viewers instantly judge if it's relevant to them?\n- Do visuals and captions complement each other without repeating information?\n- Does the proof start immediately, without greetings, logos, or background explanations?\n- Do you spark curiosity without endlessly delaying the conclusion?\n\nIf you score four or fewer, before adding effects, remake your first visual, sentence, or action.\n"
+    },
+    {
+      "number": 18,
+      "title": "Turning Abstract Hooks Into Clear Promises",
+      "body": "Change vague statements into testable promises.\n\nBEFORE:\nToday I'll tell you about Shorts\nAFTER:\nIf your Shorts have low views, they're getting stuck at one of these five points\nRemedy: Broad topic → Diagnostic promise\n\nBEFORE:\nWhy is the algorithm like this?\nAFTER:\nLet's separate feed exposure from viewer choice\nRemedy: Vague question → Measurable element\n\nBEFORE:\nYou'll be amazed if you watch to the end\nAFTER:\nI'll show you the 7-second scene that caused the sharp drop at the end\nRemedy: Exaggeration → Specific scene\n\nA strong hook isn't about making big claims—it's about quickly showing what viewers will actually see or learn."
+    },
+    {
+      "number": 19,
+      "title": "A/B/C Hook Testing",
+      "body": "Keep the main content fixed and create three types of hooks only.\n\nA · Result Type\nThe number you should check before views is this one.\nFirst frame ________  |  First action ________\n\nB · Diagnostic Type\nWhere did your Shorts get stuck among these five spots?\nFirst frame ________  |  First action ________\n\nC · Evidence Type\nI overlaid the retention curves of the last 10 videos on one screen.\nFirst frame ________  |  First action ________\n\nKeep the topic, main content, length, and reward the same.\nMatch posting conditions and comparison periods as closely as possible.\nTest the winning sentence structure again with the next topic."
+    },
+    {
+      "number": 20,
+      "title": "Diagnosing Early Drop-Offs",
+      "body": "Find the scene just before the retention curve drops and prescribe a structural fix.\n\nHOLD\nFirst question of this section:\nFind the scene just before the curve dips and prescribe a structural solution.\n\nDiagnosis order: Check the signal → Check the scene → Adjust one variable."
+    },
+    {
+      "number": 21,
+      "title": "Reading the Retention Curve",
+      "body": "Check the scene just before the curve drops, not just the shape.\n\nEarly sharp drop:\n- Delayed promise or mismatch with first frame\n\nMid-video rebound:\n- Possible rewinding, sharing, or lack of understanding\n\nDrop in specific section:\n- Repetitive explanation, context switch, or readability issues\n\nYouTube retention data usually takes 1-2 days to process. Don’t judge an empty graph right after upload as a failure."
+    },
+    {
+      "number": 22,
+      "title": "Drop-Off Patterns and Fixes",
+      "body": "Turn curve shapes into scene-based questions.\n\nVertical drop:\n- Did a new context, ad, greeting, or repetition appear at that moment?\nPrescription: Delete or move up the scene.\n\nStepwise drop:\n- Does the topic change at every transition without a clear promise?\nPrescription: Add a transition sentence.\n\nLong, gentle decline:\n- Is the same explanation continuing without new information?\nPrescription: Compress beats or swap examples.\n\nLate sharp drop:\n- Did viewers already know the conclusion, or was the CTA too long?\nPrescription: End right after the conclusion.\n\nNot every spike is a good sign. Check the scene to see if viewers rewatched because they liked it, or rewound because they didn’t understand."
+    },
+    {
+      "number": 23,
+      "title": "15-45 Second Scene Map",
+      "body": "Each section should set up the reason for the next scene.\n\n0-2 seconds\nPromise\nProblem or result\n\n2-7 seconds\nEvidence\nActual footage\n\n7-20 seconds\nDevelopment\nMethod or comparison\n\n20-35 seconds\nTransition\nNew information\n\n35-45 seconds\nReward\nConclusion or action\n\nDelete:\nCan the next scene be understood if this one is removed?\n\nTransition:\nIs there new information, visuals, or progress every 5-8 seconds?\n\nReward:\nDoes the final scene answer the initial promise?\n\nIf shortening the length also reduces understanding, it’s omission, not compression."
+    },
+    {
+      "number": 24,
+      "title": "Clarity Prescriptions",
+      "body": "Quick understanding is more important than quick cuts.\n\n1. Subtitles\nOne meaning per screen, highlight keywords, keep within safe area\n\n2. Visuals\nShow the subject, process, or result slightly before the audio\n\n3. Voice\nDon’t cut off sentence endings; pause before and after key words\n\n4. Effects\nUse only to highlight new information, transitions, or evidence\n\n5. Background Music\nDon’t drown out the voice; only support emotional shifts\n\nIf you can understand the topic from a muted screenshot, and follow the flow with your eyes closed, visuals and audio are complementing, not depending on, each other."
+    },
+    {
+      "number": 25,
+      "title": "Pinpointing Retention Drop-Offs",
+      "body": "Look at the 7 seconds just before your retention curve drops sharply. Note any changes in script, visuals, captions, or transitions—these are your candidates for removal or revision in your next video.\n\nBEFORE\n3 seconds before drop-off\n\nPOINT\nThe exact moment of decline\n\nAFTER\nReward for those who stayed\n\nMore important than a single sharp drop are recurring patterns across multiple videos, such as scenes right after greetings, before examples, or at the start of a call to action (CTA). These repeated moments are key signals to focus on."
+    },
+    {
+      "number": 26,
+      "title": "Does Completion Lead to Sharing?",
+      "body": "Check if viewers who finish your video are motivated to share, save, or discuss it.\n\nRESPONSE\nFirst question of this section:\nDoes the value at the end of your video lead to sharing, saving, or conversation?\n\nDiagnosis steps: Identify signals → Review scenes → Adjust one variable"
+    },
+    {
+      "number": 27,
+      "title": "What Value Remains After Watching?",
+      "body": "For a completed view to lead to sharing, it must leave behind value:\n\n1. Practical Value\nA checklist, sequence, or phrase viewers want to save and reuse.\n\n2. Shareable Value\nInformation that instantly makes you think of someone to send it to.\n\n3. Judgment Value\nCriteria for comparison or warnings about what to avoid.\n\n4. Emotional Value\nMoments that spark empathy, surprise, relief, or laughter.\n\nA video is more likely to spread when viewers think not just 'That was useful,' but 'Who should I send this to, and why?'"
+    },
+    {
+      "number": 28,
+      "title": "Read the Reasons Behind Engagement",
+      "body": "Focus on why viewers engage, not just how many likes you get.\n\nShare\nWhy someone would send this to a specific person\nDesign elements: Target audience, problem, one-sentence summary\n\nSave\nWhy someone would want to revisit or reuse this\nDesign elements: Sequence, tools, templates\n\nComment\nWhy someone would add their experience, judgment, or question\nDesign elements: Multiple-choice questions, requests for examples\n\nRewatch\nWhy someone would watch again or try to follow along\nDesign elements: Details, actions, rapid information\n\nIf you see lots of comments but they're mostly asking for clarification, that's a sign of unclear content—not viral potential."
+    },
+    {
+      "number": 29,
+      "title": "Matching CTAs to Viewer Response",
+      "body": "If you get engagement but not subscriptions, review your next-step promises:\n\nSubscribe\nMake a specific promise about the next related video.\nExample: Next up, we'll compare three hooks in action.\n\nSave\nAsk for a save only at moments viewers will want to revisit.\nExample: Double-check these six things before uploading.\n\nComment\nAsk a question that can be answered in one sentence.\nExample: Which is your weakest area—feed, hook, or retention?\n\nProfile\nClarify what viewers gain and where to find it.\nExample: Get the full diagnostic chart from my profile link.\n\nYour CTA should be a natural next step after delivering value. Only ask for one action per video."
+    },
+    {
+      "number": 30,
+      "title": "Test, Adjust, and Measure Again",
+      "body": "Change one variable, then remeasure using the same baseline.\n\nTEST & LEARN\nFirst question of this section:\nChange one variable, then remeasure using the same baseline.\n\nDiagnosis steps: Identify signals → Review scenes → Adjust one variable"
+    },
+    {
+      "number": 31,
+      "title": "One-Variable Experiment Method",
+      "body": "Apply only one change at a time.\n\nThe more things you change at once, the harder it is to know what actually caused the improvement.\n\n1. Fixed Elements\nTopic · Main content · Length · Reward · Posting conditions\n\n2. Variable\nChange only one: either the first frame, the first sentence, or one structural element in the middle.\n\n3. Evaluation\nPick one metric to judge: Feed impressions · Chosen views · Retention · Shares\n\n4. Timeframe\nCompare signals over the same window: Initial signal · 24 hours · 7-day trend\n\n5. Learning\nInstead of just noting if it got better or worse, write down one sentence you can reuse in your next video.\n"
+    },
+    {
+      "number": 32,
+      "title": "Platform Metric Definitions",
+      "body": "Do not compare raw view counts 1:1 across platforms.\n\nYouTube\nViews: Counts when playback or replay starts.\nRelated metrics: Engaged views, Shown in feed, Chosen views\n\nInstagram\nViews: Counts when played or displayed.\nRelated metrics: Accounts reached, Interactions\n\nTikTok\nViews: Check the in-app definition.\nRelated metrics: Watch time, Completion, Source, Search response\n\nAs of March 31, 2025, YouTube Shorts counts a view as any playback or replay start, with no minimum watch time. The previous method is now labeled as Engaged views.\n\nOn Instagram, 'Accounts reached' is the number of unique accounts that have seen your content at least once, while 'Views' can include multiple plays by the same account.\n"
+    },
+    {
+      "number": 33,
+      "title": "Easy Cut Diagnosis Loop",
+      "body": "Find videos that are taking off and keep improving weak spots in a loop.\n\nConnect these steps in a cycle:\n- Discover trending videos in real time\n- Analyze highlights using AI\n- Auto-create Shorts\n- Record performance\n\nSteps:\nDiscovery: Topics that are starting to get traction\nAnalysis: Highlights and structure\nProduction: First scene, captions, cuts\nLearning: Weak metrics, next steps\n\nFind what works, and turn it into a Short right away."
+    },
+    {
+      "number": 34,
+      "title": "14-Day Diagnosis Plan",
+      "body": "3 days of observation, 7 days for changes, 4 days for review\n\nD1-3 Baseline\nGroup your last 10 videos · Find the median · Identify the first failure point\n\nD4-5 Identify Causes\nCheck the scene before the graph drops · Review comments · Check traffic sources\n\nD6-7 Design Changes\nSet fixed variables · Choose one variable to change · Pick one evaluation metric\n\nD8-11 Experiment\nPost 3 videos with the same format, changing only one variable\n\nD12-14 Review & Repeat\nCheck 24-hour and 7-day trends · Decide the next experiment\n\nThe goal is not to guarantee a viral video in 14 days, but to find one change you can repeat in your next 10 videos."
+    },
+    {
+      "number": 35,
+      "title": "Final 15-Point Diagnosis Checklist",
+      "body": "15 questions to review after upload\n\nExposure\n01  Feed impressions are similar to baseline\n02  No issues with recommendation eligibility or public settings\n03  There is evidence of demand for the topic\n\nStopping Points\n04  The first frame shows the topic and result\n05  Title and first sentence make the same promise\n06  Chosen views are similar to baseline\n\nRetention\n07  Marked the scene just before a sharp drop\n08  Checked for repetition, context switches, readability\n09  The ending answers the initial promise\n\nResponse\n10  Clear reasons for sharing or saving\n11  Positive signals in comments\n12  Identified why certain scenes are rewatched\n\nExperiment\n13  Only one variable was changed\n14  Evaluation metric and timeframe were set\n15  Wrote one sentence of learning for the next video\n\nThe first 'No' you find is your next area to fix.\nChange only one variable, and use the same checklist to compare again."
+    },
+    {
+      "number": 36,
+      "title": "Official Sources and References",
+      "body": "Official References\n\nMetric names and counting methods can change, so always check the latest information before analyzing.\n\nYouTube Shorts Getting Started & View Counting\nhttps://support.google.com/youtube/answer/10059070?hl=en\n\nYouTube Shorts Content Analysis\nhttps://support.google.com/youtube/answer/12942217?hl=en\n\nYouTube Key Moments in Audience Retention\nhttps://support.google.com/youtube/answer/9314415?hl=en\n\nInstagram Insights\nhttps://www.facebook.com/help/instagram/788388387972460\n\nInstagram Recommendation Guidelines\nhttps://www.facebook.com/help/instagram/653964212890722\n\nTikTok Creator Search Insights\nhttps://support.tiktok.com/en/using-tiktok/growing-your-audience/creator-search-insights\n\nThis book is educational material for creators and does not guarantee platform performance.\n\nUS legal sources:\n- FTC Disclosures: https://www.ftc.gov/business-guidance/resources/disclosures-101-social-media-influencers\n- US Copyright Fair Use: https://www.copyright.gov/fair-use/more-info.html\n- Amazon Associates: https://affiliate-program.amazon.com/\n\nReview date: 2026-11-01\n"
+    }
+  ]
+}

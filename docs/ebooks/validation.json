@@ -1,0 +1,114 @@
+[
+  {
+    "slug": "copyright-survival",
+    "locale": "en",
+    "pages": 36,
+    "bytes": 300481,
+    "bodySizeMin": 9,
+    "textChars": 22570
+  },
+  {
+    "slug": "copyright-survival",
+    "locale": "ja",
+    "pages": 36,
+    "bytes": 384193,
+    "bodySizeMin": 9,
+    "textChars": 10342
+  },
+  {
+    "slug": "low-views-diagnosis",
+    "locale": "en",
+    "pages": 36,
+    "bytes": 301355,
+    "bodySizeMin": 9,
+    "textChars": 22669
+  },
+  {
+    "slug": "low-views-diagnosis",
+    "locale": "ja",
+    "pages": 36,
+    "bytes": 385718,
+    "bodySizeMin": 9,
+    "textChars": 10051
+  },
+  {
+    "slug": "monetization-7",
+    "locale": "en",
+    "pages": 36,
+    "bytes": 305210,
+    "bodySizeMin": 9,
+    "textChars": 28914
+  },
+  {
+    "slug": "monetization-7",
+    "locale": "ja",
+    "pages": 36,
+    "bytes": 404414,
+    "bodySizeMin": 9.0,
+    "textChars": 12966
+  },
+  {
+    "slug": "monetization-playbook",
+    "locale": "en",
+    "pages": 20,
+    "bytes": 283176,
+    "bodySizeMin": 9,
+    "textChars": 15685
+  },
+  {
+    "slug": "monetization-playbook",
+    "locale": "ja",
+    "pages": 20,
+    "bytes": 357932,
+    "bodySizeMin": 9,
+    "textChars": 7772
+  },
+  {
+    "slug": "multi-platform",
+    "locale": "en",
+    "pages": 36,
+    "bytes": 301776,
+    "bodySizeMin": 9,
+    "textChars": 22922
+  },
+  {
+    "slug": "multi-platform",
+    "locale": "ja",
+    "pages": 36,
+    "bytes": 384644,
+    "bodySizeMin": 9,
+    "textChars": 10804
+  },
+  {
+    "slug": "title-300",
+    "locale": "en",
+    "pages": 36,
+    "bytes": 304288,
+    "bodySizeMin": 9.5,
+    "textChars": 28643
+  },
+  {
+    "slug": "title-300",
+    "locale": "ja",
+    "pages": 36,
+    "bytes": 380982,
+    "bodySizeMin": 9.5,
+    "textChars": 13821
+  },
+  {
+    "slug": "viral-formula",
+    "locale": "en",
+    "pages": 36,
+    "bytes": 300684,
+    "bodySizeMin": 9,
+    "textChars": 20401
+  },
+  {
+    "slug": "viral-formula",
+    "locale": "ja",
+    "pages": 36,
+    "bytes": 375629,
+    "bodySizeMin": 9,
+    "textChars": 8705
+  }
+]

@@ -1,0 +1,50 @@
+[
+  {
+    "locale": "ko",
+    "width": 1440,
+    "cards": 7,
+    "previews": 21,
+    "errors": [],
+    "overflow": false
+  },
+  {
+    "locale": "ko",
+    "width": 390,
+    "cards": 7,
+    "previews": 21,
+    "errors": [],
+    "overflow": false
+  },
+  {
+    "locale": "en",
+    "width": 1440,
+    "cards": 7,
+    "previews": 21,
+    "errors": [],
+    "overflow": false
+  },
+  {
+    "locale": "en",
+    "width": 390,
+    "cards": 7,
+    "previews": 21,
+    "errors": [],
+    "overflow": false
+  },
+  {
+    "locale": "ja",
+    "width": 1440,
+    "cards": 7,
+    "previews": 21,
+    "errors": [],
+    "overflow": false
+  },
+  {
+    "locale": "ja",
+    "width": 390,
+    "cards": 7,
+    "previews": 21,
+    "errors": [],
+    "overflow": false
+  }
+]

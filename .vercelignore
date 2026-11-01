@@ -35,3 +35,5 @@ web/public/showcase-examples/curated-pilot-v1/**
 # Editorial source and duplicate exports are not runtime assets.
 output/**
 docs/marketing/**
+docs/ebooks/**
+tmp/**

@@ -10,14 +10,7 @@ import {
   type PaymentMessageTone,
 } from "@/components/payment-message-overlay";
 import { SHOW_MONETIZATION_CONTENT } from "@/lib/content-visibility";
-
-type Ebook = {
-  slug: string;
-  title: string;
-  pageCount: number;
-  pageHeight: number;
-  monetizationRelated?: boolean;
-};
+import { pricingEbooks, ebookPreviewSrc, ebookPreviewHeight, ebookDownloadName, type PricingEbook as Ebook } from "@/lib/ebook-catalog";
 
 type DownloadMessage = {
   message: string;
@@ -26,26 +19,11 @@ type DownloadMessage = {
   tone: PaymentMessageTone;
 };
 
-const ebooks = [
-  { slug: "monetization-7", title: "쇼츠 수익화 7가지 방법", pageCount: 36, pageHeight: 2829, monetizationRelated: true },
-  { slug: "multi-platform", title: "유튜브·릴스·틱톡 동시 공략법", pageCount: 36, pageHeight: 2829 },
-  { slug: "copyright-survival", title: "쇼츠 저작권 생존 가이드", pageCount: 36, pageHeight: 2829 },
-  { slug: "monetization-playbook", title: "숏폼 수익화 실전 가이드", pageCount: 20, pageHeight: 2589, monetizationRelated: true },
-  { slug: "viral-formula", title: "조회수 터지는 쇼츠의 공식", pageCount: 36, pageHeight: 2829 },
-  { slug: "low-views-diagnosis", title: "조회수가 안 나오는 쇼츠 진단서", pageCount: 36, pageHeight: 2829 },
-  { slug: "title-300", title: "클릭을 부르는 쇼츠 제목 300선", pageCount: 36, pageHeight: 2829 },
-] satisfies readonly Ebook[];
-
 const visibleEbooks = SHOW_MONETIZATION_CONTENT
-  ? ebooks
-  : ebooks.filter((book) => !book.monetizationRelated);
+  ? pricingEbooks
+  : pricingEbooks.filter((book) => !book.monetizationRelated);
 
 const previewPages = [1, 2, 3] as const;
-
-function pageImage(slug: string, page: number) {
-  const qualitySuffix = page <= 3 ? "-hq" : "";
-  return `/ebook-previews/${slug}/page-${String(page).padStart(2, "0")}${qualitySuffix}.jpg`;
-}
 
 function downloadName(contentDisposition: string | null, fallback: string) {
   const encodedName = contentDisposition?.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
@@ -74,7 +52,7 @@ export function EbookPreviewRail({
   description?: string;
 }) {
   const { locale, t } = useI18n();
-  const bookTitle = (book: Ebook) => translateLegacyText(book.title, locale);
+  const bookTitle = (book: Ebook) => book.titles[locale];
   const [activeBook, setActiveBook] = useState<Ebook | null>(null);
   const [downloadingSlug, setDownloadingSlug] = useState<string | null>(null);
   const [downloadMessage, setDownloadMessage] = useState<DownloadMessage | null>(null);
@@ -140,7 +118,7 @@ export function EbookPreviewRail({
 
     try {
       const response = await fetch(
-        `/api/ebooks/${encodeURIComponent(book.slug)}/download`,
+        `/api/ebooks/${encodeURIComponent(book.slug)}/download?lang=${locale}`,
         { cache: "no-store" },
       );
       if (!response.ok) {
@@ -152,7 +130,7 @@ export function EbookPreviewRail({
       anchor.href = objectUrl;
       anchor.download = downloadName(
         response.headers.get("content-disposition"),
-        `Easy_Cut_${book.title}.pdf`,
+        ebookDownloadName(book.slug, locale),
       );
       document.body.appendChild(anchor);
       anchor.click();
@@ -235,7 +213,7 @@ export function EbookPreviewRail({
               </span>
               <span className="ebook-card-cover">
                 <Image
-                  src={pageImage(book.slug, 1)}
+                  src={ebookPreviewSrc(book.slug, 1, locale)}
                   alt={t("ebook.cover", { title: bookTitle(book) })}
                   fill
                   sizes="(max-width: 520px) 168px, 206px"
@@ -278,10 +256,10 @@ export function EbookPreviewRail({
                       <div className="ebook-preview-page-meta"><strong>{t("ebook.previewPage", { page })}</strong></div>
                       <div className="ebook-preview-page-image">
                         <Image
-                          src={pageImage(activeBook.slug, page)}
+                          src={ebookPreviewSrc(activeBook.slug, page, locale)}
                           alt={t("ebook.page", { title: bookTitle(activeBook), page })}
                           width={2000}
-                          height={activeBook.pageHeight}
+                          height={ebookPreviewHeight(activeBook, locale)}
                           sizes="(max-width: 760px) calc(100vw - 32px), 720px"
                           quality={92}
                         />
@@ -295,10 +273,10 @@ export function EbookPreviewRail({
                   aria-label={t("ebook.locked")}
                 >
                   <Image
-                    src={pageImage(activeBook.slug, 4)}
+                    src={ebookPreviewSrc(activeBook.slug, 4, locale)}
                     alt=""
                     width={2000}
-                    height={activeBook.pageHeight}
+                    height={ebookPreviewHeight(activeBook, locale)}
                     sizes="(max-width: 760px) calc(100vw - 32px), 720px"
                   />
                   <div className="ebook-preview-lock-copy">
