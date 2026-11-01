@@ -192,9 +192,20 @@ export async function cancelPayPalCheckout(userId:string,checkoutId:string,db=ge
 }
 export async function reconcilePayPal(db=getDb()) {
   if(!paypalEnabled())return {checked:0,failed:0};
+  const started=Date.now();
   const rows=await db`select c.provider_subscription_id as paypal_id from shorts_mvp.paypal_checkouts c left join shorts_mvp.paypal_subscriptions s on s.paypal_id=c.provider_subscription_id
  where c.environment=${paypalEnvironment()} and c.provider_subscription_id is not null and (s.paypal_id is null or s.provider_status not in ('CANCELLED','EXPIRED')) order by s.last_checked_at asc nulls first limit 10`;
-  let failed=0;
-  for(const r of rows){try{await syncPayPalSubscription(r.paypalId,db);}catch{failed++;}}
-  return {checked:rows.length,failed};
+  let checked=0,failed=0;
+  // Two independent lookups at a time; never leave unawaited work on route exit.
+  for(let i=0;i<rows.length;i+=2) {
+    if(Date.now()-started>180_000)break;
+    await Promise.all(rows.slice(i,i+2).map(async r=>{
+      checked++;
+      try {await syncPayPalSubscription(r.paypalId,db);}
+      catch {failed++;console.error("paypal_reconciliation_item_failed",{environment:paypalEnvironment(),batchIndex:i});}
+    }));
+  }
+  const result={checked,failed,deferred:rows.length-checked,durationMs:Date.now()-started};
+  console.info("paypal_reconciliation_completed",result);
+  return result;
 }

@@ -6,7 +6,7 @@ vi.mock('server-only',()=>({}));
 const planId='P-1234567890123456789012';
 vi.mock('./api',()=>({paypalRequest:vi.fn(),paypalEnabled:()=>true,paypalEnvironment:()=> 'sandbox',paypalPlanId:()=> 'P-1234567890123456789012'}));
 import { paypalRequest } from './api';
-import { preparePayPalCheckout,syncPayPalSubscription,validatePayPalPayment,validatePayPalPlan } from './service';
+import { preparePayPalCheckout,syncPayPalSubscription,validatePayPalPayment,validatePayPalPlan,reconcilePayPal } from './service';
 import { paypalPlan } from './catalog';
 import { processPayPalEvent } from './events';
 import { hasLegacyPaymentHistory } from './eligibility';
@@ -179,4 +179,21 @@ it('does not replace an approval that races with selecting a different plan',asy
  await expect(preparePayPalCheckout(user,'starter_6m','en',db(pg))).rejects.toMatchObject({code:'CHECKOUT_UNCONFIRMED'});
  expect((await pg.query('select * from shorts_mvp.paypal_checkouts')).rows).toHaveLength(1);
  expect(vi.mocked(paypalRequest).mock.calls.some(([,body])=>body!==undefined)).toBe(false);
+});
+
+it('independent reconciliation recovers payment once after a missed webhook',async()=>{
+ expect(await reconcilePayPal(db(pg))).toMatchObject({checked:1,failed:0,deferred:0});
+ await reconcilePayPal(db(pg));
+ expect((await pg.query('select * from shorts_mvp.paypal_payments')).rows).toHaveLength(1);
+ expect((await pg.query('select * from shorts_mvp.usage_grants')).rows).toHaveLength(3);
+});
+it('a provider failure for one subscription does not prevent recovering another',async()=>{
+ await pg.exec(`insert into shorts_mvp.paypal_checkouts(id,user_id,environment,plan_code,provider_plan_id,provider_subscription_id,locale,status)values(gen_random_uuid(),'${other}','sandbox','starter_3m','${planId}','I-FAIL12345678','ja','ready')`);
+ const prior=vi.mocked(paypalRequest).getMockImplementation()!;
+ vi.mocked(paypalRequest).mockImplementation(async(...args)=>{
+   if(args[0].includes('I-FAIL12345678'))throw Error('provider unavailable');
+   return prior(...args);
+ });
+ expect(await reconcilePayPal(db(pg))).toMatchObject({checked:2,failed:1,deferred:0});
+ expect((await pg.query('select * from shorts_mvp.paypal_payments')).rows).toHaveLength(1);
 });

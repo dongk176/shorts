@@ -65,6 +65,10 @@
     {
       "path": "/api/cron/ranking-search-index",
       "schedule": "35 * * * *"
+    },
+    {
+      "path": "/api/cron/paypal-reconciliation",
+      "schedule": "*/5 * * * *"
     }
   ]
 }
