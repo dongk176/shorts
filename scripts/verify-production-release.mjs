@@ -42,6 +42,13 @@ export const PROTECTED_APP_ROUTES = [
 // These routes are the only intentional additions relative to the currently
 // promoted production manifest. Everything else must still fail closed.
 export const ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE = [
+  // User-approved PayPal international checkout (2026-11-01).
+  "/api/paypal/checkout/route",
+  "/api/paypal/subscription/route",
+  "/api/paypal/webhook/route",
+  "/billing/paypal/page",
+  "/en/billing/paypal/page",
+  "/jp/billing/paypal/page",
   // User-requested English ranking workspace (2026-10-30).
   "/en/ranking-shorts/page",
   // User-requested feedback for the owner's completed ranking videos (2026-10-27).
