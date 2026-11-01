@@ -1,5 +1,6 @@
 "use client";
 
+import { paypalPlan } from "@/lib/paypal/catalog";
 import { CreditAllowance } from "@/components/credit-info";
 import { useUiText } from "@/lib/i18n/use-ui-text";
 
@@ -99,10 +100,14 @@ function mobileOrderClass(plan: TossCatalogPlan) {
 }
 
 export function TossPricingClient({
+  paypalCheckout = false,
+  paypalAuthenticated = false,
   initialState,
   guestCatalog,
   onRequireLogin,
 }: {
+  paypalCheckout?: boolean;
+  paypalAuthenticated?: boolean;
   initialState: TossBillingState | null;
   guestCatalog: TossCatalogPlan[] | null;
   onRequireLogin: () => void;
@@ -160,6 +165,12 @@ export function TossPricingClient({
   const loading = !state && !guestCatalog;
 
   function choose(plan: TossCatalogPlan) {
+    if (paypalCheckout && paypalAuthenticated) {
+      setError(null);
+      setConsent(false);
+      setSelection({ plan, action: "subscribe" });
+      return;
+    }
     if (guestCatalog) {
       onRequireLogin();
       return;
@@ -184,6 +195,19 @@ export function TossPricingClient({
     setBusy(true);
     setError(null);
     try {
+      if (paypalCheckout) {
+        const planCode = selection.plan.tier === "easycut_pro" ? "pro_1m" : `${selection.plan.tier}_${selection.plan.contractMonths}m`;
+        const response = await fetch("/api/paypal/checkout", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ planCode, locale: locale === "ja" ? "ja" : "en" }),
+        });
+        const payload = await response.json();
+        if (!response.ok) throw Error(locale === "ja" ? "決済を確認できません。すでに開始した場合は再購入せず、アカウント設定またはサポートからご確認ください。" : "Checkout could not be confirmed. If you already started a payment, do not pay again; check account settings or contact support.");
+        const approval = new URL(payload.approvalUrl);
+        if (approval.protocol !== "https:" || approval.hostname !== "www.paypal.com" || approval.username || approval.password) throw Error("Checkout could not be confirmed.");
+        window.location.assign(approval.toString());
+        return;
+      }
       if (selection.action === "subscribe") {
         if (!sdkReady || !window.TossPayments) {
           throw new Error("결제창을 준비하고 있습니다. 잠시 후 다시 시도해 주세요.");
@@ -328,6 +352,10 @@ export function TossPricingClient({
         {plans.map((plan) => {
           const current = state?.subscription?.plan.code === plan.code;
           const pending = state?.subscription?.scheduledPlan?.code === plan.code;
+          const international = paypalCheckout ? paypalPlan(plan.tier === "easycut_pro" ? "pro_1m" : `${plan.tier}_${plan.contractMonths}m`) : null;
+          const discountPercent = international
+            ? Math.round((1 - international.amount / 100 / international.months / (plan.tier === "starter" ? 29 : plan.tier === "expert" ? 69 : 12)) * 100)
+            : plan.discountPercent;
           const cardClass = plan.tier === "starter"
             ? "pricing-card-popular"
             : plan.tier === "expert" ? "pricing-card-pro" : "";
@@ -342,20 +370,22 @@ export function TossPricingClient({
               {plan.tier === "starter" && plan.contractMonths === 12 ? (
                 <span className={`pricing-badge ${styles.localReasonableBadge}`}>{ui("최대 할인")}</span>
               ) : null}
-              {plan.discountPercent > 0 ? (
+              {discountPercent > 0 ? (
                 <span className={`${styles.planEyebrow} ${styles.discountEyebrow} ${
                   plan.tier === "expert" ? styles.discountEyebrowViolet : ""
                 }`}>
-                  {translateLegacyText(`${plan.discountPercent}% 할인`, locale)}
+                  {translateLegacyText(`${discountPercent}% 할인`, locale)}
                 </span>
               ) : null}
               <div className="pricing-plan-name"><h2>{ui(plan.displayName)}</h2></div>
               <p className={styles.localPlanDescription}>{ui(subtitle(plan))}</p>
               <div className={`pricing-price ${styles.localPlanPrice}`}>
-                <strong>₩{won(plan.monthlyEquivalentKrw)}</strong><span>{ui("/월")}</span>
+                <strong>{international ? `US$${(international.amount / 100 / international.months).toFixed(2)}` : `₩${won(plan.monthlyEquivalentKrw)}`}</strong><span>{ui("/월")}</span>
               </div>
               <p className="pricing-billing">
-                {ui(plan.tier === "easycut_pro"
+                {international ? (locale === "ja"
+                  ? `${international.months}か月ごとにUS$${(international.amount / 100).toFixed(2)}を請求`
+                  : `US$${(international.amount / 100).toFixed(2)} billed every ${international.months === 1 ? "month" : `${international.months} months`}`) : ui(plan.tier === "easycut_pro"
                   ? billingCycleLabel(plan.contractMonths)
                   : `${billingCycleLabel(plan.contractMonths)} · 총 ₩${won(plan.priceKrw)}`)}
               </p>
@@ -389,7 +419,7 @@ export function TossPricingClient({
         })}
       </section>
 
-      {selection && state ? (
+      {selection && (state || paypalCheckout) ? (
         <div className={styles.localDialogBackdrop} role="presentation" onMouseDown={(event) => {
           if (event.target === event.currentTarget && !busy) setSelection(null);
         }}>
@@ -416,7 +446,7 @@ export function TossPricingClient({
                 <div className={styles.localPlanSummary}>
                   <div className={styles.localPlanSummaryCopy}>
                     <strong>{ui(selection.plan.displayName)}</strong>
-                    {selection.action === "scheduled" && state.subscription ? (
+                    {selection.action === "scheduled" && state?.subscription ? (
                       <span>{ui("현재 구독 종료 후 적용됩니다")}</span>
                     ) : null}
                     <ul className={styles.localPlanSummaryFeatures}>
@@ -432,7 +462,7 @@ export function TossPricingClient({
                   </div>
                 </div>
               )}
-              {selection.action === "subscribe" && !state.paymentRestrictions.hanaCardAvailable ? (
+              {selection.action === "subscribe" && !paypalCheckout && state && !state.paymentRestrictions.hanaCardAvailable ? (
                 <aside className={styles.localCardRestriction} aria-label={ui("결제 가능 카드 안내")}>
                   <strong>{ui("하나카드는 아직 결제할 수 없어요")}</strong>
                   <p>{ui("카드사 심사 중으로 현재 하나카드는 등록과 결제가 완료되지 않습니다. 토스 결제창에서 다른 카드를 선택해 주세요.")}</p>

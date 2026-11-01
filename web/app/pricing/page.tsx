@@ -74,7 +74,9 @@ export default async function PricingPage() {
       ? await requireMvpSession(user, { createIfMissing: false })
       : null;
     const appUserId = session?.userId ?? null;
-    if (!paypalCheckout) {
+    if (paypalCheckout) {
+      guestTossCatalog = publicTossCatalog();
+    } else {
       if (!user) {
         const runtime = await loadTossBillingRuntimeState(db);
         tossExperience = runtime.effective.assignments && runtime.effective.charges;

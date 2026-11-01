@@ -42,9 +42,11 @@ export function PricingPageShell({
         />
       </SiteHeader>
       <main className="pricing-main">
-        {tossExperience ? (
+        {tossExperience || paypalCheckout ? (
           <>
             <TossPricingClient
+              paypalCheckout={paypalCheckout}
+              paypalAuthenticated={Boolean(user)}
               initialState={initialTossState}
               guestCatalog={guestTossCatalog}
               onRequireLogin={() => setLoginOpen(true)}
@@ -57,7 +59,6 @@ export function PricingPageShell({
           </>
         ) : (
           <PricingClient
-            paypalCheckout={paypalCheckout}
             initialState={initialState}
             onRequireLogin={() => setLoginOpen(true)}
           />

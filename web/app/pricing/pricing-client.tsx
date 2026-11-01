@@ -1,6 +1,5 @@
 "use client";
 
-import { paypalPlan } from "@/lib/paypal/catalog";
 import { CreditAllowance } from "@/components/credit-info";
 import { useUiText } from "@/lib/i18n/use-ui-text";
 
@@ -265,12 +264,10 @@ function AnimatedMinuteCredit({ minutes }: { minutes: number }) {
 
 export function PricingClient({
   ancillaryOnly = false,
-  paypalCheckout = false,
   initialState,
   onRequireLogin,
 }: {
   ancillaryOnly?: boolean;
-  paypalCheckout?: boolean;
   initialState: PricingState | null;
   onRequireLogin: () => void;
 }) {
@@ -317,7 +314,7 @@ export function PricingClient({
   }, [initialState]);
 
   useEffect(() => {
-    if (ancillaryOnly || paypalCheckout) return;
+    if (ancillaryOnly) return;
     const controller = new AbortController();
     const packageCodes = (["starter", "expert"] as const)
       .map((tier) => getPricingV2Package(tier, packageMonths)?.code)
@@ -338,7 +335,7 @@ export function PricingClient({
       ));
     }).catch(() => undefined);
     return () => controller.abort();
-  }, [ancillaryOnly, packageMonths, paypalCheckout]);
+  }, [ancillaryOnly, packageMonths]);
 
   async function reloadState() {
     const response = await fetch("/api/mvp/state", {
@@ -399,17 +396,6 @@ export function PricingClient({
       ],
     };
   });
-  const pricedPlans = paypalCheckout ? displayedPlans.map(plan => {
-    const international = paypalPlan(plan.checkoutPlanCode === "easycut_pro_v2" ? "pro_1m" : plan.checkoutPlanCode);
-    const total = (international.amount / 100).toFixed(2);
-    const baseline = international.code.startsWith("starter_") ? 29 : international.code.startsWith("expert_") ? 69 : 12;
-    const discount = Math.round((1 - international.amount / 100 / international.months / baseline) * 100);
-    return { ...plan,
-      price: `US$${(international.amount / 100 / international.months).toFixed(2)}`,
-      eyebrow: discount > 0 ? (locale === "ja" ? `${discount}%割引` : `${discount}% off`) : "",
-      billing: locale === "ja" ? `${international.months}か月ごとにUS$${total}を請求` : `US$${total} billed every ${international.months === 1 ? "month" : `${international.months} months`}`,
-    };
-  }) : displayedPlans;
   const activePricingProduct = state?.billing.status === "active"
     ? getPricingV2Plan(state.billing.planCode)
     : null;
@@ -480,25 +466,6 @@ export function PricingClient({
 
   async function choosePlan(planCode: PricingV2PlanCode) {
     if (requireLogin()) return;
-    if (paypalCheckout) {
-      setBusy(planCode);
-      setError(null);
-      try {
-        const response = await fetch("/api/paypal/checkout", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ planCode: planCode === "easycut_pro_v2" ? "pro_1m" : planCode, locale: locale === "ja" ? "ja" : "en" }),
-        });
-        const payload = await response.json();
-        if (!response.ok) throw Error("PAYPAL_CHECKOUT_UNCONFIRMED");
-        const approval = new URL(payload.approvalUrl);
-        if (approval.protocol !== "https:" || approval.hostname !== "www.paypal.com" || approval.username || approval.password) throw Error("PAYPAL_CHECKOUT_UNCONFIRMED");
-        window.location.assign(approval.toString());
-      } catch {
-        setError(locale === "ja" ? "決済を確認できません。すでに開始した場合は再購入せず、アカウント設定またはサポートからご確認ください。" : "Checkout could not be confirmed. If you already started a payment, do not pay again; check account settings or contact support.");
-        setBusy(null);
-      }
-      return;
-    }
     const product = getPricingV2Plan(planCode);
     if (!product) {
       setError("선택한 상품을 확인할 수 없습니다.");
@@ -932,10 +899,10 @@ export function PricingClient({
         <div className={`${styles.planGrid} ${hasActivePackage ? styles.packageOnlyGrid : ""}`}>
           {hasActivePackage ? (
             <div className={styles.packageGroup}>
-              {pricedPlans.slice(1).map(renderPlanCard)}
+              {displayedPlans.slice(1).map(renderPlanCard)}
             </div>
           ) : (
-            pricedPlans.map(renderPlanCard)
+            displayedPlans.map(renderPlanCard)
           )}
         </div>
           </section>
