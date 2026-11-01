@@ -7,7 +7,7 @@ import { paypalPlan, addPayPalMonths, usdMinor, type PayPalPlan } from "./catalo
 import { paypalEnabled, paypalEnvironment, paypalPlanId, paypalRequest } from "./api";
 import { assertPayPalNewCustomer } from "./eligibility";
 type Db = Sql | TransactionSql;
-export type PayPalSubscription = { id:string; plan_id:string; custom_id?:string; status:string; quantity?:string; plan_overridden?:boolean; create_time:string; status_update_time?:string; billing_info?:{next_billing_time?:string}; links?:{rel:string;href:string}[] };
+export type PayPalSubscription = { id:string; plan_id:string; custom_id?:string; status:string; quantity?:string; plan_overridden?:boolean; create_time:string; status_update_time?:string; billing_info?:{next_billing_time?:string;last_payment?:{time?:string;amount?:{currency_code:string;value:string}}}; links?:{rel:string;href:string}[] };
 type Transaction = { id:string; status:string; time:string; amount_with_breakdown:{gross_amount:{currency_code:string;value:string}} };
 type Checkout = {id:string;userId:string;planCode:string;providerPlanId:string;environment:string;providerSubscriptionId:string|null;status:string};
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -44,7 +44,7 @@ export async function preparePayPalCheckout(userId:string,code:string,locale:"en
     await assertPayPalNewCustomer(userId,tx);
     const [existing]=await tx<Checkout[]>`select * from shorts_mvp.paypal_checkouts where user_id=${userId} and environment=${environment} and status in ('creating','ready','unknown') order by created_at desc limit 1 for update`;
     if(existing) {
-      if(existing.planCode!==code || existing.status!=="ready")throw new HttpError(409,"Resolve the previous checkout first.","CHECKOUT_UNCONFIRMED");
+      if(existing.status!=="ready")throw new HttpError(409,"Resolve the previous checkout first.","CHECKOUT_UNCONFIRMED");
       return existing;
     }
     await noConflicts(tx,userId);
@@ -55,8 +55,14 @@ export async function preparePayPalCheckout(userId:string,code:string,locale:"en
     const sub=await paypalRequest<PayPalSubscription>(`/v1/billing/subscriptions/${checkout.providerSubscriptionId}`);
     validatePayPalSubscription(sub,checkout);
     const href=sub.links?.find(l=>l.rel==="approve")?.href;
-    if(href && sub.status==="APPROVAL_PENDING")return {checkoutId:checkout.id,approvalUrl:approvalUrl(href)};
-    await syncPayPalSubscription(sub.id,db);
+    if(href && sub.status==="APPROVAL_PENDING" && checkout.planCode===code)return {checkoutId:checkout.id,approvalUrl:approvalUrl(href)};
+    const confirmed=await syncPayPalSubscription(sub.id,db);
+    // A terminal, unpaid attempt cannot charge again. Retire it canonically before
+    // creating a fresh checkout, rather than making the buyer click twice.
+    if(!confirmed.paid && !sub.billing_info?.last_payment && ["CANCELLED","EXPIRED"].includes(confirmed.status))return preparePayPalCheckout(userId,code,locale,db);
+    // An abandoned approval remains payable at PayPal. Keep its identity and price;
+    // send the buyer to resume it instead of creating a second payable subscription.
+    if(confirmed.status==="APPROVAL_PENDING")throw new HttpError(409,"Resume the unfinished PayPal checkout.","PAYPAL_CHECKOUT_PENDING");
     throw new HttpError(409,"The previous checkout is being confirmed.","CHECKOUT_UNCONFIRMED");
   }
   try {
@@ -91,7 +97,7 @@ export async function syncPayPalSubscription(id:string,db=getDb()) {
   // Recent transaction history is independently read from PayPal, not browser or webhook claims.
   const from=new Date(Math.max(Date.parse(sub.create_time)-60000,Date.now()-179*86400000));
   const query=new URLSearchParams({start_time:from.toISOString(),end_time:new Date(Date.now()+60000).toISOString()});
-  const history=await paypalRequest<{transactions?:Transaction[];total_items?:number}>(`/v1/billing/subscriptions/${id}/transactions?${query}`);
+  const history=sub.status==="APPROVAL_PENDING"?{transactions:[]}:await paypalRequest<{transactions?:Transaction[];total_items?:number}>(`/v1/billing/subscriptions/${id}/transactions?${query}`);
   // PayPal returns HTTP 200 with {} when the requested range has no transactions,
   // including the short interval between buyer approval and payment-history availability.
   // No transaction means no allowance; retry canonical lookup when history catches up.

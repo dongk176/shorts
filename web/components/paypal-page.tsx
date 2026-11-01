@@ -9,15 +9,16 @@ import { SiteFooter } from "@/components/site-footer";
 import { AuthControls } from "@/components/auth-controls";
 import styles from "./paypal-page.module.css";
 export type PayPalViewState={id:string;status:string;planCode:string;currentPeriodEnd:string|null;cancelAtPeriodEnd:boolean}|null;
-export function PayPalPage({user,locale,subscription,enabled,blocked=false,checkoutId,managementOnly=false}:{user:AuthProfile|null;locale:SiteLocale;subscription:PayPalViewState;enabled:boolean;blocked?:boolean;checkoutId?:string;managementOnly?:boolean}) {
+export function PayPalPage({user,locale,subscription,enabled,blocked=false,checkoutId,checkoutCanceled=false,managementOnly=false}:{user:AuthProfile|null;locale:SiteLocale;subscription:PayPalViewState;enabled:boolean;blocked?:boolean;checkoutId?:string;checkoutCanceled?:boolean;managementOnly?:boolean}) {
  const ja=locale==="ja",[months,setMonths]=useState<3|6|12>(6),[loginOpen,setLoginOpen]=useState(false),[busy,setBusy]=useState(false),[message,setMessage]=useState(""),[state,setState]=useState(subscription);
  const text=(en:string,jp:string)=>ja?jp:en;
+ const pendingText=ja?'決済は完了していません。下のボタンから同じプランの決済を再開できます。':'Checkout is unfinished. You can retry the same plan using Resume PayPal checkout below.';
  useEffect(()=>{
   if(!checkoutId||!user)return;
   let live=true;
-  fetch('/api/paypal/checkout',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({checkoutId})}).then(async r=>{if(!r.ok)throw Error();return r.json();}).then(data=>{if(live){setState(data);setMessage(data?.currentPeriodEnd?(ja?'お支払いを確認しました。利用枠が反映されました。':'Payment verified. Your processing allowance is available.'):(ja?'お支払いを確認しています。少し待ってから再読み込みしてください。':'Payment is being verified. Please refresh shortly.'));}}).catch(()=>{if(live)setMessage(ja?'お支払いはまだ確認できません。再購入せず、少し待って再読み込みするかサポートにお問い合わせください。':'Payment is not yet confirmed. Do not purchase again; refresh shortly or contact support.');});
+  fetch('/api/paypal/checkout',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({checkoutId})}).then(async r=>{if(!r.ok)throw Error();return r.json();}).then(data=>{if(live){setState(data);setMessage(data?.currentPeriodEnd?(ja?'お支払いを確認しました。利用枠が反映されました。':'Payment verified. Your processing allowance is available.'):(data?.status==='APPROVAL_PENDING'?pendingText:['CANCELLED','EXPIRED'].includes(data?.status)?(ja?'決済をキャンセルしました。料金ページから再度購入できます。':'Checkout canceled. You can try again from pricing.'):(ja?'お支払いを確認しています。少し待ってから再読み込みしてください。':'Payment is being verified. Please refresh shortly.')));}}).catch(()=>{if(live)setMessage(ja?'お支払いはまだ確認できません。再購入せず、少し待って再読み込みするかサポートにお問い合わせください。':'Payment is not yet confirmed. Do not purchase again; refresh shortly or contact support.');});
   return()=>{live=false;};
- },[checkoutId,user,ja]);
+ },[checkoutId,user,ja,pendingText]);
  async function buy(code:string){
   if(!user){setLoginOpen(true);return;}
   setBusy(true);setMessage('');
@@ -34,6 +35,9 @@ export function PayPalPage({user,locale,subscription,enabled,blocked=false,check
   <main className={styles.main}><h1>{managementOnly?text('Manage PayPal subscription','PayPalサブスクリプション管理'):text('Choose your EasyCut plan','EasyCutプランを選択')}</h1>
    <p>{text('Pay securely with PayPal. All prices and charges are in US dollars (USD).','PayPalで安全に決済。表示価格・請求通貨はすべて米ドル（USD）です。')}</p>
    {message&&<p className={styles.notice} role="status">{message}</p>}
+   {!message&&state?.status==='APPROVAL_PENDING'&&<p className={styles.notice} role="status">{pendingText}</p>}
+   {checkoutCanceled&&!state?.currentPeriodEnd&&<p className={styles.notice}>{text('You returned without completing checkout. You can resume an unfinished checkout below.','決済を完了せずに戻りました。未完了の決済は下から再開できます。')}</p>}
+   {managementOnly&&<p><a href={localizedHref('/pricing',locale)}>{text('Back to pricing','料金ページに戻る')}</a></p>}
    {blocked&&<p className={styles.notice}>{text('You already have a subscription or paid plan. Manage it before starting another subscription.','既存のサブスクリプションまたは利用プランがあります。新しく購入する前に既存の契約をご確認ください。')} <a href={localizedHref('/settings/plan',locale)}>{text('Manage plan','契約を管理')}</a></p>}
    {state&&<section className={styles.notice}><h2>{text('Your PayPal subscription','ご契約中のPayPalプラン')}</h2><p>{paypalPlans.find(p=>p.code===state.planCode)?.name} · {state.status}</p>{state.currentPeriodEnd&&<p>{text('Paid access until: ','利用期限：')}{new Date(state.currentPeriodEnd).toLocaleString(ja?'ja-JP':'en-US')}</p>}{state.status==='APPROVAL_PENDING'&&<button disabled={busy} onClick={()=>buy(state.planCode)}>{text('Resume PayPal checkout','PayPal決済を再開')}</button>}{['ACTIVE','SUSPENDED'].includes(state.status)&&<button disabled={busy} onClick={cancel}>{text('Stop automatic renewal','自動更新を停止')}</button>}</section>}
    {!managementOnly&&<><div className={styles.terms} role="group" aria-label={text('Package duration','パッケージ期間')}>{([3,6,12] as const).map(m=><button key={m} aria-pressed={months===m} onClick={()=>setMonths(m)}>{m}{text(' months','か月')}</button>)}</div>

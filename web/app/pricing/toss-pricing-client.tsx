@@ -8,7 +8,7 @@ import { formatSeoulDate } from "@/lib/i18n/format";
 import { translateLegacyText } from "@/lib/i18n/legacy-phrases";
 import { useI18n } from "@/lib/i18n/provider";
 
-import { localePath, localizedReturnUrl } from "@/lib/i18n/routing";
+import { localePath, localizedReturnUrl, localizedHref } from "@/lib/i18n/routing";
 
 import Link from "@/lib/i18n/navigation";
 import Script from "next/script";
@@ -202,6 +202,10 @@ export function TossPricingClient({
           body: JSON.stringify({ planCode, locale: locale === "ja" ? "ja" : "en" }),
         });
         const payload = await response.json();
+        if (!response.ok && payload.code === "PAYPAL_CHECKOUT_PENDING") {
+          window.location.assign(localizedHref("/billing/paypal", locale));
+          return;
+        }
         if (!response.ok) throw Error(locale === "ja" ? "決済を確認できません。すでに開始した場合は再購入せず、アカウント設定またはサポートからご確認ください。" : "Checkout could not be confirmed. If you already started a payment, do not pay again; check account settings or contact support.");
         const approval = new URL(payload.approvalUrl);
         if (approval.protocol !== "https:" || approval.hostname !== "www.paypal.com" || approval.username || approval.password) throw Error("Checkout could not be confirmed.");
