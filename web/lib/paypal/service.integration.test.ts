@@ -112,13 +112,20 @@ it('resumes the same unapproved checkout after returning or closing PayPal',asyn
  expect(vi.mocked(paypalRequest).mock.calls.filter(([,body])=>body!==undefined)).toHaveLength(0);
  expect((await pg.query('select * from shorts_mvp.paypal_checkouts')).rows).toHaveLength(1);
 });
-it('routes a different plan to the existing unapproved checkout without another charge',async()=>{
+it('replaces an unapproved checkout when a different package is selected',async()=>{
  sub.status='APPROVAL_PENDING';transactions=[];
  const catalog=remote as unknown as Parameters<typeof validatePayPalPlan>[0];catalog.billing_cycles[0].frequency.interval_count=6;catalog.billing_cycles[0].pricing_scheme.fixed_price.value='144.00';
- await expect(preparePayPalCheckout(user,'starter_6m','en',db(pg))).rejects.toMatchObject({code:'PAYPAL_CHECKOUT_PENDING'});
- expect((await pg.query('select * from shorts_mvp.paypal_subscriptions')).rows).toMatchObject([{provider_status:'APPROVAL_PENDING'}]);
- expect(vi.mocked(paypalRequest).mock.calls.some(([path])=>path.includes('/transactions?'))).toBe(false);
- expect(vi.mocked(paypalRequest).mock.calls.some(([,body])=>body!==undefined)).toBe(false);
+ vi.mocked(paypalRequest).mockImplementation(async(path,body)=>{
+  if(path.startsWith('/v1/billing/plans/'))return remote;
+  if(body){const b=body as {custom_id:string};return {...sub,id:'I-NEW123456789',custom_id:b.custom_id,links:[{rel:'approve',href:'https://www.sandbox.paypal.com/webapps/billing/subscriptions?ba_token=BA-NEW'}]};}
+  return sub;
+ });
+ const result=await preparePayPalCheckout(user,'starter_6m','en',db(pg));
+ expect(result.checkoutId).not.toBe(checkout);
+ expect((await pg.query('select status from shorts_mvp.paypal_checkouts where id=$1',[checkout])).rows).toEqual([{status:'canceled'}]);
+ expect((await pg.query('select plan_code,status from shorts_mvp.paypal_checkouts where id=$1',[result.checkoutId])).rows).toEqual([{plan_code:'starter_6m',status:'ready'}]);
+ const creation=vi.mocked(paypalRequest).mock.calls.find(([path,body])=>path==='/v1/billing/subscriptions'&&body);
+ expect(creation?.[1]).toMatchObject({application_context:{user_action:'SUBSCRIBE_NOW'}});
  expect((await pg.query('select * from shorts_mvp.usage_grants')).rows).toHaveLength(0);
 });
 it.each(['CANCELLED','EXPIRED'])('retries a terminal unpaid %s checkout in one click',async(status)=>{
@@ -151,5 +158,25 @@ it('does not retry a canceled subscription with paid access',async()=>{
 it('does not retry a terminal subscription with a canonical last payment absent from history yet',async()=>{
  sub.status='CANCELLED';sub.billing_info={last_payment:{time:'2026-11-01T00:00:00Z',amount:{currency_code:'USD',value:'87.00'}}};transactions=[];
  await expect(preparePayPalCheckout(user,'starter_3m','en',db(pg))).rejects.toMatchObject({code:'CHECKOUT_UNCONFIRMED'});
+ expect(vi.mocked(paypalRequest).mock.calls.some(([,body])=>body!==undefined)).toBe(false);
+});
+
+it('does not activate a late approval of a locally abandoned checkout or resurrect its open status',async()=>{
+ await pg.exec(`update shorts_mvp.paypal_checkouts set status='canceled'`);sub.status='APPROVED';transactions=[];
+ await syncPayPalSubscription(id,db(pg));
+ expect(vi.mocked(paypalRequest).mock.calls.some(([path])=>path.endsWith('/activate'))).toBe(false);
+ expect((await pg.query('select status from shorts_mvp.paypal_checkouts')).rows).toEqual([{status:'canceled'}]);
+ expect((await pg.query('select * from shorts_mvp.usage_grants')).rows).toHaveLength(0);
+});
+it('does not replace an approval that races with selecting a different plan',async()=>{
+ const catalog=remote as unknown as Parameters<typeof validatePayPalPlan>[0];catalog.billing_cycles[0].frequency.interval_count=6;catalog.billing_cycles[0].pricing_scheme.fixed_price.value='144.00';
+ sub.status='APPROVAL_PENDING';transactions=[];let reads=0;
+ vi.mocked(paypalRequest).mockImplementation(async(path)=>{
+  if(path.startsWith('/v1/billing/plans/'))return remote;
+  if(++reads>=3)return {...sub,status:'APPROVED'};
+  return sub;
+ });
+ await expect(preparePayPalCheckout(user,'starter_6m','en',db(pg))).rejects.toMatchObject({code:'CHECKOUT_UNCONFIRMED'});
+ expect((await pg.query('select * from shorts_mvp.paypal_checkouts')).rows).toHaveLength(1);
  expect(vi.mocked(paypalRequest).mock.calls.some(([,body])=>body!==undefined)).toBe(false);
 });

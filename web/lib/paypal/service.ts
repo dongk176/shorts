@@ -60,9 +60,18 @@ export async function preparePayPalCheckout(userId:string,code:string,locale:"en
     // A terminal, unpaid attempt cannot charge again. Retire it canonically before
     // creating a fresh checkout, rather than making the buyer click twice.
     if(!confirmed.paid && !sub.billing_info?.last_payment && ["CANCELLED","EXPIRED"].includes(confirmed.status))return preparePayPalCheckout(userId,code,locale,db);
-    // An abandoned approval remains payable at PayPal. Keep its identity and price;
-    // send the buyer to resume it instead of creating a second payable subscription.
-    if(confirmed.status==="APPROVAL_PENDING")throw new HttpError(409,"Resume the unfinished PayPal checkout.","PAYPAL_CHECKOUT_PENDING");
+    if(confirmed.status==="APPROVAL_PENDING" && !confirmed.paid && !sub.billing_info?.last_payment) {
+      // Cancel this local attempt only after independently verifying that the buyer
+      // has not approved it. Keep its provider ID for reconciliation of old tabs.
+      await db.begin(async tx=>{
+        await tx`select pg_advisory_xact_lock(hashtextextended(${userId},0))`;
+        const current=await paypalRequest<PayPalSubscription>(`/v1/billing/subscriptions/${sub.id}`);
+        validatePayPalSubscription(current,checkout);
+        if(current.status!=="APPROVAL_PENDING" || current.billing_info?.last_payment)throw new HttpError(409,"The previous checkout is being confirmed.","CHECKOUT_UNCONFIRMED");
+        await tx`update shorts_mvp.paypal_checkouts set status='canceled',updated_at=now() where id=${checkout.id} and status='ready'`;
+      });
+      return preparePayPalCheckout(userId,code,locale,db);
+    }
     throw new HttpError(409,"The previous checkout is being confirmed.","CHECKOUT_UNCONFIRMED");
   }
   try {
@@ -93,6 +102,8 @@ export async function syncPayPalSubscription(id:string,db=getDb()) {
   const [checkout]=await db<Checkout[]>`select * from shorts_mvp.paypal_checkouts where id=${sub.custom_id!}`;
   if(!checkout || checkout.environment!==paypalEnvironment())throw Error("Unmapped PayPal subscription");
   validatePayPalSubscription(sub,checkout);
+  // Do not reopen a locally abandoned attempt when a delayed pending event arrives.
+  if(checkout.status==="canceled" && ["APPROVAL_PENDING","APPROVED"].includes(sub.status))return {status:sub.status,paid:false};
   const plan=paypalPlan(checkout.planCode);
   // Recent transaction history is independently read from PayPal, not browser or webhook claims.
   const from=new Date(Math.max(Date.parse(sub.create_time)-60000,Date.now()-179*86400000));
