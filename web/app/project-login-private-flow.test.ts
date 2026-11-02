@@ -50,7 +50,8 @@ describe("EASYCUT PRIVATE entry", () => {
     expect(usageIndicator).toContain("header-usage-indicator");
     expect(usageIndicator).toContain('t("common.remainingMinutes", { minutes: displayedMinutes })');
     expect(usageIndicator).toContain("site-header-mobile-usage md:hidden");
-    expect(usageIndicator).toContain("`남은 ${displayedMinutes}분`");
+    expect(usageIndicator).toContain("`크레딧 ${displayedMinutes}`");
+    expect(usageIndicator).toContain("{mobile ? compactLabel : label}");
     expect(header).toContain("<HeaderUsageIndicator mobile />");
     expect(sidebarStyles).toContain(".site-header-mobile-usage");
     expect(sidebarStyles).toMatch(/\.site-header-mobile-usage \{[\s\S]*?border: 0;[\s\S]*?background: transparent;[\s\S]*?font-size: 14px;/);

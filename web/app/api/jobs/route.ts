@@ -1,3 +1,5 @@
+import { midformRelease, midformTarget, requireMidformAdmin } from "@/lib/midform-release";
+import { midformRequestSchema } from "@/lib/midform-cloud";
 import { lockSnsTemplateAdmission } from "@/lib/sns-template-release";
 import { lockLanguageTestAdmission, languageTestTarget, languageTestUnavailable } from "@/lib/language-test";
 import { randomUUID } from "node:crypto";
@@ -59,6 +61,7 @@ import {
 } from "@/lib/shorts-thank-you-event";
 
 const schema = z.object({
+  midform: midformRequestSchema.optional(),
   analysisId: z.string().uuid(),
   youtubeUrl: z.string().max(2048).optional(),
   templateId: z.enum(templateIds),
@@ -114,6 +117,11 @@ export async function POST(request: Request) {
     const rightsConfirmed = input.rightsConfirmed === true;
     const session = await requireAuthenticatedMvpSession();
     const db = getDb();
+    if (input.midform) {
+      await requireMidformAdmin(db, session.userId);
+      if (request.headers.get("origin") !== new URL(request.url).origin || request.headers.get("sec-fetch-site") === "cross-site") throw new HttpError(403, "이지컷 화면에서 다시 시도해 주세요.");
+      if (input.snsTemplate || input.languageTest || input.communityTemplate || input.customTemplateId || input.subtitleTemplateId || input.outputLanguage !== "ko" || input.videoAspectRatio !== "16:9" || input.templateId !== "dark-minimal" || !rightsConfirmed) throw new HttpError(400, "중폼 제작 설정을 확인해 주세요.");
+    }
     const enterpriseAccess = await assertEnterpriseSessionServiceAccess(db, session);
     const enterpriseUsage = enterpriseAccess.accountType === "enterprise";
     const executionBackend = getInitialJobBackend();
@@ -198,7 +206,8 @@ export async function POST(request: Request) {
       throw new HttpError(409, "현재 계정에서는 영상 구간 선택 기능을 사용할 수 없습니다.");
     }
     const usageSeconds = billableSourceSeconds(selectedDurationSeconds);
-    const plannedShortCount = expectedShortCount(selectedDurationSeconds);
+    if (input.midform && (selectedDurationSeconds < 600 || selectedDurationSeconds > 3600 || sourceDurationSeconds > 3600)) throw new HttpError(400, "중폼은 10~60분 영상을 선택해 주세요.");
+    const plannedShortCount = input.midform ? 1 : expectedShortCount(selectedDurationSeconds);
     const deadlineMinutes = sourceRangeSelectionEnabled
       ? sourceRangeJobDeadlineMinutes(sourceDurationSeconds)
       : jobDeadlineMinutes(selectedDurationSeconds);
@@ -302,6 +311,8 @@ export async function POST(request: Request) {
           status: concurrentExisting[0].status,
         };
       }
+      const midform = input.midform ? await midformRelease(tx, session.userId) : null;
+      if (midform && executionBackend !== "aws_batch") throw new HttpError(503, "중폼 제작 서버를 준비하고 있습니다.");
       const languageTest = input.snsTemplate
         ? await lockSnsTemplateAdmission(tx, session.userId, input.communityTemplate)
         : usesLanguageFeature ? await lockLanguageTestAdmission(tx, session.userId) : null;
@@ -376,6 +387,10 @@ export async function POST(request: Request) {
         if (!dispatchTarget) throw languageTestUnavailable();
         dispatchTarget = languageTestTarget(languageTest, dispatchTarget.targetKey);
       }
+      if (midform) {
+        if (!dispatchTarget) throw new HttpError(503, "중폼 제작 서버를 준비하고 있습니다.");
+        dispatchTarget = midformTarget(midform, dispatchTarget.targetKey);
+      }
       let initialRenderSpecVersion: 4 | null = null;
       let initialCaptionRenderSpecVersion: 4 | null = null;
       let initialEditorReleaseId: string | null = null;
@@ -428,7 +443,7 @@ export async function POST(request: Request) {
       // The DB resolver takes shared locks on the runtime/state rows until this
       // transaction commits, so an emergency stop or infrastructure lease is
       // strictly ordered before or after this job instead of racing the INSERT.
-      const initialRenderRelease = languageTest ? { releaseId: languageTest.releaseId } : await resolveInitialRenderRelease(tx, {
+      const initialRenderRelease = midform ? { releaseId: midform.releaseId } : languageTest ? { releaseId: languageTest.releaseId } : await resolveInitialRenderRelease(tx, {
         userId: session.userId,
         dispatchTarget,
       });
@@ -457,7 +472,7 @@ export async function POST(request: Request) {
           batch_job_definition, batch_job_queue,
           initial_editor_release_id,
           initial_render_spec_version, initial_caption_render_spec_version
-          ,selected_source_duration_seconds,billable_source_seconds,source_language_hint,language_test_release_id
+          ,selected_source_duration_seconds,billable_source_seconds,source_language_hint,language_test_release_id,midform_request,midform_release_id
         ) values (
           ${jobId}, ${session.id}, ${session.userId}, ${input.requestId}, ${metadata.normalizedUrl}, ${metadata.videoId}, ${metadata.title},
           ${resolvedExecution.channelDisplayName || metadata.channelName}, ${metadata.channelThumbnailUrl}, ${metadata.thumbnailUrl}, ${sourceDurationSeconds}, ${rangeStartSeconds},
@@ -474,7 +489,7 @@ export async function POST(request: Request) {
           ${initialEditorReleaseId},
           ${initialRenderSpecVersion}, ${initialCaptionRenderSpecVersion},
           ${selectedDurationSeconds},${usageSeconds},
-          ${languageTest ? input.sourceLanguage || "auto" : null},${languageTest?.releaseId || null}
+          ${languageTest ? input.sourceLanguage || "auto" : null},${languageTest?.releaseId || null},${input.midform ? tx.json(input.midform) : null},${midform?.releaseId || null}
         )
         returning project_number
       `;

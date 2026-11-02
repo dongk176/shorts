@@ -14,7 +14,7 @@ import { ProjectFeedbackOverlay } from "./project-feedback-overlay";
 import { PROJECT_FEEDBACK_PROJECT_VIEWED_STORAGE_KEY, markCompletedProjectViewedForFeedback } from "@/lib/project-feedback-client";
 
 vi.mock("@/lib/i18n/use-ui-text", () => ({ useUiText: () => (text: string) => text }));
-vi.mock("@/lib/i18n/provider", () => ({ useI18n: () => ({ locale: "ko", t: (key: string) => key }) }));
+vi.mock("@/lib/i18n/provider", () => ({ useNavigationLocale: () => "ko", useI18n: () => ({ locale: "ko", t: (key: string) => key }) }));
 vi.mock("@/lib/i18n/navigation", () => ({ usePathname: () => "/", useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("@/app/actions/onboarding-welcome", () => ({ claimOnboardingWelcomeAnnouncement: async () => null }));
 vi.mock("@/app/actions/editor-launch-announcement", () => ({ claimEditorLaunchAnnouncement: async () => null }));

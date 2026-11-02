@@ -1107,13 +1107,16 @@ def test_caption_editor_title_keeps_the_original_caption_accent() -> None:
     assert (22, 163, 74, 255) in set(content.getdata())
 
 
-def test_title_layer_uses_every_selected_editor_font(tmp_path: Path) -> None:
+def test_title_layer_uses_every_regular_selected_editor_font(tmp_path: Path) -> None:
     document = _document()
     document.title.text = "선택한 폰트 검증"
     document.title.text_styles = []
     document.overlays.scales["title"] = 1
     rendered_pixels: set[bytes] = set()
-    for font_id in EditorFontId:
+    # The manual picker excludes the locale-only JP face. KR/JP can have
+    # identical Korean glyphs; Japanese rendering has its own locale tests.
+    selected_fonts = [font for font in EditorFontId if font != EditorFontId.NOTO_SANS_JP]
+    for font_id in selected_fonts:
         document.overlays.fonts["title"] = font_id
         output = create_editor_title_layer(
             document,
@@ -1122,7 +1125,7 @@ def test_title_layer_uses_every_selected_editor_font(tmp_path: Path) -> None:
         with Image.open(output) as image:
             rendered_pixels.add(image.tobytes())
 
-    assert len(rendered_pixels) == len(EditorFontId)
+    assert len(rendered_pixels) == len(selected_fonts)
 
 
 def test_noto_serif_title_uses_the_same_bold_weight_as_the_browser() -> None:

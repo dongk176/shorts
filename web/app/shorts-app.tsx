@@ -1,5 +1,7 @@
 "use client";
 
+import { ConversionChoice } from "@/components/conversion-choice";
+import { MidformCloudWorkspace } from "@/components/midform-cloud-workspace";
 import { EnterpriseServiceGate } from "@/components/enterprise-service-gate";
 import { useHomeProjects } from "@/lib/use-home-projects";
 import { mergeHomeCore } from "@/lib/home-projects-state";
@@ -13526,6 +13528,11 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
   initialLocale?: SiteLocale;
   initialStateLoadedAt?: number;
 }) {
+  const [conversionChoiceOpen, setConversionChoiceOpen] = useState(false);
+  const [conversionChoiceStage, setConversionChoiceStage] = useState<"analyze" | "create" | "switch">("analyze");
+  const [shortsChosen, setShortsChosen] = useState(false);
+  const [midformOpened, setMidformOpened] = useState(false);
+  const [midformBusy, setMidformBusy] = useState(false);
   const ui = useUiText();
   const { locale, t } = useI18n();
   const [resumedDraft] = useState(() => readCreationDraft<LocaleCreationDraft>(initialState?.user?.id ?? null, locale));
@@ -14246,8 +14253,8 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
     if (file) void prepareSelectedUpload(file);
   };
 
-  const analyze = async (event: FormEvent) => {
-    event.preventDefault();
+  const analyze = async (event?: FormEvent) => {
+    event?.preventDefault();
     if (sourceMode !== "youtube") return;
     if (isConversionMaintenanceActive()) {
       setConversionMaintenanceOpen(true);
@@ -14937,6 +14944,19 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
         locale={locale}
         className={adminTemplateLayoutEnabled ? "order-[-2]" : ""}
       />
+      {state?.capabilities.midform ? <ConversionChoice open={conversionChoiceOpen} onClose={() => setConversionChoiceOpen(false)} onChoose={mode => {
+        setConversionChoiceOpen(false); setMidformOpened(mode === "midform");
+        if (mode === "shorts") {
+          setShortsChosen(true);
+          if (conversionChoiceStage === "create") void (uploadSourceActive ? createUploadJob() : createJob());
+          else if (conversionChoiceStage === "analyze" && sourceMode === "youtube" && youtubeUrl.trim()) void analyze();
+        }
+      }} /> : null}
+      {state?.capabilities.midform && midformOpened ? <>
+        <button type="button" className="text-sm text-neutral-400 hover:text-white" disabled={midformBusy} onClick={() => { setConversionChoiceStage("switch"); setConversionChoiceOpen(true); }}>← 제작 방식 바꾸기</button>
+        <MidformCloudWorkspace active onBusyChange={setMidformBusy} initialUrl={youtubeUrl} initialFile={uploadVideo?.file} initialSourceMode={sourceMode} />
+      </> : null}
+      <div style={{ display: state?.capabilities.midform === true && midformOpened ? "none" : "contents" }}>
       <section className={`hero mx-auto flex w-full max-w-4xl flex-col items-center text-center ${adminTemplateLayoutEnabled ? "order-[-2]" : ""}`}>
         <HomeHero
           locale={locale}
@@ -14974,7 +14994,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
         ) : null}
         {sourceMode === "youtube" ? (
           <>
-            <form id="workspace" onSubmit={analyze} className={`url-console w-full max-w-3xl ${uploadModeVisible ? "mt-3" : "mt-8"}`}>
+            <form id="workspace" onSubmit={event => { if (state?.capabilities.midform) { event.preventDefault(); setConversionChoiceStage("analyze"); setConversionChoiceOpen(true); } else void analyze(event); }} noValidate={state?.capabilities.midform === true} className={`url-console w-full max-w-3xl ${uploadModeVisible ? "mt-3" : "mt-8"}`}>
               <div className="relative flex-1">
                 <span className="absolute inset-y-0 left-4 flex items-center text-xl text-[#d7aaa4]" aria-hidden="true">↗</span>
                 <input type="url" value={youtubeUrl} onChange={(event) => { setYoutubeUrl(event.target.value); setRightsConfirmed(false); setRightsConfirmationAttention(false); }} placeholder={t("home.youtubePlaceholder")} className="url-input" aria-label={t("home.youtubeLabel")} />
@@ -15292,7 +15312,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
               {ui(error)}
             </div>
           )}
-          <button disabled={analysisCreationBlocked || !sourceRangeIsValid || busy || stateLoadStatus !== "ready"} onClick={() => void (uploadSourceActive ? createUploadJob() : createJob())} aria-busy={busy || loginPromptPending} className={`h-[52px] w-full rounded-xl py-4 font-bold text-black transition duration-150 disabled:bg-neutral-800 disabled:text-neutral-500 ${loginPromptPending ? "scale-[.985] bg-neutral-200 shadow-[inset_0_2px_6px_rgba(0,0,0,.22)] motion-reduce:transform-none" : "bg-white hover:bg-neutral-100 active:scale-[.985]"}`}>
+          <button disabled={analysisCreationBlocked || !sourceRangeIsValid || busy || stateLoadStatus !== "ready"} onClick={() => { if (state?.capabilities.midform && !shortsChosen) { setConversionChoiceStage("create"); setConversionChoiceOpen(true); } else void (uploadSourceActive ? createUploadJob() : createJob()); }} aria-busy={busy || loginPromptPending} className={`h-[52px] w-full rounded-xl py-4 font-bold text-black transition duration-150 disabled:bg-neutral-800 disabled:text-neutral-500 ${loginPromptPending ? "scale-[.985] bg-neutral-200 shadow-[inset_0_2px_6px_rgba(0,0,0,.22)] motion-reduce:transform-none" : "bg-white hover:bg-neutral-100 active:scale-[.985]"}`}>
             <span className="inline-flex items-center justify-center gap-2">
               {(busy || loginPromptPending) && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-black/25 border-t-black motion-reduce:animate-none" />}
               {ui(busy
@@ -15308,6 +15328,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
         </button>
         <div id="home-examples" hidden={!showExamples}>{showExamples ? <div className="mt-6 space-y-10"><TransformationShowcase /><BackgroundShowcase /><ThreeStepProcess /></div> : null}</div>
       </div> : stateLoadStatus === "ready" ? <><ThreeStepProcess /><CustomerReviews /></> : null}
+      </div>
     </main>
     <SiteFooter />
     <SupportInquiryWidget

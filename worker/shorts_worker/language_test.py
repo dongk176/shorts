@@ -8,6 +8,17 @@ from .errors import RenderError
 
 def verify_language_test_job(job: dict[str, Any]) -> None:
     """A dedicated worker may only process its explicitly pinned projects."""
+    if job.get("midform_request") is not None:
+        marker = job.get("midform_release_id")
+        if (os.getenv("MIDFORM_ENABLED") != "true" or not marker
+                or str(marker) != os.getenv("MIDFORM_RELEASE_ID")
+                or marker != job.get("initial_editor_release_id")
+                or job.get("source_type", "youtube") not in {"youtube", "upload"}
+                or job.get("pipeline_version") != 2
+                or job.get("initial_render_spec_version") != 4
+                or job.get("initial_caption_render_spec_version") != 4):
+            raise RenderError("중폼 프로젝트와 워커 연결이 일치하지 않습니다.")
+        return
     from .sns_template import sns_snapshot
     sns = sns_snapshot(job) is not None
     sns_worker = os.environ.get("EASYCUT_SNS_TEMPLATE_WORKER") == "true"
