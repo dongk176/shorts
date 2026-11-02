@@ -14,7 +14,8 @@ beforeAll(async () => {
     create table shorts_mvp.editor_releases(id uuid primary key,git_sha text,worker_image_digest text,font_manifest_sha256 text,status text,staging_verified_at timestamptz);
     insert into shorts_mvp.editor_releases values ('${release}','sha','digest','font','canary_ready',now());
     create table shorts_mvp.video_jobs(id uuid primary key,user_id uuid,source_type text,planned_short_count int,initial_editor_release_id uuid,language_test_release_id uuid,is_example boolean default false,pipeline_version int,initial_render_spec_version int,initial_caption_render_spec_version int,batch_target_key text,batch_target_release_id text,batch_job_definition text,batch_job_queue text);
-    create table shorts_mvp.generated_shorts(id uuid primary key,pending_edit_snapshot jsonb,pending_edit_request_id uuid,constraint generated_shorts_pending_edit_request_check check (true));
+    create table shorts_mvp.editor_render_requests(id uuid primary key,short_id uuid,user_id uuid,release_id uuid,release_channel text);
+    create table shorts_mvp.generated_shorts(id uuid primary key,job_id uuid,user_id uuid,pending_edit_snapshot jsonb,pending_edit_request_id uuid,constraint generated_shorts_pending_edit_request_check check (true));
     create table shorts_mvp.ordinary_guard_log(n int);
     create function shorts_mvp.enforce_project_target_successor_admission() returns trigger language plpgsql as $$
 begin
@@ -47,4 +48,10 @@ describe("midform DB boundary", () => {
     await expect(db.exec(`update shorts_mvp.video_jobs set user_id='${user}' where id='${id}'`)).rejects.toThrow("MIDFORM_IDENTITY_IMMUTABLE");
     await expect(db.exec(`update shorts_mvp.video_jobs set midform_request=null where id='${id}'`)).rejects.toThrow("MIDFORM_IDENTITY_IMMUTABLE");
   });
+  it("rejects using a private editor release for an ordinary or foreign short", async () => {
+    await expect(db.exec(`insert into shorts_mvp.editor_render_requests values
+      ('88888888-8888-4888-8888-888888888888','99999999-9999-4999-8999-999999999999','${user}','${release}','canary')`))
+      .rejects.toThrow("MIDFORM_EDITOR_BINDING_MISMATCH");
+  });
+
 });

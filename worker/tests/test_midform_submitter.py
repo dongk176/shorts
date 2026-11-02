@@ -84,3 +84,28 @@ def test_invalid_admission_never_returns_an_editor_target(change):
         records["editor_releases"][0]["git_sha"] = "d" * 40
     with pytest.raises(RuntimeError):
         module.editor_target(host, "request", job)
+
+
+def test_runtime_switches_only_come_from_a_verified_midform_binding():
+    request = {"containerOverrides": {"environment": [{"name": "EXISTING", "value": "kept"}]}}
+    unchanged = copy.deepcopy(request)
+    module.bind_runtime(request, {"user_id": "ordinary"})
+    assert request == unchanged
+    _, job, _ = fixture()
+    module.bind_runtime(request, job)
+    assert request["containerOverrides"]["environment"] == [
+        {"name": "EXISTING", "value": "kept"},
+        {"name": "MIDFORM_ENABLED", "value": "true"},
+        {"name": "MIDFORM_RELEASE_ID", "value": RID},
+    ]
+    with pytest.raises(RuntimeError, match="Duplicate"):
+        module.bind_runtime(request, job)
+
+
+def test_attested_standard_editor_definition_is_supported():
+    host, job, records = fixture()
+    records["editor_releases"][0]["production_job_definition_arn"] = (
+        "arn:aws:batch:ap-northeast-2:181651591905:job-definition/"
+        "shorts-mvp-editor-release-aaaaaaaaaaaa-4vcpu:1"
+    )
+    assert module.editor_target(host, "request", job)[3] == RID

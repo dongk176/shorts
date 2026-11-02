@@ -111,3 +111,27 @@ for each row execute function shorts_mvp.enforce_midform_identity();
 alter table shorts_mvp.video_jobs add constraint video_jobs_midform_pair_check check (
   (midform_request is null) = (midform_release_id is null)
 );
+
+-- Apply the same owned, pinned administrator boundary to editor outbox requests.
+create function shorts_mvp.enforce_midform_editor_binding() returns trigger
+language plpgsql security invoker set search_path=shorts_mvp,pg_temp as $$
+declare pinned uuid;
+begin
+  select j.midform_release_id into pinned from shorts_mvp.generated_shorts s
+    join shorts_mvp.video_jobs j on j.id=s.job_id where s.id=new.short_id;
+  if pinned is null and not exists(select 1 from shorts_mvp.midform_releases where id=new.release_id) then
+    return new;
+  end if;
+  if new.release_id is distinct from pinned or new.release_channel is distinct from 'canary'
+    or not exists(select 1 from shorts_mvp.generated_shorts s
+      join shorts_mvp.video_jobs j on j.id=s.job_id
+      join shorts_mvp.app_users u on u.id=j.user_id
+      join shorts_mvp.midform_releases r on r.id=j.midform_release_id
+      where s.id=new.short_id and s.user_id=new.user_id and j.user_id=new.user_id
+        and u.is_admin and r.verified_at is not null and s.midform_document is not null)
+  then raise exception 'MIDFORM_EDITOR_BINDING_MISMATCH'; end if;
+  return new;
+end; $$;
+revoke all on function shorts_mvp.enforce_midform_editor_binding() from public,anon,authenticated;
+create trigger editor_requests_midform_binding before insert on shorts_mvp.editor_render_requests
+for each row execute function shorts_mvp.enforce_midform_editor_binding();
