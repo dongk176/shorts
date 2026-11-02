@@ -1,7 +1,7 @@
 # Admin-only midform candidate
 
-Status: local implementation only. No release verification or production promotion
-is implied by this document. Runtime verification rows must come from real checks.
+Status: implementation and local verification complete; production runtime
+verification and promotion pending. Runtime verification rows must come from real checks.
 
 ## Source and environment
 
@@ -63,5 +63,24 @@ do not replace it with the entire current web worker tree. Follow
 7. Compare route manifests with current production, then promote the exact tested
    deployment without rebuilding. Restore temporary capacity to its agreed OFF state.
 
-Local evidence is retained under `output/admin-midform-20261103/` (not release
-attestation). No production runtime, schema or feature flags have been changed.
+Local evidence is retained outside the release worktree under
+`/private/tmp/easycut-midform-production-evidence-20261103/admin-midform-20261103/`.
+It is not runtime attestation.
+
+## Execution checkpoint (2026-11-03)
+
+- Applied the additive midform migration and revision-checked submitter patches.
+  New midform admission remains OFF; no midform runtime rows or jobs registered.
+- Feature-OFF unaliased web candidate `dpl_8traqRYCjXkuussMTcCiwpxFvEkE`
+  uses source `518c4640eb39191857357ca46bb7db63fd8509b6`. Authenticated Vercel
+  fetches confirmed home, guidebook, pricing and editor responses; anonymous
+  admin navigation redirects home, and `/api/midform` returns application 404.
+- Production alias still points to the original baseline deployment above.
+  No receiver successor fence, service switch or web promotion has occurred.
+- Bounded upload source `6d58195dedd6a095707eaf2593d13dc0608ea633` passed the
+  full CI repository gate in run `41497021140`. Its release configuration stage
+  stopped because the new tag lacked a protection rule. Added exact-tag deletion
+  and force-update protection (ruleset `26388002`), then dispatched run
+  `41499731949` for the same source. Image attestation remains pending.
+- The user authorized a short new-upload maintenance window. Begin it only once
+  both runtime candidates and the acceptance-test configuration are ready.
