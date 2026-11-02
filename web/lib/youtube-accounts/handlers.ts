@@ -7,6 +7,7 @@ import { apiError, HttpError } from "@/lib/http";
 import { assertSameOriginJsonRequest } from "@/lib/same-origin";
 import { accountContext } from "./runtime";
 import { uuid } from "./contracts";
+import { assertYoutubeUploadAvailable } from "./upload-availability";
 
 function privateResponse(response: Response) {
   response.headers.set("Cache-Control", "private, no-store");
@@ -63,6 +64,7 @@ export const uploadsPost = (request: Request) => handle(async () => {
   assertSameOriginJsonRequest(request);
   const { uploads, actor, origin } = await accountContext();
   if (request.headers.get("origin") !== origin) throw new HttpError(403, "요청 출처가 올바르지 않습니다.");
+  await assertYoutubeUploadAvailable();
   try { return NextResponse.json({ upload: await uploads.create(actor, await request.json()) }); }
   finally { await uploads.cleanup(); }
 });
@@ -70,6 +72,7 @@ export const uploadResume = (request: Request, context: { params: Promise<{ uplo
   assertSameOriginJsonRequest(request);
   const { uploads, actor, origin } = await accountContext();
   if (request.headers.get("origin") !== origin) throw new HttpError(403, "요청 출처가 올바르지 않습니다.");
+  await assertYoutubeUploadAvailable();
   try { return NextResponse.json({ upload: await uploads.run(actor, (await context.params).uploadId) }); }
   finally { await uploads.cleanup(); }
 });

@@ -19,7 +19,7 @@ export function AdminPublishingButton({ shortId, title, adminEnabled = false, me
     : locale === "en" ? { upload: "Upload", heading: "Upload short", help: "Upload your finished video directly to your channel.", close: "Close upload" }
       : { upload: "アップロード", heading: "ショート動画を投稿", help: "完成した動画をチャンネルに投稿しましょう。", close: "閉じる" };
   const maintenance = uploadMaintenanceText(locale);
-  const dialogEnabled = adminEnabled || tiktokEnabled || metaEnabled || instagramEnabled;
+  const dialogEnabled = youtubeEnabled || adminEnabled || tiktokEnabled || metaEnabled || instagramEnabled;
   const defaultPlatform = !adminEnabled && (metaEnabled || instagramEnabled) ? "Instagram" : !adminEnabled && tiktokEnabled ? "TikTok" : "YouTube";
   const [platform, setPlatform] = useState<typeof available[number]>(defaultPlatform);
   const selected = available.includes(platform) ? platform : available[0];
@@ -50,9 +50,9 @@ export function AdminPublishingButton({ shortId, title, adminEnabled = false, me
     {open && dialogEnabled && createPortal(<dialog ref={dialog} data-i18n-skip className="publish-dialog" aria-labelledby={heading} onCancel={() => setOpen(false)}>
       <header className="publish-dialog-header"><div><h2 id={heading}>{text.heading}</h2><p>{text.help}</p></div><button className="publish-close" type="button" aria-label={text.close} onClick={() => setOpen(false)}>×</button></header>
       <div className="publish-tabs">{available.map(name => <button type="button" key={name} className={selected === name ? "is-active" : ""} aria-pressed={selected === name} onClick={() => setPlatform(name)}><PlatformIcon name={name}/>{name}</button>)}</div>
-      <div className="publish-dialog-body">{selected === "YouTube" && adminEnabled && youtubeEnabled
+      <div className="publish-dialog-body">{selected === "YouTube" && youtubeEnabled
         ? <YoutubeAccountConnections shortId={shortId} title={title} previewUrl={`/api/youtube/accounts/media/${shortId}`}/>
-        : selected === "YouTube" && !adminEnabled
+        : selected === "YouTube" && !youtubeEnabled
           ? <div className="publish-empty" role="status"><PlatformIcon name="YouTube"/><h3>{maintenance.heading}</h3><p>{maintenance.message}</p><p>{maintenance.alternative}</p><a className="publish-primary" href={`/api/shorts/${encodeURIComponent(shortId)}/download`} download>{maintenance.download}</a></div>
         : selected === "TikTok" && tiktokEnabled
           ? <TikTokPublishingPanel shortId={shortId} title={title}/>

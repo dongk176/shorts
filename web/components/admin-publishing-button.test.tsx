@@ -31,8 +31,17 @@ async function render(props: Partial<ComponentProps<typeof AdminPublishingButton
   return {document,click,fetcher};
 }
 describe('one shared publishing dialog',()=>{
- it('shows only maintenance for a member, without fetching connections, and can reopen',async()=>{
+ it('opens YouTube for an eligible ordinary member without an administrator grant',async()=>{
   const {document,click,fetcher}=await render({adminEnabled:false,youtubeEnabled:true});
+  await click('.publish-trigger');
+  expect(document.querySelector('.publish-tabs .is-active')?.textContent).toBe('YouTube');
+  expect(document.body.textContent).not.toContain('Uploads are temporarily unavailable');
+  expect(fetcher).toHaveBeenCalled();
+  await click('.publish-tabs button:nth-child(3)');
+  expect(document.body.textContent).toContain('This platform is coming soon.');
+ });
+ it('shows maintenance without a YouTube grant and can reopen',async()=>{
+  const {document,click,fetcher}=await render({adminEnabled:false,youtubeEnabled:false});
   expect(document.querySelector('.publish-trigger')?.textContent).toContain('Maintenance');
   await click('.publish-trigger');
   expect(document.querySelector('.publish-status-actions a')?.getAttribute('href')).toBe('/api/shorts/short-a/download');
@@ -46,14 +55,14 @@ describe('one shared publishing dialog',()=>{
   expect(document.querySelectorAll('dialog[open]').length).toBe(1);
   expect(fetcher).not.toHaveBeenCalled();
  });
- it('cannot bypass YouTube maintenance with an OAuth callback',async()=>{
-  const {document,fetcher}=await render({adminEnabled:false,youtubeEnabled:true,tiktokEnabled:false},"youtube");
+ it('cannot bypass a missing YouTube grant with an OAuth callback',async()=>{
+  const {document,fetcher}=await render({adminEnabled:false,youtubeEnabled:false,tiktokEnabled:false},"youtube");
   expect(document.body.textContent).toContain('Uploads are temporarily unavailable');
   expect(document.querySelector('.publish-tabs')).toBeNull();
   expect(fetcher).not.toHaveBeenCalled();
  });
- it('fails closed to maintenance when the administrator flag is missing',async()=>{
-  const {document,click,fetcher}=await render({adminEnabled:undefined,youtubeEnabled:true});
+ it('fails closed when neither publishing grant is present',async()=>{
+  const {document,click,fetcher}=await render({adminEnabled:undefined,youtubeEnabled:false});
   expect(document.querySelector('.publish-trigger')?.textContent).toContain('Maintenance');
   await click('.publish-trigger');
   expect(document.querySelector('.publish-status-actions a')?.getAttribute('href')).toBe('/api/shorts/short-a/download');
@@ -61,7 +70,7 @@ describe('one shared publishing dialog',()=>{
   expect(fetcher).not.toHaveBeenCalled();
  });
  it('opens TikTok for a granted member while keeping YouTube and Meta unavailable',async()=>{
-  const {document,click,fetcher}=await render({adminEnabled:false,tiktokEnabled:true,youtubeEnabled:true});
+  const {document,click,fetcher}=await render({adminEnabled:false,tiktokEnabled:true,youtubeEnabled:false});
   await click('.publish-trigger');
   expect(document.querySelector('.publish-tabs .is-active')?.textContent).toBe('TikTok');
   expect(document.querySelector('[data-platform="tiktok"]')).not.toBeNull();

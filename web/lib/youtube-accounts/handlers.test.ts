@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 vi.mock("./runtime", () => ({ accountContext: vi.fn() }));
+vi.mock("./upload-availability", () => ({ assertYoutubeUploadAvailable: vi.fn() }));
+import { assertYoutubeUploadAvailable } from "./upload-availability";
 import { accountContext } from "./runtime";
 import { connectionsGet, connectionDelete, eligibilityPost, oauthStart, oauthCallback, uploadsGet, uploadsPost, uploadResume } from "./handlers";
 import { HttpError } from "@/lib/http";
@@ -87,4 +89,13 @@ it("upload handlers use the authenticated actor and never accept owner from quer
 it("requires explicit all-connections deletion confirmation", async () => {
  const r = await connectionDelete(request("/api/youtube/accounts/id", "DELETE", {}), { params: Promise.resolve({ connectionId: "id" }) });
  expect(r.status).toBe(400); expect(service.disconnect).not.toHaveBeenCalled();
+});
+
+it("blocks new and resumed uploads during an emergency stop without provider work", async () => {
+  vi.mocked(assertYoutubeUploadAvailable).mockRejectedValue(new HttpError(503, "maintenance", "YOUTUBE_UPLOAD_MAINTENANCE"));
+  expect((await uploadsPost(request("/api/youtube/accounts/uploads", "POST", {}))).status).toBe(503);
+  expect((await uploadResume(request("/api/youtube/accounts/uploads/id/resume", "POST", {}), {params:Promise.resolve({uploadId:"id"})})).status).toBe(503);
+  expect(uploads.create).not.toHaveBeenCalled();
+  expect(uploads.run).not.toHaveBeenCalled();
+  expect((await connectionsGet(request("/api/youtube/accounts"))).status).toBe(200);
 });
