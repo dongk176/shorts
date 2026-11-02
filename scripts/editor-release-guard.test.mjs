@@ -456,7 +456,7 @@ test("candidate worker uses a pinned, scan-friendly image with render dependenci
   assert.match(dockerfile, /apk add --no-cache[\s\S]*deno[\s\S]*ffmpeg/);
   assert.match(
     dockerfile,
-    /FROM python:3\.12-alpine3\.22@sha256:[a-f0-9]{64} AS worker-base[\s\S]*RUN apk add --no-cache --upgrade[\s\S]*libcrypto3=3\.5\.8-r0[\s\S]*libssl3=3\.5\.8-r0[\s\S]*openssl=3\.5\.8-r0/,
+    /FROM python:3\.12-alpine3\.22@sha256:[a-f0-9]{64} AS worker-base[\s\S]*RUN apk add --no-cache --upgrade[\s\S]*libcrypto3=3\.5\.9-r0[\s\S]*libssl3=3\.5\.9-r0[\s\S]*openssl=3\.5\.9-r0/,
   );
   assert.match(dockerfile, /apk add --no-cache font-noto-cjk/);
   assert.match(dockerfile, /addgroup -g 10001 easycut/);
