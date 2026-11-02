@@ -2,6 +2,11 @@ import "server-only";
 import { HttpError } from "@/lib/http";
 import { paypalPlan } from "./catalog";
 import { logPayPalResponseFailure, logPayPalTransportFailure } from "./diagnostics";
+export class PayPalProviderError extends HttpError {
+  constructor(public readonly providerStatus: number, public readonly debugId?: string, unavailableReference = false) {
+    super(503, "PayPal request could not be confirmed.", unavailableReference ? "PAYPAL_REFERENCE_UNAVAILABLE" : "PAYPAL_UNCONFIRMED");
+  }
+}
 async function providerFetch(host: string, path: string, init: RequestInit) {
   let response: Response;
   try { response = await fetch(host + path, init); }
@@ -9,7 +14,12 @@ async function providerFetch(host: string, path: string, init: RequestInit) {
   if (!response.ok) {
     const body: unknown = await response.json().catch(() => null);
     logPayPalResponseFailure(path, response.status, body, response.headers.get("paypal-debug-id"));
-    throw new HttpError(503, "PayPal request could not be confirmed.", "PAYPAL_UNCONFIRMED");
+    const data = body && typeof body === "object" ? body as Record<string, unknown> : {};
+    const id = response.headers.get("paypal-debug-id") || data.debug_id;
+    const debugId = typeof id === "string" && /^[a-f0-9]{13}$/i.test(id) ? id : undefined;
+    // A missing reference is not evidence of cancellation or a failed payment.
+    const unavailable = response.status === 404 && /^\/v1\/billing\/subscriptions\/I-[A-Z0-9]+$/.test(path);
+    throw new PayPalProviderError(response.status, debugId, unavailable);
   }
   return response;
 }

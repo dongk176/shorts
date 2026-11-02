@@ -1,5 +1,6 @@
 "use client";
 
+import { paypalCheckoutErrorMessage } from "@/lib/paypal/checkout-error-message";
 import { paypalPlan } from "@/lib/paypal/catalog";
 import { CreditAllowance } from "@/components/credit-info";
 import { useUiText } from "@/lib/i18n/use-ui-text";
@@ -202,7 +203,7 @@ export function TossPricingClient({
           body: JSON.stringify({ planCode, locale: locale === "ja" ? "ja" : "en" }),
         });
         const payload = await response.json();
-        if (!response.ok) throw Error(locale === "ja" ? "決済を確認できません。すでに開始した場合は再購入せず、アカウント設定またはサポートからご確認ください。" : "Checkout could not be confirmed. If you already started a payment, do not pay again; check account settings or contact support.");
+        if (!response.ok) throw Error(paypalCheckoutErrorMessage(payload.code, locale === "ja"));
         const approval = new URL(payload.approvalUrl);
         if (approval.protocol !== "https:" || approval.hostname !== "www.paypal.com" || approval.username || approval.password) throw Error("Checkout could not be confirmed.");
         window.location.assign(approval.toString());

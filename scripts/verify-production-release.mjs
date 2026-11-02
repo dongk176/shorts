@@ -42,6 +42,8 @@ export const PROTECTED_APP_ROUTES = [
 // These routes are the only intentional additions relative to the currently
 // promoted production manifest. Everything else must still fail closed.
 export const ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE = [
+  // Read-only administrator PayPal configuration verification.
+  "/api/admin/paypal/diagnostics/route",
   // Independent PayPal recovery must not wait for other billing providers.
   "/api/cron/paypal-reconciliation/route",
   // User-approved PayPal international checkout (2026-11-01).

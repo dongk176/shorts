@@ -33,6 +33,16 @@ async function noConflicts(tx:Db,userId:string) {
   const [paddle]=await tx`select id from shorts_mvp.paddle_checkouts where user_id=${userId} and status in ('creating','ready','unknown') limit 1`;
   if(active||order||toss||paddle)throw new HttpError(409,"An existing subscription or payment must be resolved first.","EXISTING_SUBSCRIPTION");
 }
+async function recordLookupFailure(id:string,error:unknown,db:Db) {
+  const code=error instanceof HttpError && ["PAYPAL_REFERENCE_UNAVAILABLE","PAYPAL_UNCONFIRMED"].includes(error.code)?error.code:"PAYPAL_PROCESSING_FAILED";
+  const rawId=(error as {debugId?:unknown}|null)?.debugId;
+  const debugId=typeof rawId==="string" && /^[a-f0-9]{13}$/i.test(rawId)?rawId:null;
+  await db`update shorts_mvp.paypal_checkouts set last_lookup_at=now(),last_lookup_error_code=${code},last_lookup_debug_id=${debugId} where provider_subscription_id=${id} and environment=${paypalEnvironment()}`;
+}
+async function lookupSubscription(id:string,db:Db) {
+  try{return await paypalRequest<PayPalSubscription>(`/v1/billing/subscriptions/${id}`);}
+  catch(error){await recordLookupFailure(id,error,db);throw error;}
+}
 export async function preparePayPalCheckout(userId:string,code:string,locale:"en"|"ja",db=getDb()) {
   if(!paypalEnabled())throw new HttpError(503,"PayPal is unavailable.");
   const plan=paypalPlan(code), planId=paypalPlanId(code), environment=paypalEnvironment();
@@ -52,7 +62,7 @@ export async function preparePayPalCheckout(userId:string,code:string,locale:"en
     return row;
   });
   if(checkout.providerSubscriptionId) {
-    const sub=await paypalRequest<PayPalSubscription>(`/v1/billing/subscriptions/${checkout.providerSubscriptionId}`);
+    const sub=await lookupSubscription(checkout.providerSubscriptionId,db);
     validatePayPalSubscription(sub,checkout);
     const href=sub.links?.find(l=>l.rel==="approve")?.href;
     if(href && sub.status==="APPROVAL_PENDING" && checkout.planCode===code)return {checkoutId:checkout.id,approvalUrl:approvalUrl(href)};
@@ -65,7 +75,7 @@ export async function preparePayPalCheckout(userId:string,code:string,locale:"en
       // has not approved it. Keep its provider ID for reconciliation of old tabs.
       await db.begin(async tx=>{
         await tx`select pg_advisory_xact_lock(hashtextextended(${userId},0))`;
-        const current=await paypalRequest<PayPalSubscription>(`/v1/billing/subscriptions/${sub.id}`);
+        const current=await lookupSubscription(sub.id,tx);
         validatePayPalSubscription(current,checkout);
         if(current.status!=="APPROVAL_PENDING" || current.billing_info?.last_payment)throw new HttpError(409,"The previous checkout is being confirmed.","CHECKOUT_UNCONFIRMED");
         await tx`update shorts_mvp.paypal_checkouts set status='canceled',updated_at=now() where id=${checkout.id} and status='ready'`;
@@ -97,13 +107,17 @@ function approvalUrl(value:string) {
 }
 export async function syncPayPalSubscription(id:string,db=getDb()) {
   if(!subscriptionId.test(id))throw Error("Invalid PayPal subscription ID");
-  const sub=await paypalRequest<PayPalSubscription>(`/v1/billing/subscriptions/${id}`);
+  const sub=await lookupSubscription(id,db);
   if(!uuid.test(sub.custom_id??""))throw Error("Unmapped PayPal subscription");
   const [checkout]=await db<Checkout[]>`select * from shorts_mvp.paypal_checkouts where id=${sub.custom_id!}`;
   if(!checkout || checkout.environment!==paypalEnvironment())throw Error("Unmapped PayPal subscription");
   validatePayPalSubscription(sub,checkout);
   // Do not reopen a locally abandoned attempt when a delayed pending event arrives.
-  if(checkout.status==="canceled" && ["APPROVAL_PENDING","APPROVED"].includes(sub.status))return {status:sub.status,paid:false};
+  if(checkout.status==="canceled" && ["APPROVAL_PENDING","APPROVED"].includes(sub.status)) {
+    await db`update shorts_mvp.paypal_checkouts set last_lookup_at=now(),last_lookup_error_code=null,last_lookup_debug_id=null where id=${checkout.id}`;
+    await db`update shorts_mvp.paypal_subscriptions set last_checked_at=now() where paypal_id=${id}`;
+    return {status:sub.status,paid:false};
+  }
   const plan=paypalPlan(checkout.planCode);
   // Recent transaction history is independently read from PayPal, not browser or webhook claims.
   const from=new Date(Math.max(Date.parse(sub.create_time)-60000,Date.now()-179*86400000));
@@ -160,13 +174,13 @@ export async function syncPayPalSubscription(id:string,db=getDb()) {
     // while already paid monthly grants remain usable until their own expiry.
     await tx`update shorts_mvp.paypal_subscriptions set provider_status=${sub.status},updated_at=now(),last_checked_at=now() where paypal_id=${id}`;
     if(mapped.subscriptionId) await tx`update shorts_mvp.user_subscriptions set cancel_at_period_end=${["CANCELLED","EXPIRED"].includes(sub.status)},next_charge_at=${sub.billing_info?.next_billing_time??null},status=case when current_period_end<=now() and ${["CANCELLED","EXPIRED"].includes(sub.status)} then 'expired' else 'active' end,updated_at=now() where id=${mapped.subscriptionId}`;
-    await tx`update shorts_mvp.paypal_checkouts set provider_subscription_id=${id},status=${mapped.subscriptionId?"completed":["CANCELLED","EXPIRED"].includes(sub.status)?"canceled":"ready"},updated_at=now() where id=${checkout.id}`;
+    await tx`update shorts_mvp.paypal_checkouts set last_lookup_at=now(),last_lookup_error_code=null,last_lookup_debug_id=null,provider_subscription_id=${id},status=${mapped.subscriptionId?"completed":["CANCELLED","EXPIRED"].includes(sub.status)?"canceled":"ready"},updated_at=now() where id=${checkout.id}`;
     return {status:sub.status,paid:Boolean(mapped.subscriptionId)};
   });
 }
 export async function getPayPalState(userId:string,db=getDb()) {
-  const [row]=await db`select ps.paypal_id,ps.provider_status,c.plan_code,s.current_period_end,s.cancel_at_period_end from shorts_mvp.paypal_subscriptions ps join shorts_mvp.paypal_checkouts c on c.id=ps.checkout_id left join shorts_mvp.user_subscriptions s on s.id=ps.subscription_id where ps.user_id=${userId} and ps.environment=${paypalEnvironment()} order by ps.created_at desc limit 1`;
-  return row?{id:row.paypalId as string,status:row.providerStatus as string,planCode:row.planCode as string,currentPeriodEnd:row.currentPeriodEnd?new Date(row.currentPeriodEnd).toISOString():null,cancelAtPeriodEnd:Boolean(row.cancelAtPeriodEnd)}:null;
+  const [row]=await db`select ps.paypal_id,ps.provider_status,ps.last_checked_at,c.last_lookup_at,c.last_lookup_error_code,c.id as checkout_id,c.plan_code,s.current_period_end,s.cancel_at_period_end from shorts_mvp.paypal_subscriptions ps join shorts_mvp.paypal_checkouts c on c.id=ps.checkout_id left join shorts_mvp.user_subscriptions s on s.id=ps.subscription_id where ps.user_id=${userId} and ps.environment=${paypalEnvironment()} order by c.created_at desc limit 1`;
+  return row?{id:row.paypalId as string,status:row.providerStatus as string,checkoutId:row.checkoutId as string,lastLookupAt:row.lastLookupAt?new Date(row.lastLookupAt).toISOString():null,lookupErrorCode:row.lastLookupErrorCode as string|null,lastCheckedAt:row.lastCheckedAt?new Date(row.lastCheckedAt).toISOString():null,confirmationCurrent:Boolean(!row.lastLookupErrorCode && row.lastCheckedAt && Date.now()>=new Date(row.lastCheckedAt).getTime() && Date.now()-new Date(row.lastCheckedAt).getTime()<15*60_000),planCode:row.planCode as string,currentPeriodEnd:row.currentPeriodEnd?new Date(row.currentPeriodEnd).toISOString():null,cancelAtPeriodEnd:Boolean(row.cancelAtPeriodEnd)}:null;
 }
 export async function confirmPayPalCheckout(userId:string,checkoutId:string,db=getDb()) {
   const [c]=await db<Checkout[]>`select * from shorts_mvp.paypal_checkouts where id=${checkoutId} and user_id=${userId} and environment=${paypalEnvironment()}`;
@@ -184,7 +198,7 @@ export async function cancelPayPalCheckout(userId:string,checkoutId:string,db=ge
   const [c]=await db<Checkout[]>`select * from shorts_mvp.paypal_checkouts where id=${checkoutId} and user_id=${userId} and environment=${paypalEnvironment()}`;
   if(!c || c.status==="completed")throw new HttpError(409,"Checkout cannot be canceled.");
   if(!c.providerSubscriptionId)throw new HttpError(409,"Checkout needs support review.");
-  const sub=await paypalRequest<PayPalSubscription>(`/v1/billing/subscriptions/${c.providerSubscriptionId}`);
+  const sub=await lookupSubscription(c.providerSubscriptionId,db);
   validatePayPalSubscription(sub,c);
   if(sub.status==="ACTIVE")throw new HttpError(409,"Confirm this subscription before canceling.");
   if(!["CANCELLED","EXPIRED"].includes(sub.status)) await paypalRequest(`/v1/billing/subscriptions/${sub.id}/cancel`,{reason:"Customer abandoned checkout."});
@@ -194,7 +208,7 @@ export async function reconcilePayPal(db=getDb()) {
   if(!paypalEnabled())return {checked:0,failed:0};
   const started=Date.now();
   const rows=await db`select c.provider_subscription_id as paypal_id from shorts_mvp.paypal_checkouts c left join shorts_mvp.paypal_subscriptions s on s.paypal_id=c.provider_subscription_id
- where c.environment=${paypalEnvironment()} and c.provider_subscription_id is not null and (s.paypal_id is null or s.provider_status not in ('CANCELLED','EXPIRED')) order by s.last_checked_at asc nulls first limit 10`;
+ where c.environment=${paypalEnvironment()} and c.provider_subscription_id is not null and (s.paypal_id is null or s.provider_status not in ('CANCELLED','EXPIRED')) order by c.last_lookup_at asc nulls first,c.created_at asc limit 10`;
   let checked=0,failed=0;
   // Two independent lookups at a time; never leave unawaited work on route exit.
   for(let i=0;i<rows.length;i+=2) {
@@ -202,7 +216,7 @@ export async function reconcilePayPal(db=getDb()) {
     await Promise.all(rows.slice(i,i+2).map(async r=>{
       checked++;
       try {await syncPayPalSubscription(r.paypalId,db);}
-      catch {failed++;console.error("paypal_reconciliation_item_failed",{environment:paypalEnvironment(),batchIndex:i});}
+      catch(error) {failed++;await recordLookupFailure(r.paypalId,error,db);console.error("paypal_reconciliation_item_failed",{environment:paypalEnvironment(),batchIndex:i});}
     }));
   }
   const result={checked,failed,deferred:rows.length-checked,durationMs:Date.now()-started};

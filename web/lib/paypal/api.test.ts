@@ -21,3 +21,11 @@ it("records authentication and network failures without exposing raw errors", as
   expect(log).toHaveBeenCalledWith("paypal_transport_failed",{operation:"/v1/oauth2/token",errorName:"TypeError"});
   expect(JSON.stringify(log.mock.calls)).not.toContain("private-secret");
 });
+
+it('distinguishes missing subscription references without assuming a payment failed', async()=>{
+ vi.stubEnv('PAYPAL_ENVIRONMENT','live');vi.stubEnv('PAYPAL_CLIENT_ID','client');vi.stubEnv('PAYPAL_CLIENT_SECRET','secret');
+ vi.spyOn(console,'error').mockImplementation(()=>{});
+ vi.stubGlobal('fetch',vi.fn().mockResolvedValueOnce(Response.json({access_token:'token',expires_in:3600})).mockResolvedValueOnce(Response.json({name:'RESOURCE_NOT_FOUND',debug_id:'a123456789abc'},{status:404})));
+ const {paypalRequest}=await import('./api');
+ await expect(paypalRequest('/v1/billing/subscriptions/I-123456789012')).rejects.toMatchObject({code:'PAYPAL_REFERENCE_UNAVAILABLE',providerStatus:404,debugId:'a123456789abc'});
+});

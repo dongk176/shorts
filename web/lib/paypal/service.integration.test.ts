@@ -6,7 +6,7 @@ vi.mock('server-only',()=>({}));
 const planId='P-1234567890123456789012';
 vi.mock('./api',()=>({paypalRequest:vi.fn(),paypalEnabled:()=>true,paypalEnvironment:()=> 'sandbox',paypalPlanId:()=> 'P-1234567890123456789012'}));
 import { paypalRequest } from './api';
-import { preparePayPalCheckout,syncPayPalSubscription,validatePayPalPayment,validatePayPalPlan,reconcilePayPal } from './service';
+import { preparePayPalCheckout,syncPayPalSubscription,validatePayPalPayment,validatePayPalPlan,reconcilePayPal,getPayPalState } from './service';
 import { paypalPlan } from './catalog';
 import { processPayPalEvent } from './events';
 import { hasLegacyPaymentHistory } from './eligibility';
@@ -28,7 +28,7 @@ create table shorts_mvp.paddle_payments(transaction_id text primary key,user_id 
 create table shorts_mvp.user_subscriptions(id uuid primary key,user_id uuid,plan_code text,status text,billing_cycle text,payment_method_id uuid,payment_provider text constraint user_subscriptions_payment_provider_check check(payment_provider in ('toss','paddle','thepayone')),current_period_start timestamptz,current_period_end timestamptz,cancel_at_period_end boolean default false,next_charge_at timestamptz,updated_at timestamptz default now());
 create table shorts_mvp.usage_grants(id uuid primary key default gen_random_uuid(),user_id uuid,subscription_id uuid,kind text,product_code text,total_seconds int,credited_seconds int,carried_seconds int,reserved_seconds int default 0,consumed_seconds int default 0,valid_from timestamptz,expires_at timestamptz,status text default 'active',updated_at timestamptz default now(),check(reserved_seconds+consumed_seconds<=total_seconds));
 create unique index base_once on shorts_mvp.usage_grants(subscription_id,valid_from,kind) where subscription_id is not null and kind='base';`);
-const migration=fs.readFileSync('../supabase/migrations/20261101070715_paypal_billing.sql','utf8');await pg.exec(migration);await pg.exec(migration);
+const migration=fs.readFileSync('../supabase/migrations/20261101070715_paypal_billing.sql','utf8');await pg.exec(migration);await pg.exec(migration);const health=fs.readFileSync('../supabase/migrations/20261102035853_paypal_lookup_health.sql','utf8');await pg.exec(health);await pg.exec(health);
 },30000);
 beforeEach(async()=>{
  vi.useFakeTimers({toFake:['Date']});vi.setSystemTime(new Date('2026-11-01T00:10:00Z'));
@@ -196,4 +196,30 @@ it('a provider failure for one subscription does not prevent recovering another'
  });
  expect(await reconcilePayPal(db(pg))).toMatchObject({checked:2,failed:1,deferred:0});
  expect((await pg.query('select * from shorts_mvp.paypal_payments')).rows).toHaveLength(1);
+});
+
+it('reports stale canonical state and preserves the last known status without granting',async()=>{
+ transactions=[];sub.status='APPROVAL_PENDING';await syncPayPalSubscription(id,db(pg));
+ await pg.exec("update shorts_mvp.paypal_subscriptions set last_checked_at='2026-11-01T00:10:00Z'");
+ expect(await getPayPalState(user,db(pg))).toMatchObject({confirmationCurrent:true,status:'APPROVAL_PENDING',checkoutId:checkout});
+ vi.setSystemTime(new Date('2026-11-01T01:00:00Z'));
+ expect(await getPayPalState(user,db(pg))).toMatchObject({confirmationCurrent:false,status:'APPROVAL_PENDING'});
+ expect((await pg.query('select * from shorts_mvp.usage_grants')).rows).toHaveLength(0);
+});
+it('keeps unavailable provider references blocked instead of treating 404 as unpaid or canceled',async()=>{
+ vi.mocked(paypalRequest).mockImplementation(async path=>{if(path.startsWith('/v1/billing/plans/'))return remote;throw Error('missing reference');});
+ await expect(preparePayPalCheckout(user,'starter_3m','en',db(pg))).rejects.toThrow('missing reference');
+ expect((await pg.query('select * from shorts_mvp.paypal_checkouts')).rows).toHaveLength(1);
+ expect((await pg.query('select status from shorts_mvp.paypal_checkouts')).rows[0]).toMatchObject({status:'ready'});
+ expect((await pg.query('select * from shorts_mvp.usage_grants')).rows).toHaveLength(0);
+});
+
+it('failed lookups rotate through the bounded queue instead of starving later checkouts',async()=>{
+ await pg.exec(`with users as (insert into shorts_mvp.app_users(id) select gen_random_uuid() from generate_series(1,11) returning id) insert into shorts_mvp.paypal_checkouts(user_id,environment,plan_code,provider_plan_id,provider_subscription_id,locale,status) select id,'sandbox','starter_3m','${planId}','I-'||upper(substr(replace(id::text,'-',''),1,12)),'en','ready' from users`);
+ vi.mocked(paypalRequest).mockRejectedValue(Error('provider unavailable'));
+ expect(await reconcilePayPal(db(pg))).toMatchObject({checked:10,failed:10});
+ await reconcilePayPal(db(pg));
+ expect((await pg.query('select * from shorts_mvp.paypal_checkouts where last_lookup_at is not null')).rows).toHaveLength(12);
+ expect((await pg.query('select * from shorts_mvp.paypal_checkouts where last_lookup_error_code is not null')).rows).toHaveLength(12);
+ expect((await pg.query('select * from shorts_mvp.usage_grants')).rows).toHaveLength(0);
 });
