@@ -79,6 +79,7 @@ export async function GET(_: Request, context: RouteContext) {
         and upload.user_id=job.user_id
         and upload.mvp_session_id=job.mvp_session_id
       where job.project_number=${projectNumber}
+      and coalesce(to_jsonb(job)->'midform_request','null'::jsonb)='null'::jsonb
         and job.user_id=${session.userId}
         and job.source_type='upload'
         and job.execution_backend='upload_service'

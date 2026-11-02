@@ -77,7 +77,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ short
         s.editor_document, s.render_version
       from shorts_mvp.generated_shorts s
       join shorts_mvp.video_jobs j on j.id=s.job_id
-      where s.id=${shortId} and not j.is_example
+      where s.id=${shortId} and coalesce(to_jsonb(s)->'midform_document','null'::jsonb)='null'::jsonb and not j.is_example
         and j.user_deleted_at is null and (
         (${session.userId}::uuid is not null and s.user_id=${session.userId})
         or (${session.userId}::uuid is null and s.user_id is null and s.mvp_session_id=${session.id})
@@ -151,7 +151,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ short
         template_id=${input.templateId}, title_font_scale=${input.titleFontScale},
         title_text_styles=${db.json(orderedTitleStyles)}, title_text_styles_initialized=true
       from shorts_mvp.video_jobs j
-      where s.id=${shortId} and j.id=s.job_id and not j.is_example
+      where s.id=${shortId} and coalesce(to_jsonb(s)->'midform_document','null'::jsonb)='null'::jsonb and j.id=s.job_id and not j.is_example
         and j.user_deleted_at is null and (
         (${session.userId}::uuid is not null and s.user_id=${session.userId})
         or (${session.userId}::uuid is null and s.user_id is null and s.mvp_session_id=${session.id})
@@ -176,7 +176,7 @@ export async function DELETE(_: Request, context: { params: Promise<{ shortId: s
       update shorts_mvp.generated_shorts s
       set status='deleted', deleted_at=coalesce(deleted_at, now())
       from shorts_mvp.video_jobs j
-      where s.id=${shortId} and j.id=s.job_id and not j.is_example
+      where s.id=${shortId} and coalesce(to_jsonb(s)->'midform_document','null'::jsonb)='null'::jsonb and j.id=s.job_id and not j.is_example
         and j.user_deleted_at is null and (
         (${session.userId}::uuid is not null and s.user_id=${session.userId})
         or (${session.userId}::uuid is null and s.user_id is null and s.mvp_session_id=${session.id})

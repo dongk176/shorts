@@ -91,6 +91,7 @@ export async function DELETE(
         ) as has_active_outputs
         from shorts_mvp.video_jobs j
         where j.project_number=${projectNumber}
+      and coalesce(to_jsonb(j)->'midform_request','null'::jsonb)='null'::jsonb
           and j.user_id=${session.userId}
           and not j.is_example
         limit 1

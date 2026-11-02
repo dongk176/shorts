@@ -140,6 +140,17 @@ export async function getShortDownloadUrl(
   });
 }
 
+export async function getMidformEditSourceUrl(key: string, expiresAt: Date) {
+  if (!/^edit-sources\/[A-Za-z0-9/_-]+\.mp4$/.test(key)) throw new Error("편집 영상 경로가 올바르지 않습니다.");
+  const domain = process.env.CLOUDFRONT_DOMAIN;
+  const keyPairId = process.env.CLOUDFRONT_KEY_PAIR_ID;
+  const privateKey = await cloudFrontPrivateKey();
+  const expiry = Math.min(Date.now() + 15 * 60_000, expiresAt.getTime());
+  if (!domain || !keyPairId || !privateKey || expiry <= Date.now()) throw new Error("편집 영상 연결이 만료되었습니다.");
+  return getCloudFrontSignedUrl({ url: `https://${domain}/${key}`, keyPairId, privateKey,
+    dateLessThan: new Date(expiry).toISOString() });
+}
+
 export async function getShortPlaybackAccess({
   outputKey,
   thumbnailKey,

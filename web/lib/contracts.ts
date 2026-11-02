@@ -321,6 +321,7 @@ export type MvpState = {
   paymentMethodAction: PaymentMethodAction;
   usage: UsageSnapshot;
   capabilities: {
+    midform?: boolean;
     snsTemplate?: boolean;
     communityTemplate?: boolean;
     languageTest?: boolean;

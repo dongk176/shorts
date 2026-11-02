@@ -1,4 +1,6 @@
-import { randomUUID } from "node:crypto";
+import { midformUploadRelease, requireMidformAdmin } from "@/lib/midform-release";
+import { midformRequestSchema } from "@/lib/midform-cloud";
+import { createHash, randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
@@ -71,6 +73,7 @@ const millisecondNumber = z.number().finite().transform(
 );
 
 const requestSchema = z.object({
+  midform: midformRequestSchema.optional(),
   requestId: z.string().uuid(),
   file: z.object({
     name: z.string().min(1).max(1024),
@@ -302,12 +305,16 @@ export async function POST(request: Request) {
       request,
       FILE_UPLOAD_CONTROL_BODY_MAX_BYTES,
     ));
+    if (input.midform) {
+      await requireMidformAdmin(db, session.userId);
+      if (input.file.durationSeconds < 600 || input.file.durationSeconds > 3600 || input.rangeStartSeconds !== 0 || input.rangeEndSeconds !== input.file.durationSeconds || input.customTemplateId || input.subtitleTemplateId || input.templateId !== "dark-minimal" || input.videoAspectRatio !== "16:9" || input.outputLanguage !== "ko") throw new HttpError(400, "중폼은 10~60분 원본 영상을 선택해 주세요.");
+    }
     const originalFilename = sanitizedDisplayFilename(input.file.name);
     const declaredContentType = input.file.contentType
       .split(";", 1)[0]
       ?.trim()
       .toLowerCase() || "application/octet-stream";
-    const intentHash = fileUploadIntentHash({
+    const baseIntentHash = fileUploadIntentHash({
       originalFilename,
       declaredContentType,
       sizeBytes: input.file.sizeBytes,
@@ -345,7 +352,8 @@ export async function POST(request: Request) {
       (input.rangeEndSeconds - input.rangeStartSeconds) * 1_000,
     ) / 1_000;
     const usageSeconds = billableSourceSeconds(selectedDurationSeconds);
-    const plannedShortCount = expectedShortCount(selectedDurationSeconds);
+    const intentHash = input.midform ? createHash("sha256").update(`${baseIntentHash}:midform-v1`).digest("hex") : baseIntentHash;
+    const plannedShortCount = input.midform ? 1 : expectedShortCount(selectedDurationSeconds);
     const sourceDurationSeconds = Math.ceil(input.file.durationSeconds);
     const sourceRangeSelectionEnabled = input.file.durationSeconds
       >= MIN_SELECTED_SOURCE_SECONDS;
@@ -569,6 +577,7 @@ export async function POST(request: Request) {
       // Administrator tests and public uploads bind to the exact independently
       // verified upload release without rotating ordinary link dispatch.
       // Public admission additionally requires the audited release evidence.
+      const midform = input.midform ? await midformUploadRelease(tx, session.userId) : null;
       const initialRenderRelease = await resolveFileUploadInitialRenderRelease(tx, {
         targetKey: dispatchTarget.targetKey,
         access: lockedAccess,
@@ -580,6 +589,7 @@ export async function POST(request: Request) {
           "FILE_UPLOAD_RENDER_RELEASE_UNAVAILABLE",
         );
       }
+      if (midform && initialRenderRelease.releaseId !== midform.releaseId) throw new HttpError(503, "중폼 업로드 서버를 준비하고 있습니다.");
       if (resolvedExecution.usesCustomTemplateDesign) {
         await assertCustomTemplateDesignRenderRelease(tx, initialRenderRelease.releaseId);
       }
@@ -623,7 +633,7 @@ export async function POST(request: Request) {
           transcription_policy,batch_job_definition,batch_job_queue,
           selected_source_duration_seconds,billable_source_seconds,
           source_type,initial_editor_release_id,
-          initial_render_spec_version,initial_caption_render_spec_version
+          initial_render_spec_version,initial_caption_render_spec_version,midform_request,midform_release_id
         ) values (
           ${jobId},${projectNumber},${session.id},${session.userId},${input.requestId},
           ${null},${null},${originalFilename},${resolvedExecution.channelDisplayName || ""},
@@ -638,7 +648,7 @@ export async function POST(request: Request) {
           ${billing.retentionDays},2,${sourceRangeSelectionEnabled},
           ${transcriptionAccess.policy},${null},${null},
           ${selectedDurationSeconds},${usageSeconds},'upload',
-          ${initialRenderRelease.releaseId},4,4
+          ${initialRenderRelease.releaseId},4,4,${input.midform ? tx.json(input.midform) : null},${midform?.releaseId || null}
         )
       `;
       const reservations = await tx`

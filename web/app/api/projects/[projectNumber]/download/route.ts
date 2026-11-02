@@ -29,6 +29,7 @@ async function downloadItems(context: Context) {
     from shorts_mvp.generated_shorts s
     join shorts_mvp.video_jobs j on j.id=s.job_id
     where j.project_number=${projectNumber}
+      and coalesce(to_jsonb(j)->'midform_request','null'::jsonb)='null'::jsonb
       and j.user_deleted_at is null
       and j.is_example=false
       and (

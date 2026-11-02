@@ -254,7 +254,7 @@ export async function getRecentJobs(db: Sql, session: MvpSession, onlyJobId?: st
   const rows = onlyJobId
     ? await db`
         select * from shorts_mvp.video_jobs
-        where id = ${onlyJobId} and user_deleted_at is null and (
+        where coalesce(to_jsonb(video_jobs)->'midform_request', 'null'::jsonb) = 'null'::jsonb and id = ${onlyJobId} and user_deleted_at is null and (
           (${owner.userId}::uuid is not null and user_id=${owner.userId})
           or (${owner.userId}::uuid is null and user_id is null and mvp_session_id=${owner.anonymousSessionId})
           or (is_example and status='completed')
@@ -262,7 +262,7 @@ export async function getRecentJobs(db: Sql, session: MvpSession, onlyJobId?: st
       `
     : await db`
         select * from shorts_mvp.video_jobs
-        where user_deleted_at is null and ((${owner.userId}::uuid is not null and user_id=${owner.userId})
+        where coalesce(to_jsonb(video_jobs)->'midform_request', 'null'::jsonb) = 'null'::jsonb and user_deleted_at is null and ((${owner.userId}::uuid is not null and user_id=${owner.userId})
           or (${owner.userId}::uuid is null and user_id is null and mvp_session_id=${owner.anonymousSessionId})
           or (is_example and status='completed' and coalesce(output_language,'ko')=${locale}))
         order by is_example desc, created_at desc limit 10
@@ -274,7 +274,7 @@ export async function getAllProjects(db: Sql, session: MvpSession): Promise<Vide
   const owner = sessionOwnership(session);
   const rows = await db`
     select * from shorts_mvp.video_jobs
-    where user_deleted_at is null and ((${owner.userId}::uuid is not null and user_id=${owner.userId})
+    where coalesce(to_jsonb(video_jobs)->'midform_request', 'null'::jsonb) = 'null'::jsonb and user_deleted_at is null and ((${owner.userId}::uuid is not null and user_id=${owner.userId})
       or (${owner.userId}::uuid is null and user_id is null and mvp_session_id=${owner.anonymousSessionId})
       or (is_example and status='completed'))
     order by is_example desc, created_at desc
@@ -291,7 +291,7 @@ export async function getProjectByNumber(
   const owner = sessionOwnership(session);
   const rows = await db`
     select * from shorts_mvp.video_jobs
-    where project_number=${projectNumber} and user_deleted_at is null and (
+    where coalesce(to_jsonb(video_jobs)->'midform_request', 'null'::jsonb) = 'null'::jsonb and project_number=${projectNumber} and user_deleted_at is null and (
       (${owner.userId}::uuid is not null and user_id=${owner.userId})
       or (${owner.userId}::uuid is null and user_id is null and mvp_session_id=${owner.anonymousSessionId})
       or (is_example and status='completed')
@@ -350,7 +350,7 @@ export async function getPublicExampleProjectByNumber(
 ): Promise<VideoJob | null> {
   const rows = await db`
     select * from shorts_mvp.video_jobs
-    where project_number=${projectNumber} and is_example and status='completed'
+    where coalesce(to_jsonb(video_jobs)->'midform_request', 'null'::jsonb) = 'null'::jsonb and project_number=${projectNumber} and is_example and status='completed'
       and user_deleted_at is null
     limit 1
   `;

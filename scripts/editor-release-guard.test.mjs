@@ -25,10 +25,10 @@ test("legacy editor global CSS remains byte-for-byte at the approved baseline", 
 
   assert.equal(
     digest,
-    // Current promoted cc9eab84 (dpl_CmTEr5pde3ewpzzSwP1jBvxGjtre), checked 2026-10-07.
-    // Reviewed existing workspace chrome and mobile input-size additions.
+    // Current promoted a2893f37 (dpl_Bb8c7zYnsvghXUfDXpMwe1g2A6DT), checked 2026-11-03.
+    // Verified against git show a2893f37:web/app/globals.css; midform uses CSS modules.
     // This release leaves global CSS byte-identical; retain the exact digest guard.
-    "17d86ec47ef67e8f0c0ead1b9f5c95111c4a0cd4cfc3804f791bbe54cf3685f3",
+    "f0f158f748e283b287b281e1e9c19535bd19a8ce035b478f06b1e80b41300480",
     "Do not change the approved global CSS baseline without a dedicated public UI review.",
   );
 });
