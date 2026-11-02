@@ -219,19 +219,17 @@ test("release workflow promotes one tested digest without deploying the website"
   ]) assert.match(registrar, new RegExp(lane));
   assert.match(registrar, /editor-release-probe/);
   assert.match(workflow, /make verify/);
-  assert.match(workflow, /secrets\.EDITOR_TEST_DATABASE_URL/);
-  assert.match(workflow, /secrets\.EDITOR_TEST_DATABASE_FINGERPRINT/);
-  assert.match(workflow, /EDITOR_TEST_SUPABASE_PROJECT_REF/);
-  assert.match(workflow, /PRODUCTION_SUPABASE_PROJECT_REF/);
-  assert.match(
-    workflow,
-    /node scripts\/apply-supabase\.mjs --non-production[\s\S]*202608260008_editor_release_probe_attestation\.sql/,
-  );
-  assert.match(
-    workflow,
-    /202608260008_editor_release_probe_attestation\.sql[\s\\\n]*202608270001_fix_editor_release_object_cardinality\.sql/,
-  );
-  assert.doesNotMatch(workflow, /node scripts\/apply-supabase\.mjs\s*\n\s*$/m);
+  assert.doesNotMatch(workflow, /secrets\.EDITOR_TEST_DATABASE_(?:URL|FINGERPRINT)/);
+  assert.doesNotMatch(workflow, /node scripts\/apply-supabase\.mjs/);
+  assert.match(workflow, /python scripts\/verify-isolated-release-schema\.py/);
+  const isolatedSchema = await source("scripts/verify-isolated-release-schema.py");
+  assert.match(isolatedSchema, /"--network", "none"/);
+  assert.match(isolatedSchema, /"--tmpfs", "\/var\/lib\/postgresql\/data:rw,size=512m"/);
+  assert.match(isolatedSchema, /postgres@sha256:[0-9a-f]{64}/);
+  assert.match(isolatedSchema, /FILE_UPLOAD_SUCCESSOR_TEST_CONTAINER/);
+  assert.match(isolatedSchema, /PROJECT_TARGET_SUCCESSOR_TEST_CONTAINER/);
+  assert.match(isolatedSchema, /finally:[\s\S]*"rm", "--force", name/);
+  assert.doesNotMatch(isolatedSchema, /"--publish"|"-p"|"--network", "host"/);
   assert.match(workflow, /EDITOR_RELEASE_ECR_REPOSITORY_URI/);
   assert.match(workflow, /\.projectTargets \| keys \| length == 5/);
   assert.match(workflow, /GITHUB_STEP_SUMMARY/);
