@@ -35,6 +35,15 @@ def overlay(source, editor=False):
     if source.count(marker) != 1:
         raise ValueError("Midform insertion point is not unique")
     source = source.replace(marker, marker + branch)
+    runtime_marker = ('        submission_key = f"rerender:{short_id}:{version}:{rerender_attempt}"'
+                      if editor else '        submission_key = (\n            f"project:{job_id}:resume:1"')
+    runtime_job = "parent_job" if editor else "job"
+    if source.count(runtime_marker) != 1:
+        raise ValueError("Midform runtime insertion point is not unique")
+    source = source.replace(runtime_marker,
+        f'        if {runtime_job}.get("midform_release_id"):\n'
+        '            import midform_submitter\n'
+        f'            midform_submitter.bind_runtime(request, {runtime_job})\n' + runtime_marker)
     before = {n.name: ast.dump(n) for n in ast.parse(original).body if isinstance(n, ast.FunctionDef)}
     after = {n.name: ast.dump(n) for n in ast.parse(source).body if isinstance(n, ast.FunctionDef)}
     allowed = {"_submit", "_language_editor_target" if editor else "_project_registry_for_job"}

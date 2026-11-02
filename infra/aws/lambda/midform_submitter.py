@@ -12,7 +12,7 @@ DEFINITION = re.compile(
 )
 EDITOR = re.compile(
     r"^arn:aws:batch:ap-northeast-2:181651591905:job-definition/"
-    r"shorts-mvp-editor-release-language-test-midform-[a-f0-9]{12}:[1-9][0-9]*$"
+    r"shorts-mvp-editor-release-(?:language-test-midform-[a-f0-9]{12}|[a-f0-9]{12}-4vcpu):[1-9][0-9]*$"
 )
 
 
@@ -74,3 +74,20 @@ def editor_target(host, request_id, job):
                 or target["fontManifestSha256"] != row.get("font_manifest_sha256")):
             raise RuntimeError("Midform editor provenance mismatch")
     return release["editor_job_queue_arn"], definition, row["worker_image_digest"], row["id"]
+
+
+def bind_runtime(request, job):
+    """Set private runtime switches from a previously verified DB binding."""
+    marker = job.get("midform_release_id")
+    if not marker:
+        return
+    if (marker != job.get("initial_editor_release_id")
+            or job.get("midform_request") != {"version": 1, "targetSeconds": 0}):
+        raise RuntimeError("Invalid midform runtime binding")
+    environment = request["containerOverrides"].setdefault("environment", [])
+    if any(item["name"] in {"MIDFORM_ENABLED", "MIDFORM_RELEASE_ID"} for item in environment):
+        raise RuntimeError("Duplicate midform runtime switch")
+    environment.extend([
+        {"name": "MIDFORM_ENABLED", "value": "true"},
+        {"name": "MIDFORM_RELEASE_ID", "value": marker},
+    ])
