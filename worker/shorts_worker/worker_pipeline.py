@@ -1146,7 +1146,7 @@ class BatchWorker:
                 dir=self.settings.temp_dir,
             ))
             with self.heartbeat(job_id):
-                if not self.settings.openai_api_key:
+                if not self.settings.openai_api_key and job.get("midform_request") is None:
                     raise TranscriptionError(
                         "OPENAI_API_KEY가 없어 필수 전사를 시작할 수 없습니다."
                     )
@@ -1387,6 +1387,13 @@ class BatchWorker:
                             }
                         },
                     )
+
+                if job.get("midform_request") is not None:
+                    from .midform_project import run_midform_project
+
+                    run_midform_project(self, job, source, work_dir)
+                    preparation_finished = True
+                    return
 
                 self.repository.stage(job_id, "transcribing", 28, "영상 내용을 분석하고 있습니다.")
                 transcription_started_at = time.monotonic()
@@ -1957,7 +1964,7 @@ class BatchWorker:
                 resource_tier=resource_tier,
                 container_peak_memory_bytes=_container_memory_peak_bytes(),
             )
-            if not preparation_finished:
+            if not preparation_finished and job.get("midform_request") is None:
                 self._cleanup_initial_objects(job)
             self.repository.fail_open_project_attempts(
                 job_id,
@@ -3234,6 +3241,10 @@ class BatchWorker:
         short_id = str(item["id"])
         if not self.repository.begin_initial_render(short_id):
             return None
+        if item.get("midform_document") is not None:
+            from .midform_project import resume_midform_output
+
+            return resume_midform_output(self, item)
         started_at = time.monotonic()
         clip_duration_seconds = max(
             0.0,
@@ -3666,6 +3677,11 @@ class BatchWorker:
         if not item:
             raise KeyError(short_id)
         pending_snapshot = item.get("pending_edit_snapshot")
+        if isinstance(pending_snapshot, dict) and pending_snapshot.get("kind") == "midform":
+            from .midform_project import rerender_midform
+
+            rerender_midform(self, item, pending_snapshot)
+            return
         if (
             isinstance(pending_snapshot, dict)
             and pending_snapshot.get("version") in {2, 3}

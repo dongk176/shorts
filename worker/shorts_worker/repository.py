@@ -789,6 +789,55 @@ class WorkerRepository:
                 (short_id,),
             ).fetchone()
 
+    def save_midform_document(self, short_id: str, document: dict) -> None:
+        with self.connect() as connection:
+            updated = connection.execute(
+                """
+                update shorts_mvp.generated_shorts s set midform_document=%s
+                from shorts_mvp.video_jobs j
+                where s.id=%s and j.id=s.job_id and j.midform_request is not null
+                  and s.status='rendering' and s.deleted_at is null
+                  and s.expires_at > clock_timestamp()
+                returning s.id
+                """, (Jsonb(document), short_id),
+            ).fetchone()
+            if not updated:
+                raise ValueError("긴 영상 편집 정보를 저장하지 못했습니다.")
+
+    def complete_midform_rerender(
+        self, short_id: str, *, request_id: str, output_key: str, thumbnail_key: str,
+        size: int, version: int, duration: float, draft: dict, srt: str,
+    ) -> list[str] | None:
+        with self.connect() as connection, connection.transaction():
+            row = connection.execute(
+                """select output_s3_key,thumbnail_s3_key from shorts_mvp.generated_shorts
+                where id=%s and pending_edit_request_id=%s and status='rerendering'
+                  and render_version=%s and deleted_at is null and expires_at > clock_timestamp()
+                  and pending_edit_snapshot->>'kind'='midform' for update""",
+                (short_id, request_id, version - 1),
+            ).fetchone()
+            if not row:
+                return None
+            connection.execute(
+                """update shorts_mvp.generated_shorts set output_s3_key=%s,thumbnail_s3_key=%s,
+                  file_size_bytes=%s,render_version=%s,status='ready',rerender_progress=100,
+                  start_seconds=0,end_seconds=%s,duration_seconds=%s,
+                  midform_document=jsonb_set(jsonb_set(jsonb_set(midform_document,'{renderedDraft}',%s),
+                    '{draft}',%s),'{outputSrt}',%s),
+                  rendered_config_hash=pending_render_hash,pending_render_hash=null,
+                  pending_edit_snapshot=null,pending_edit_request_id=null,rerender_batch_job_id=null,
+                  render_error_code=null,render_error_message=null
+                where id=%s""",
+                (output_key, thumbnail_key, size, version, duration, duration,
+                 Jsonb(draft), Jsonb(draft), Jsonb(srt), short_id),
+            )
+            connection.execute(
+                """update shorts_mvp.editor_render_requests set status='succeeded',
+                  output_render_version=%s,completed_at=now(),updated_at=now()
+                where id=%s and short_id=%s""", (version, request_id, short_id),
+            )
+            return [str(row[key]) for key in ("output_s3_key", "thumbnail_s3_key") if row[key]]
+
     def claim_prepare_attempt(
         self, job_id: str, *, attempt_override: int | None = None
     ) -> dict[str, Any] | None:
@@ -1540,6 +1589,7 @@ class WorkerRepository:
         title_text_styles_initialized: bool = False,
         subtitles_enabled: bool | None = None,
         viral_score: int | None = None,
+        midform_document: dict | None = None,
     ) -> bool:
         with self.connect() as connection, connection.transaction():
             locked_job = connection.execute(
@@ -1711,6 +1761,11 @@ class WorkerRepository:
             # Fail closed so the caller deletes the newly uploaded clean clip.
             if not upserted:
                 return False
+            if midform_document is not None:
+                connection.execute(
+                    "update shorts_mvp.generated_shorts set midform_document=%s where id=%s",
+                    (Jsonb(midform_document), short_id),
+                )
             if int(job.get("pipeline_version") or 1) == 2:
                 checkpoint = connection.execute(
                     """
