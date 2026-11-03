@@ -29,7 +29,7 @@ def evidence_manifest(module):
         "renderSpecVersion": 4, "captionRenderSpecVersion": 4,
         "wrapRevision": "editor-text-v1",
         "verification": {
-            "caseCount": 3, "fontIds": sorted(module._REQUIRED_FONTS),
+            "caseCount": 3, "fontIds": sorted(module._DESIGN_FONTS),
             "textOverlayCount": 20, "wrapRevision": "editor-text-v1",
             "maximumFrameMeanError": 1.2, "deletedTextPreserved": True,
             "backgroundSha256": "b" * 64, "frames": frames,

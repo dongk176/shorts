@@ -13,7 +13,7 @@ concurrency:
 
 env:
   AWS_REGION: ap-northeast-2
-  EDITOR_RELEASE_TAG: editor-v4-render-parity-20261103-2
+  EDITOR_RELEASE_TAG: editor-v4-render-parity-20261103-3
   EDITOR_RELEASE_BUILD_ROLE_ARN: ${{ vars.EDITOR_RELEASE_BUILD_ROLE_ARN }}
   EDITOR_RELEASE_VERIFIER_ROLE_ARN: ${{ vars.EDITOR_RELEASE_VERIFIER_ROLE_ARN }}
   EDITOR_RELEASE_ECR_REPOSITORY_URI: ${{ vars.EDITOR_RELEASE_ECR_REPOSITORY_URI }}
@@ -30,7 +30,7 @@ jobs:
   build:
     # A mutable branch is never a release identity. AWS independently verifies
     # this exact protected tag before it allows an image push.
-    if: github.ref == 'refs/tags/editor-v4-render-parity-20261103-2'
+    if: github.ref == 'refs/tags/editor-v4-render-parity-20261103-3'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     outputs:
@@ -200,6 +200,7 @@ jobs:
             def expected_files: {
               "pretendard":"Pretendard-Bold.woff2",
               "noto-sans-kr":"NotoSansKR-Variable.ttf",
+              "noto-sans-jp":"NotoSansCJKjp-Variable.ttf",
               "do-hyeon":"DoHyeon-Regular.ttf",
               "jua":"Jua-Regular.ttf",
               "jalnan-2":"Jalnan2-Regular.woff2",
@@ -222,7 +223,7 @@ jobs:
             def font_root: "/app/worker/shorts_worker/assets/editor_fonts/";
             (.sha256 | test("^[0-9a-f]{64}$"))
             and (.fallbackDetected == false)
-            and (.entries | type == "array" and length == 20)
+            and (.entries | type == "array" and length == 21)
             and ([.entries[].fontId] | sort) == (expected_files | keys | sort)
             and ([.entries[] | select(
               (keys | sort) != (["cssToAssBaselineOffsetEm","cssToAssScale","fontId","postscriptName","resolvedPath","sha256","titleBaselineOffsetEm","wordSpaceAdvanceEm"] | sort)
@@ -250,7 +251,7 @@ jobs:
 
   verify-and-register:
     needs: build
-    if: github.ref == 'refs/tags/editor-v4-render-parity-20261103-2'
+    if: github.ref == 'refs/tags/editor-v4-render-parity-20261103-3'
     environment: editor-v4-release-approval
     runs-on: ubuntu-latest
     timeout-minutes: 120
@@ -496,9 +497,9 @@ jobs:
             .schemaVersion == 1
             and .renderer == "isolated-linux-worker-v4"
             and .runtimeIdentity == $identity
-            and .caseCount == 66
-            and (.cases | length) == 66
-            and (.fontIds | unique | length) == 20
+            and .caseCount == 69
+            and (.cases | length) == 69
+            and (.fontIds | unique | length) == 21
             and ([.cases[].workerFrameSha256] | all(test("^[0-9a-f]{64}$")))
           ' worker-matrix/matrix.json
           test "$(jq -r '.browserParityMatrix.sha256' probe-manifest.json)" = "$matrix_sha256"
@@ -512,8 +513,8 @@ jobs:
             --report browser-worker-parity/report.json
           jq -e '
             .schemaVersion == 2
-            and .caseCount == 66
-            and (.fontIds | unique | length) == 20
+            and .caseCount == 69
+            and (.fontIds | unique | length) == 21
             and .maximumAllowedErrorPixels == 2
             and .maximumDomErrorPixels <= 2
             and .maximumPixelErrorPixels <= 2
@@ -597,9 +598,9 @@ jobs:
           {
             echo "### Browser compiler → isolated Linux worker parity"
             echo
-            echo "- cases: 66"
-            echo "- title fonts: 20/20"
-            echo "- pop/highlight fonts: 20/20 in both modes"
+            echo "- cases: 69"
+            echo "- title fonts: 21/21"
+            echo "- pop/highlight fonts: 21/21 in both modes"
             echo "- maximum DOM error: ${{ steps.browser-parity.outputs.maximum_dom_error }}px"
             echo "- maximum pixel error: ${{ steps.browser-parity.outputs.maximum_pixel_error }}px"
             echo "- allowed: 2px"
