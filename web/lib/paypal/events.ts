@@ -3,11 +3,16 @@ import { getDb } from "@/lib/db";
 import { paypalRequest, paypalEnvironment } from "./api";
 import { usdMinor } from "./catalog";
 import { syncPayPalSubscription } from "./service";
+import { processOneTimeEvent } from "./one-time";
 export type PayPalEvent = { id:string;event_type:string;resource:{id?:string;billing_agreement_id?:string;sale_id?:string} };
 export async function processPayPalEvent(event:PayPalEvent,db=getDb()) {
   if(!/^[A-Z0-9-]{8,100}$/.test(event.id) || !event.event_type || !event.resource)throw Error("Invalid event");
   const [done]=await db`select event_id from shorts_mvp.paypal_webhook_events where event_id=${event.id}`;
   if(done)return;
+  if(await processOneTimeEvent(event,db)) {
+    await db`insert into shorts_mvp.paypal_webhook_events(event_id,event_type) values(${event.id},${event.event_type}) on conflict do nothing`;
+    return;
+  }
   const kind=event.event_type;
   if(kind.startsWith("BILLING.SUBSCRIPTION.")) {
     await syncPayPalSubscription(event.resource.id??"",db);

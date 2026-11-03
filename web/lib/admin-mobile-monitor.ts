@@ -5,6 +5,7 @@ import { getDb } from "@/lib/db";
 import { defaultMobilePreferences, shouldNotify } from "@/lib/admin-mobile-contract";
 import { loadMobileRoutes } from "@/lib/admin-mobile-overview";
 import { sendMobilePush } from "@/lib/admin-mobile-push";
+import { oneTimeEnabled } from "@/lib/paypal/one-time-config";
 
 type Incident = { key: string; active: boolean | null; title: string; detail: string; nextStep: string; impact: string; urgent?: boolean; payload?: {routeId:string; identity:string; summary:string} };
 
@@ -82,6 +83,15 @@ export async function scanMobileEvents() {
       where m.singleton and p.created_at>=m.started_at and p.created_at>=now()-interval '7 days'
         and not exists(select 1 from shorts_mvp.admin_mobile_events e where e.event_key='payment:paddle:'||p.transaction_id)
       order by p.created_at limit 500 on conflict(event_key) do nothing`;
+    if(oneTimeEnabled())await tx`insert into shorts_mvp.admin_mobile_events
+      (event_key,kind,title,subtitle,detail,next_step,impact,payload,occurred_at)
+      select 'payment:paypal:'||o.capture_id,'payment','해외 이용권이 판매됐어요','PayPal 일회성 결제',
+        '결제 완료와 이용권 지급이 확인됐어요. 자동 갱신은 없어요.','매출에서 달러 결제 내역을 확인해주세요.','결제 1건',
+        jsonb_build_object('paymentId',o.capture_id,'amountMinor',o.amount_minor,'currency','USD'),o.paid_at
+      from shorts_mvp.paypal_one_time_orders o,shorts_mvp.admin_mobile_monitor_state m
+      where m.singleton and o.environment='live' and o.status='completed' and o.paid_at>=m.started_at and o.paid_at>=now()-interval '7 days'
+        and not exists(select 1 from shorts_mvp.admin_mobile_events e where e.event_key='payment:paypal:'||o.capture_id)
+      order by o.paid_at limit 500 on conflict(event_key) do nothing`;
     const [health] = await tx`select
       count(*) filter(where status in ('queued','retry_waiting'))::integer as waiting,
       coalesce(extract(epoch from now()-min(created_at) filter(where status in ('queued','retry_waiting')))/60,0)::integer as oldest_wait,

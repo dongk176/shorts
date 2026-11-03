@@ -4,6 +4,8 @@ import { z } from "zod";
 import { addKstMonths } from "@/lib/billing";
 import { getDb } from "@/lib/db";
 import { loadAdminPaddleOrders } from "@/lib/admin-paddle";
+import { loadAdminPayPalOrders } from "@/lib/admin-paypal";
+import { oneTimeEnabled } from "@/lib/paypal/one-time-config";
 import { HttpError } from "@/lib/http";
 import { getPrepaidPackageMonthState } from "@/lib/refund-policy";
 import type { AdminBillingOrderPage, AdminOrder } from "@/lib/admin-billing-contract";
@@ -155,6 +157,9 @@ export async function loadAdminBillingOrders({
       join shorts_mvp.paddle_subscriptions ps on ps.paddle_id=p.paddle_subscription_id and ps.user_id=p.user_id
       join shorts_mvp.app_users u on u.id=p.user_id
       where ps.environment='live'
+      ${oneTimeEnabled()?db`union all select o.id::text,o.created_at,'succeeded','paypal',u.email,o.capture_id,o.capture_id
+        from shorts_mvp.paypal_one_time_orders o join shorts_mvp.app_users u on u.id=o.user_id
+        where o.environment='live' and o.status='completed'`:db``}
     )
     select id,created_at,provider,
       to_char(created_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as cursor_created_at
@@ -169,8 +174,9 @@ export async function loadAdminBillingOrders({
     limit ${ADMIN_BILLING_ORDER_PAGE_SIZE + 1} offset ${legacyOffset}
   `;
   const page = selected.slice(0, ADMIN_BILLING_ORDER_PAGE_SIZE);
-  const domesticIds = page.filter((r) => r.provider !== 'paddle').map((r) => String(r.id));
+  const domesticIds = page.filter((r) => !['paddle','paypal'].includes(r.provider)).map((r) => String(r.id));
   const paddleIds = page.filter((r) => r.provider === 'paddle').map((r) => String(r.id));
+  const paypalIds = page.filter((r) => r.provider === 'paypal').map((r) => String(r.id));
   const rows = domesticIds.length ? await db`
     with selected_orders as materialized (
       select o.id,o.created_at from shorts_mvp.billing_orders o
@@ -243,7 +249,8 @@ export async function loadAdminBillingOrders({
     order by o.created_at desc,o.id desc
   ` : [];
   const paddleOrders = paddleIds.length ? await loadAdminPaddleOrders(paddleIds) : [];
-  const byId = new Map([...rows.map((row) => toAdminOrder(row)), ...paddleOrders].map((order) => [order.id, order]));
+  const paypalOrders=paypalIds.length?await loadAdminPayPalOrders(paypalIds):[];
+  const byId = new Map([...rows.map((row) => toAdminOrder(row)), ...paddleOrders,...paypalOrders].map((order) => [order.id, order]));
   const orders = page.map((row) => byId.get(String(row.id))).filter((order): order is AdminOrder => Boolean(order));
   const hasMore = selected.length > ADMIN_BILLING_ORDER_PAGE_SIZE;
 

@@ -36,8 +36,10 @@ export function paypalPlanId(code: string) {
   return id;
 }
 let cached: { key: string; token: string; until: number } | null = null;
-export async function paypalRequest<T>(path: string, body?: unknown, options: { method?: "POST" | "GET"; requestId?: string } = {}): Promise<T> {
-  if (!/^\/v1\/(billing\/(plans|subscriptions)|payments\/(sale|refund)|notifications\/verify-webhook-signature)(\/[A-Za-z0-9-]+)*(\?[^#]*)?$/.test(path)) throw Error("Invalid PayPal path");
+export async function paypalRequest<T>(path: string, body?: unknown, options: { method?: "POST" | "GET" | "PATCH"; requestId?: string } = {}): Promise<T> {
+  const orders = /^\/v2\/(checkout\/orders(?:\/[A-Z0-9]+(?:\/capture)?)?|payments\/(captures|refunds)\/[A-Z0-9]+)$/.test(path);
+  if (orders && (!paypalEnabled() || process.env.PAYPAL_ONE_TIME_ENABLED !== "true")) throw Error("One-time checkout is disabled");
+  if (!orders && !/^\/v1\/(billing\/(plans|subscriptions)|payments\/(sale|refund)|notifications\/(verify-webhook-signature|webhooks))(\/[A-Za-z0-9-]+)*(\?[^#]*)?$/.test(path)) throw Error("Invalid PayPal path");
   const host=paypalEnvironment()==="live"?"https://api-m.paypal.com":"https://api-m.sandbox.paypal.com";
   const client=process.env.PAYPAL_CLIENT_ID, secret=process.env.PAYPAL_CLIENT_SECRET;
   if (!client || !secret) throw new HttpError(503,"PayPal is unavailable.");

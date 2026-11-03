@@ -1,17 +1,13 @@
 import { beforeAll, beforeEach, afterAll, describe, expect, it, vi } from "vitest";
 import { PGlite } from "../../test-tools/node_modules/@electric-sql/pglite/dist/index.js";
-import type { Sql } from "postgres";
+import { pgliteTestSql } from "./pglite-test-sql";
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/db", () => ({ getDb: () => sql }));
 import { loadAdminBillingOrders, decodeBillingOrderCursor } from "./admin-billing-orders";
 import { loadAdminPaddleOrders, loadAdminPaddleSales } from "./admin-paddle";
 import { formatAdminCurrency } from "./admin-paddle-contract";
 let pg: PGlite;
-const sql = (async (strings: TemplateStringsArray, ...values: unknown[]) => {
-  const text = strings.reduce((acc, part, index) => acc + (index ? `$${index}` : "") + part, "");
-  const { rows } = await pg.query<Record<string, unknown>>(text, values);
-  return rows.map((row) => Object.fromEntries(Object.entries(row).map(([key, value]) => [key.replace(/_([a-z])/g, (_, c) => c.toUpperCase()), value])));
-}) as unknown as Sql;
+const sql = pgliteTestSql(()=>pg);
 const uid = "00000000-0000-4000-8000-000000000001";
 const sid = "00000000-0000-4000-8000-000000000002";
 const id = (n: number) => "txn_" + String(n).padStart(26, "0");
@@ -40,10 +36,11 @@ beforeAll(async () => {
   insert into shorts_mvp.app_users values('${uid}','admin-test@example.test');
   insert into shorts_mvp.user_subscriptions values('${sid}','active','paddle_pro_12m');
   insert into shorts_mvp.paddle_subscriptions values('sub_live','${uid}','${sid}','live'),('sub_sandbox','${uid}','${sid}','sandbox');`);
+  await pg.exec(`create table shorts_mvp.paypal_one_time_orders(id uuid primary key,user_id uuid,subscription_id uuid,plan_code text,status text,capture_id text,amount_minor integer,currency text,refunded_minor integer default 0,reversed boolean default false,entitlement_hold boolean default false,environment text,paid_at timestamptz,access_end timestamptz,created_at timestamptz default now(),last_error_code text);`);
 });
 afterAll(async () => { await pg.close(); });
 beforeEach(async () => {
-  await pg.exec(`truncate shorts_mvp.paddle_payments,shorts_mvp.paddle_adjustments,shorts_mvp.billing_orders;`);
+  await pg.exec(`truncate shorts_mvp.paypal_one_time_orders,shorts_mvp.paddle_payments,shorts_mvp.paddle_adjustments,shorts_mvp.billing_orders;`);
 });
 async function payment(n: number, currency = "JPY", amount = 590, subscription = "sub_live", time = "2026-09-26T15:00:00.123456Z") {
   await pg.query(`insert into shorts_mvp.paddle_payments(transaction_id,paddle_subscription_id,user_id,currency,amount_minor,period_start,period_end,created_at,plan_code)
@@ -110,4 +107,17 @@ describe("administrator live Paddle ledger", () => {
     expect(yen).toMatchObject({grossMinor:1770,refundedMinor:590,todayGrossMinor:590,todayPaidOrders:1,paidOrders:3});
     expect((await loadAdminPaddleOrders([id(2)]))[0].refundStatus).toBe("full");
   });
+});
+
+
+it("includes confirmed Live PayPal sales in USD without mixing KRW or Sandbox",async()=>{
+ vi.stubEnv('PAYPAL_ENABLED','true');vi.stubEnv('PAYPAL_ONE_TIME_ENABLED','true');
+ try{
+  await payment(8,'USD',399);await domestic();
+  await pg.query("insert into shorts_mvp.paypal_one_time_orders(id,user_id,subscription_id,plan_code,status,capture_id,amount_minor,currency,refunded_minor,environment,paid_at,access_end)values('22222222-2222-4222-8222-222222222222',$1,$2,'pro_1m','completed','CAPTURE1234567',1200,'USD',200,'live',now(),now()+interval '1 month'),('33333333-3333-4333-8333-333333333333',$1,$2,'pro_1m','completed','SANDBOX1234567',99900,'USD',0,'sandbox',now(),now()+interval '1 month')",[uid,sid]);
+  const page=await loadAdminBillingOrders({filters});expect(page.orders).toHaveLength(3);
+  expect(page.orders.find(o=>o.provider==='paypal')).toMatchObject({currency:'USD',amountMinor:1200,refundedAmountMinor:200,amountKrw:0,kind:'일회성 이용권'});
+  expect((await loadAdminBillingOrders({filters:{...filters,provider:'paypal'}})).orders).toHaveLength(1);
+  expect((await loadAdminPaddleSales()).find(s=>s.currency==='USD')).toMatchObject({grossMinor:1599,refundedMinor:200,netMinor:1399,paidOrders:2});
+ }finally{vi.unstubAllEnvs();}
 });

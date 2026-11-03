@@ -102,12 +102,16 @@ function mobileOrderClass(plan: TossCatalogPlan) {
 
 export function TossPricingClient({
   paypalCheckout = false,
+  paypalOneTime = false,
+  paypalEndpoint,
   paypalAuthenticated = false,
   initialState,
   guestCatalog,
   onRequireLogin,
 }: {
   paypalCheckout?: boolean;
+  paypalOneTime?: boolean;
+  paypalEndpoint?: string;
   paypalAuthenticated?: boolean;
   initialState: TossBillingState | null;
   guestCatalog: TossCatalogPlan[] | null;
@@ -198,14 +202,14 @@ export function TossPricingClient({
     try {
       if (paypalCheckout) {
         const planCode = selection.plan.tier === "easycut_pro" ? "pro_1m" : `${selection.plan.tier}_${selection.plan.contractMonths}m`;
-        const response = await fetch("/api/paypal/checkout", {
+        const response = await fetch(paypalEndpoint || (paypalOneTime ? "/api/paypal/orders" : "/api/paypal/checkout"), {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ planCode, locale: locale === "ja" ? "ja" : "en" }),
+          body: JSON.stringify({ planCode, locale: locale === "ja" ? "ja" : "en", ...(paypalOneTime ? {consent:true}: {}) }),
         });
         const payload = await response.json();
         if (!response.ok) throw Error(paypalCheckoutErrorMessage(payload.code, locale === "ja"));
         const approval = new URL(payload.approvalUrl);
-        if (approval.protocol !== "https:" || approval.hostname !== "www.paypal.com" || approval.username || approval.password) throw Error("Checkout could not be confirmed.");
+        if (approval.protocol !== "https:" || !["www.paypal.com", "www.sandbox.paypal.com"].includes(approval.hostname) || approval.username || approval.password) throw Error("Checkout could not be confirmed.");
         window.location.assign(approval.toString());
         return;
       }
@@ -384,7 +388,9 @@ export function TossPricingClient({
                 <strong>{international ? `US$${(international.amount / 100 / international.months).toFixed(2)}` : `₩${won(plan.monthlyEquivalentKrw)}`}</strong><span>{ui("/월")}</span>
               </div>
               <p className="pricing-billing">
-                {international ? (locale === "ja"
+                {international && paypalOneTime ? (locale === "ja"
+                  ? `${international.months}か月分 US$${(international.amount / 100).toFixed(2)}を1回払い・自動更新なし`
+                  : `US$${(international.amount / 100).toFixed(2)} once for ${international.months} month${international.months > 1 ? "s" : ""}. No automatic renewal.`) : international ? (locale === "ja"
                   ? `${international.months}か月ごとにUS$${(international.amount / 100).toFixed(2)}を請求`
                   : `US$${(international.amount / 100).toFixed(2)} billed every ${international.months === 1 ? "month" : `${international.months} months`}`) : ui(plan.tier === "easycut_pro"
                   ? billingCycleLabel(plan.contractMonths)
@@ -404,7 +410,7 @@ export function TossPricingClient({
                 className={`pricing-cta ${plan.tier === "starter" ? "pricing-cta-primary" : ""} ${styles.planCta} ${pending ? styles.planCtaPending : ""}`}
                 onClick={() => choose(plan)}
               >
-                {current
+                {paypalOneTime ? (locale === "ja" ? "購入する" : "Buy access") : current
                   ? ui("이용 중")
                   : pending ? (
                     <span className={styles.planCtaPendingContent}>
@@ -427,7 +433,7 @@ export function TossPricingClient({
           <section role="dialog" aria-modal="true" aria-labelledby="plan-dialog-title" className={styles.localDialog}>
             <div className={styles.localDialogHeader}>
               <h2 id="plan-dialog-title">
-                {ui(selection.action === "cancel_pending"
+                {paypalOneTime ? (locale === "ja" ? "購入内容の確認" : "Review purchase") : ui(selection.action === "cancel_pending"
                   ? "변경 예약 취소하기"
                   : selection.action === "subscribe"
                     ? "구독 시작 확인하기"
@@ -463,6 +469,7 @@ export function TossPricingClient({
                   </div>
                 </div>
               )}
+              {paypalOneTime ? <p>{locale === "ja" ? "1回払いです。自動更新・自動課金はありません。利用枠は毎月更新されます。" : "One-time payment. No automatic renewal or recurring charge. Processing allowance resets monthly."}</p> : null}
               {selection.action === "subscribe" && !paypalCheckout && state && !state.paymentRestrictions.hanaCardAvailable ? (
                 <aside className={styles.localCardRestriction} aria-label={ui("결제 가능 카드 안내")}>
                   <strong>{ui("하나카드는 아직 결제할 수 없어요")}</strong>

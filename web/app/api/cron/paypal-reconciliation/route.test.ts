@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 vi.mock("@/lib/paypal/service", () => ({ reconcilePayPal: vi.fn() }));
+vi.mock("@/lib/paypal/one-time", () => ({reconcileOneTimeOrders:vi.fn().mockResolvedValue({checked:0,failed:0})}));
 import { reconcilePayPal } from "@/lib/paypal/service";
 import { GET } from "./route";
 afterEach(() => { vi.unstubAllEnvs(); vi.clearAllMocks(); });

@@ -3,6 +3,7 @@ import { getDb } from "@/lib/db";
 import type { AdminOrder } from "@/lib/admin-billing-contract";
 import type { PaddleSalesTotal } from "@/lib/admin-paddle-contract";
 import { kstDate, shiftTrendDate } from "@/lib/admin-trends";
+import { oneTimeEnabled } from "@/lib/paypal/one-time-config";
 
 // Only observed, completed live payments. Neither opening a checkout nor a
 // sandbox transaction is revenue. Use the payment snapshot, not today's plan.
@@ -71,6 +72,9 @@ export async function loadAdminPaddleSales(today = kstDate()): Promise<PaddleSal
         from shorts_mvp.paddle_adjustments where transaction_id=p.transaction_id
       ) a on true
       where ps.environment='live'
+      ${oneTimeEnabled()?db`union all select currency,amount_minor,paid_at,refunded_minor,
+        case when reversed then greatest(0,amount_minor-refunded_minor) else 0 end,0
+        from shorts_mvp.paypal_one_time_orders where environment='live' and status='completed'`:db``}
     )
     select currency,sum(amount_minor) as gross,sum(refunded) as refunded,sum(chargeback) as chargeback,
       sum(pending) as pending,count(*) as paid_orders,

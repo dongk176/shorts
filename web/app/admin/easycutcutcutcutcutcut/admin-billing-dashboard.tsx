@@ -246,7 +246,7 @@ export function AdminBillingDashboard({
 
   return (
     <div className="mt-7 grid gap-7">
-      {!["toss", "paddle"].includes(initialFilters.provider) && <AdminUpgradeRefunds />}
+      {!["toss", "paddle", "paypal"].includes(initialFilters.provider) && <AdminUpgradeRefunds />}
       {supportingError ? (
         <section className="rounded-2xl border border-amber-300/20 bg-amber-300/[.06] p-5" role="alert">
           <p className="text-sm font-bold text-amber-100">{supportingError}</p>
@@ -296,13 +296,13 @@ export function AdminBillingDashboard({
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-black">결제 주문</h2>
-              <p className="mt-1 text-xs text-neutral-500">현재 {loadedOrders.length.toLocaleString("ko-KR")}건 표시 · 승인 금액과 실제 환불 누계 기준 · Paddle은 결제 완료 내역만 표시</p>
+              <p className="mt-1 text-xs text-neutral-500">현재 {loadedOrders.length.toLocaleString("ko-KR")}건 표시 · 승인 금액과 실제 환불 누계 기준 · 해외 결제는 결제 완료 내역만 표시</p>
             </div>
             <form className="flex flex-wrap gap-2" method="get">
               <input type="hidden" name="tab" value="billing" />
               <input name="q" defaultValue={initialFilters.query} placeholder="이메일·주문·거래번호" className="h-10 w-56 rounded-xl border border-white/10 bg-black/20 px-3 text-sm outline-none placeholder:text-neutral-600 focus:border-[#ff8c7c]" />
               <select name="provider" defaultValue={initialFilters.provider} className="h-10 rounded-xl border border-white/10 bg-[#191c1d] px-3 text-sm">
-                <option value="all">모든 결제사</option><option value="thepayone">더페이원</option><option value="nicepay">나이스페이</option><option value="toss">토스페이먼츠</option><option value="paddle">Paddle</option>
+                <option value="all">모든 결제사</option><option value="thepayone">더페이원</option><option value="nicepay">나이스페이</option><option value="toss">토스페이먼츠</option><option value="paddle">Paddle</option><option value="paypal">PayPal</option>
               </select>
               <select name="status" defaultValue={initialFilters.status} className="h-10 rounded-xl border border-white/10 bg-[#191c1d] px-3 text-sm">
                 <option value="all">모든 상태</option><option value="succeeded">승인</option><option value="pending">대기</option><option value="processing">처리 중</option><option value="failed">실패</option><option value="manual_review">확인 필요</option><option value="unknown">결과 불명</option><option value="expired">만료</option>
@@ -331,13 +331,13 @@ export function AdminBillingDashboard({
                   <td className="px-4 py-4"><p className="max-w-56 truncate font-bold text-neutral-200">{order.email}</p><p className="mt-1 text-xs text-neutral-600">구독 {label(order.subscriptionStatus)}</p></td>
                   <td className="px-4 py-4"><p className="font-bold">{productLabel(order.productCode)}</p><p className="mt-1 text-xs text-neutral-500">{order.kind} · {order.productCode?.startsWith("starter_") || order.productCode?.startsWith("expert_") ? "단건 패키지" : order.billingCycle || "단건"}</p>{order.popularFilterUsageCount > 0 && <p className="mt-1 text-xs font-bold text-amber-300">유료 인기 필터 {order.popularFilterUsageCount}회 사용</p>}</td>
                   <td className="px-4 py-4">
-                    <p className="font-bold">{order.provider === "paddle" ? "Paddle" : order.provider === "thepayone" ? "더페이원" : order.provider === "toss" ? "토스페이먼츠" : "나이스페이"}</p>
+                    <p className="font-bold">{order.provider === "paypal" ? "PayPal" : order.provider === "paddle" ? "Paddle" : order.provider === "thepayone" ? "더페이원" : order.provider === "toss" ? "토스페이먼츠" : "나이스페이"}</p>
                     {(paymentFlow || order.providerTerminalId) && <p className="mt-1 text-xs font-bold text-neutral-400">{[paymentFlow, order.providerTerminalId].filter(Boolean).join(" · ")}</p>}
                   </td>
                   <td className="px-4 py-4">
-                    <p className="font-black">{order.provider === "paddle" ? formatAdminCurrency(order.amountMinor || 0, order.currency) : money(order.amountKrw)}</p>
-                    <p className="mt-1 text-xs font-bold text-neutral-300">{order.provider === "paddle" ? "해외 구독 결제 · 세금 포함" : paymentDetails.join(" · ")}</p>
-                    <p className="mt-1 text-xs text-[#ff9b8d]">환불 {order.provider === "paddle" ? formatAdminCurrency(order.refundedAmountMinor || 0, order.currency) : money(order.refundedAmountKrw)} · {label(order.refundStatus)}</p>
+                    <p className="font-black">{["paddle","paypal"].includes(order.provider) ? formatAdminCurrency(order.amountMinor || 0, order.currency) : money(order.amountKrw)}</p>
+                    <p className="mt-1 text-xs font-bold text-neutral-300">{order.provider === "paypal" ? "일회성 이용권 · 자동 갱신 없음" : order.provider === "paddle" ? "해외 구독 결제 · 세금 포함" : paymentDetails.join(" · ")}</p>
+                    <p className="mt-1 text-xs text-[#ff9b8d]">환불 {["paddle","paypal"].includes(order.provider) ? formatAdminCurrency(order.refundedAmountMinor || 0, order.currency) : money(order.refundedAmountKrw)} · {label(order.refundStatus)}</p>
                     {(order.pendingRefundMinor || 0) > 0 && <p className="mt-1 text-xs text-amber-200">환불 승인 대기 {formatAdminCurrency(order.pendingRefundMinor!, order.currency)}</p>}
                     {(order.chargebackMinor || 0) > 0 && <p className="mt-1 text-xs text-amber-200">차지백 {formatAdminCurrency(order.chargebackMinor!, order.currency)}</p>}
                     {order.reservedRefundKrw > 0 && <p className="mt-1 text-xs text-amber-300">기존 환불 처리 중 {money(order.reservedRefundKrw)}</p>}
@@ -345,7 +345,7 @@ export function AdminBillingDashboard({
                   <td className="px-4 py-4"><p className="font-bold">{label(order.status)}</p>{paymentFailure && <p className="mt-1 text-xs text-amber-300">{paymentFailure}</p>}</td>
                   <td className="px-4 py-4 font-mono text-xs text-neutral-500" title={order.orderId}><p>{shortId(order.orderId)}</p><p className="mt-1" title={order.paddleSubscriptionId}>{shortId(order.paddleSubscriptionId || order.providerTransactionId)}</p></td>
                   <td className="px-5 py-4 text-right">
-                    {order.provider === "paddle"
+                    {order.provider === "paypal" ? <a href="https://www.paypal.com/mep/dashboard" target="_blank" rel="noopener noreferrer" className="inline-block rounded-lg border border-white/20 px-3 py-2 text-xs font-bold text-neutral-200">PayPal에서 확인 ↗</a> : order.provider === "paddle"
                       ? <a href={`https://vendors.paddle.com/transactions-v2/${encodeURIComponent(order.orderId)}`} target="_blank" rel="noopener noreferrer" className="inline-block rounded-lg border border-white/20 px-3 py-2 text-xs font-bold text-neutral-200">Paddle에서 보기 ↗</a>
                       : canResolveManualReview
                       ? <button type="button" onClick={() => openManualReview(order)} className="rounded-lg border border-amber-300/40 px-3 py-2 text-xs font-black text-amber-200">PG 대조 처리</button>

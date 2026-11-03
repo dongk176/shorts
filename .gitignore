@@ -81,3 +81,7 @@ htmlcov/
 # Local ebook renders and translation request cache.
 /tmp/pricing-ebooks/
 /tmp/ebook-translation/
+
+# Isolated release evidence and reusable local test dependencies.
+/.tmp/release/
+/test-tools

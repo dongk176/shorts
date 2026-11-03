@@ -22,7 +22,7 @@ const querySchema = z.object({
     "canceled",
     "expired",
   ]).default("all"),
-  provider: z.enum(["all", "nicepay", "thepayone", "toss", "paddle"]).default("all"),
+  provider: z.enum(["all", "nicepay", "thepayone", "toss", "paddle", "paypal"]).default("all"),
   q: z.string().trim().max(100).default(""),
 });
 

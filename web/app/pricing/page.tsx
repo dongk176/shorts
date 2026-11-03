@@ -1,4 +1,5 @@
 import { paypalEnabled } from "@/lib/paypal/api";
+import { oneTimeEnabled } from "@/lib/paypal/one-time-config";
 import { hasLegacyPaymentHistory } from "@/lib/paypal/eligibility";
 import { getRequestLocale } from "@/lib/i18n/server";
 import { paddleEnabled, paddleConfigured } from "@/lib/paddle/config";
@@ -106,6 +107,7 @@ export default async function PricingPage() {
     <PricingPageShell
       user={profile}
       paypalCheckout={paypalCheckout}
+      paypalOneTime={paypalCheckout && oneTimeEnabled()}
       initialState={initialState}
       tossExperience={tossExperience}
       initialTossState={initialTossState}

@@ -42,6 +42,12 @@ export const PROTECTED_APP_ROUTES = [
 // These routes are the only intentional additions relative to the currently
 // promoted production manifest. Everything else must still fail closed.
 export const ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE = [
+  // User-approved PayPal one-time checkout and administrator configuration.
+  "/api/paypal/orders/route",
+  "/billing/paypal/order/page",
+  "/en/billing/paypal/order/page",
+  "/jp/billing/paypal/order/page",
+  "/admin/easycutcutcutcutcutcut/paypal/page",
   // Read-only administrator PayPal configuration verification.
   "/api/admin/paypal/diagnostics/route",
   // Independent PayPal recovery must not wait for other billing providers.

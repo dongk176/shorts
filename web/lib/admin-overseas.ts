@@ -4,6 +4,7 @@ import { requireOverseasAdminUser } from "@/lib/admin-overseas-auth";
 import { getDb } from "@/lib/db";
 import { buildAdminTrend, kstDate, type AdminTrendMetric, type AdminTrendPeriod, type AdminTrendPoint } from "@/lib/admin-trends";
 import { overseasFilters, overseasPageSize, type OverseasData } from "@/lib/admin-overseas-contract";
+import { oneTimeEnabled } from "@/lib/paypal/one-time-config";
 
 const korean = "[가-힣ᄀ-ᇿㄱ-ㆎ]";
 
@@ -11,7 +12,8 @@ function overseasScope(db: Sql) {
   return db`
     eligible as materialized (
       select u.id,u.email,u.display_name,u.created_at,
-        exists(select 1 from shorts_mvp.paddle_subscriptions ps where ps.user_id=u.id and ps.environment='live') as has_paddle
+        (exists(select 1 from shorts_mvp.paddle_subscriptions ps where ps.user_id=u.id and ps.environment='live')
+          ${oneTimeEnabled()?db`or exists(select 1 from shorts_mvp.paypal_one_time_orders o where o.user_id=u.id and o.environment='live' and o.status='completed')`:db``}) as has_paddle
       from shorts_mvp.app_users u
       where u.withdrawn_at is null and not coalesce(u.is_admin,false)
         and not exists(select 1 from shorts_mvp.admin_role_assignments r where r.user_id=u.id)
@@ -19,6 +21,7 @@ function overseasScope(db: Sql) {
           -- A real international billing relationship is positive evidence even
           -- when the customer has a Korean name or previously made Korean videos.
           exists(select 1 from shorts_mvp.paddle_subscriptions ps where ps.user_id=u.id and ps.environment='live')
+          ${oneTimeEnabled()?db`or exists(select 1 from shorts_mvp.paypal_one_time_orders o where o.user_id=u.id and o.environment='live' and o.status='completed')`:db``}
           or (
             concat_ws(' ',u.email,u.display_name) !~ ${korean}
             and lower(coalesce(u.email,'')) !~ '\\.kr$'
@@ -49,7 +52,7 @@ function overseasScope(db: Sql) {
       -- Financial history is scoped to the transaction, not to the member list.
       -- Include every live Paddle payment, including withdrawn/staff customers;
       -- never query or serialize their domestic billing history.
-      select p.*,least(p.amount_minor,coalesce(a.refunded,0)) as refunded,
+      select p.transaction_id,p.user_id,p.plan_code,p.created_at,p.currency,p.amount_minor,least(p.amount_minor,coalesce(a.refunded,0)) as refunded,
         least(greatest(0,p.amount_minor-coalesce(a.refunded,0)),coalesce(a.chargeback,0)) as chargeback,
         coalesce(a.pending,0) as pending
       from shorts_mvp.paddle_payments p
@@ -61,6 +64,9 @@ function overseasScope(db: Sql) {
         from shorts_mvp.paddle_adjustments where transaction_id=p.transaction_id
       ) a on true
       where p.currency in ('USD','JPY')
+      ${oneTimeEnabled()?db`union all select capture_id,user_id,plan_code,paid_at,'USD',amount_minor,refunded_minor,
+        case when reversed then greatest(0,amount_minor-refunded_minor) else 0 end,0
+        from shorts_mvp.paypal_one_time_orders where environment='live' and status='completed'`:db``}
     ), projects as materialized (
       select j.* from shorts_mvp.video_jobs j join eligible u on u.id=j.user_id
       where j.output_language in ('en','ja') and coalesce(j.video_title,'') !~ ${korean}
@@ -83,11 +89,15 @@ export async function loadAdminOverseas(params: Record<string, string | string[]
       (select count(*)::int from eligible) as members,
       (select count(*)::int from eligible where (created_at at time zone 'Asia/Seoul')::date=${today}::date) as today_members,
       (select count(*)::int from shorts_mvp.paddle_subscriptions ps join eligible u on u.id=ps.user_id
-        where ps.environment='live' and ps.provider_status in ('active','trialing')) as active_subscriptions,
+        where ps.environment='live' and ps.provider_status in ('active','trialing'))
+        ${oneTimeEnabled()?db`+(select count(*)::int from shorts_mvp.paypal_one_time_orders o join eligible u on u.id=o.user_id
+          where o.environment='live' and o.status='completed' and o.access_end>now() and o.refunded_minor<o.amount_minor and not o.reversed and not o.entitlement_hold)`:db``} as active_subscriptions,
       (select count(*)::int from shorts_mvp.paddle_subscriptions ps join eligible u on u.id=ps.user_id
         where ps.environment='live' and ps.provider_status='past_due') as past_due_subscriptions,
       (select count(*)::int from shorts_mvp.paddle_subscriptions ps join eligible u on u.id=ps.user_id
-        where ps.environment='live' and ps.provider_status not in ('active','trialing','past_due')) as inactive_subscriptions,
+        where ps.environment='live' and ps.provider_status not in ('active','trialing','past_due'))
+        ${oneTimeEnabled()?db`+(select count(*)::int from shorts_mvp.paypal_one_time_orders o join eligible u on u.id=o.user_id
+          where o.environment='live' and o.status='completed' and (o.access_end<=now() or o.refunded_minor>=o.amount_minor or o.reversed))`:db``} as inactive_subscriptions,
       (select count(*)::int from projects) as projects,
       (select count(*)::int from projects where created_at>=now()-interval '7 days') as recent_projects,
       (select coalesce(jsonb_agg(t),'[]'::jsonb) from (

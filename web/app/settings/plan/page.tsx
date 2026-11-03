@@ -1,4 +1,6 @@
 import { PayPalPage } from "@/components/paypal-page";
+import { PayPalOrderResult } from "@/components/paypal-order-result";
+import { latestOneTimeOrder } from "@/lib/paypal/one-time";
 import { paypalEnabled } from "@/lib/paypal/api";
 import { getPayPalState } from "@/lib/paypal/service";
 import { getRequestLocale } from "@/lib/i18n/server";
@@ -114,6 +116,8 @@ export default async function PlanManagementPage() {
     );
   }
   if (process.env.PAYPAL_ENVIRONMENT) {
+    const order=await latestOneTimeOrder(session.userId);
+    if(order)return <PayPalOrderResult checkoutId={order.checkoutId} canceled={false} japanese={await getRequestLocale()==='ja'}/>;
     const state = await getPayPalState(session.userId);
     if (state) return <PayPalPage user={authProfile(user)} locale={await getRequestLocale()} enabled={paypalEnabled()} subscription={state} managementOnly/>;
   }

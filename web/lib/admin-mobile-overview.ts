@@ -1,6 +1,7 @@
 import "server-only";
 import { ensureAdminDbReady, getDb } from "@/lib/db";
 import { pushConfigured } from "@/lib/admin-mobile-contract";
+import { oneTimeEnabled } from "@/lib/paypal/one-time-config";
 
 const iso = (value: unknown) => value instanceof Date ? value.toISOString() : value ? new Date(String(value)).toISOString() : null;
 const n = (value: unknown) => Number(value || 0);
@@ -24,6 +25,8 @@ export async function loadAdminMobileOverview(adminId: string) {
             where a.transaction_id=p.transaction_id and a.status='approved' and a.action='refund'),0),
           case when exists(select 1 from shorts_mvp.paddle_payments earlier where earlier.paddle_subscription_id=p.paddle_subscription_id and earlier.created_at<p.created_at) then 'renewal' else 'new' end
         from shorts_mvp.paddle_payments p join shorts_mvp.paddle_subscriptions ps on ps.paddle_id=p.paddle_subscription_id and ps.environment='live' where p.created_at>=(date_trunc('day',now() at time zone 'Asia/Seoul') at time zone 'Asia/Seoul')-interval '29 days'
+        ${oneTimeEnabled()?db`union all select to_char(paid_at at time zone 'Asia/Seoul','YYYY-MM-DD'),'USD',amount_minor,refunded_minor,'new'
+          from shorts_mvp.paypal_one_time_orders where environment='live' and status='completed' and paid_at>=(date_trunc('day',now() at time zone 'Asia/Seoul') at time zone 'Asia/Seoul')-interval '29 days'`:db``}
       ) select day,currency,sum(amount)::bigint as gross,sum(refunded)::bigint as refunds,count(*)::integer as count,
         count(*) filter(where kind='new')::integer as new_count,count(*) filter(where kind='renewal')::integer as renewal_count
       from payments group by day,currency order by day`,
@@ -41,6 +44,8 @@ export async function loadAdminMobileOverview(adminId: string) {
           coalesce((select sum(a.amount_minor) from shorts_mvp.paddle_adjustments a
             where a.transaction_id=p.transaction_id and a.status='approved' and a.action='refund'),0)
         from shorts_mvp.paddle_payments p join shorts_mvp.paddle_subscriptions ps on ps.paddle_id=p.paddle_subscription_id and ps.environment='live' where p.created_at>=now()-interval '30 days'
+        ${oneTimeEnabled()?db`union all select capture_id,'new',amount_minor,'USD',paid_at,not entitlement_hold and not reversed and refunded_minor<amount_minor,refunded_minor
+          from shorts_mvp.paypal_one_time_orders where environment='live' and status='completed' and paid_at>=now()-interval '30 days'`:db``}
       ) as recent order by occurred_at desc limit 100`,
     db`select
         count(*) filter(where created_at>=now()-interval '24 hours' and status='completed')::integer as succeeded,

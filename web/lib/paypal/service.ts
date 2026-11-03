@@ -25,7 +25,7 @@ export function validatePayPalPayment(t:Transaction, plan:PayPalPlan) {
   if(!/^[A-Z0-9]{10,32}$/.test(t.id) || t.status!=="COMPLETED" || t.amount_with_breakdown?.gross_amount.currency_code!=="USD" || usdMinor(t.amount_with_breakdown.gross_amount.value)!==plan.amount || !Number.isFinite(Date.parse(t.time)))throw Error("PayPal payment mismatch");
   return new Date(t.time);
 }
-async function noConflicts(tx:Db,userId:string) {
+export async function assertNoPayPalBillingConflicts(tx:Db,userId:string) {
   await assertPayPalNewCustomer(userId,tx);
   const [active]=await tx`select id from shorts_mvp.user_subscriptions where user_id=${userId} and status in ('pending','trialing','active','past_due') and (current_period_end is null or current_period_end>now() or cancel_at_period_end=false) limit 1`;
   const [order]=await tx`select id from shorts_mvp.billing_orders where user_id=${userId} and (status in ('processing','unknown','manual_review') or (status='pending' and (checkout_expires_at is null or checkout_expires_at>now()))) limit 1`;
@@ -33,6 +33,7 @@ async function noConflicts(tx:Db,userId:string) {
   const [paddle]=await tx`select id from shorts_mvp.paddle_checkouts where user_id=${userId} and status in ('creating','ready','unknown') limit 1`;
   if(active||order||toss||paddle)throw new HttpError(409,"An existing subscription or payment must be resolved first.","EXISTING_SUBSCRIPTION");
 }
+const noConflicts = assertNoPayPalBillingConflicts;
 async function recordLookupFailure(id:string,error:unknown,db:Db) {
   const code=error instanceof HttpError && ["PAYPAL_REFERENCE_UNAVAILABLE","PAYPAL_UNCONFIRMED"].includes(error.code)?error.code:"PAYPAL_PROCESSING_FAILED";
   const rawId=(error as {debugId?:unknown}|null)?.debugId;

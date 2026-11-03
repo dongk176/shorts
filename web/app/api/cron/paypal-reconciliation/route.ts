@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { reconcilePayPal } from "@/lib/paypal/service";
+import { reconcileOneTimeOrders } from "@/lib/paypal/one-time";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,7 +15,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ detail: "Unauthorized" }, { status: 401 });
   }
   try {
-    const result = await reconcilePayPal();
+    const orders = await reconcileOneTimeOrders();
+    const subscriptions = await reconcilePayPal();
+    const result = {...subscriptions,orders,failed:orders.failed+subscriptions.failed};
     return NextResponse.json(result, { status: result.failed ? 500 : 200, headers: { "Cache-Control": "no-store" } });
   } catch {
     console.error("paypal_reconciliation_failed");

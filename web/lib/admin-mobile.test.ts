@@ -3,6 +3,7 @@ import { generateKeyPairSync, verify } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PGlite } from "../../test-tools/node_modules/@electric-sql/pglite/dist/index.js";
 import type { Sql } from "postgres";
+import { pgliteTestSql } from "./pglite-test-sql";
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/db", () => ({ getDb: () => sql, ensureAdminDbReady: async () => {} }));
 vi.mock("@/lib/admin-mobile-push", () => ({ sendMobilePush: vi.fn(async () => ({})) }));
@@ -21,12 +22,7 @@ import { nativeDeviceSchema } from "./admin-native-contract";
 let pg: PGlite;
 const uid = "00000000-0000-4000-8000-000000000001";
 const sid = "00000000-0000-4000-8000-000000000002";
-const sql = (async (strings: TemplateStringsArray,...values: unknown[]) => {
-  const query = strings.reduce((s,p,i) => s+(i ? "$"+i : "")+p,"");
-  if (query.includes("pg_try_advisory_xact_lock") || query.includes("pg_advisory_xact_lock")) return [{ acquired: true }];
-  const { rows } = await pg.query<Record<string,unknown>>(query,values);
-  return rows.map(row => Object.fromEntries(Object.entries(row).map(([k,v]) => [k.replace(/_([a-z])/g,(_,c) => c.toUpperCase()),v])));
-}) as unknown as Sql;
+const sql = pgliteTestSql(()=>pg,true);
 Object.assign(sql,{ begin: async (fn: (sql: Sql) => Promise<unknown>) => {
   await pg.exec("begin");
   try { const value = await fn(sql); await pg.exec("commit"); return value; }
@@ -51,11 +47,12 @@ beforeAll(async () => {
     insert into shorts_mvp.paddle_subscriptions values('live','live',now()),('sandbox','sandbox',now());`);
   await pg.exec(readFileSync(new URL("../../supabase/migrations/202610050001_admin_mobile_push.sql",import.meta.url),"utf8"));
   await pg.exec(readFileSync(new URL("../../supabase/migrations/202610050002_admin_native_push.sql",import.meta.url),"utf8"));
+  await pg.exec(`create table shorts_mvp.paypal_one_time_orders(id uuid primary key,user_id uuid,subscription_id uuid,plan_code text,status text,capture_id text,amount_minor integer,currency text,refunded_minor integer default 0,reversed boolean default false,entitlement_hold boolean default false,environment text,paid_at timestamptz,access_end timestamptz,created_at timestamptz default now(),last_error_code text);`);
 });
 afterAll(async () => { await pg.close(); });
 beforeEach(async () => {
   vi.clearAllMocks();vi.unstubAllEnvs();nativeCookie=undefined;inventoryMock.mockResolvedValue([]);
-  await pg.exec(`truncate shorts_mvp.admin_mobile_events,shorts_mvp.admin_mobile_deliveries,shorts_mvp.admin_mobile_receipts,
+  await pg.exec(`truncate shorts_mvp.paypal_one_time_orders,shorts_mvp.admin_mobile_events,shorts_mvp.admin_mobile_deliveries,shorts_mvp.admin_mobile_receipts,
     shorts_mvp.admin_mobile_subscriptions,shorts_mvp.admin_mobile_preferences,shorts_mvp.admin_native_auth_codes,shorts_mvp.admin_native_sessions,shorts_mvp.billing_orders,
     shorts_mvp.paddle_payments,shorts_mvp.paddle_adjustments,shorts_mvp.video_jobs,shorts_mvp.ingestion_route_slots,shorts_mvp.ingestion_attempts;
     update shorts_mvp.admin_mobile_monitor_state set started_at=now()-interval '1 day';
@@ -292,4 +289,17 @@ describe("persisted monitoring and delivery", () => {
     const {rows}=await pg.query<{payload:{summary:string}}>("select payload from shorts_mvp.admin_mobile_events where incident_key like 'route:%'");
     expect(rows).toHaveLength(1);expect(rows[0].payload.summary).toContain("24시간");expect(rows[0].payload.summary).toContain("1/31");
   });
+});
+
+
+it('includes a PayPal one-time sale as USD12 and creates one exact-amount mobile alert',async()=>{
+ vi.stubEnv('PAYPAL_ENABLED','true');vi.stubEnv('PAYPAL_ONE_TIME_ENABLED','true');
+ await pg.query("insert into shorts_mvp.paypal_one_time_orders(id,user_id,plan_code,status,capture_id,amount_minor,currency,environment,paid_at,access_end)values('22222222-2222-4222-8222-222222222222',$1,'pro_1m','completed','CAPTURE1234567',1200,'USD','live',now(),now()+interval '1 month')",[uid]);
+ await scanMobileEvents();await scanMobileEvents();
+ const snapshot=await loadAdminMobileOverview(uid);expect(snapshot.availability.billing).toBe(true);
+ expect(snapshot.dailySales.find(s=>s.currency==='USD')).toMatchObject({gross:1200,refunds:0,count:1});
+ expect(snapshot.payments.find(p=>p.id==='CAPTURE1234567')).toMatchObject({amountMinor:1200,currency:'USD',entitlement:true});
+ const rows=(await pg.query<{id:string;title:string;kind:string;payload:Record<string,unknown>}>("select id,title,kind,payload from shorts_mvp.admin_mobile_events where event_key='payment:paypal:CAPTURE1234567'")).rows;
+ expect(rows).toHaveLength(1);expect(rows[0].payload).toMatchObject({amountMinor:1200,currency:'USD'});
+ expect(notificationContent(rows[0],true).body).toContain('12.00');
 });
