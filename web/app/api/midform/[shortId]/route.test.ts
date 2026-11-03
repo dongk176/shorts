@@ -5,6 +5,7 @@ vi.mock("@/lib/midform-access", () => ({ midformAccess: mocks.access }));
 vi.mock("@/lib/aws", () => ({ getMidformEditSourceUrl: mocks.source, getShortPlaybackAccess: mocks.playback }));
 vi.mock("@/lib/midform-release", () => ({ midformRelease: mocks.release }));
 import { GET, PATCH, POST } from "./route";
+import { midformRanges } from "@/lib/midform-local";
 const shortId = "11111111-1111-4111-8111-111111111111";
 const requestId = "22222222-2222-4222-8222-222222222222";
 const userId = "33333333-3333-4333-8333-333333333333";
@@ -19,7 +20,7 @@ function setup(options: { missing?: boolean; revision?: number; busy?: boolean; 
       midformReleaseId: requestId, status: options.busy ? "rerendering" : "ready", renderVersion: 1, cleanClipS3Key: "edit-sources/reel.mp4",
       outputS3Key: "outputs/v1.mp4", expiresAt: new Date(Date.now() + 86400000),
       midformDocumentJson: sql.includes("s.midform_document::text as midform_document_json")
-        ? JSON.stringify({ ...draft, revision: options.revision ?? 0, draft, renderedDraft: draft, duration: 10, outputSrt: "captions" })
+        ? JSON.stringify({ ...draft, revision: options.revision ?? 0, draft, renderedDraft: draft, duration: 10, sourceDuration: 60, silences: [[2, 4]], outputSrt: "captions" })
         : undefined,
     }];
     if (sql.includes("select snapshot_hash")) return options.previousHash ? [{ snapshotHash: options.previousHash }] : [];
@@ -51,6 +52,16 @@ describe("authenticated midform project routes", () => {
     expect(document.framing).toEqual({ speaker_0: "left" });
     expect(document.exportDraft.framing).toEqual(document.framing);
     expect(document.rows[0].speaker).toBe("speaker_0");
+  });
+  it("reopens with the measured aggressive silences used by the editor's preview and duration", async () => {
+    setup();
+    const response = await GET(new Request("https://www.easycut.co.kr/"), context());
+    const document = await response.json();
+    const ranges = midformRanges(document.rows, document.silenceProfiles[document.silencePreset], document.removeSilence);
+    expect(ranges.map(({ start, end }) => [start, end])).toEqual([[0, 2], [4, 10]]);
+    expect(ranges.reduce((seconds, range) => seconds + range.end - range.start, 0)).toBe(8);
+    expect(document.sourceDuration).toBe(60);
+    expect(document.duration).toBe(10);
   });
   it("saves captions under a row lock without enqueuing a render", async () => {
     const calls = setup();

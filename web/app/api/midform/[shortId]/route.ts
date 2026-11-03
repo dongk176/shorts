@@ -57,7 +57,7 @@ export async function GET(request: Request, context: Context) {
       renderVersion: Number(row.renderVersion), title: row.videoTitle, duration: doc.duration,
       sourceDuration: doc.sourceDuration, rows: draft.rows, framing: draft.framing, names: draft.names,
       removeSilence: true, silencePreset: "aggressive", entertainment: draft.entertainment,
-      silences: doc.silences, target: doc.target,
+      silences: doc.silences, silenceProfiles: { aggressive: doc.silences }, target: doc.target,
       selectionMode: doc.selectionMode, busy: row.status === "rerendering",
       status: row.status === "rerendering" ? "rendering" : "ready", error: row.renderErrorMessage,
       exportReady: row.status === "ready", exportDraft: doc.renderedDraft,
