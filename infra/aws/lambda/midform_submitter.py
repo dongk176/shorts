@@ -180,7 +180,10 @@ def bind_runtime(request, job):
             or job.get("midform_request") != {"version": 1, "targetSeconds": 0}):
         raise RuntimeError("Invalid midform runtime binding")
     environment = request["containerOverrides"].setdefault("environment", [])
-    if any(item["name"] in {"MIDFORM_ENABLED", "MIDFORM_RELEASE_ID", *LANGUAGE_SWITCHES} for item in environment):
+    if any(
+        item["name"] in {"MIDFORM_ENABLED", "MIDFORM_RELEASE_ID", *LANGUAGE_SWITCHES}
+        for item in environment
+    ):
         raise RuntimeError("Duplicate midform runtime switch")
     environment.extend([
         {"name": "MIDFORM_ENABLED", "value": "true"},
