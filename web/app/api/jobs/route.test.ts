@@ -1,3 +1,4 @@
+vi.mock("server-only", () => ({}));
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ db: vi.fn(), session: vi.fn(), billing: vi.fn(), usage: vi.fn(), wake: vi.fn() }));
 vi.mock("@/lib/custom-template-design", () => ({ assertCustomTemplateDesignRenderRelease: async () => undefined }));
@@ -71,7 +72,7 @@ beforeEach(() => {
       }];
       if (q.includes("with scoped_jobs")) return [{ active: jobs.filter((j) => j.user === owner).length, restrictedContentCooldownMinutes: 0 }];
       if (q.includes("insert into shorts_mvp.video_jobs")) {
-        const job = { id: v[0] as string, user: v[2] as string, request: v[3] as string, projectNumber: jobs.length + 1, output: v[19], release: v.at(-1) };
+        const job = { id: v[0] as string, user: v[2] as string, request: v[3] as string, projectNumber: jobs.length + 1, output: v[19], release: v.at(-3) };
         jobs.push(job); return [{ projectNumber: job.projectNumber }];
       }
       if (q.includes("insert into shorts_mvp.usage_reservations")) { reservations.push(v); return [{ id: releaseId }]; }

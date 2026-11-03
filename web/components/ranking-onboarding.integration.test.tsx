@@ -7,7 +7,7 @@ import { WelcomeOverlayQueueProvider, useWelcomeOverlayStage } from "./welcome-o
 import { ProjectFeedbackOverlay } from "./project-feedback-overlay";
 const state = vi.hoisted(() => ({ path: "/", authenticated: true, accountId: "account-a", rankingAvailable: true }));
 vi.mock("@/components/usage-provider", () => ({ useUsageState: () => state }));
-vi.mock("@/lib/i18n/navigation", () => ({ usePathname: () => state.path }));
+vi.mock("@/lib/i18n/navigation", () => ({ default: ({ children, ...props }: AnchorHTMLAttributes<HTMLAnchorElement>) => <a {...props}>{children}</a>, usePathname: () => state.path }));
 vi.mock("@/lib/i18n/use-ui-text", () => ({ useUiText: () => (text: string) => text }));
 vi.mock("@/lib/usage-client", () => ({ publishUsageSnapshot: vi.fn() }));
 vi.mock("next/link", () => ({ default: ({ children, ...props }: AnchorHTMLAttributes<HTMLAnchorElement>) => <a {...props}>{children}</a> }));

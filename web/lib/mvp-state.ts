@@ -1,3 +1,4 @@
+import { midformRelease, midformUploadRelease } from "./midform-release";
 import { snsTemplateRelease } from "./sns-template-release";
 import type { SiteLocale } from "./i18n/config";
 import { languageFeatureAllowed, languageTestStatus } from "./language-test";
@@ -142,6 +143,7 @@ async function readMvpState(
     paymentMethodAction,
     usage,
     capabilities: {
+      midform: session.isAdmin === true ? await Promise.all([midformRelease(db, session.userId), midformUploadRelease(db, session.userId)]).then(() => true).catch(() => false) : false,
       communityTemplate: session.userId !== null
         ? await snsTemplateRelease(db, true).then(() => true).catch(() => false) : false,
       snsTemplate: session.userId !== null

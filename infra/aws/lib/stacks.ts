@@ -28,7 +28,7 @@ const workerSourceGitSha = /^[0-9a-f]{40}$/;
 const disabledEditorReleaseGitHubRef =
   "refs/tags/__disabled_editor_release__";
 const stageBEditorReleaseGitHubRef =
-  "refs/tags/editor-v4-render-parity-20260902-4";
+  "refs/tags/editor-v4-render-parity-20261103-3";
 const editorReleaseApprovalEnvironment = "editor-v4-release-approval";
 const editorReleaseWorkflowPath = ".github/workflows/editor-release.yml";
 const editorReleaseWorkflowName = "Verify editor release candidate";
@@ -1477,6 +1477,18 @@ export class ShortsMvpComputeStack extends cdk.Stack {
     });
     runtimeSecret.grantRead(lambdaRole);
     bucket.grantReadWrite(lambdaRole);
+    if (props.environment === "production") {
+      new iam.Policy(this, "MidformDefinitionReadPolicy", {
+        policyName: "EasyCutMidformDefinitionRead20261103",
+        roles: [lambdaRole],
+        statements: [new iam.PolicyStatement({
+          sid: "ReadMidformTargetDefinitionsInSeoul",
+          actions: ["batch:DescribeJobDefinitions"],
+          resources: ["*"],
+          conditions: { StringEquals: { "aws:RequestedRegion": "ap-northeast-2" } },
+        })],
+      });
+    }
     lambdaRole.addToPolicy(new iam.PolicyStatement({
       actions: [
         "batch:DescribeJobs",

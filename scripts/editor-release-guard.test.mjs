@@ -25,10 +25,10 @@ test("legacy editor global CSS remains byte-for-byte at the approved baseline", 
 
   assert.equal(
     digest,
-    // Current promoted cc9eab84 (dpl_CmTEr5pde3ewpzzSwP1jBvxGjtre), checked 2026-10-07.
-    // Reviewed existing workspace chrome and mobile input-size additions.
+    // Current promoted a2893f37 (dpl_Bb8c7zYnsvghXUfDXpMwe1g2A6DT), checked 2026-11-03.
+    // Verified against git show a2893f37:web/app/globals.css; midform uses CSS modules.
     // This release leaves global CSS byte-identical; retain the exact digest guard.
-    "17d86ec47ef67e8f0c0ead1b9f5c95111c4a0cd4cfc3804f791bbe54cf3685f3",
+    "f0f158f748e283b287b281e1e9c19535bd19a8ce035b478f06b1e80b41300480",
     "Do not change the approved global CSS baseline without a dedicated public UI review.",
   );
 });
@@ -219,19 +219,17 @@ test("release workflow promotes one tested digest without deploying the website"
   ]) assert.match(registrar, new RegExp(lane));
   assert.match(registrar, /editor-release-probe/);
   assert.match(workflow, /make verify/);
-  assert.match(workflow, /secrets\.EDITOR_TEST_DATABASE_URL/);
-  assert.match(workflow, /secrets\.EDITOR_TEST_DATABASE_FINGERPRINT/);
-  assert.match(workflow, /EDITOR_TEST_SUPABASE_PROJECT_REF/);
-  assert.match(workflow, /PRODUCTION_SUPABASE_PROJECT_REF/);
-  assert.match(
-    workflow,
-    /node scripts\/apply-supabase\.mjs --non-production[\s\S]*202608260008_editor_release_probe_attestation\.sql/,
-  );
-  assert.match(
-    workflow,
-    /202608260008_editor_release_probe_attestation\.sql[\s\\\n]*202608270001_fix_editor_release_object_cardinality\.sql/,
-  );
-  assert.doesNotMatch(workflow, /node scripts\/apply-supabase\.mjs\s*\n\s*$/m);
+  assert.doesNotMatch(workflow, /secrets\.EDITOR_TEST_DATABASE_(?:URL|FINGERPRINT)/);
+  assert.doesNotMatch(workflow, /node scripts\/apply-supabase\.mjs/);
+  assert.match(workflow, /python scripts\/verify-isolated-release-schema\.py/);
+  const isolatedSchema = await source("scripts/verify-isolated-release-schema.py");
+  assert.match(isolatedSchema, /"--network", "none"/);
+  assert.match(isolatedSchema, /"--tmpfs", "\/var\/lib\/postgresql\/data:rw,size=512m"/);
+  assert.match(isolatedSchema, /postgres@sha256:[0-9a-f]{64}/);
+  assert.match(isolatedSchema, /FILE_UPLOAD_SUCCESSOR_TEST_CONTAINER/);
+  assert.match(isolatedSchema, /PROJECT_TARGET_SUCCESSOR_TEST_CONTAINER/);
+  assert.match(isolatedSchema, /finally:[\s\S]*"rm", "--force", name/);
+  assert.doesNotMatch(isolatedSchema, /"--publish"|"-p"|"--network", "host"/);
   assert.match(workflow, /EDITOR_RELEASE_ECR_REPOSITORY_URI/);
   assert.match(workflow, /\.projectTargets \| keys \| length == 5/);
   assert.match(workflow, /GITHUB_STEP_SUMMARY/);
@@ -247,11 +245,11 @@ test("release workflow promotes one tested digest without deploying the website"
   assert.doesNotMatch(workflow, /vars\.AWS_WORKER_BUILD_ROLE_ARN/);
   assert.match(
     workflow,
-    /github\.ref == 'refs\/tags\/editor-v4-render-parity-20260902-4'/,
+    /github\.ref == 'refs\/tags\/editor-v4-render-parity-20261103-3'/,
   );
   assert.deepEqual(
     [...new Set(workflow.match(/editor-v4-render-parity-[0-9]{8}-[0-9]+/g))],
-    ["editor-v4-render-parity-20260902-4"],
+    ["editor-v4-render-parity-20261103-3"],
   );
   assert.equal(workflow.match(/fetch-depth: 0/g)?.length, 2);
   assert.equal(workflow.match(/fetch-tags: true/g)?.length, 2);
@@ -456,7 +454,7 @@ test("candidate worker uses a pinned, scan-friendly image with render dependenci
   assert.match(dockerfile, /apk add --no-cache[\s\S]*deno[\s\S]*ffmpeg/);
   assert.match(
     dockerfile,
-    /FROM python:3\.12-alpine3\.22@sha256:[a-f0-9]{64} AS worker-base[\s\S]*RUN apk add --no-cache --upgrade[\s\S]*libcrypto3=3\.5\.8-r0[\s\S]*libssl3=3\.5\.8-r0[\s\S]*openssl=3\.5\.8-r0/,
+    /FROM python:3\.12-alpine3\.22@sha256:[a-f0-9]{64} AS worker-base[\s\S]*RUN apk add --no-cache --upgrade[\s\S]*libcrypto3=3\.5\.9-r0[\s\S]*libssl3=3\.5\.9-r0[\s\S]*openssl=3\.5\.9-r0/,
   );
   assert.match(dockerfile, /apk add --no-cache font-noto-cjk/);
   assert.match(dockerfile, /addgroup -g 10001 easycut/);

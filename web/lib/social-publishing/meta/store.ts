@@ -22,6 +22,7 @@ export class MetaStore {
     const rows = await db`select s.id,j.project_number,s.output_s3_key,s.render_version
       from shorts_mvp.generated_shorts s join shorts_mvp.video_jobs j on j.id=s.job_id
       where s.id=${shortId} and s.user_id=${userId} and j.user_id=${userId}
+        and coalesce(to_jsonb(j)->'midform_request','null'::jsonb)='null'::jsonb
         and j.is_example=false and j.status<>'deleted' and j.user_deleted_at is null
         and s.status='ready' and s.deleted_at is null and s.output_s3_key is not null
         and (s.expires_at is null or s.expires_at>now())

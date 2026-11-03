@@ -37,6 +37,8 @@ export async function GET(
             and s.mvp_session_id=${session.id}
           )
         )
+        and (coalesce(to_jsonb(j)->'midform_request','null'::jsonb)='null'::jsonb
+          or exists(select 1 from shorts_mvp.app_users u where u.id=${session.userId} and u.is_admin))
         and j.is_example=false
         and s.status='ready'
         and s.output_s3_key is not null

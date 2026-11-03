@@ -13,7 +13,7 @@ concurrency:
 
 env:
   AWS_REGION: ap-northeast-2
-  EDITOR_RELEASE_TAG: editor-v4-render-parity-20260902-4
+  EDITOR_RELEASE_TAG: editor-v4-render-parity-20261103-3
   EDITOR_RELEASE_BUILD_ROLE_ARN: ${{ vars.EDITOR_RELEASE_BUILD_ROLE_ARN }}
   EDITOR_RELEASE_VERIFIER_ROLE_ARN: ${{ vars.EDITOR_RELEASE_VERIFIER_ROLE_ARN }}
   EDITOR_RELEASE_ECR_REPOSITORY_URI: ${{ vars.EDITOR_RELEASE_ECR_REPOSITORY_URI }}
@@ -30,7 +30,7 @@ jobs:
   build:
     # A mutable branch is never a release identity. AWS independently verifies
     # this exact protected tag before it allows an image push.
-    if: github.ref == 'refs/tags/editor-v4-render-parity-20260902-4'
+    if: github.ref == 'refs/tags/editor-v4-render-parity-20261103-3'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     outputs:
@@ -59,11 +59,19 @@ jobs:
             worker/requirements.txt
             worker/requirements-dev.txt
 
+      - name: Install required video verification tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          ffmpeg -version
+          ffprobe -version
+
       - name: Install verification dependencies
         run: |
           python -m pip install -r worker/requirements-dev.txt
           npm ci --prefix web
           npm ci --prefix infra/aws
+          npm install --prefix test-tools --no-save --package-lock=false @electric-sql/pglite@0.3.14
 
       - name: Run the complete repository gate
         env:
@@ -192,6 +200,7 @@ jobs:
             def expected_files: {
               "pretendard":"Pretendard-Bold.woff2",
               "noto-sans-kr":"NotoSansKR-Variable.ttf",
+              "noto-sans-jp":"NotoSansCJKjp-Variable.ttf",
               "do-hyeon":"DoHyeon-Regular.ttf",
               "jua":"Jua-Regular.ttf",
               "jalnan-2":"Jalnan2-Regular.woff2",
@@ -214,7 +223,7 @@ jobs:
             def font_root: "/app/worker/shorts_worker/assets/editor_fonts/";
             (.sha256 | test("^[0-9a-f]{64}$"))
             and (.fallbackDetected == false)
-            and (.entries | type == "array" and length == 20)
+            and (.entries | type == "array" and length == 21)
             and ([.entries[].fontId] | sort) == (expected_files | keys | sort)
             and ([.entries[] | select(
               (keys | sort) != (["cssToAssBaselineOffsetEm","cssToAssScale","fontId","postscriptName","resolvedPath","sha256","titleBaselineOffsetEm","wordSpaceAdvanceEm"] | sort)
@@ -242,7 +251,7 @@ jobs:
 
   verify-and-register:
     needs: build
-    if: github.ref == 'refs/tags/editor-v4-render-parity-20260902-4'
+    if: github.ref == 'refs/tags/editor-v4-render-parity-20261103-3'
     environment: editor-v4-release-approval
     runs-on: ubuntu-latest
     timeout-minutes: 120
@@ -311,34 +320,13 @@ jobs:
           account_id="$(aws sts get-caller-identity --query Account --output text)"
           echo "EDITOR_TEST_BUCKET_NAME=shorts-mvp-editor-test-${account_id}-${AWS_REGION}" >> "$GITHUB_ENV"
 
-      - name: Apply additive migrations only to the isolated Supabase project
-        env:
-          DATABASE_URL: ${{ secrets.EDITOR_TEST_DATABASE_URL }}
-          NON_PRODUCTION_DATABASE_FINGERPRINT: ${{ secrets.EDITOR_TEST_DATABASE_FINGERPRINT }}
+      # The synthetic probe has no application DB connection. The old shared
+      # test project is now an independent lab; never replay migrations there.
+      # Exercise the existing handoff SQL against disposable network-none DBs.
+      - name: Verify isolated release handoff schema contracts
         run: |
-          test -n "$DATABASE_URL"
-          node -e '
-            const value = process.env.DATABASE_URL || "";
-            const testRef = process.env.EDITOR_TEST_SUPABASE_PROJECT_REF || "";
-            const productionRef = process.env.PRODUCTION_SUPABASE_PROJECT_REF || "";
-            if (!value.includes(testRef) || value.includes(productionRef)) {
-              throw new Error("isolated Supabase identity check failed");
-            }
-          '
-          # Replaying every historical migration is unsafe after later schema
-          # changes alter old conflict keys. The isolated editor probe only
-          # needs the additive editor release, outbox, and caption contracts.
-          node scripts/apply-supabase.mjs --non-production \
-            202607310003_editor_release_channels.sql \
-            202608010001_editor_render_canary_outbox.sql \
-            202608080001_subtitle_templates_admin_canary.sql \
-            202608110001_editor_subtitle_editing_capability.sql \
-            202608240002_unified_template_subtitles_canary_flag.sql \
-            202608260007_editor_render_spec_v4_release_control.sql \
-            202608260008_editor_release_probe_attestation.sql \
-            202608270001_fix_editor_release_object_cardinality.sql \
-            202608280001_file_upload_render_release_binding.sql \
-            202608280002_file_upload_render_release_binding_validate.sql
+          if [ ! -e /usr/local/bin/docker ]; then sudo ln -s /usr/bin/docker /usr/local/bin/docker; fi
+          python scripts/verify-isolated-release-schema.py
 
       - name: Ask the trusted registrar to create the isolated probe
         id: isolated-probe
@@ -509,9 +497,9 @@ jobs:
             .schemaVersion == 1
             and .renderer == "isolated-linux-worker-v4"
             and .runtimeIdentity == $identity
-            and .caseCount == 66
-            and (.cases | length) == 66
-            and (.fontIds | unique | length) == 20
+            and .caseCount == 69
+            and (.cases | length) == 69
+            and (.fontIds | unique | length) == 21
             and ([.cases[].workerFrameSha256] | all(test("^[0-9a-f]{64}$")))
           ' worker-matrix/matrix.json
           test "$(jq -r '.browserParityMatrix.sha256' probe-manifest.json)" = "$matrix_sha256"
@@ -525,8 +513,8 @@ jobs:
             --report browser-worker-parity/report.json
           jq -e '
             .schemaVersion == 2
-            and .caseCount == 66
-            and (.fontIds | unique | length) == 20
+            and .caseCount == 69
+            and (.fontIds | unique | length) == 21
             and .maximumAllowedErrorPixels == 2
             and .maximumDomErrorPixels <= 2
             and .maximumPixelErrorPixels <= 2
@@ -610,9 +598,9 @@ jobs:
           {
             echo "### Browser compiler → isolated Linux worker parity"
             echo
-            echo "- cases: 66"
-            echo "- title fonts: 20/20"
-            echo "- pop/highlight fonts: 20/20 in both modes"
+            echo "- cases: 69"
+            echo "- title fonts: 21/21"
+            echo "- pop/highlight fonts: 21/21 in both modes"
             echo "- maximum DOM error: ${{ steps.browser-parity.outputs.maximum_dom_error }}px"
             echo "- maximum pixel error: ${{ steps.browser-parity.outputs.maximum_pixel_error }}px"
             echo "- allowed: 2px"

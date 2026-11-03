@@ -39,9 +39,9 @@ RUN apk add --no-cache --upgrade \
         giflib \
         libjpeg-turbo \
         libstdc++ \
-        libcrypto3=3.5.8-r0 \
-        libssl3=3.5.8-r0 \
-        openssl=3.5.8-r0 \
+        libcrypto3=3.5.9-r0 \
+        libssl3=3.5.9-r0 \
+        openssl=3.5.9-r0 \
         pango \
         pixman \
     && addgroup -g 10001 easycut \

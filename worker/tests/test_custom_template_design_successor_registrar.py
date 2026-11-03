@@ -385,7 +385,7 @@ def test_finalizer_binds_successor_evidence_without_weakening_fifteen_checks(
     module._artifact_contract = MagicMock(return_value={"versionId": "version", "sha256": "f" * 64})
     module._read_browser_parity_matrix = MagicMock(return_value=({}, "f" * 64, matrix_uri))
     module._read_inline_browser_parity_report = MagicMock(return_value={
-        "caseCount": 66, "maximumDomErrorPixels": 1, "maximumPixelErrorPixels": 1,
+        "caseCount": 69, "maximumDomErrorPixels": 1, "maximumPixelErrorPixels": 1,
     })
     module._verify_browser_parity_report = MagicMock()
     # The companion suite checks artifacts; here isolate the finalizer's evidence binding.

@@ -30,7 +30,8 @@ export async function metaReviewerShortForProject(db: Sql, userId: string, proje
   const rows = await db`select s.id from shorts_mvp.generated_shorts s
     join shorts_mvp.video_jobs j on j.id=s.job_id join shorts_mvp.app_users u on u.id=s.user_id
     where s.id=${grant.shortId} and s.user_id=${userId} and j.user_id=${userId} and j.project_number=${projectNumber}
-      and u.withdrawn_at is null and j.is_example=false and j.status<>'deleted' and j.user_deleted_at is null
+      and u.withdrawn_at is null and coalesce(to_jsonb(j)->'midform_request','null'::jsonb)='null'::jsonb
+        and j.is_example=false and j.status<>'deleted' and j.user_deleted_at is null
       and s.status='ready' and s.deleted_at is null and s.output_s3_key is not null
       and (s.expires_at is null or s.expires_at>now()) and clock_timestamp()<${grant.expiresAt}::timestamptz limit 1`;
   return rows.length ? grant.shortId : null;

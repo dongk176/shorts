@@ -3281,6 +3281,7 @@ def _editor_release_v4_manifest(module: ModuleType) -> dict[str, object]:
     font_manifest_sha256 = hashlib.sha256(canonical).hexdigest()
     manifest = _editor_release_manifest(document_version=3)
     manifest.update({
+        "fonts": sorted(module._REQUIRED_FONTS),
         "schemaVersion": 2,
         "renderSpecVersion": 4,
         "captionRenderSpecVersion": 4,
@@ -3718,12 +3719,12 @@ def test_editor_v4_registrar_requires_the_exact_browser_parity_artifact() -> Non
     module, _ = _load_lambda("editor_release_registrar")
     manifest = _editor_release_v4_manifest(module)
     matrix = _editor_browser_parity_matrix(module, manifest)
-    assert matrix["caseCount"] == 66
+    assert matrix["caseCount"] == 69
     matrix_payload = json.dumps(matrix, separators=(",", ":")).encode()
     matrix_sha256 = hashlib.sha256(matrix_payload).hexdigest()
     manifest["browserParityMatrix"] = {
         "schemaVersion": 1,
-        "caseCount": 66,
+        "caseCount": 69,
         "fontIds": sorted(module._REQUIRED_FONTS),
         "sha256": matrix_sha256,
     }
@@ -3914,7 +3915,7 @@ def test_editor_v4_release_records_browser_worker_parity_as_required_check() -> 
         "/actions/runs/1/attempts/1"
     )
     assert browser_check["details"]["reportSha256"] == "f" * 64
-    assert browser_check["details"]["caseCount"] == 66
+    assert browser_check["details"]["caseCount"] == 69
     assert browser_check["details"]["report"] == report
 
 
@@ -4262,7 +4263,7 @@ def test_editor_v4_registrar_finalization_uses_only_attested_evidence_and_atomic
         "sha256": "f" * 64,
     })
     module._read_browser_parity_matrix = MagicMock(return_value=(
-        {"caseCount": 66},
+        {"caseCount": 69},
         "f" * 64,
         matrix_uri,
     ))
@@ -4288,7 +4289,7 @@ def test_editor_v4_registrar_finalization_uses_only_attested_evidence_and_atomic
 
     module._rpc = rpc
     module._read_inline_browser_parity_report = MagicMock(return_value={
-        "caseCount": 66,
+        "caseCount": 69,
         "maximumDomErrorPixels": 1.5,
         "maximumPixelErrorPixels": 2,
     })

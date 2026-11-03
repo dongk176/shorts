@@ -57,6 +57,7 @@ _SUPPORTED_DOCUMENT_VERSIONS = {2, 3}
 _REQUIRED_FONTS = {
     "pretendard",
     "noto-sans-kr",
+    "noto-sans-jp",
     "do-hyeon",
     "jua",
     "jalnan-2",
@@ -83,7 +84,8 @@ _V4_CAPTION_RENDER_SPEC_VERSION = 4
 _FONT_MANIFEST_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _BROWSER_PARITY_CHECK = "browser-worker-visual-parity"
 _BROWSER_PARITY_MATRIX_NAME = "browser-parity/matrix.json"
-_BROWSER_PARITY_CASE_COUNT = 66
+_BROWSER_PARITY_CASE_COUNT = 69
+_DESIGN_FONTS = _REQUIRED_FONTS - {"noto-sans-jp"}
 _BROWSER_PARITY_REPORT_MAX_BYTES = 512 * 1024
 _BROWSER_PARITY_REQUIRED_CHECKS = {
     _BROWSER_PARITY_CHECK,
@@ -158,6 +160,7 @@ _EDITOR_FONT_ROOT = "/app/worker/shorts_worker/assets/editor_fonts"
 _REQUIRED_FONT_FILES = {
     "pretendard": "Pretendard-Bold.woff2",
     "noto-sans-kr": "NotoSansKR-Variable.ttf",
+    "noto-sans-jp": "NotoSansCJKjp-Variable.ttf",
     "do-hyeon": "DoHyeon-Regular.ttf",
     "jua": "Jua-Regular.ttf",
     "jalnan-2": "Jalnan2-Regular.woff2",
@@ -1016,9 +1019,9 @@ def _verify_custom_template_design(
         or verification.get("textOverlayCount") != 20
         or verification.get("wrapRevision") != "editor-text-v1"
         or verification.get("deletedTextPreserved") is not True
-        or not isinstance(fonts, list) or len(fonts) != len(_REQUIRED_FONTS)
+        or not isinstance(fonts, list) or len(fonts) != len(_DESIGN_FONTS)
         or any(not isinstance(font, str) for font in fonts)
-        or set(fonts) != _REQUIRED_FONTS
+        or set(fonts) != _DESIGN_FONTS
         or isinstance(error, bool) or not isinstance(error, int | float)
         or not math.isfinite(error) or not 0 <= error <= 2
         or not _FONT_MANIFEST_SHA256.fullmatch(str(verification.get("backgroundSha256") or ""))
@@ -1132,7 +1135,8 @@ def _verify_manifest(
         geometry.get("maximumErrorPixels", 999)
     ) > 2:
         raise RuntimeError("Editor release geometry exceeds the two-pixel tolerance")
-    if set(manifest.get("fonts") or []) != _REQUIRED_FONTS:
+    expected_fonts = _REQUIRED_FONTS if is_v4 else _DESIGN_FONTS
+    if set(manifest.get("fonts") or []) != expected_fonts:
         raise RuntimeError("Editor release did not verify every bundled font")
     if is_v4:
         font_manifest = manifest.get("fontManifest")
