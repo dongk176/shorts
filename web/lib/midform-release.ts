@@ -22,7 +22,7 @@ export async function midformRelease(db: Sql | TransactionSql, userId: string | 
   const parsed = languageTestRegistrySchema.safeParse(raw);
   if (!parsed.success || !row?.verifiedAt || !row.stagingVerifiedAt
     || !["canary_ready", "canary_active", "approved"].includes(row.status)
-    || row.uiVersion !== 3 || row.documentVersion !== 3
+    || row.uiVersion !== 4 || row.documentVersion !== 3
     || row.renderSpecVersion !== 4 || row.captionRenderSpecVersion !== 4
     || !Object.values(parsed.data.lanes).every(({current: t}) => t.releaseId.startsWith("midform-")
       && t.workerSourceGitSha === row.gitSha && t.imageUri.endsWith(`@${row.workerImageDigest}`)
