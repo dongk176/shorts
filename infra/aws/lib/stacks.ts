@@ -1477,6 +1477,18 @@ export class ShortsMvpComputeStack extends cdk.Stack {
     });
     runtimeSecret.grantRead(lambdaRole);
     bucket.grantReadWrite(lambdaRole);
+    if (props.environment === "production") {
+      new iam.Policy(this, "MidformDefinitionReadPolicy", {
+        policyName: "EasyCutMidformDefinitionRead20261103",
+        roles: [lambdaRole],
+        statements: [new iam.PolicyStatement({
+          sid: "ReadMidformTargetDefinitionsInSeoul",
+          actions: ["batch:DescribeJobDefinitions"],
+          resources: ["*"],
+          conditions: { StringEquals: { "aws:RequestedRegion": "ap-northeast-2" } },
+        })],
+      });
+    }
     lambdaRole.addToPolicy(new iam.PolicyStatement({
       actions: [
         "batch:DescribeJobs",
