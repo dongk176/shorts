@@ -1,5 +1,3 @@
-import { Suspense } from "react";
-import type { SiteLocale } from "@/lib/i18n/config";
 import { createLocalizedPageMetadata } from "@/lib/i18n/metadata";
 import type { Metadata } from "next";
 import { StructuredData } from "@/components/structured-data";
@@ -27,6 +25,12 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function Home() {
   const locale = await getRequestLocale();
+  const initialState = await loadMvpState(undefined, undefined, locale, { includeRecentJobs: false }).catch((error) => {
+    console.error("home_initial_state_failed", {
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    });
+    return null;
+  });
   const monthlyOffer = publicMonthlyOffer(locale, paddleConfigured() && paddleEnabled());
   const applicationData = {
     "@context": "https://schema.org",
@@ -51,34 +55,10 @@ export default async function Home() {
   return (
     <>
       <StructuredData data={applicationData} />
-      <Suspense fallback={<HomeLoading locale={locale} />}>
-        <HomeContent locale={locale} />
-      </Suspense>
-    </>
-  );
-}
-
-async function HomeContent({ locale }: { locale: SiteLocale }) {
-  const initialState = await loadMvpState(undefined, undefined, locale, { includeRecentJobs: false }).catch((error) => {
-    console.error("home_initial_state_failed", {
-      errorName: error instanceof Error ? error.name : "UnknownError",
-    });
-    return null;
-  });
-  return (initialState?.enterpriseAccess.accountType === "enterprise"
+      {initialState?.enterpriseAccess.accountType === "enterprise"
         && !initialState.enterpriseAccess.allowed
         ? <EnterpriseServiceGate access={initialState.enterpriseAccess} />
-        : <ShortsApp key={`${locale}:${initialState?.user?.id ?? "guest"}`} initialState={initialState} initialLocale={locale} initialStateLoadedAt={Date.now()} />);
-}
-
-function HomeLoading({ locale }: { locale: SiteLocale }) {
-  return <main className="mx-auto w-full max-w-6xl px-5 py-20" aria-busy="true">
-    <h1 className="text-3xl font-bold text-white">{localizedValue(locale, {
-      ko: "AI 쇼츠 만들기", en: "Create AI Shorts", ja: "AIショート動画を作成",
-    })}</h1>
-    <p role="status" className="mt-4 text-base text-neutral-400">{localizedValue(locale, {
-      ko: "계정 정보를 불러오는 중…", en: "Loading your account…", ja: "アカウント情報を読み込み中…",
-    })}</p>
-    <div aria-hidden="true" className="mt-8 h-36 rounded-2xl border border-white/10 bg-white/5" />
-  </main>;
+        : <ShortsApp key={`${locale}:${initialState?.user?.id ?? "guest"}`} initialState={initialState} initialLocale={locale} initialStateLoadedAt={Date.now()} />}
+    </>
+  );
 }
