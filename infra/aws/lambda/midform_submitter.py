@@ -185,5 +185,6 @@ def bind_runtime(request, job):
     environment.extend([
         {"name": "MIDFORM_ENABLED", "value": "true"},
         {"name": "MIDFORM_RELEASE_ID", "value": marker},
-        *({"name": key, "value": ""} for key in sorted(LANGUAGE_SWITCHES)),
+        # Batch omits empty override values; use an explicit disabled value.
+        *({"name": key, "value": "false"} for key in sorted(LANGUAGE_SWITCHES)),
     ])

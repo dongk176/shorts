@@ -98,7 +98,7 @@ def test_runtime_switches_only_come_from_a_verified_midform_binding():
         {"name": "EXISTING", "value": "kept"},
         {"name": "MIDFORM_ENABLED", "value": "true"},
         {"name": "MIDFORM_RELEASE_ID", "value": RID},
-        *({"name": key, "value": ""} for key in sorted(module.LANGUAGE_SWITCHES)),
+        *({"name": key, "value": "false"} for key in sorted(module.LANGUAGE_SWITCHES)),
     ]
     with pytest.raises(RuntimeError, match="Duplicate"):
         module.bind_runtime(request, job)
