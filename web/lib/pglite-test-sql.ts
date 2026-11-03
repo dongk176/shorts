@@ -1,4 +1,3 @@
-import type { PGlite } from "../../test-tools/node_modules/@electric-sql/pglite/dist/index.js";
 import type { Sql } from "postgres";
 type Fragment={strings:TemplateStringsArray;values:unknown[]};
 function compile(fragment:Fragment,values:unknown[]=[]):{text:string;values:unknown[]} {
@@ -12,7 +11,7 @@ function compile(fragment:Fragment,values:unknown[]=[]):{text:string;values:unkn
 }
 // Match postgres.js's lazy nested SQL fragments while executing the real SQL
 // against PostgreSQL/WASM. This does not simulate concurrent connection locks.
-export function pgliteTestSql(engine:()=>Pick<PGlite,'query'>,locksAsAcquired=false):Sql {
+export function pgliteTestSql(engine:()=>{query<T>(sql:string,values?:unknown[]):Promise<{rows:T[]}>},locksAsAcquired=false):Sql {
   return ((strings:TemplateStringsArray,...values:unknown[])=>({strings,values,
     then:(resolve:(rows:unknown[])=>unknown,reject:(error:unknown)=>unknown)=>{
       const q=compile({strings,values});
