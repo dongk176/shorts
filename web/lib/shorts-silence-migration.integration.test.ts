@@ -18,7 +18,7 @@ beforeAll(async () => {
     insert into shorts_mvp.video_jobs values ('${job}','${admin}',false,null,'{"shortsSilenceRemoval":{"version":1,"preset":"aggressive"}}');
     insert into shorts_mvp.generated_shorts values ('${short}','${job}','${admin}');`);
   await db.exec(await readFile(new URL("../../supabase/migrations/20261104050801_admin_shorts_silence_tasks.sql", import.meta.url), "utf8"));
-  await db.exec(await readFile(new URL("../../supabase/migrations/20261104170150_public_shorts_silence.sql", import.meta.url), "utf8"));
+  await db.exec(await readFile(new URL("../../supabase/migrations/20261104171115_public_shorts_silence.sql", import.meta.url), "utf8"));
 });
 afterAll(async () => { await db?.close(); });
 const insert = (owner = admin) => db.exec(`insert into shorts_mvp.admin_short_silence_tasks

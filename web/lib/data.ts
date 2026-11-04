@@ -195,10 +195,12 @@ export async function getShortsForJobs(
         else coalesce(t.state,'waiting') end as state,
         coalesce(t.cut_count,0) as cut_count,coalesce(t.removed_seconds,0) as removed_seconds
       from shorts_mvp.generated_shorts s join shorts_mvp.app_users u on u.id=s.user_id
+      join shorts_mvp.video_jobs j on j.id=s.job_id and j.user_id=u.id
       join shorts_mvp.runtime_feature_flags f on f.flag_key='admin_shorts_silence' and f.enabled
       left join shorts_mvp.admin_short_silence_tasks t on t.short_id=s.id
       left join shorts_mvp.editor_render_requests r on r.id=t.request_id
-      where s.id in ${db(silenceIds)} and u.is_admin`;
+      where s.id in ${db(silenceIds)} and not j.is_example and j.midform_request is null
+        and j.template_snapshot->'shortsSilenceRemoval'='{"version":1,"preset":"aggressive"}'::jsonb`;
     for (const row of states) silenceStates.set(String(row.id), { status: row.state, cutCount: Number(row.cutCount), removedSeconds: Number(row.removedSeconds) });
   }
   const result = new Map<string, GeneratedShort[]>();
