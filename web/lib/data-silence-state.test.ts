@@ -30,7 +30,7 @@ function db(){
     templateSnapshot:{shortsSilenceRemoval:{version:1,preset:"aggressive"}},durationSeconds:10}];
   const actual=query.replace("in ?",`in ('${short}')`);
   const result=await database.query(actual);
-  return result.rows.map(row=>Object.fromEntries(Object.entries(row).map(([key,value])=>[key.replace(/_([a-z])/g,(_,c)=>c.toUpperCase()),value])));
+  return result.rows.map(row=>Object.fromEntries(Object.entries(row as Record<string, unknown>).map(([key,value])=>[key.replace(/_([a-z])/g,(_,c)=>c.toUpperCase()),value])));
  },{json:(v:unknown)=>v}) as unknown as Sql;
 }
 describe("ordinary member silence result visibility on the real state query",()=>{
