@@ -6,6 +6,26 @@ import { describe, expect, it } from "vitest";
 import { silenceEditDocument } from "./shorts-silence-contract";
 
 describe("actual silence cuts and the unchanged editor renderer", () => {
+  it("does not expose signed source access in a timeout traceback", () => {
+    const root = path.resolve(import.meta.dirname, "../..");
+    const script = `
+import importlib.util, subprocess, sys, traceback
+from unittest.mock import patch
+spec=importlib.util.spec_from_file_location('silence_analyzer',sys.argv[1])
+module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+url='https://cdn.example.com/edit-sources/test.mp4?Signature=temporary-private-access'
+with patch.object(module.subprocess,'run',side_effect=subprocess.TimeoutExpired(['ffmpeg','-i',url],90)):
+    try: module.analyze({'url':url,'host':'cdn.example.com','start':0,'end':12})
+    except RuntimeError:
+        message=traceback.format_exc()
+        assert 'temporary-private-access' not in message and url not in message
+        assert 'Owned audio analysis did not complete' in message
+        print('redacted')
+    else: raise AssertionError('Expected bounded analysis failure')
+`;
+    expect(execFileSync(path.join(root, "worker/.venv/bin/python"), ["-c", script,
+      path.join(root, "web/private/shorts-silence/analyze.py")], { encoding: "utf8", timeout: 10_000 }).trim()).toBe("redacted");
+  });
   it.each([0, 240])("removes silence and retimes captions with source-clock offset %s", offset => {
     const folder = mkdtempSync(path.join(os.tmpdir(), "shorts-silence-media-"));
     const root = path.resolve(import.meta.dirname, "../..");
