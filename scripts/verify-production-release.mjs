@@ -42,6 +42,9 @@ export const PROTECTED_APP_ROUTES = [
 // These routes are the only intentional additions relative to the currently
 // promoted production manifest. Everything else must still fail closed.
 export const ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE = [
+  // Administrator-only Shorts silence removal through the existing editor.
+  "/api/cron/admin-shorts-silence/route",
+  "/api/shorts/[shortId]/silence-removal/route",
   // User-approved PayPal one-time checkout and administrator configuration.
   "/api/paypal/orders/route",
   "/billing/paypal/order/page",

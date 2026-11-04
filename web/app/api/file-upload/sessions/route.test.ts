@@ -270,6 +270,13 @@ beforeEach(() => {
 });
 
 describe("file upload job control plane", () => {
+  it("rejects a silence request without authoritative administrator status before upload allocation", async () => {
+    vi.stubEnv("ADMIN_SHORTS_SILENCE_ENABLED", "true"); vi.stubEnv("RANKING_VERCEL_SNAPSHOT_ID", "snapshot");
+    const { db } = transactionDb(); mocks.getDb.mockReturnValue(db);
+    const result = await POST(jsonRequest({ ...validBody, silenceRemoval: { version: 1, preset: "aggressive" } }));
+    expect(result.status).toBe(404); expect(db.begin).not.toHaveBeenCalled();
+    expect(mocks.ensureUploadCapacity).not.toHaveBeenCalled();
+  });
   it("conceals GET and signed-out/off POST probes with the same 404", async () => {
     const getResponse = await GET();
     expect(getResponse.status).toBe(404);

@@ -1,3 +1,5 @@
+import { shortsSilenceRequestSchema } from "@/lib/shorts-silence-contract";
+import { requireShortsSilenceAdmin, assertSilenceTemplate } from "@/lib/shorts-silence-access";
 import { midformRelease, midformTarget, requireMidformAdmin } from "@/lib/midform-release";
 import { midformRequestSchema } from "@/lib/midform-cloud";
 import { lockSnsTemplateAdmission } from "@/lib/sns-template-release";
@@ -61,6 +63,7 @@ import {
 } from "@/lib/shorts-thank-you-event";
 
 const schema = z.object({
+  silenceRemoval: shortsSilenceRequestSchema.optional(),
   midform: midformRequestSchema.optional(),
   analysisId: z.string().uuid(),
   youtubeUrl: z.string().max(2048).optional(),
@@ -117,6 +120,10 @@ export async function POST(request: Request) {
     const rightsConfirmed = input.rightsConfirmed === true;
     const session = await requireAuthenticatedMvpSession();
     const db = getDb();
+    if (input.silenceRemoval) {
+      await requireShortsSilenceAdmin(db, session.userId); assertSilenceTemplate(input);
+      if (request.headers.get("origin") !== new URL(request.url).origin || request.headers.get("sec-fetch-site") === "cross-site") throw new HttpError(403, "이지컷 화면에서 다시 시도해 주세요.");
+    }
     if (input.midform) {
       await requireMidformAdmin(db, session.userId);
       if (request.headers.get("origin") !== new URL(request.url).origin || request.headers.get("sec-fetch-site") === "cross-site") throw new HttpError(403, "이지컷 화면에서 다시 시도해 주세요.");
@@ -311,6 +318,7 @@ export async function POST(request: Request) {
           status: concurrentExisting[0].status,
         };
       }
+      if (input.silenceRemoval) await requireShortsSilenceAdmin(tx, session.userId);
       const midform = input.midform ? await midformRelease(tx, session.userId) : null;
       if (midform && executionBackend !== "aws_batch") throw new HttpError(503, "중폼 제작 서버를 준비하고 있습니다.");
       const languageTest = input.snsTemplate
@@ -340,10 +348,11 @@ export async function POST(request: Request) {
       });
       const resolvedTemplateId = renderContract.templateId;
       const resolvedVideoAspectRatio = renderContract.videoAspectRatio;
-      const templateSnapshot = input.snsTemplate
+      const baseTemplateSnapshot = input.snsTemplate
         ? { presetVersion: 4, snsTemplateVersion: 1, brandColor: input.brandColor ?? "#000000",
             ...(input.communityTemplate ? { communityTemplateVersion: 1 } : {}) }
         : renderContract.templateSnapshot;
+      const templateSnapshot = input.silenceRemoval ? { ...baseTemplateSnapshot, shortsSilenceRemoval: input.silenceRemoval } : baseTemplateSnapshot;
       const subtitleTemplateSnapshot = renderContract.subtitleTemplateSnapshot;
       const usesUnifiedTemplateSubtitleCandidate =
         renderContract.usesUnifiedTemplateSubtitleCandidate;

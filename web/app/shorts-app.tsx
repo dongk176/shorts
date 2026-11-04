@@ -1,5 +1,9 @@
 "use client";
 
+import { ShortsSilenceStatus } from "@/components/shorts-silence-status";
+import { SilenceRemovalChoice } from "@/components/silence-removal-choice";
+import { SHORTS_SILENCE_REQUEST } from "@/lib/shorts-silence-contract";
+
 import { ConversionChoice } from "@/components/conversion-choice";
 import { MidformCloudWorkspace } from "@/components/midform-cloud-workspace";
 import { EnterpriseServiceGate } from "@/components/enterprise-service-gate";
@@ -12983,8 +12987,10 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
     setEditorDraftEntry(null);
   };
 
+  const waitingForSilence = job.shorts.some(item => item.silenceRemoval && ["waiting", "processing", "rendering"].includes(item.silenceRemoval.status));
+
   useEffect(() => {
-    if (job.status !== "completed" || revealDecidedJobIds.current.has(job.id)) return;
+    if (job.status !== "completed" || waitingForSilence || revealDecidedJobIds.current.has(job.id)) return;
     revealDecidedJobIds.current.add(job.id);
     const storageKey = `${PROJECT_REVEAL_STORAGE_PREFIX}${job.id}`;
     let hasSeenReveal = false;
@@ -12995,7 +13001,7 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
       // Local storage is optional; the ref still prevents duplicate effect runs.
     }
     setRevealDecision({ jobId: job.id, show: !hasSeenReveal });
-  }, [job.id, job.status]);
+  }, [job.id, job.status, waitingForSilence]);
 
   useEffect(() => {
     for (const item of job.shorts.filter(isPlaybackAvailable)) {
@@ -13063,7 +13069,7 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
     return <div className="project-workspace"><button onClick={onBack}>{ui("← 프로젝트로 돌아가기")}</button><p className={`m-auto max-w-xl whitespace-pre-line px-6 text-center leading-7 ${job.status === "failed" ? "text-red-300" : "text-neutral-500"}`}>{ui(message)}</p></div>;
   }
   if (
-    job.status === "completed"
+    job.status === "completed" && !waitingForSilence
     && (!revealDecision || revealDecision.jobId !== job.id)
   ) {
     return <div className="project-workspace" aria-label={ui("프로젝트를 여는 중")} />;
@@ -13150,6 +13156,7 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
                     </span>
                   )}
                 </div>
+                {item.silenceRemoval ? <ShortsSilenceStatus shortId={item.id} state={item.silenceRemoval} /> : null}
                 <div className="short-result-layout">
                   <div className="short-video-column">
                     <div className="short-video-shell">
@@ -13531,6 +13538,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
   const [conversionChoiceOpen, setConversionChoiceOpen] = useState(false);
   const [conversionChoiceStage, setConversionChoiceStage] = useState<"analyze" | "create" | "switch">("analyze");
   const [shortsChosen, setShortsChosen] = useState(false);
+  const [shortsSilenceSelected, setShortsSilenceSelected] = useState(false);
   const [midformOpened, setMidformOpened] = useState(false);
   const [midformBusy, setMidformBusy] = useState(false);
   const ui = useUiText();
@@ -13704,6 +13712,8 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
     : analysis?.brandColorSelectionEnabled === true;
   const adminCompactSourceRangeEnabled = brandColorSelectionEnabled;
   const adminTemplateLayoutEnabled = brandColorSelectionEnabled;
+  const shortsSilenceAllowed = state?.capabilities.shortsSilenceRemoval === true && !customTemplateId && !snsTemplateActive && !languageTestActive && outputLanguage === "ko";
+  const shortsSilenceActive = shortsSilenceAllowed && shortsSilenceSelected;
   const sourceVideoEmbedUrl = !uploadSourceActive && sourceRangeSelectionEnabled && analysis
     ? youtubePrivacyEnhancedEmbedUrl(analysis.videoId)
     : null;
@@ -14365,6 +14375,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
         : null,
       brandColorSelectionEnabled && !customTemplateId ? brandColor : null,
       true,
+      shortsSilenceActive,
     ]);
     if (uploadRequestIntentKey.current !== intentKey) {
       uploadRequestId.current = crypto.randomUUID();
@@ -14418,6 +14429,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
           videoAspectRatio: effectiveVideoAspectRatio,
           outputLanguage: "ko",
           rightsConfirmed,
+          ...(shortsSilenceActive ? { silenceRemoval: SHORTS_SILENCE_REQUEST } : {}),
           ...(subtitleTemplateSelectionEnabled && subtitleTemplateId
             ? { subtitleTemplateId, subtitleCaptionPlacement }
             : {}),
@@ -14675,6 +14687,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
       outputLanguage,
       ...(languageTestActive ? { languageTest: true, sourceLanguage } : {}),
       rightsConfirmed,
+      ...(shortsSilenceActive ? { silenceRemoval: SHORTS_SILENCE_REQUEST } : {}),
       ...(sourceRangeSelectionEnabled
         ? { rangeStartSeconds: sourceRangeStartSeconds, rangeEndSeconds: sourceRangeEndSeconds }
         : {}),
@@ -15190,6 +15203,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
               )}
             </>
           )}
+          {shortsSilenceAllowed ? <SilenceRemovalChoice enabled={shortsSilenceSelected} onChange={setShortsSilenceSelected} disabled={analysisCreationBlocked || busy} /> : null}
           {languageTestActive && (
             <section className="rounded-xl border border-white/15 bg-white/[.025] p-4" data-language-selection>
               <div className="flex items-center justify-between gap-4 text-sm font-bold">

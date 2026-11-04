@@ -1,5 +1,5 @@
 vi.mock("server-only", () => ({}));
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ db: vi.fn(), session: vi.fn(), billing: vi.fn(), usage: vi.fn(), wake: vi.fn() }));
 vi.mock("@/lib/custom-template-design", () => ({ assertCustomTemplateDesignRenderRelease: async () => undefined }));
 vi.mock("@/lib/db", () => ({ getDb: mocks.db }));
@@ -33,16 +33,17 @@ const registry = { version: 1, environment: "production", lanes: Object.fromEntr
 } }])) };
 let publicPercent = 100;
 let admin = false;
-const jobs: { id: string; user: string; request: string; projectNumber: number; output: unknown; release: unknown }[] = [];
+const jobs: { id: string; user: string; request: string; projectNumber: number; output: unknown; release: unknown; snapshot: unknown }[] = [];
 const reservations: unknown[][] = [];
 const locks = new Map<string, Promise<void>>();
 const request = (change: Record<string, unknown> = {}) => new Request("https://www.easycut.co.kr/api/jobs", {
-  method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+  method: "POST", headers: { "Content-Type": "application/json", Origin: "https://www.easycut.co.kr" }, body: JSON.stringify({
     analysisId: releaseId, requestId: crypto.randomUUID(), templateId: "dark-minimal", rightsConfirmed: true,
     outputLanguage: "ja", languageTest: true, sourceLanguage: "auto", ...change,
   }),
 });
 
+afterEach(() => vi.unstubAllEnvs());
 beforeEach(() => {
   vi.clearAllMocks(); publicPercent = 100; admin = false; jobs.length = 0; reservations.length = 0; locks.clear();
   mocks.session.mockResolvedValue({ userId: user, id: user, isAdmin: false });
@@ -64,7 +65,7 @@ beforeEach(() => {
         youtubeUrl: "https://www.youtube.com/watch?v=abcdefghijk", youtubeVideoId: "abcdefghijk", videoTitle: "Fixture",
         channelName: "Fixture", durationSeconds: 240, creationAllowed: true, sourceRangeSelectionEnabled: false,
       }];
-      if (q.includes("from shorts_mvp.app_users")) return [{ id: v[0], isAdmin: admin }];
+      if (q.includes("from shorts_mvp.app_users")) return [{ id: v[0], isAdmin: admin, enabled: true }];
       if (q.includes("left join shorts_mvp.language_test_releases")) return [{
         enabled: true, publicRolloutPercent: publicPercent, releaseId, verifiedAt: new Date(), stagingVerifiedAt: new Date(),
         registryJson: JSON.stringify(registry), gitSha: sha, workerImageDigest: image, fontManifestSha256: font,
@@ -72,7 +73,7 @@ beforeEach(() => {
       }];
       if (q.includes("with scoped_jobs")) return [{ active: jobs.filter((j) => j.user === owner).length, restrictedContentCooldownMinutes: 0 }];
       if (q.includes("insert into shorts_mvp.video_jobs")) {
-        const job = { id: v[0] as string, user: v[2] as string, request: v[3] as string, projectNumber: jobs.length + 1, output: v[19], release: v.at(-3) };
+        const job = { id: v[0] as string, user: v[2] as string, request: v[3] as string, projectNumber: jobs.length + 1, output: v[19], release: v.at(-3), snapshot: v[15] };
         jobs.push(job); return [{ projectNumber: job.projectNumber }];
       }
       if (q.includes("insert into shorts_mvp.usage_reservations")) { reservations.push(v); return [{ id: releaseId }]; }
@@ -88,6 +89,21 @@ beforeEach(() => {
 });
 
 describe("language job admission through the actual POST handler", () => {
+  it("blocks ordinary-user silence requests before job creation or billing", async () => {
+    vi.stubEnv("ADMIN_SHORTS_SILENCE_ENABLED", "true"); vi.stubEnv("RANKING_VERCEL_SNAPSHOT_ID", "snapshot");
+    expect((await POST(request({ languageTest: false, sourceLanguage: undefined, outputLanguage: "ko",
+      silenceRemoval: { version: 1, preset: "aggressive" } }))).status).toBe(404);
+    expect(jobs).toHaveLength(0); expect(reservations).toHaveLength(0);
+  });
+  it("preserves normal admission and charges once for the administrator silence marker", async () => {
+    admin = true; vi.stubEnv("ADMIN_SHORTS_SILENCE_ENABLED", "true"); vi.stubEnv("RANKING_VERCEL_SNAPSHOT_ID", "snapshot");
+    const requestId = crypto.randomUUID();
+    const body = { requestId, languageTest: false, sourceLanguage: undefined, outputLanguage: "ko", silenceRemoval: { version: 1, preset: "aggressive" } };
+    expect((await POST(request(body))).status).toBe(202);
+    expect((await POST(request(body))).status).toBe(200);
+    expect(jobs).toHaveLength(1); expect(reservations).toHaveLength(1);
+    expect(jobs[0].snapshot).toEqual({ shortsSilenceRemoval: { version: 1, preset: "aggressive" } });
+  });
   it("accepts public ON and preserves the requested output and pinned worker", async () => {
     expect((await POST(request())).status).toBe(202);
     expect(jobs[0]).toMatchObject({ output: "ja", release: releaseId });

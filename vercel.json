@@ -64,6 +64,10 @@
     {
       "path": "/api/cron/paypal-reconciliation",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/admin-shorts-silence",
+      "schedule": "* * * * *"
     }
   ]
 }

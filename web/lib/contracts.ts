@@ -199,6 +199,7 @@ export type Plan = {
 };
 
 export type GeneratedShort = {
+  silenceRemoval?: import("./shorts-silence-contract").SilenceRemovalState;
   subtitleTranslation?: import("./subtitle-translation-outcome").SubtitleTranslationOutcome | null;
   id: string;
   clipIndex: number;
@@ -321,6 +322,7 @@ export type MvpState = {
   paymentMethodAction: PaymentMethodAction;
   usage: UsageSnapshot;
   capabilities: {
+    shortsSilenceRemoval?: boolean;
     midform?: boolean;
     snsTemplate?: boolean;
     communityTemplate?: boolean;

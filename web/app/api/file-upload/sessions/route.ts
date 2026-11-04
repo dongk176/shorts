@@ -1,3 +1,5 @@
+import { shortsSilenceRequestSchema } from "@/lib/shorts-silence-contract";
+import { requireShortsSilenceAdmin, assertSilenceTemplate } from "@/lib/shorts-silence-access";
 import { midformUploadRelease, requireMidformAdmin } from "@/lib/midform-release";
 import { midformRequestSchema } from "@/lib/midform-cloud";
 import { createHash, randomUUID } from "node:crypto";
@@ -73,6 +75,7 @@ const millisecondNumber = z.number().finite().transform(
 );
 
 const requestSchema = z.object({
+  silenceRemoval: shortsSilenceRequestSchema.optional(),
   midform: midformRequestSchema.optional(),
   requestId: z.string().uuid(),
   file: z.object({
@@ -309,6 +312,7 @@ export async function POST(request: Request) {
       await requireMidformAdmin(db, session.userId);
       if (input.file.durationSeconds < 600 || input.file.durationSeconds > 3600 || input.rangeStartSeconds !== 0 || input.rangeEndSeconds !== input.file.durationSeconds || input.customTemplateId || input.subtitleTemplateId || input.templateId !== "dark-minimal" || input.videoAspectRatio !== "16:9" || input.outputLanguage !== "ko") throw new HttpError(400, "중폼은 10~60분 원본 영상을 선택해 주세요.");
     }
+    if (input.silenceRemoval) { await requireShortsSilenceAdmin(db, session.userId); assertSilenceTemplate(input); }
     const originalFilename = sanitizedDisplayFilename(input.file.name);
     const declaredContentType = input.file.contentType
       .split(";", 1)[0]
@@ -352,7 +356,8 @@ export async function POST(request: Request) {
       (input.rangeEndSeconds - input.rangeStartSeconds) * 1_000,
     ) / 1_000;
     const usageSeconds = billableSourceSeconds(selectedDurationSeconds);
-    const intentHash = input.midform ? createHash("sha256").update(`${baseIntentHash}:midform-v1`).digest("hex") : baseIntentHash;
+    const formatIntentHash = input.midform ? createHash("sha256").update(`${baseIntentHash}:midform-v1`).digest("hex") : baseIntentHash;
+    const intentHash = input.silenceRemoval ? createHash("sha256").update(`${formatIntentHash}:shorts-silence-aggressive-v1`).digest("hex") : formatIntentHash;
     const plannedShortCount = input.midform ? 1 : expectedShortCount(selectedDurationSeconds);
     const sourceDurationSeconds = Math.ceil(input.file.durationSeconds);
     const sourceRangeSelectionEnabled = input.file.durationSeconds
@@ -539,7 +544,8 @@ export async function POST(request: Request) {
       });
       const resolvedTemplateId = renderContract.templateId;
       const resolvedVideoAspectRatio = renderContract.videoAspectRatio;
-      const templateSnapshot = renderContract.templateSnapshot;
+      if (input.silenceRemoval) await requireShortsSilenceAdmin(tx, session.userId);
+      const templateSnapshot = input.silenceRemoval ? { ...renderContract.templateSnapshot, shortsSilenceRemoval: input.silenceRemoval } : renderContract.templateSnapshot;
       const subtitleTemplateSnapshot = renderContract.subtitleTemplateSnapshot;
       const dispatchTarget = projectDispatchTargetForFeatures({
         usesUnifiedTemplateSubtitleCandidate:

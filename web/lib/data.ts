@@ -1,3 +1,4 @@
+import { shortsSilenceEnabled, type SilenceRemovalState } from "./shorts-silence-contract";
 import type { SiteLocale } from "./i18n/config";
 import { subtitleTranslationOutcome } from "./subtitle-translation-outcome";
 import type { Row, Sql } from "postgres";
@@ -185,6 +186,21 @@ export async function getShortsForJobs(
   const wordTimedShortIds = options.includeExactWordTimingAvailability
     ? await getWordTimedShortIds(db, jobIds)
     : new Set<string>();
+  const silenceStates = new Map<string, SilenceRemovalState>();
+  const silenceIds = rows.filter(row => row.templateSnapshot?.shortsSilenceRemoval).map(row => String(row.id));
+  if (shortsSilenceEnabled() && silenceIds.length) {
+    const states = await db`select s.id,case
+        when s.render_version>1 and r.status='succeeded' then 'completed'
+        when t.state='rendering' and r.status in ('failed','superseded') then 'failed'
+        else coalesce(t.state,'waiting') end as state,
+        coalesce(t.cut_count,0) as cut_count,coalesce(t.removed_seconds,0) as removed_seconds
+      from shorts_mvp.generated_shorts s join shorts_mvp.app_users u on u.id=s.user_id
+      join shorts_mvp.runtime_feature_flags f on f.flag_key='admin_shorts_silence' and f.enabled
+      left join shorts_mvp.admin_short_silence_tasks t on t.short_id=s.id
+      left join shorts_mvp.editor_render_requests r on r.id=t.request_id
+      where s.id in ${db(silenceIds)} and u.is_admin`;
+    for (const row of states) silenceStates.set(String(row.id), { status: row.state, cutCount: Number(row.cutCount), removedSeconds: Number(row.removedSeconds) });
+  }
   const result = new Map<string, GeneratedShort[]>();
   for (const row of rows) {
     const editorDocument = editorDocumentSnapshotSchema.safeParse(
@@ -244,6 +260,14 @@ export async function getShortsForJobs(
       status: row.status,
       expiresAt: row.expiresAt?.toISOString() ?? null,
     };
+    const silenceState = silenceStates.get(String(row.id));
+    if (silenceState) {
+      item.silenceRemoval = silenceState;
+      if (["waiting", "processing", "rendering"].includes(silenceState.status)) {
+        item.status = "rerendering";
+        item.rerenderProgress = silenceState.status === "rendering" ? Number(row.rerenderProgress || 5) : 0;
+      }
+    }
     result.set(row.jobId, [...(result.get(row.jobId) || []), item]);
   }
   return result;

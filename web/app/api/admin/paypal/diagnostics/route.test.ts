@@ -1,4 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
+vi.mock("server-only",()=>({}));
 import { HttpError } from "@/lib/http";
 vi.mock("@/lib/admin",()=>({requireAdminUser:vi.fn()}));
 vi.mock("@/lib/paypal/configuration-health",()=>({inspectPayPalConfiguration:vi.fn()}));
