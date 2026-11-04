@@ -63,6 +63,7 @@ import {
 } from "@/lib/shorts-thank-you-event";
 
 const schema = z.object({
+  commentReactions: z.boolean().optional(),
   silenceRemoval: shortsSilenceRequestSchema.optional(),
   midform: midformRequestSchema.optional(),
   analysisId: z.string().uuid(),
@@ -351,7 +352,9 @@ export async function POST(request: Request) {
       const baseTemplateSnapshot = input.snsTemplate
         ? { presetVersion: 4, snsTemplateVersion: 1, brandColor: input.brandColor ?? "#000000",
             ...(input.communityTemplate ? { communityTemplateVersion: 1 } : {}) }
-        : renderContract.templateSnapshot;
+        : input.templateId === "comment-capture" && !input.customTemplateId && input.commentReactions === false
+          ? { ...renderContract.templateSnapshot, commentReactions: false }
+          : renderContract.templateSnapshot;
       const templateSnapshot = input.silenceRemoval ? { ...baseTemplateSnapshot, shortsSilenceRemoval: input.silenceRemoval } : baseTemplateSnapshot;
       const subtitleTemplateSnapshot = renderContract.subtitleTemplateSnapshot;
       const usesUnifiedTemplateSubtitleCandidate =

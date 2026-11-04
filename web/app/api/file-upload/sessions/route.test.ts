@@ -273,6 +273,14 @@ beforeEach(() => {
 });
 
 describe("file upload job control plane", () => {
+  it("persists reaction-free comment uploads", async () => {
+    const { db, queries } = transactionDb(); mocks.getDb.mockReturnValue(db);
+    const response = await POST(jsonRequest({ ...validBody, templateId: "comment-capture", commentReactions: false }));
+    expect(response.status).toBe(201);
+    const insert = queries.find(q => q.sql.includes("insert into shorts_mvp.video_jobs"));
+    expect(JSON.stringify(insert?.values)).toContain('"commentReactions":false');
+  });
+
   it("rejects ordinary silence requests while public admission is off before upload allocation", async () => {
     vi.stubEnv("ADMIN_SHORTS_SILENCE_ENABLED", "true"); vi.stubEnv("RANKING_VERCEL_SNAPSHOT_ID", "snapshot");
     const { db } = transactionDb(); mocks.getDb.mockReturnValue(db);

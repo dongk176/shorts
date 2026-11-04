@@ -3325,6 +3325,37 @@ describe("job API security and idempotency", () => {
     expect(insertCall?.slice(1)).toContain("16:9");
   });
 
+  it("persists reaction-free comments for an ordinary creation request", async () => {
+    const db = dbWithRows([], [analysisRow]);
+    const tx = dbWithRows(
+      [],
+      [],
+      [{ active: 0 }],
+      [{ projectNumber: 7 }],
+      [{ id: "reservation-comment-v2" }],
+      [],
+      [],
+    );
+    Object.assign(db, { begin: vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)) });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await createJob(jsonRequest("http://localhost/api/jobs", {
+      analysisId,
+      templateId: "comment-capture",
+      commentReactions: false,
+      videoAspectRatio: "16:9",
+      rightsConfirmed: true,
+      requestId: "a25dd669-6410-41d2-9f7e-6e01fe0bc19e",
+    }));
+
+    expect(response.status).toBe(202);
+    const insertCall = tx.mock.calls.find(([strings]) =>
+      Array.from(strings as TemplateStringsArray).join("").includes("insert into shorts_mvp.video_jobs"),
+    );
+    expect(insertCall?.slice(1)).toContainEqual({ presetVersion: 4, commentReactions: false });
+    expect(insertCall?.slice(1)).toContain("16:9");
+  });
+
   it("versions non-comment preset jobs for the versioned ratio-specific channel position", async () => {
     const db = dbWithRows([], [analysisRow]);
     const tx = dbWithRows(

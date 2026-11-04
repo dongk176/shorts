@@ -45,6 +45,7 @@ export type CommentOverlay = {
   avatarColor: string;
   nickname: string;
   likeCount: number;
+  showReactions?: boolean;
   ageLabel: string;
 };
 

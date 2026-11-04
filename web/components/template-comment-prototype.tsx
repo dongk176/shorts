@@ -89,7 +89,7 @@ function TemplateCommentContents({
       >
         <span data-i18n-skip>{text}</span>
       </span>
-      <span className="flex items-center font-semibold" style={{ marginTop: canvasWidth(2.1), gap: canvasWidth(4.2), fontSize: canvasWidth(3.1), color: muted }}>
+      <span className="flex items-center font-semibold" style={{ visibility: comment?.showReactions === false ? "hidden" : undefined, marginTop: canvasWidth(2.1), gap: canvasWidth(4.2), fontSize: canvasWidth(3.1), color: muted }}>
         <span className="flex items-center" style={{ gap: canvasWidth(1.35) }}>
           <span style={{ width: canvasWidth(4.1), height: canvasWidth(4.1) }}><ReactionIcon kind="like" color={foreground} /></span>
           <span data-i18n-skip>{formattedLikeCount}</span>

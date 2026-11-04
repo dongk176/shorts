@@ -764,3 +764,26 @@ def test_gpt4o_mini_transcription_uses_supported_json_response(tmp_path: Path) -
     assert calls[0]["response_format"] == "json"
     assert result.segments[0].start == 5
     assert result.segments[-1].end == 15
+
+
+@pytest.mark.parametrize("custom", [False, True])
+def test_comment_reactions_can_be_hidden_without_changing_copy(
+    tmp_path: Path, custom: bool,
+) -> None:
+    from PIL import ImageChops
+    comment = CommentOverlay(id="reactions", startSeconds=0, endSeconds=5,
+                             text="Same comment", initial="A", avatarColor="#8B2CC4",
+                             nickname="Viewer", likeCount=128, ageLabel="1h")
+    assert comment.show_reactions is True
+    options = {"theme": "dark", "size": "medium"} if custom else {}
+    on = create_comment_panel(comment, tmp_path / "on.png", **options)
+    off = create_comment_panel(comment.model_copy(update={"show_reactions": False}),
+                               tmp_path / "off.png", **options)
+    with Image.open(on) as a, Image.open(off) as b:
+        assert a.size == b.size
+        bounds = ImageChops.difference(a.convert("RGB"), b.convert("RGB")).getbbox()
+        assert bounds is not None
+        # Identity and body stay byte-identical; only the lower action row changes.
+        assert bounds[1] > 140
+        assert ImageChops.difference(a.crop((0, 0, a.width, 140)),
+                                    b.crop((0, 0, b.width, 140))).getbbox() is None

@@ -91,6 +91,7 @@ const commentOverlay = z.object({
   avatarColor: hexColor,
   nickname: z.string().trim().min(1).max(30),
   likeCount: z.number().int().min(10).max(999_999),
+  showReactions: z.boolean().optional(),
   ageLabel: z.string().trim().min(1).max(20),
 }).refine((item) => item.endSeconds > item.startSeconds);
 const activeCommentOverlays = z.array(commentOverlay).max(20);

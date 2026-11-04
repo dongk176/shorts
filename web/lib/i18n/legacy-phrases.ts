@@ -37,7 +37,7 @@ const phrases: readonly Phrase[] = [
   ["안내 닫기", "Close guide", "案内を閉じる"],
   ["랭킹 쇼츠 베타", "Ranking Shorts beta", "ランキングショート ベータ版"],
   ["여러 영상에서 원하는 장면을 골라, 하나의 랭킹 쇼츠로 만들어 보세요.", "Choose scenes from multiple videos and combine them into one ranking video.", "複数の動画から好きなシーンを選び、1本のランキングショートにまとめましょう。"],
-  ["베타 기능 · 영상 1개당 5분 사용 · 제작 실패 시 반환", "Beta · Uses 5 minutes per video · Refunded if creation fails", "ベータ機能 · 1本あたり5分を使用 · 制作失敗時は返還"],
+  ["베타 기능 · 영상 1개당 3분 사용 · 제작 실패 시 반환", "Beta · Uses 3 minutes per video · Refunded if creation fails", "ベータ機能 · 1本あたり3分を使用 · 制作失敗時は返還"],
   ["사용법 보고 시작하기", "Start with a walkthrough", "使い方を見て始める"],
   ["랭킹 쇼츠 사용법 닫기", "Close Ranking Shorts walkthrough", "ランキングショートの使い方を閉じる"],
   ["직접 만들어 보기", "Create your own", "自分で作ってみる"],

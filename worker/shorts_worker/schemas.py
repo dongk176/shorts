@@ -378,6 +378,7 @@ class CommentOverlay(BaseModel):
     avatar_color: str = Field(alias="avatarColor", pattern=r"^#[0-9A-Fa-f]{6}$")
     nickname: str = Field(min_length=1, max_length=30)
     like_count: int = Field(alias="likeCount", ge=10, le=999_999)
+    show_reactions: bool = Field(default=True, alias="showReactions")
     age_label: str = Field(alias="ageLabel", min_length=1, max_length=20)
 
     @field_validator("text", "nickname", "age_label")

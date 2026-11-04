@@ -726,27 +726,28 @@ def _create_custom_comment_panel(
             font=body_font,
             fill=foreground,
         )
-    actions_y = (text_top + len(lines) * line_height + actions_gap
-                 + (action_row_height - icon_size) / 2)
-    _draw_reaction_icon(draw, content_x, actions_y, icon_size, color=foreground)
-    likes_x = content_x + icon_size + round(14.58 * scale)
-    likes_box = action_font.getbbox(likes)
-    likes_y = (
-        actions_y
-        + (icon_size - (likes_box[3] - likes_box[1])) / 2
-        - likes_box[1]
-    )
-    draw.text((likes_x, likes_y), likes, font=action_font, fill=muted)
-    dislike_x = likes_x + _text_width(draw, likes, action_font) + round(45.36 * scale)
-    _draw_reaction_icon(draw, dislike_x, actions_y, icon_size, down=True, color=foreground)
-    reply_x = dislike_x + icon_size + round(45.36 * scale)
-    reply_box = action_font.getbbox(reply)
-    reply_y = (
-        actions_y
-        + (icon_size - (reply_box[3] - reply_box[1])) / 2
-        - reply_box[1]
-    )
-    draw.text((reply_x, reply_y), reply, font=action_font, fill=muted)
+    if comment.show_reactions:
+        actions_y = (text_top + len(lines) * line_height + actions_gap
+                     + (action_row_height - icon_size) / 2)
+        _draw_reaction_icon(draw, content_x, actions_y, icon_size, color=foreground)
+        likes_x = content_x + icon_size + round(14.58 * scale)
+        likes_box = action_font.getbbox(likes)
+        likes_y = (
+            actions_y
+            + (icon_size - (likes_box[3] - likes_box[1])) / 2
+            - likes_box[1]
+        )
+        draw.text((likes_x, likes_y), likes, font=action_font, fill=muted)
+        dislike_x = likes_x + _text_width(draw, likes, action_font) + round(45.36 * scale)
+        _draw_reaction_icon(draw, dislike_x, actions_y, icon_size, down=True, color=foreground)
+        reply_x = dislike_x + icon_size + round(45.36 * scale)
+        reply_box = action_font.getbbox(reply)
+        reply_y = (
+            actions_y
+            + (icon_size - (reply_box[3] - reply_box[1])) / 2
+            - reply_box[1]
+        )
+        draw.text((reply_x, reply_y), reply, font=action_font, fill=muted)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output = base if overlay_mode else base.convert("RGB")
@@ -864,24 +865,27 @@ def create_comment_panel(
             fill=body_color,
         )
 
-    actions_y = text_top + len(lines) * line_height + round(17 * scale)
-    icon_size = round(34 * scale)
-    _draw_reaction_icon(details_draw, content_x, actions_y, icon_size, color=icon_color)
-    details_draw.text(
-        (content_x + icon_size + round(12 * scale), actions_y - round(2 * scale)),
-        likes,
-        font=action_font,
-        fill=action_color,
-    )
-    likes_width = _text_width(details_draw, likes, action_font)
-    dislike_x = content_x + icon_size + round(30 * scale) + likes_width
-    _draw_reaction_icon(details_draw, dislike_x, actions_y, icon_size, down=True, color=icon_color)
-    details_draw.text(
-        (dislike_x + icon_size + round(36 * scale), actions_y - round(2 * scale)),
-        reply,
-        font=action_font,
-        fill=reply_color,
-    )
+    if comment.show_reactions:
+        actions_y = text_top + len(lines) * line_height + round(17 * scale)
+        icon_size = round(34 * scale)
+        _draw_reaction_icon(details_draw, content_x, actions_y, icon_size, color=icon_color)
+        details_draw.text(
+            (content_x + icon_size + round(12 * scale), actions_y - round(2 * scale)),
+            likes,
+            font=action_font,
+            fill=action_color,
+        )
+        likes_width = _text_width(details_draw, likes, action_font)
+        dislike_x = content_x + icon_size + round(30 * scale) + likes_width
+        _draw_reaction_icon(
+            details_draw, dislike_x, actions_y, icon_size, down=True, color=icon_color
+        )
+        details_draw.text(
+            (dislike_x + icon_size + round(36 * scale), actions_y - round(2 * scale)),
+            reply,
+            font=action_font,
+            fill=reply_color,
+        )
     base.alpha_composite(details.filter(ImageFilter.GaussianBlur(radius=max(0.25, 0.4 * scale))))
 
     output_path.parent.mkdir(parents=True, exist_ok=True)

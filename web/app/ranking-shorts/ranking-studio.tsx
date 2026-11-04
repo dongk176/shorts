@@ -1335,7 +1335,7 @@ export function RankingStudio({
               <span>↗</span>
             </button>
           )}
-          {!result && <p className="ranking-usage-note">{ui("영상 1개당 5분 크레딧 사용 · 제작 실패 시 반환")}</p>}
+          {!result && <p className="ranking-usage-note">{ui("영상 1개당 3분 크레딧 사용 · 제작 실패 시 반환")}</p>}
         </aside>
       </div>
       {sourceNotice && <div className="ranking-source-toast" role="status">

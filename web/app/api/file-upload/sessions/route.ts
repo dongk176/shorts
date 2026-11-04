@@ -75,6 +75,7 @@ const millisecondNumber = z.number().finite().transform(
 );
 
 const requestSchema = z.object({
+  commentReactions: z.boolean().optional(),
   silenceRemoval: shortsSilenceRequestSchema.optional(),
   midform: midformRequestSchema.optional(),
   requestId: z.string().uuid(),
@@ -356,7 +357,9 @@ export async function POST(request: Request) {
       (input.rangeEndSeconds - input.rangeStartSeconds) * 1_000,
     ) / 1_000;
     const usageSeconds = billableSourceSeconds(selectedDurationSeconds);
-    const formatIntentHash = input.midform ? createHash("sha256").update(`${baseIntentHash}:midform-v1`).digest("hex") : baseIntentHash;
+    const commentIntentHash = input.templateId === "comment-capture" && !input.customTemplateId && input.commentReactions === false
+      ? createHash("sha256").update(`${baseIntentHash}:comments-without-reactions-v1`).digest("hex") : baseIntentHash;
+    const formatIntentHash = input.midform ? createHash("sha256").update(`${commentIntentHash}:midform-v1`).digest("hex") : commentIntentHash;
     const intentHash = input.silenceRemoval ? createHash("sha256").update(`${formatIntentHash}:shorts-silence-aggressive-v1`).digest("hex") : formatIntentHash;
     const plannedShortCount = input.midform ? 1 : expectedShortCount(selectedDurationSeconds);
     const sourceDurationSeconds = Math.ceil(input.file.durationSeconds);
@@ -545,7 +548,9 @@ export async function POST(request: Request) {
       const resolvedTemplateId = renderContract.templateId;
       const resolvedVideoAspectRatio = renderContract.videoAspectRatio;
       if (input.silenceRemoval) await requireShortsSilenceAccess(tx, session.userId);
-      const templateSnapshot = input.silenceRemoval ? { ...renderContract.templateSnapshot, shortsSilenceRemoval: input.silenceRemoval } : renderContract.templateSnapshot;
+      const commentSnapshot = input.templateId === "comment-capture" && !input.customTemplateId && input.commentReactions === false
+        ? { ...renderContract.templateSnapshot, commentReactions: false } : renderContract.templateSnapshot;
+      const templateSnapshot = input.silenceRemoval ? { ...commentSnapshot, shortsSilenceRemoval: input.silenceRemoval } : commentSnapshot;
       const subtitleTemplateSnapshot = renderContract.subtitleTemplateSnapshot;
       const dispatchTarget = projectDispatchTargetForFeatures({
         usesUnifiedTemplateSubtitleCandidate:

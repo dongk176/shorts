@@ -70,9 +70,11 @@ export function CaptionCommentPreview({ comment, theme, outputLanguage }: {
         textLength={run.emoji ? run.width : undefined}
         lengthAdjust={run.emoji ? "spacingAndGlyphs" : undefined}
       >{run.text}</tspan>)}</text>)}
+      <g visibility={comment.showReactions === false ? "hidden" : undefined}>
       {icon(145)}{icon(dislikeX, true)}
       <text x="191" y={actionY - 2 + (measured?.actionAscent ?? 33)} fontSize="28" fill={dark ? "#BEBEBE" : "#6B6B73"}>{actions.likes}</text>
       <text x={dislikeX + 70} y={actionY - 2 + (measured?.actionAscent ?? 33)} fontSize="28" fill={dark ? "#C4C4C4" : "#6B6B73"}>{actions.reply}</text>
+      </g>
     </g>
   </svg>;
 }

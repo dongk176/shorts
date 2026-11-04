@@ -70,6 +70,7 @@ const commentSchema = z.object({
   avatarColor: hexColorSchema,
   nickname: z.string().trim().min(1).max(30),
   likeCount: z.number().int().min(10).max(999_999),
+  showReactions: z.boolean().optional(),
   ageLabel: z.string().trim().min(1).max(20),
 }).strict().refine((comment) => comment.endSeconds > comment.startSeconds);
 const subtitleSchema = z.object({

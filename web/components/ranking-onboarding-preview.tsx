@@ -120,7 +120,7 @@ export function RankingOnboarding({ mode, ownerId }: { mode: "home" | "studio"; 
       </div> : <div className={styles.beta}>
         <h2 id="ranking-welcome-title">{ui("랭킹 쇼츠 베타")}</h2>
         <p className={styles.intro}>{ui("여러 영상에서 원하는 장면을 골라, 하나의 랭킹 쇼츠로 만들어 보세요.")}</p>
-        <p className={styles.betaNote}>{ui("베타 기능 · 영상 1개당 5분 크레딧 사용 · 제작 실패 시 반환")}</p>
+        <p className={styles.betaNote}>{ui("베타 기능 · 영상 1개당 3분 크레딧 사용 · 제작 실패 시 반환")}</p>
         <button type="button" className={styles.primary} onClick={startTour}>{ui("사용법 보고 시작하기")}<span aria-hidden="true">→</span></button>
       </div>}
     </dialog>, document.body)}

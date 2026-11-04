@@ -91,6 +91,7 @@ import { SourceRangeGuide } from "@/components/source-range-guide";
 import { SubtitleTemplateDiscoveryOverlay } from "@/components/subtitle-template-discovery-overlay";
 import { SubtitlePositionGuide } from "@/components/subtitle-position-guide";
 import { SupportInquiryWidget } from "@/components/support-inquiry-widget";
+import { CommentReactionsControl, CommentLikeCountInput } from "@/components/comment-reactions-control";
 import { TemplateCommentPreview } from "@/components/template-comment-prototype";
 import { CaptionCommentPreview } from "@/components/caption-comment-preview";
 import { fitCaptionChannel } from "@/lib/caption-comment-preview";
@@ -1069,7 +1070,7 @@ function CommentCaptureCard({
         <div className="min-w-0 flex-1">
           <div className="w-fit max-w-[74cqw] truncate text-[3.45cqw] font-bold leading-tight blur-[0.52cqw]" style={{ color: foreground, fontFamily: commentFontFamily(comment.nickname + comment.ageLabel, japaneseFontEnabled) }}>@{comment.nickname} <span className="font-normal" style={{ color: muted }}>{comment.ageLabel}</span></div>
           <p className="mt-[1.5cqw] line-clamp-2 whitespace-pre-wrap font-normal leading-[1.28] blur-[0.05cqw]" style={{ color: foreground, fontSize: `${COMMENT_CAPTURE_BODY_FONT_CQW}cqw`, fontFamily: commentFontFamily(comment.text, japaneseFontEnabled) }}>{comment.text}</p>
-          <div className="mt-[2.1cqw] flex items-center gap-[1.25cqw] text-[3.4cqw] blur-[0.035cqw]" style={{ color: muted }}>
+          <div className="mt-[2.1cqw] flex items-center gap-[1.25cqw] text-[3.4cqw] blur-[0.035cqw]" style={{ color: muted, visibility: comment.showReactions === false ? "hidden" : undefined }}>
             <ReactionIcon /><span data-i18n-skip>{actions.likes}</span>
             <span className="ml-[2.2cqw]"><ReactionIcon down /></span>
             <span data-i18n-skip className="ml-[3cqw] text-[3.25cqw]" style={{ fontFamily: commentFontFamily(actions.reply, outputLanguage === "ja") }}>{actions.reply}</span>
@@ -2117,6 +2118,8 @@ function TemplatePicker({
   brandColor,
   onBrandColorChange,
   settingsBelowRail,
+  commentReactions,
+  onCommentReactionsChange,
   communityTemplateAvailable = false,
   communityTemplateActive = false,
   onCommunityTemplateSelect,
@@ -2147,6 +2150,8 @@ function TemplatePicker({
   brandColor: TemplatePresetColor;
   onBrandColorChange: (value: TemplatePresetColor) => void;
   settingsBelowRail: boolean;
+  commentReactions: boolean;
+  onCommentReactionsChange: (value: boolean) => void;
   communityTemplateAvailable?: boolean;
   communityTemplateActive?: boolean;
   onCommunityTemplateSelect?: () => void;
@@ -2186,8 +2191,8 @@ function TemplatePicker({
   const leadingFavoriteCards = favoriteCards.filter(
     (card) => card.kind === "preset" && card.template.id === "comment-capture",
   );
-  // Keep the default rail SNS → comments → community even if comments were unfavorited.
-  if (communityTemplateAvailable && leadingFavoriteCards.length === 0) {
+  // Keep comments discoverable; users without custom templates see it first.
+  if ((communityTemplateAvailable || usablePersonalTemplates.length === 0) && leadingFavoriteCards.length === 0) {
     const commentTemplate = templates.find((template) => template.id === "comment-capture");
     if (commentTemplate) leadingFavoriteCards.push({ kind: "preset", template: commentTemplate });
   }
@@ -2250,6 +2255,7 @@ function TemplatePicker({
         className="template-picker-rail mt-4 flex snap-x snap-mandatory gap-3 overflow-x-auto overscroll-x-contain pb-4 pr-2 [&::-webkit-scrollbar]:h-3 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-[rgba(255,255,255,.05)] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border-2 [&::-webkit-scrollbar-thumb]:border-[rgba(0,0,0,.34)] [&::-webkit-scrollbar-thumb]:bg-[rgba(255,255,255,.34)] [&::-webkit-scrollbar-thumb:hover]:bg-[rgba(255,255,255,.5)]"
         style={{ scrollbarColor: "rgba(255,255,255,.34) rgba(255,255,255,.05)", scrollbarWidth: "auto" }}
       >
+        {usablePersonalTemplates.length === 0 && leadingFavoriteCards.map(renderFavoriteCard)}
         {snsTemplateAvailable && (
           <button
             type="button"
@@ -2261,17 +2267,17 @@ function TemplatePicker({
             <SnsTemplatePreview ratio={effectiveAspectRatio} brandColor={brandColor}
               channelName={channelName} channelThumbnailUrl={channelThumbnailUrl} thumbnailUrl={sourceThumbnailUrl} />
             <span className="mt-2.5 block text-center text-sm font-semibold">SNS 템플릿</span>
-            <span className="mt-1 block text-center text-[10px] font-bold" style={{ color: brandColor }}>베타</span>
+
           </button>
         )}
-        {leadingFavoriteCards.map(renderFavoriteCard)}
+        {usablePersonalTemplates.length > 0 && leadingFavoriteCards.map(renderFavoriteCard)}
         {communityTemplateAvailable && <button type="button" aria-label="커뮤니티 템플릿"
           aria-pressed={communityTemplateActive} onClick={onCommunityTemplateSelect}
           className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 sm:w-[220px] ${communityTemplateActive ? "border-red-500" : "border-white/10 hover:border-white/30"}`}>
           <SnsTemplatePreview community ratio={effectiveAspectRatio} brandColor={brandColor}
             channelName={channelName} channelThumbnailUrl={channelThumbnailUrl} thumbnailUrl={sourceThumbnailUrl} />
           <span className="mt-2.5 block text-center text-sm font-semibold">커뮤니티 템플릿</span>
-          <span className="mt-1 block text-center text-[10px] text-cyan-300">베타</span>
+
         </button>}
         {subtitleTemplateSelectionEnabled && (
           <>
@@ -2349,8 +2355,7 @@ function TemplatePicker({
         enabled={subtitlePositionGuideEnabled && subtitleTemplateSelectionEnabled && Boolean(subtitleTemplateId)}
       />
       {!snsTemplateActive && !subtitleTemplateId && !customTemplateId && value === "comment-capture" && (
-        <p className="mt-3 rounded-xl border border-cyan-300/15 bg-cyan-300/[.06] px-4 py-3 text-sm text-cyan-100">
-          {ui("AI가 실제 사람이 작성한 것처럼 자연스러운 댓글을 만들어줘요.")}</p>
+        <CommentReactionsControl value={commentReactions} onChange={onCommentReactionsChange} />
       )}
       {!canUseCustomTemplates && personalTemplates.length > 0 && (
         <p className="mt-3 rounded-xl border border-[#ff9b8d]/15 bg-[#ff715e]/[.05] px-4 py-3 text-sm text-[#ffc0b7]">
@@ -3366,6 +3371,7 @@ const editorCommentsChanged = (
       || comment.avatarColor !== next.avatarColor
       || comment.nickname !== next.nickname
       || comment.likeCount !== next.likeCount
+      || comment.showReactions !== next.showReactions
       || comment.ageLabel !== next.ageLabel;
   })
 );
@@ -9631,7 +9637,8 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
         ...before.map((comment) => (
           comment.id === longest.id ? { ...comment, endSeconds: midpoint } : comment
         )),
-        randomComment(midpoint, longest.endSeconds, outputLanguage, nextCommentText),
+        { ...randomComment(midpoint, longest.endSeconds, outputLanguage, nextCommentText),
+          ...(longest.showReactions === false ? { showReactions: false } : {}) },
       ];
     }
     commentsRef.current = after;
@@ -12287,6 +12294,18 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
             <header className="editor-tool-panel-header">
               <strong>{ui("댓글")}</strong>
             </header>
+            {templateId === "comment-capture" && !activeCustomTemplate && selectedTimelineComment && <>
+              <CommentReactionsControl value={selectedTimelineComment.showReactions !== false} onChange={(value) => {
+                beginEditorCommentTextInteraction();
+                updateComment(selectedTimelineComment.id, { showReactions: value });
+                finishEditorCommentTextInteraction();
+              }} />
+              {selectedTimelineComment.showReactions !== false && <CommentLikeCountInput
+                key={`${selectedTimelineComment.id}:${selectedTimelineComment.likeCount}`}
+                value={selectedTimelineComment.likeCount}
+                onBegin={beginEditorCommentTextInteraction} onFinish={finishEditorCommentTextInteraction}
+                onChange={(likeCount) => updateComment(selectedTimelineComment.id, { likeCount })} />}
+            </>}
             {selectedTimelineComment && <div className="editor-selected-comment-setting">
               <label>
                 <span className="editor-selected-comment-setting-heading">
@@ -13527,7 +13546,7 @@ type LocaleCreationDraft = {
   languageDraftEnabled: boolean; rangeStart: number; rangeEnd: number; rightsConfirmed: boolean;
   templateId: TemplateId; subtitleTemplateId: SubtitleTemplateSelectionId | null;
   subtitleCaptionPlacement: SubtitleCaptionPlacement; brandColor: TemplatePresetColor;
-  customTemplateId: string | null; videoAspectRatio: VideoAspectRatio;
+  customTemplateId: string | null; videoAspectRatio: VideoAspectRatio; commentReactions?: boolean;
 };
 
 export function ShortsApp({ initialState = null, initialLocale, initialStateLoadedAt = 0 }: {
@@ -13553,6 +13572,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
   );
   const [stateLoadError, setStateLoadError] = useState<string | null>(null);
   const [snsTemplateSelected, setSnsTemplateSelected] = useState(false);
+  const [commentReactions, setCommentReactions] = useState(resumedDraft?.commentReactions ?? true);
   const [communityTemplateSelected, setCommunityTemplateSelected] = useState(false);
   const [sourceMode, setSourceMode] = useState<"youtube" | "upload">("youtube");
   const [youtubeUrl, setYoutubeUrl] = useState(resumedDraft?.youtubeUrl ?? "");
@@ -13659,14 +13679,14 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
         analysis, youtubeUrl, sourceLanguage, outputLanguage: selectedOutputLanguage,
         outputLanguageChosen: outputLanguageChosen.current, languageDraftEnabled: languageTestActive,
         rangeStart: sourceRangeStartSeconds, rangeEnd: sourceRangeEndSeconds, rightsConfirmed,
-        templateId, subtitleTemplateId, subtitleCaptionPlacement, brandColor, customTemplateId, videoAspectRatio,
+        templateId, subtitleTemplateId, subtitleCaptionPlacement, brandColor, customTemplateId, videoAspectRatio, commentReactions,
       });
     };
     window.addEventListener(BEFORE_LOCALE_REFRESH, preserve);
     return () => window.removeEventListener(BEFORE_LOCALE_REFRESH, preserve);
   }, [state?.user, sourceMode, busy, analysis, youtubeUrl, sourceLanguage, selectedOutputLanguage,
     languageTestActive, sourceRangeStartSeconds, sourceRangeEndSeconds, rightsConfirmed,
-    templateId, subtitleTemplateId, subtitleCaptionPlacement, brandColor, customTemplateId, videoAspectRatio]);
+    templateId, subtitleTemplateId, subtitleCaptionPlacement, brandColor, customTemplateId, videoAspectRatio, commentReactions]);
   const uploadModeEnabled = state?.capabilities.fileUpload === true;
   const uploadModeVisible = !state?.user || uploadModeEnabled;
   const communityTemplateActive = communityTemplateSelected && snsTemplateSelected && sourceMode === "youtube" && state?.capabilities.communityTemplate === true;
@@ -14378,6 +14398,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
       brandColorSelectionEnabled && !customTemplateId ? brandColor : null,
       true,
       shortsSilenceActive,
+      templateId === "comment-capture" && !customTemplateId ? commentReactions : null,
     ]);
     if (uploadRequestIntentKey.current !== intentKey) {
       uploadRequestId.current = crypto.randomUUID();
@@ -14432,6 +14453,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
           outputLanguage: "ko",
           rightsConfirmed,
           ...(shortsSilenceActive ? { silenceRemoval: SHORTS_SILENCE_REQUEST } : {}),
+          ...(templateId === "comment-capture" && !customTemplateId && !snsTemplateActive ? { commentReactions } : {}),
           ...(subtitleTemplateSelectionEnabled && subtitleTemplateId
             ? { subtitleTemplateId, subtitleCaptionPlacement }
             : {}),
@@ -14690,6 +14712,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
       ...(languageTestActive && !shortsSilenceActive ? { languageTest: true, sourceLanguage } : {}),
       rightsConfirmed,
       ...(shortsSilenceActive ? { silenceRemoval: SHORTS_SILENCE_REQUEST } : {}),
+          ...(templateId === "comment-capture" && !customTemplateId && !snsTemplateActive ? { commentReactions } : {}),
       ...(sourceRangeSelectionEnabled
         ? { rangeStartSeconds: sourceRangeStartSeconds, rangeEndSeconds: sourceRangeEndSeconds }
         : {}),
@@ -15277,6 +15300,8 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
             brandColor={brandColor}
             onBrandColorChange={setBrandColor}
             settingsBelowRail={adminTemplateLayoutEnabled}
+            commentReactions={commentReactions}
+            onCommentReactionsChange={setCommentReactions}
             onSubtitleTemplateChange={(nextSubtitleTemplateId) => {
               setSnsTemplateSelected(false); setCommunityTemplateSelected(false);
               if (nextSubtitleTemplateId) markSubtitleTemplateUsed();

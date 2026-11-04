@@ -2153,6 +2153,8 @@ class BatchWorker:
         caption_enabled: bool | None = None,
     ) -> tuple[str, Path, dict[str, object]] | None:
         started_at = time.monotonic()
+        if (job.get("template_snapshot") or {}).get("commentReactions") is False:
+            comments = [{**comment, "showReactions": False} for comment in comments]
         short_id = str(uuid4())
         clean_path = work_dir / "clean" / f"{short_id}.mp4"
         clean_path.parent.mkdir(parents=True, exist_ok=True)
@@ -3112,6 +3114,11 @@ class BatchWorker:
                             for item in comment_inputs
                         }
 
+                if (job.get("template_snapshot") or {}).get("commentReactions") is False:
+                    comments_by_clip = {
+                        index: [{**comment, "showReactions": False} for comment in comments]
+                        for index, comments in comments_by_clip.items()
+                    }
                 for index, clip in enumerate(clips, start=1):
                     self.repository.stage(
                         job_id,

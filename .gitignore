@@ -85,3 +85,5 @@ htmlcov/
 # Isolated release evidence and reusable local test dependencies.
 /.tmp/release/
 /test-tools
+
+/output/comment-ui-preview/

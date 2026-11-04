@@ -512,3 +512,14 @@ describe("editor document v3 render specification", () => {
     expect(() => editorDocumentSnapshotSchema.parse(fixture)).toThrow();
   });
 });
+
+ it("preserves comment reaction visibility and edited counts through draft serialization", () => {
+  const document = validDocument();
+  document.comments[0].showReactions = false;
+  document.comments[0].likeCount = 5432;
+  const parsed = editorDocumentSnapshotSchema.parse(document);
+  expect(parsed.comments[0].showReactions).toBe(false);
+  expect(parsed.comments[0].likeCount).toBe(5432);
+  delete document.comments[0].showReactions;
+  expect(editorDocumentSnapshotSchema.parse(document).comments[0].showReactions).toBeUndefined();
+});
