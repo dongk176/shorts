@@ -10,6 +10,12 @@ export const SHORTS_SILENCE_REQUEST = { version: 1, preset: "aggressive" } as co
 export type SilenceRemovalState = { status: "waiting" | "processing" | "rendering" | "completed" | "failed";
   cutCount: number; removedSeconds: number };
 
+export function canSelectShortsSilence(input: { capability?: boolean; customTemplate: boolean;
+  snsTemplate: boolean; outputLanguage: string; sourceLanguage?: string }) {
+  return input.capability === true && !input.customTemplate && !input.snsTemplate
+    && input.outputLanguage === "ko" && (!input.sourceLanguage || ["auto", "ko"].includes(input.sourceLanguage));
+}
+
 export function shortsSilenceEnabled(env: Record<string, string | undefined> = process.env) {
   return env.ADMIN_SHORTS_SILENCE_ENABLED === "true" && env.EASYCUT_ENVIRONMENT !== "lab"
     && Boolean(env.RANKING_VERCEL_SNAPSHOT_ID);

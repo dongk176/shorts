@@ -2,7 +2,7 @@
 
 import { ShortsSilenceStatus } from "@/components/shorts-silence-status";
 import { SilenceRemovalChoice } from "@/components/silence-removal-choice";
-import { SHORTS_SILENCE_REQUEST } from "@/lib/shorts-silence-contract";
+import { canSelectShortsSilence, SHORTS_SILENCE_REQUEST } from "@/lib/shorts-silence-contract";
 
 import { ConversionChoice } from "@/components/conversion-choice";
 import { MidformCloudWorkspace } from "@/components/midform-cloud-workspace";
@@ -13712,7 +13712,9 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
     : analysis?.brandColorSelectionEnabled === true;
   const adminCompactSourceRangeEnabled = brandColorSelectionEnabled;
   const adminTemplateLayoutEnabled = brandColorSelectionEnabled;
-  const shortsSilenceAllowed = state?.capabilities.shortsSilenceRemoval === true && !customTemplateId && !snsTemplateActive && !languageTestActive && outputLanguage === "ko";
+  const shortsSilenceAllowed = canSelectShortsSilence({ capability: state?.capabilities.shortsSilenceRemoval,
+    customTemplate: Boolean(customTemplateId), snsTemplate: snsTemplateActive, outputLanguage,
+    sourceLanguage: sourceMode === "youtube" ? sourceLanguage : undefined });
   const shortsSilenceActive = shortsSilenceAllowed && shortsSilenceSelected;
   const sourceVideoEmbedUrl = !uploadSourceActive && sourceRangeSelectionEnabled && analysis
     ? youtubePrivacyEnhancedEmbedUrl(analysis.videoId)
@@ -14685,7 +14687,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
       } : {}),
       videoAspectRatio: effectiveVideoAspectRatio,
       outputLanguage,
-      ...(languageTestActive ? { languageTest: true, sourceLanguage } : {}),
+      ...(languageTestActive && !shortsSilenceActive ? { languageTest: true, sourceLanguage } : {}),
       rightsConfirmed,
       ...(shortsSilenceActive ? { silenceRemoval: SHORTS_SILENCE_REQUEST } : {}),
       ...(sourceRangeSelectionEnabled

@@ -2,10 +2,19 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 import type { Sql } from "postgres";
 import { requireShortsSilenceAdmin, assertSilenceTemplate } from "./shorts-silence-access";
-import { shortsSilenceEnabled, shortsSilenceRequestSchema, silenceKeptRanges } from "./shorts-silence-contract";
+import { canSelectShortsSilence, shortsSilenceEnabled, shortsSilenceRequestSchema, silenceKeptRanges } from "./shorts-silence-contract";
 
 afterEach(() => vi.unstubAllEnvs());
 describe("administrator-only silence admission", () => {
+  it("shows the option for the default automatic Korean input without enabling foreign-language combinations", () => {
+    const input = { capability: true, customTemplate: false, snsTemplate: false, outputLanguage: "ko", sourceLanguage: "auto" };
+    expect(canSelectShortsSilence(input)).toBe(true);
+    expect(canSelectShortsSilence({ ...input, sourceLanguage: "ko" })).toBe(true);
+    expect(canSelectShortsSilence({ ...input, sourceLanguage: undefined })).toBe(true);
+    expect(canSelectShortsSilence({ ...input, capability: false })).toBe(false);
+    expect(canSelectShortsSilence({ ...input, outputLanguage: "en" })).toBe(false);
+    expect(canSelectShortsSilence({ ...input, sourceLanguage: "ja" })).toBe(false);
+  });
   it.each([false, undefined, "true", 1])("rejects non-authoritative admin values %s", async value => {
     vi.stubEnv("ADMIN_SHORTS_SILENCE_ENABLED", "true"); vi.stubEnv("RANKING_VERCEL_SNAPSHOT_ID", "snapshot");
     await expect(requireShortsSilenceAdmin((async () => [{ isAdmin: value, enabled: true }]) as unknown as Sql, "user"))
