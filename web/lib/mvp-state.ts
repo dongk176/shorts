@@ -1,5 +1,4 @@
-import { shortsSilenceEnabled } from "./shorts-silence-contract";
-import { shortsSilenceRuntimeEnabled } from "./shorts-silence-access";
+import { shortsSilenceAccessEnabled } from "./shorts-silence-access";
 import { midformRelease, midformUploadRelease } from "./midform-release";
 import { snsTemplateRelease } from "./sns-template-release";
 import type { SiteLocale } from "./i18n/config";
@@ -145,7 +144,7 @@ async function readMvpState(
     paymentMethodAction,
     usage,
     capabilities: {
-      shortsSilenceRemoval: session.isAdmin === true && shortsSilenceEnabled() && await shortsSilenceRuntimeEnabled(db),
+      shortsSilenceRemoval: await shortsSilenceAccessEnabled(db, session.userId),
       midform: session.isAdmin === true ? await Promise.all([midformRelease(db, session.userId), midformUploadRelease(db, session.userId)]).then(() => true).catch(() => false) : false,
       communityTemplate: session.userId !== null
         ? await snsTemplateRelease(db, true).then(() => true).catch(() => false) : false,

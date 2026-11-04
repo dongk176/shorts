@@ -1,8 +1,9 @@
 vi.mock("server-only", () => ({}));
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const m = vi.hoisted(() => ({
-  auth: vi.fn(), session: vi.fn(), jobs: vi.fn(), examples: vi.fn(), enterprise: vi.fn(),
+  silence: vi.fn(), auth: vi.fn(), session: vi.fn(), jobs: vi.fn(), examples: vi.fn(), enterprise: vi.fn(),
 }));
+vi.mock("./shorts-silence-access", () => ({ shortsSilenceAccessEnabled: m.silence }));
 vi.mock("./read-request", () => ({ withReadRequest: (_name: string, run: (stage: (n: string, fn: () => Promise<unknown>) => Promise<unknown>) => unknown) => run((_n, fn) => fn()) }));
 vi.mock("./db", () => ({ getDb: () => ({}) }));
 vi.mock("./supabase/server", () => ({ getAuthenticatedUser: m.auth }));
@@ -24,6 +25,7 @@ import { loadMvpState, loadMvpRecentJobs } from "./mvp-state";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  m.silence.mockResolvedValue(false);
   m.auth.mockResolvedValue({ id: "auth-a" });
   m.session.mockResolvedValue({ id: "session", userId: "app-a", user: { id: "auth-a" }, isEnterprise: false });
   m.jobs.mockResolvedValue([{ id: "project" }]); m.examples.mockResolvedValue([{ id: "example" }]);
@@ -38,6 +40,13 @@ describe("home core and projects are independently bounded reads", () => {
     expect(core.usage.remainingSeconds).toBe(30);
     expect(core.capabilities.fileUpload).toBe(false);
     expect(core.recentJobsLoaded).toBe(false);
+  });
+  it("shows public silence to an ordinary member while keeping midform private", async () => {
+    m.silence.mockResolvedValue(true);
+    const result = await loadMvpState();
+    expect(result.capabilities.shortsSilenceRemoval).toBe(true);
+    expect(result.capabilities.midform).toBe(false);
+    expect(m.silence).toHaveBeenCalledWith({}, "app-a");
   });
   it("preserves the full-state contract for existing API consumers", async () => {
     expect((await loadMvpState()).recentJobs).toEqual([{ id: "project" }]);

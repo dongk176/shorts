@@ -3920,7 +3920,7 @@ describe("short ownership, expiry, and edit validation", () => {
       onboardingWelcomeFunded: true,
       renderedConfigHash: "old-hash",
       currentConfigHash: "new-hash",
-    }]);
+    }], [{ automaticallyRendered: false }]);
     mocks.getDb.mockReturnValue(db);
 
     const response = await rerenderShort(
@@ -3932,7 +3932,7 @@ describe("short ownership, expiry, and edit validation", () => {
     await expect(response.json()).resolves.toMatchObject({
       code: "ONBOARDING_WELCOME_RERENDER_LIMIT",
     });
-    expect(db).toHaveBeenCalledTimes(1);
+    expect(db).toHaveBeenCalledTimes(2);
   });
 
   it("does not issue a Signed URL for missing or expired shorts", async () => {

@@ -14,7 +14,7 @@ export async function processAdminShortSilence(db: Sql, shortId?: string, userId
   if (!await shortsSilenceRuntimeEnabled(db)) return { status: "disabled" };
   await db`update shorts_mvp.admin_short_silence_tasks t set state='failed',
       error_code='SILENCE_LEASE_EXHAUSTED',updated_at=now()
-    from shorts_mvp.app_users u where u.id=t.user_id and u.is_admin
+    from shorts_mvp.app_users u where u.id=t.user_id
       and t.state='processing' and t.lease_until<clock_timestamp() and t.attempts>=2`;
   // The renderer owns its normal lifecycle. Observe its result; never retry or
   // cancel an existing rendering request from this feature.
@@ -22,7 +22,7 @@ export async function processAdminShortSilence(db: Sql, shortId?: string, userId
     set state=case when r.status='succeeded' then 'completed' else 'failed' end,
       error_code=case when r.status='succeeded' then null else 'SILENCE_RENDER_FAILED' end,updated_at=now()
     from shorts_mvp.editor_render_requests r,shorts_mvp.app_users u
-    where t.request_id=r.id and u.id=t.user_id and u.is_admin and t.state='rendering'
+    where t.request_id=r.id and u.id=t.user_id and t.state='rendering'
       and r.status in ('succeeded','failed','superseded')`;
   const leaseId = randomUUID();
   const claimed = await db.begin(async tx => {
@@ -38,7 +38,7 @@ export async function processAdminShortSilence(db: Sql, shortId?: string, userId
       from shorts_mvp.generated_shorts s join shorts_mvp.video_jobs j on j.id=s.job_id
       join shorts_mvp.app_users u on u.id=j.user_id
       left join shorts_mvp.admin_short_silence_tasks t on t.short_id=s.id
-      where u.is_admin and s.user_id=u.id and not j.is_example and j.midform_request is null
+      where s.user_id=u.id and not j.is_example and j.midform_request is null
         and j.template_snapshot->'shortsSilenceRemoval'='{"version":1,"preset":"aggressive"}'::jsonb
         and j.status='completed' and j.user_deleted_at is null
         and s.status='ready' and s.render_version=1 and s.editor_document is null
@@ -94,7 +94,7 @@ export async function processAdminShortSilence(db: Sql, shortId?: string, userId
       if (!task) throw new Error("SILENCE_LEASE_EXPIRED");
       const [current] = await tx`select s.id from shorts_mvp.generated_shorts s
         join shorts_mvp.video_jobs j on j.id=s.job_id join shorts_mvp.app_users u on u.id=j.user_id
-        where s.id=${source.id} and s.user_id=${source.userId} and u.id=s.user_id and u.is_admin
+        where s.id=${source.id} and s.user_id=${source.userId} and u.id=s.user_id
           and j.template_snapshot->'shortsSilenceRemoval'='{"version":1,"preset":"aggressive"}'::jsonb
           and not j.is_example and j.midform_request is null and j.user_deleted_at is null
           and s.status='ready' and s.render_version=1 and s.editor_document is null
@@ -121,7 +121,7 @@ export async function processAdminShortSilence(db: Sql, shortId?: string, userId
     const code = error instanceof Error && /^SILENCE_[A-Z_]+$/.test(error.message) ? error.message : "SILENCE_PROCESSING_FAILED";
     await db`update shorts_mvp.admin_short_silence_tasks set state='failed',error_code=${code},updated_at=now()
       where short_id=${source.id} and lease_id=${leaseId} and state='processing'`;
-    console.warn("admin_short_silence_failed", { shortId: source.id, code });
+    console.warn("short_silence_failed", { shortId: source.id, code });
     throw new HttpError(503, "무음 정리를 완료하지 못했어요. 원본 결과는 그대로 보관돼 있어요.", code);
   }
 }

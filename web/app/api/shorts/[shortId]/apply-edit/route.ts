@@ -1,3 +1,4 @@
+import { manualRenderVersion } from "@/lib/shorts-silence-allowance";
 import { assertUnifiedSnsDesignRelease, validateUnifiedSnsEdit } from "@/lib/unified-sns-editor-validation";
 import { isUnifiedSnsSnapshot } from "@/lib/unified-sns-editor";
 import { contentTextFont, hasUnsupportedCjkFont } from "@/lib/content-language";
@@ -596,7 +597,7 @@ async function applyEditorDocument({
   }
   if (!onboardingWelcomeRerenderAllowed(
     Boolean(existing.onboardingWelcomeFunded),
-    Number(existing.renderVersion),
+    await manualRenderVersion(db, shortId, Number(existing.renderVersion), Boolean(existing.onboardingWelcomeFunded)),
   )) {
     throw new HttpError(
       402,
@@ -1031,7 +1032,7 @@ export async function POST(request: Request, context: { params: Promise<{ shortI
     }
     if (!onboardingWelcomeRerenderAllowed(
       Boolean(existing.onboardingWelcomeFunded),
-      Number(existing.renderVersion),
+      await manualRenderVersion(db, shortId, Number(existing.renderVersion), Boolean(existing.onboardingWelcomeFunded)),
     )) {
       throw new HttpError(
         402,

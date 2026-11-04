@@ -17,7 +17,8 @@ beforeAll(async () => {
     insert into shorts_mvp.app_users values ('${admin}',true),('${user}',false);
     insert into shorts_mvp.video_jobs values ('${job}','${admin}',false,null,'{"shortsSilenceRemoval":{"version":1,"preset":"aggressive"}}');
     insert into shorts_mvp.generated_shorts values ('${short}','${job}','${admin}');`);
-  await db.exec(await readFile(new URL("../../supabase/migrations/20261104043817_admin_shorts_silence_tasks.sql", import.meta.url), "utf8"));
+  await db.exec(await readFile(new URL("../../supabase/migrations/20261104050801_admin_shorts_silence_tasks.sql", import.meta.url), "utf8"));
+  await db.exec(await readFile(new URL("../../supabase/migrations/20261104170150_public_shorts_silence.sql", import.meta.url), "utf8"));
 });
 afterAll(async () => { await db?.close(); });
 const insert = (owner = admin) => db.exec(`insert into shorts_mvp.admin_short_silence_tasks
@@ -26,13 +27,14 @@ const insert = (owner = admin) => db.exec(`insert into shorts_mvp.admin_short_si
 
 describe("private silence task storage", () => {
   it("blocks foreign ownership even with a valid private request", async () => {
-    await expect(insert(user)).rejects.toThrow("SILENCE_ADMIN_OWNERSHIP_REQUIRED");
+    await expect(insert(user)).rejects.toThrow("SILENCE_OWNERSHIP_REQUIRED");
   });
-  it("requires an authoritative administrator and exact aggressive job request", async () => {
+  it("accepts ordinary owned tasks while requiring the exact opt-in request", async () => {
     await db.exec(`update shorts_mvp.app_users set is_admin=false where id='${admin}'`);
-    await expect(insert()).rejects.toThrow("SILENCE_ADMIN_OWNERSHIP_REQUIRED");
+    await insert();
+    await db.exec("delete from shorts_mvp.admin_short_silence_tasks");
     await db.exec(`update shorts_mvp.app_users set is_admin=true where id='${admin}'; update shorts_mvp.video_jobs set template_snapshot='{}'`);
-    await expect(insert()).rejects.toThrow("SILENCE_ADMIN_OWNERSHIP_REQUIRED");
+    await expect(insert()).rejects.toThrow("SILENCE_OWNERSHIP_REQUIRED");
     await db.exec(`update shorts_mvp.video_jobs set template_snapshot='{"shortsSilenceRemoval":{"version":1,"preset":"aggressive"}}'`);
   });
   it("persists one owned task and prevents identity replacement and duplicates", async () => {

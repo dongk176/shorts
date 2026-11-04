@@ -3,11 +3,18 @@ import type { Sql, TransactionSql } from "postgres";
 import { HttpError } from "./http";
 import { shortsSilenceEnabled } from "./shorts-silence-contract";
 
-export async function requireShortsSilenceAdmin(db: Sql | TransactionSql, userId: string | null) {
-  const [user] = await db`select u.id,u.is_admin,f.enabled from shorts_mvp.app_users u
+export async function requireShortsSilenceAccess(db: Sql | TransactionSql, userId: string | null) {
+  if (!shortsSilenceEnabled() || !userId) throw new HttpError(404, "찾을 수 없습니다.");
+  const [user] = await db`select u.id,u.is_admin,f.enabled,coalesce(p.enabled,false) as public_enabled from shorts_mvp.app_users u
     join shorts_mvp.runtime_feature_flags f on f.flag_key='admin_shorts_silence'
+    left join shorts_mvp.runtime_feature_flags p on p.flag_key='public_shorts_silence'
     where u.id=${userId} for share of u,f`;
-  if (user?.isAdmin !== true || user.enabled !== true || !shortsSilenceEnabled()) throw new HttpError(404, "찾을 수 없습니다.");
+  if ((user?.isAdmin !== true && user?.publicEnabled !== true) || user?.enabled !== true || !shortsSilenceEnabled()) throw new HttpError(404, "찾을 수 없습니다.");
+}
+
+export async function shortsSilenceAccessEnabled(db: Sql | TransactionSql, userId: string | null) {
+  try { await requireShortsSilenceAccess(db, userId); return true; }
+  catch (error) { if (error instanceof HttpError && error.status === 404) return false; throw error; }
 }
 
 export async function shortsSilenceRuntimeEnabled(db: Sql | TransactionSql) {

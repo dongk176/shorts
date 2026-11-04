@@ -158,6 +158,7 @@ type TransactionOptions = {
   projectNumber?: number;
   customTemplate?: Record<string, unknown>;
   failUploadSessionInsert?: boolean;
+  publicSilence?: boolean;
 };
 
 function transactionDb(options: TransactionOptions = {}) {
@@ -168,6 +169,7 @@ function transactionDb(options: TransactionOptions = {}) {
   ) => {
     const sql = Array.from(strings).join("?").replace(/\s+/g, " ").trim();
     queries.push({ sql, values });
+    if (sql.includes("from shorts_mvp.app_users")) return options.publicSilence ? [{ isAdmin: false, enabled: true, publicEnabled: true }] : [];
     if (sql.includes("where upload.request_id=")) {
       return options.existing ? [{ source: "upload", ...options.existing }] : [];
     }
@@ -195,7 +197,8 @@ function transactionDb(options: TransactionOptions = {}) {
   }), {
     json: vi.fn((value: unknown) => value),
   });
-  const db = Object.assign(vi.fn(async () => [{ desiredCount: 1 }]), {
+  const db = Object.assign(vi.fn(async (strings: TemplateStringsArray) => strings.join("?").includes("from shorts_mvp.app_users")
+    ? (options.publicSilence ? [{ isAdmin: false, enabled: true, publicEnabled: true }] : []) : [{ desiredCount: 1 }]), {
     begin: vi.fn(async (callback: (transaction: typeof tx) => unknown) => (
       callback(tx)
     )),
@@ -270,12 +273,20 @@ beforeEach(() => {
 });
 
 describe("file upload job control plane", () => {
-  it("rejects a silence request without authoritative administrator status before upload allocation", async () => {
+  it("rejects ordinary silence requests while public admission is off before upload allocation", async () => {
     vi.stubEnv("ADMIN_SHORTS_SILENCE_ENABLED", "true"); vi.stubEnv("RANKING_VERCEL_SNAPSHOT_ID", "snapshot");
     const { db } = transactionDb(); mocks.getDb.mockReturnValue(db);
     const result = await POST(jsonRequest({ ...validBody, silenceRemoval: { version: 1, preset: "aggressive" } }));
     expect(result.status).toBe(404); expect(db.begin).not.toHaveBeenCalled();
     expect(mocks.ensureUploadCapacity).not.toHaveBeenCalled();
+  });
+  it("accepts opted-in ordinary uploads with public admission enabled", async () => {
+    vi.stubEnv("ADMIN_SHORTS_SILENCE_ENABLED", "true"); vi.stubEnv("RANKING_VERCEL_SNAPSHOT_ID", "snapshot");
+    const { db, queries } = transactionDb({ publicSilence: true }); mocks.getDb.mockReturnValue(db);
+    const response = await POST(jsonRequest({ ...validBody, silenceRemoval: { version: 1, preset: "aggressive" } }));
+    expect(response.status).toBe(201);
+    expect(JSON.stringify(queries.find(q => q.sql.includes("insert into shorts_mvp.video_jobs"))?.values)).toContain("shortsSilenceRemoval");
+    expect(queries.filter(q => q.sql.includes("insert into shorts_mvp.usage_reservations"))).toHaveLength(1);
   });
   it("conceals GET and signed-out/off POST probes with the same 404", async () => {
     const getResponse = await GET();

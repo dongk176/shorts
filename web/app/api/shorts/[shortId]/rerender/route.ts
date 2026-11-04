@@ -1,3 +1,4 @@
+import { manualRenderVersion } from "@/lib/shorts-silence-allowance";
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { assertEnterpriseSessionServiceAccess } from "@/lib/enterprise-access";
@@ -75,7 +76,7 @@ export async function POST(_: Request, context: { params: Promise<{ shortId: str
     }
     if (!onboardingWelcomeRerenderAllowed(
       Boolean(rows[0].onboardingWelcomeFunded),
-      Number(rows[0].renderVersion),
+      await manualRenderVersion(db, shortId, Number(rows[0].renderVersion), Boolean(rows[0].onboardingWelcomeFunded)),
     )) {
       throw new HttpError(
         402,

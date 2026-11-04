@@ -1,5 +1,5 @@
 import { shortsSilenceRequestSchema } from "@/lib/shorts-silence-contract";
-import { requireShortsSilenceAdmin, assertSilenceTemplate } from "@/lib/shorts-silence-access";
+import { requireShortsSilenceAccess, assertSilenceTemplate } from "@/lib/shorts-silence-access";
 import { midformRelease, midformTarget, requireMidformAdmin } from "@/lib/midform-release";
 import { midformRequestSchema } from "@/lib/midform-cloud";
 import { lockSnsTemplateAdmission } from "@/lib/sns-template-release";
@@ -121,7 +121,7 @@ export async function POST(request: Request) {
     const session = await requireAuthenticatedMvpSession();
     const db = getDb();
     if (input.silenceRemoval) {
-      await requireShortsSilenceAdmin(db, session.userId); assertSilenceTemplate(input);
+      await requireShortsSilenceAccess(db, session.userId); assertSilenceTemplate(input);
       if (request.headers.get("origin") !== new URL(request.url).origin || request.headers.get("sec-fetch-site") === "cross-site") throw new HttpError(403, "이지컷 화면에서 다시 시도해 주세요.");
     }
     if (input.midform) {
@@ -318,7 +318,7 @@ export async function POST(request: Request) {
           status: concurrentExisting[0].status,
         };
       }
-      if (input.silenceRemoval) await requireShortsSilenceAdmin(tx, session.userId);
+      if (input.silenceRemoval) await requireShortsSilenceAccess(tx, session.userId);
       const midform = input.midform ? await midformRelease(tx, session.userId) : null;
       if (midform && executionBackend !== "aws_batch") throw new HttpError(503, "중폼 제작 서버를 준비하고 있습니다.");
       const languageTest = input.snsTemplate

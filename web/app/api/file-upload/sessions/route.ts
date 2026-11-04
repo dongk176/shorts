@@ -1,5 +1,5 @@
 import { shortsSilenceRequestSchema } from "@/lib/shorts-silence-contract";
-import { requireShortsSilenceAdmin, assertSilenceTemplate } from "@/lib/shorts-silence-access";
+import { requireShortsSilenceAccess, assertSilenceTemplate } from "@/lib/shorts-silence-access";
 import { midformUploadRelease, requireMidformAdmin } from "@/lib/midform-release";
 import { midformRequestSchema } from "@/lib/midform-cloud";
 import { createHash, randomUUID } from "node:crypto";
@@ -312,7 +312,7 @@ export async function POST(request: Request) {
       await requireMidformAdmin(db, session.userId);
       if (input.file.durationSeconds < 600 || input.file.durationSeconds > 3600 || input.rangeStartSeconds !== 0 || input.rangeEndSeconds !== input.file.durationSeconds || input.customTemplateId || input.subtitleTemplateId || input.templateId !== "dark-minimal" || input.videoAspectRatio !== "16:9" || input.outputLanguage !== "ko") throw new HttpError(400, "중폼은 10~60분 원본 영상을 선택해 주세요.");
     }
-    if (input.silenceRemoval) { await requireShortsSilenceAdmin(db, session.userId); assertSilenceTemplate(input); }
+    if (input.silenceRemoval) { await requireShortsSilenceAccess(db, session.userId); assertSilenceTemplate(input); }
     const originalFilename = sanitizedDisplayFilename(input.file.name);
     const declaredContentType = input.file.contentType
       .split(";", 1)[0]
@@ -544,7 +544,7 @@ export async function POST(request: Request) {
       });
       const resolvedTemplateId = renderContract.templateId;
       const resolvedVideoAspectRatio = renderContract.videoAspectRatio;
-      if (input.silenceRemoval) await requireShortsSilenceAdmin(tx, session.userId);
+      if (input.silenceRemoval) await requireShortsSilenceAccess(tx, session.userId);
       const templateSnapshot = input.silenceRemoval ? { ...renderContract.templateSnapshot, shortsSilenceRemoval: input.silenceRemoval } : renderContract.templateSnapshot;
       const subtitleTemplateSnapshot = renderContract.subtitleTemplateSnapshot;
       const dispatchTarget = projectDispatchTargetForFeatures({

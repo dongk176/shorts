@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 import type { Sql } from "postgres";
-import { requireShortsSilenceAdmin, assertSilenceTemplate } from "./shorts-silence-access";
+import { requireShortsSilenceAccess, assertSilenceTemplate } from "./shorts-silence-access";
 import { canSelectShortsSilence, shortsSilenceEnabled, shortsSilenceRequestSchema, silenceKeptRanges } from "./shorts-silence-contract";
 
 afterEach(() => vi.unstubAllEnvs());
-describe("administrator-only silence admission", () => {
+describe("owned opt-in silence admission", () => {
   it("shows the option for the default automatic Korean input without enabling foreign-language combinations", () => {
     const input = { capability: true, customTemplate: false, snsTemplate: false, outputLanguage: "ko", sourceLanguage: "auto" };
     expect(canSelectShortsSilence(input)).toBe(true);
@@ -17,15 +17,25 @@ describe("administrator-only silence admission", () => {
   });
   it.each([false, undefined, "true", 1])("rejects non-authoritative admin values %s", async value => {
     vi.stubEnv("ADMIN_SHORTS_SILENCE_ENABLED", "true"); vi.stubEnv("RANKING_VERCEL_SNAPSHOT_ID", "snapshot");
-    await expect(requireShortsSilenceAdmin((async () => [{ isAdmin: value, enabled: true }]) as unknown as Sql, "user"))
+    await expect(requireShortsSilenceAccess((async () => [{ isAdmin: value, enabled: true }]) as unknown as Sql, "user"))
       .rejects.toMatchObject({ status: 404 });
+  });
+  it("admits ordinary members only with the public flag on", async () => {
+    vi.stubEnv("ADMIN_SHORTS_SILENCE_ENABLED", "true"); vi.stubEnv("RANKING_VERCEL_SNAPSHOT_ID", "snapshot");
+    const db = (async () => [{ isAdmin: false, enabled: true, publicEnabled: true }]) as unknown as Sql;
+    await expect(requireShortsSilenceAccess(db, "member")).resolves.toBeUndefined();
+    for (const row of [undefined, { isAdmin: false, enabled: false, publicEnabled: true },
+      { isAdmin: false, enabled: true, publicEnabled: "true" }]) {
+      await expect(requireShortsSilenceAccess((async () => row ? [row] : []) as unknown as Sql, "member")).rejects.toMatchObject({ status: 404 });
+    }
+    await expect(requireShortsSilenceAccess(db, null)).rejects.toMatchObject({ status: 404 });
   });
   it("requires the deployment gate and an existing analysis snapshot", async () => {
     const db = (async () => [{ isAdmin: true, enabled: true }]) as unknown as Sql;
     vi.stubEnv("ADMIN_SHORTS_SILENCE_ENABLED", "false");
-    await expect(requireShortsSilenceAdmin(db, "admin")).rejects.toMatchObject({ status: 404 });
+    await expect(requireShortsSilenceAccess(db, "admin")).rejects.toMatchObject({ status: 404 });
     vi.stubEnv("ADMIN_SHORTS_SILENCE_ENABLED", "true"); vi.stubEnv("RANKING_VERCEL_SNAPSHOT_ID", "snapshot");
-    await expect(requireShortsSilenceAdmin(db, "admin")).resolves.toBeUndefined();
+    await expect(requireShortsSilenceAccess(db, "admin")).resolves.toBeUndefined();
     expect(shortsSilenceEnabled({ ADMIN_SHORTS_SILENCE_ENABLED: "true", RANKING_VERCEL_SNAPSHOT_ID: "snapshot", EASYCUT_ENVIRONMENT: "lab" })).toBe(false);
   });
   it("accepts only the fixed aggressive contract", () => {

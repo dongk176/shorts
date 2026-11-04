@@ -33,6 +33,7 @@ const registry = { version: 1, environment: "production", lanes: Object.fromEntr
 } }])) };
 let publicPercent = 100;
 let admin = false;
+let publicSilence = false;
 const jobs: { id: string; user: string; request: string; projectNumber: number; output: unknown; release: unknown; snapshot: unknown }[] = [];
 const reservations: unknown[][] = [];
 const locks = new Map<string, Promise<void>>();
@@ -45,7 +46,7 @@ const request = (change: Record<string, unknown> = {}) => new Request("https://w
 
 afterEach(() => vi.unstubAllEnvs());
 beforeEach(() => {
-  vi.clearAllMocks(); publicPercent = 100; admin = false; jobs.length = 0; reservations.length = 0; locks.clear();
+  vi.clearAllMocks(); publicPercent = 100; admin = false; publicSilence = false; jobs.length = 0; reservations.length = 0; locks.clear();
   mocks.session.mockResolvedValue({ userId: user, id: user, isAdmin: false });
   mocks.billing.mockResolvedValue({ canCreateJobs: true, maxActiveJobs: 1, retentionDays: 30 });
   mocks.usage.mockResolvedValue({ enforcementEnabled: true, remainingSeconds: 3600 });
@@ -65,7 +66,7 @@ beforeEach(() => {
         youtubeUrl: "https://www.youtube.com/watch?v=abcdefghijk", youtubeVideoId: "abcdefghijk", videoTitle: "Fixture",
         channelName: "Fixture", durationSeconds: 240, creationAllowed: true, sourceRangeSelectionEnabled: false,
       }];
-      if (q.includes("from shorts_mvp.app_users")) return [{ id: v[0], isAdmin: admin, enabled: true }];
+      if (q.includes("from shorts_mvp.app_users")) return [{ id: v[0], isAdmin: admin, enabled: true, publicEnabled: publicSilence }];
       if (q.includes("left join shorts_mvp.language_test_releases")) return [{
         enabled: true, publicRolloutPercent: publicPercent, releaseId, verifiedAt: new Date(), stagingVerifiedAt: new Date(),
         registryJson: JSON.stringify(registry), gitSha: sha, workerImageDigest: image, fontManifestSha256: font,
@@ -89,14 +90,14 @@ beforeEach(() => {
 });
 
 describe("language job admission through the actual POST handler", () => {
-  it("blocks ordinary-user silence requests before job creation or billing", async () => {
+  it("blocks ordinary-user silence requests when public admission is off", async () => {
     vi.stubEnv("ADMIN_SHORTS_SILENCE_ENABLED", "true"); vi.stubEnv("RANKING_VERCEL_SNAPSHOT_ID", "snapshot");
     expect((await POST(request({ languageTest: false, sourceLanguage: undefined, outputLanguage: "ko",
       silenceRemoval: { version: 1, preset: "aggressive" } }))).status).toBe(404);
     expect(jobs).toHaveLength(0); expect(reservations).toHaveLength(0);
   });
-  it("preserves normal admission and charges once for the administrator silence marker", async () => {
-    admin = true; vi.stubEnv("ADMIN_SHORTS_SILENCE_ENABLED", "true"); vi.stubEnv("RANKING_VERCEL_SNAPSHOT_ID", "snapshot");
+  it.each(["administrator", "ordinary member"])("preserves normal admission and charges once for an opted-in %s", async role => {
+    admin = role === "administrator"; publicSilence = role === "ordinary member"; vi.stubEnv("ADMIN_SHORTS_SILENCE_ENABLED", "true"); vi.stubEnv("RANKING_VERCEL_SNAPSHOT_ID", "snapshot");
     const requestId = crypto.randomUUID();
     const body = { requestId, languageTest: false, sourceLanguage: undefined, outputLanguage: "ko", silenceRemoval: { version: 1, preset: "aggressive" } };
     expect((await POST(request(body))).status).toBe(202);
