@@ -21,7 +21,7 @@ beforeAll(async()=>{
  create table shorts_mvp.test_attestation(enabled boolean);insert into shorts_mvp.test_attestation values(true);
  create function shorts_mvp._verified_file_upload_successor_identity(r uuid,f text) returns jsonb language plpgsql as $$begin
  if not(select enabled from shorts_mvp.test_attestation) then raise exception 'unverified probe';end if;
- return jsonb_build_object('releaseId',r,'fontManifestSha256',f);end;$$;
+ return jsonb_build_object('releaseId',r,'fontManifestSha256',f,'sourceGitSha','test-source','workerImageDigest','test-digest');end;$$;
  create function shorts_mvp.enforce_language_request_binding() returns trigger language plpgsql as $$
 begin
   if new.output_language<>'ko' and new.language_test_release_id is null then
@@ -58,4 +58,28 @@ it('pins editor requests and retains editing after candidate admission expires',
  await expect(render(other)).rejects.toThrow('UPLOAD_LANGUAGE_EDITOR_BINDING_INVALID');await expect(render(release,other)).rejects.toThrow('UPLOAD_LANGUAGE_EDITOR_BINDING_INVALID');await render();
  await db.exec("update shorts_mvp.upload_language_candidates set expires_at=clock_timestamp()-interval '1 millisecond'");await expect(insert()).rejects.toThrow();await render();
  await db.exec('update shorts_mvp.test_attestation set enabled=false');await expect(render()).rejects.toThrow('unverified probe');await db.exec('update shorts_mvp.test_attestation set enabled=true');
+});
+
+it('requires all public roundtrips before nonadmin admission and preserves old project edits after handoff',async()=>{
+ await db.exec(`create table shorts_mvp.file_upload_release_checks(check_key text primary key,passed boolean,details jsonb,successor jsonb);`);
+ const cases=['ko','en','ja'].map(language=>({language,generated:true,silenceRemoved:true,restored:true,edited:true,rendered:true}));
+ const proof={releaseId:release,sourceGitSha:'test-source',workerImageDigest:'test-digest',fontManifestSha256:'verified-test-font',multilingualUpload:{version:1,phase:'verified',sourceGitSha:'test-source',workerImageDigest:'test-digest',cases}};
+ for(const key of ['runtime_identity','admin_end_to_end','render_parity','upload_1gb','upload_5gb','source_cleanup','usage_integrity','no_proxy_environment','no_stuck_sessions'])await db.query('insert into shorts_mvp.file_upload_release_checks values($1,true,$2,null)',[key,JSON.stringify(proof)]);
+ await db.exec(await readFile(new URL('../../supabase/migrations/20261105191157_verified_public_upload_language_binding.sql',import.meta.url),'utf8'));
+ const record=(user=owner)=>db.query('insert into shorts_mvp.upload_language_public_releases(release_id,recorded_by) values($1,$2)',[release,user]);
+ await expect(record(other)).rejects.toThrow('UPLOAD_LANGUAGE_PUBLIC_ADMIN_REQUIRED');
+ await db.exec("update shorts_mvp.file_upload_release_checks set passed=false where check_key='upload_5gb'");await expect(record()).rejects.toThrow('UPLOAD_LANGUAGE_PUBLIC_ACCEPTANCE_REQUIRED');await db.exec('update shorts_mvp.file_upload_release_checks set passed=true');
+ await db.query("update shorts_mvp.file_upload_release_checks set details=$1 where check_key='runtime_identity'",[JSON.stringify({...proof,multilingualUpload:{...proof.multilingualUpload,cases:cases.slice(0,2)}})]);await expect(record()).rejects.toThrow('UPLOAD_LANGUAGE_PUBLIC_ROUNDTRIP_REQUIRED');
+ await db.query('update shorts_mvp.file_upload_release_checks set details=$1',[JSON.stringify(proof)]);
+ const publicSnapshot={uploadLanguage:snapshot.uploadLanguage,shortsSilenceRemoval:{version:1,preset:'aggressive'}};
+ await expect(insert({user_id:other,template_snapshot:JSON.stringify(publicSnapshot)})).rejects.toThrow();
+ await record();
+ const job=await insert({user_id:other,template_snapshot:JSON.stringify(publicSnapshot)});
+ await expect(insert({user_id:other})).rejects.toThrow();
+ const id=uuid();await db.query('insert into shorts_mvp.generated_shorts(id,job_id,user_id) values($1,$2,$3)',[id,job,other]);
+ await db.query("insert into shorts_mvp.admin_short_silence_tasks values($1,$2,$3,$4,'processing')",[id,job,other,uuid()]);
+ await db.exec("update shorts_mvp.file_upload_release_checks set successor='{}'");
+ await expect(insert({user_id:other,template_snapshot:JSON.stringify(publicSnapshot)})).rejects.toThrow();
+ await db.query("insert into shorts_mvp.editor_render_requests values($1,$2,$3,$4,'canary',1)",[uuid(),id,other,release]);
+ await expect(db.exec('delete from shorts_mvp.upload_language_public_releases')).rejects.toThrow('UPLOAD_LANGUAGE_PUBLIC_PROOF_IMMUTABLE');
 });
