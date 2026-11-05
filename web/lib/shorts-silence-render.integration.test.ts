@@ -23,13 +23,13 @@ with patch.object(module.subprocess,'run',side_effect=subprocess.TimeoutExpired(
         print('redacted')
     else: raise AssertionError('Expected bounded analysis failure')
 `;
-    expect(execFileSync(path.join(root, "worker/.venv/bin/python"), ["-c", script,
+    expect(execFileSync((process.env.WORKER_PYTHON || path.join(root, "worker/.venv/bin/python")), ["-c", script,
       path.join(root, "web/private/shorts-silence/analyze.py")], { encoding: "utf8", timeout: 10_000 }).trim()).toBe("redacted");
   });
   it.each([[0, "ko"], [240, "ko"], [240, "en"], [240, "ja"]] as const)("removes silence and retimes captions at offset %s in %s", (offset, language) => {
     const folder = mkdtempSync(path.join(os.tmpdir(), "shorts-silence-media-"));
     const root = path.resolve(import.meta.dirname, "../..");
-    const python = path.join(root, "worker/.venv/bin/python");
+    const python = (process.env.WORKER_PYTHON || path.join(root, "worker/.venv/bin/python"));
     const helper = path.join(root, "test-tools/silence-media-proof.py");
     try {
       const detected = JSON.parse(execFileSync(python, [helper, "prepare", folder, String(offset), language], { encoding: "utf8", timeout: 120_000 }));

@@ -75,7 +75,7 @@ describe("silence removal preserves editable template layers", () => {
       const root = path.resolve(import.meta.dirname, "../..");
       const face = resolveEditorFontFaceV4(language === "ja" ? "noto-sans-jp" : "pretendard", "title");
       const texts = [...new Set(wrapPreviewTitle(short.hookTitle).flatMap(line => [line, ...line.split(" ")]))];
-      const measurements = JSON.parse(execFileSync(path.join(root, "worker/.venv/bin/python"), ["-c", `
+      const measurements = JSON.parse(execFileSync((process.env.WORKER_PYTHON || path.join(root, "worker/.venv/bin/python")), ["-c", `
 import importlib.util,json,sys
 from pathlib import Path
 spec=importlib.util.spec_from_file_location('analyzer',sys.argv[1]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
@@ -94,7 +94,7 @@ print(json.dumps(m.measure_title(json.loads(sys.argv[2]),Path(sys.argv[3]))))
       expect(plan.document.renderSpec.textOverlays.length).toBeGreaterThan(0);
       expect(plan.document.template.customTemplateId).toBeNull();
       const folder = mkdtempSync(path.join(os.tmpdir(), "silence-social-media-"));
-      const python = path.join(root, "worker/.venv/bin/python");
+      const python = (process.env.WORKER_PYTHON || path.join(root, "worker/.venv/bin/python"));
       const helper = path.join(root, "test-tools/silence-media-proof.py");
       try {
         execFileSync(python, [helper, "prepare", folder, "240", language], { timeout: 120_000 });
