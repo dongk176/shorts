@@ -32,7 +32,8 @@ export async function GET(_: Request, context: { params: Promise<{ shortId: stri
         s.edit_timeline_end_seconds, s.edit_timeline_subtitle_segments,
         s.edit_timeline_version, s.start_seconds, s.end_seconds,
         s.initial_start_seconds, s.initial_end_seconds, s.subtitle_segments,
-        s.expires_at, s.subtitle_template_id, s.subtitle_template_snapshot
+        s.expires_at, s.subtitle_template_id, s.subtitle_template_snapshot,
+        j.silence_test_release_id
       from shorts_mvp.generated_shorts s
       join shorts_mvp.video_jobs j on j.id=s.job_id
       where s.id=${shortId} and not j.is_example
@@ -62,6 +63,11 @@ export async function GET(_: Request, context: { params: Promise<{ shortId: stri
     }
 
     const row = rows[0];
+    // Inline output becomes ready before retained source handles finish uploading.
+    // Its output duration cannot identify the uncut clean source clock.
+    if (row.silenceTestReleaseId && !row.editTimelineS3Key) {
+      throw new HttpError(409, "편집용 원본 영상을 준비하고 있어요. 잠시만 기다려 주세요.", "EDITOR_SOURCE_PREPARING");
+    }
     const hasCapturedTimeline = Boolean(row.editTimelineS3Key);
     const sourceKey = hasCapturedTimeline
       ? String(row.editTimelineS3Key)

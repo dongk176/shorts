@@ -502,6 +502,24 @@ describe("range editing feature gate and snapshot", () => {
     }));
   });
 
+  it("waits for retained source handles on inline silence QA outputs", async () => {
+    process.env.RANGE_EDITING_ENABLED = "true";
+    mocks.getDb.mockReturnValue(dbWithRows([{
+      silenceTestReleaseId: "45f997e3-5250-4389-a097-f267e124dda1",
+      editTimelineS3Key: null, cleanClipS3Key: "edit-sources/clean.mp4",
+      startSeconds: 35.66, endSeconds: 64.293,
+      initialStartSeconds: 35.66, initialEndSeconds: 66.17,
+      expiresAt: new Date(Date.now() + 60_000),
+    }]));
+    const response = await accessEditTimeline(
+      new Request(`http://localhost/api/shorts/${shortId}/edit-timeline`),
+      { params: Promise.resolve({ shortId }) },
+    );
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({code: "EDITOR_SOURCE_PREPARING"});
+    expect(mocks.signedUrl).not.toHaveBeenCalled();
+  });
+
   it("does not queue a comment template without at least one editable comment", async () => {
     process.env.RANGE_EDITING_ENABLED = "true";
 

@@ -318,6 +318,7 @@ import {
   synchronizeEditorDocumentTimeline,
   canonicalizeEditorDocumentTimelineForSave,
 } from "@/lib/editor-timeline-sync";
+import { waitForEditorSource } from "@/lib/wait-editor-source";
 import {
   editorDocumentSemanticFingerprint,
   editorInitialRenderSpecLayerFingerprints,
@@ -9167,7 +9168,11 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
     const load = async () => {
       if (rangeEditingEnabled) {
         try {
-          const value = await requestJson<EditTimeline>(`/api/shorts/${item.id}/edit-timeline`);
+          const value = await waitForEditorSource(
+            () => requestJson<EditTimeline>(`/api/shorts/${item.id}/edit-timeline`),
+            () => cancelled,
+          );
+          if (!value || cancelled) return;
           if (!cancelled) {
             const restoredDocument = savedEditorDocument
               ? synchronizeEditorDocumentTimeline(savedEditorDocument, value)
