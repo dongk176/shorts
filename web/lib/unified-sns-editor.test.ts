@@ -8,8 +8,23 @@ import { snsCopyLimits, SNS_GENERATION_RELEASE_IDS, SNS_EDITOR_RELEASE_ID } from
 import { snsEditorRelease } from "./sns-editor-release";
 import { seedSnsEditorLayers, unifiedSnsTemplate, UNIFIED_SNS_EDITOR_RELEASE_ID } from "./unified-sns-editor";
 import { assertUnifiedSnsDesignRelease, validateUnifiedSnsEdit } from "./unified-sns-editor-validation";
+import { wrapEditorRenderText } from "./editor-render-spec";
 
 describe("shared SNS/community editor", () => {
+  it.each(["초보 운전자가 처음 타 본 자동차의 놀라운 반응입니다", "The first drive was much more surprising than anyone expected", "初めて運転した車の乗り心地にみんなが驚きました"])("keeps wrapped body rows apart without losing copy: %s", text => {
+    const item = { videoAspectRatio: "16:9" as const, startSeconds: 0, endSeconds: 30,
+      templateSnapshot: { snsTemplateVersion: 1, snsLanguage: "ko",
+        snsContent: { body: [text, text], hashtags: ["#test"] } } };
+    const layers = seedSnsEditorLayers(item).textOverlays;
+    const bounds = layers.slice(0, 2).map(layer => {
+      expect(layer.text).toBe(text);
+      const height = wrapEditorRenderText(layer.text, layer.width).length * 86 * layer.scale;
+      expect(height).toBeLessThanOrEqual(82);
+      return { top: 960 + layer.offset.y - height / 2, bottom: 960 + layer.offset.y + height / 2 };
+    });
+    expect(bounds[0].bottom).toBeLessThan(bounds[1].top);
+    expect(bounds[1].bottom).toBeLessThan(718 + 150 - 86 * (47 / 72) / 2);
+  });
   it.each(videoAspectRatios)("seeds valid movable layers for %s in every language", videoAspectRatio => {
     for (const snsLanguage of ["ko", "en", "ja"] as const) for (const community of [false, true]) {
       const limits = snsCopyLimits(community ? "4:5" : videoAspectRatio, snsLanguage);

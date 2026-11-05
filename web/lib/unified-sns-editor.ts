@@ -4,6 +4,7 @@ import { createInitialEditorOverlayLayout, type EditorOverlayLayoutSnapshot, typ
 import { createDefaultTemplateConfig, upgradeTemplateConfigToV5, type TemplatePresetColor, type CustomTemplate } from "./template-config";
 import { communityHeadingColor, communityLegacyHeading, communityVideoFrames } from "./community-template-contract";
 import type { SnsLanguage } from "./sns-editor-contract";
+import { wrapEditorRenderText } from "./editor-render-spec";
 
 // Separate immutable releases. Existing fixed-layout workers must never receive
 // documents containing the shared editor's additional layers.
@@ -68,6 +69,12 @@ export function seedSnsEditorLayers(item: Pick<GeneratedShort, "templateSnapshot
     id, text, fontId: result.fonts.title, color, effect: "none", offset: { x: 0, y: y - 960 }, width: 960, scale: size / 72, startSeconds: 0, endSeconds: item.endSeconds - item.startSeconds,
   });
   result.textOverlays = content.body.map((text, i) => layer(`sns-body-${i}`, text, l.community ? 636 : 524 + l.offset + 90 * i, l.community ? 46 : 72));
+  // Keep all copy editable while fitting wrapped text inside its original row.
+  // Use the renderer's wrapping so the preview and output have the same bounds.
+  result.textOverlays = result.textOverlays.map(overlay => {
+    const lines = wrapEditorRenderText(overlay.text, overlay.width).length;
+    return lines > 1 ? { ...overlay, scale: Math.min(overlay.scale, 82 / (86 * lines)) } : overlay;
+  });
   if (content.hashtags.length) result.textOverlays.push(layer("sns-tags", content.hashtags.join("  "), 718 + l.offset, 47, "#111111"));
   if (l.community) {
     result.textOverlays.unshift(layer("sns-board", content.boardName || communityLegacyHeading[language], 210, 96, communityHeadingColor(String(snapshot.brandColor))));
