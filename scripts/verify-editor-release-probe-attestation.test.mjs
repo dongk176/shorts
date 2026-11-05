@@ -54,6 +54,10 @@ const functionContracts = {
     "shorts_mvp.finalize_editor_render_v4_release(uuid,text,text,jsonb,jsonb,text,text)",
     "jsonb", true, "shorts_mvp, pg_temp",
   ],
+  register_editor_render_v4_release: [
+    "shorts_mvp.register_editor_render_v4_release(uuid,text,text,jsonb,jsonb,text,text)",
+    "jsonb", true, "shorts_mvp, pg_temp",
+  ],
 };
 
 function validSnapshot() {

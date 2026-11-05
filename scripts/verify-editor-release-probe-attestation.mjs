@@ -53,6 +53,12 @@ const FUNCTION_CONTRACTS = Object.freeze({
     securityDefiner: true,
     searchPath: "shorts_mvp, pg_temp",
   },
+  register_editor_render_v4_release: {
+    signature: "shorts_mvp.register_editor_render_v4_release(uuid,text,text,jsonb,jsonb,text,text)",
+    returnType: "jsonb",
+    securityDefiner: true,
+    searchPath: "shorts_mvp, pg_temp",
+  },
 });
 
 const PROBE_COLUMNS = Object.freeze({
@@ -115,7 +121,9 @@ function sha256(value) {
 }
 
 export function probeMigrationFunctionBody(functionName) {
-  const migrationPath = functionName === "finalize_editor_render_v4_release"
+  const migrationPath = functionName === "register_editor_render_v4_release"
+    ? path.resolve(import.meta.dirname, "../supabase/migrations/20261105062608_register_editor_release_without_selection.sql")
+    : functionName === "finalize_editor_render_v4_release"
     ? finalizerRepairMigrationPath
     : baseMigrationPath;
   const migration = fs.readFileSync(migrationPath, "utf8");

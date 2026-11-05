@@ -2430,7 +2430,7 @@ def _finalize_v4_release(event: dict[str, Any]) -> dict[str, Any]:
                 if not predecessor_contract:
                     raise RuntimeError("Verified successor predecessor evidence is missing")
                 check["details"]["compatibleSuccessor"] = predecessor_contract
-    result = _rpc("finalize_editor_render_v4_release", {
+    result = _rpc("register_editor_render_v4_release", {
         "p_probe_id": str(probe["id"]),
         "p_nonce": str(probe["nonce"]),
         "p_production_job_definition_arn": production_arn,

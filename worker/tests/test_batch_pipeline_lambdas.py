@@ -4283,7 +4283,7 @@ def test_editor_v4_registrar_finalization_uses_only_attested_evidence_and_atomic
         rpc_calls.append((name, body))
         if name == "attach_editor_release_probe_evidence_v4":
             return verified_probe
-        if name == "finalize_editor_render_v4_release":
+        if name == "register_editor_render_v4_release":
             return {"releaseId": "9fd1c249-6cef-40f1-97d4-e4e6c837f60c", "status": "canary_ready"}
         raise AssertionError(name)
 
@@ -4330,7 +4330,7 @@ def test_editor_v4_registrar_finalization_uses_only_attested_evidence_and_atomic
     assert module.rest.call_count == 0
     assert [name for name, _body in rpc_calls] == [
         "attach_editor_release_probe_evidence_v4",
-        "finalize_editor_render_v4_release",
+        "register_editor_render_v4_release",
     ]
     final_body = rpc_calls[-1][1]
     assert final_body["p_production_job_definition_arn"] == production_arn

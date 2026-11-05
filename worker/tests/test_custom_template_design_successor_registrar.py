@@ -411,7 +411,7 @@ def test_finalizer_binds_successor_evidence_without_weakening_fifteen_checks(
         return
     module._finalize_v4_release(event)
     name, body = module._rpc.call_args.args
-    assert name == "finalize_editor_render_v4_release"
+    assert name == "register_editor_render_v4_release"
     checks = body["p_release_checks"]
     assert len(checks) == 15
     assert {item["checkName"] for item in checks} == (

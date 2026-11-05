@@ -245,11 +245,11 @@ test("release workflow promotes one tested digest without deploying the website"
   assert.doesNotMatch(workflow, /vars\.AWS_WORKER_BUILD_ROLE_ARN/);
   assert.match(
     workflow,
-    /github\.ref == 'refs\/tags\/editor-v4-render-parity-20261103-3'/,
+    /github\.ref == 'refs\/tags\/editor-v4-render-parity-20261106-1'/,
   );
   assert.deepEqual(
     [...new Set(workflow.match(/editor-v4-render-parity-[0-9]{8}-[0-9]+/g))],
-    ["editor-v4-render-parity-20261103-3"],
+    ["editor-v4-render-parity-20261106-1"],
   );
   assert.equal(workflow.match(/fetch-depth: 0/g)?.length, 2);
   assert.equal(workflow.match(/fetch-tags: true/g)?.length, 2);
@@ -297,7 +297,7 @@ test("release workflow promotes one tested digest without deploying the website"
   assert.match(registrar, /reserve_editor_release_probe_v4/);
   assert.match(registrar, /attach_editor_release_probe_job_v4/);
   assert.match(registrar, /attach_editor_release_probe_evidence_v4/);
-  assert.match(registrar, /finalize_editor_render_v4_release/);
+  assert.match(registrar, /register_editor_render_v4_release/);
   assert.match(registrar, /shorts-mvp-editor-release-\{git_sha\[:12\]\}/);
   assert.match(registrar, /shorts-mvp-editor-test-release-\{git_sha\[:12\]\}-\{nonce\[:8\]\}/);
   assert.match(registrar, /-4vcpu/);
