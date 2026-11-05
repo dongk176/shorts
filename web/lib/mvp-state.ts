@@ -1,3 +1,4 @@
+import { fileUploadLanguageEnabled } from "./file-upload-language";
 import { shortsSilenceAccessEnabled } from "./shorts-silence-access";
 import { midformRelease, midformUploadRelease } from "./midform-release";
 import { snsTemplateRelease } from "./sns-template-release";
@@ -156,6 +157,7 @@ async function readMvpState(
           .catch(() => false))
         : false,
       fileUpload: fileUploadAccess.enabled,
+      fileUploadLanguages: fileUploadAccess.enabled && await fileUploadLanguageEnabled(db, undefined, session.userId ?? undefined).catch(() => false),
       customTemplateDesign: customTemplateDesignAccess.enabled,
       unifiedTemplateSubtitles:
         subtitleTemplateAccess?.unifiedEnabled === true,

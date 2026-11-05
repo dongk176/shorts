@@ -14,6 +14,8 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
+from .upload_candidate import upload_candidate_accepting, upload_candidate_scope
+
 _SOURCE_DOWNLOAD_STATUSES = frozenset({
     "full_source_expected",
     "selected_range",
@@ -87,6 +89,24 @@ class WorkerRepository:
                 (asset_id, user_id),
             ).fetchone()
 
+    def candidate_upload_session_allowed(self, session_id: str, token_hash: str) -> bool:
+        release, administrator = upload_candidate_scope()
+        if release is None:
+            return True
+        if not upload_candidate_accepting():
+            return False
+        with self.connect() as connection:
+            row = connection.execute(
+                """select us.token_hash from shorts_mvp.upload_sessions us
+                join shorts_mvp.video_jobs j on j.id=us.job_id and j.user_id=us.user_id
+                join shorts_mvp.app_users u on u.id=us.user_id
+                where us.id=%s and us.user_id=%s and u.is_admin
+                  and j.source_type='upload' and j.initial_editor_release_id=%s
+                  and us.status='awaiting_upload' and us.expires_at>clock_timestamp()
+                """, (session_id, administrator, release),
+            ).fetchone()
+        return bool(row and hmac.compare_digest(str(row["token_hash"]), token_hash))
+
     def claim_upload_session(
         self,
         upload_session_id: str,
@@ -110,7 +130,7 @@ class WorkerRepository:
                   us.expires_at<=clock_timestamp() as is_expired,
                   u.is_admin,j.status as job_status,j.source_type,
                   j.execution_backend,j.pipeline_version,
-                  j.source_range_selection_enabled
+                  j.source_range_selection_enabled,j.initial_editor_release_id
                 from shorts_mvp.upload_sessions us
                 join shorts_mvp.app_users u on u.id=us.user_id
                 join shorts_mvp.video_jobs j on j.id=us.job_id
@@ -124,6 +144,14 @@ class WorkerRepository:
             if not row:
                 return {"claim_result": "not_found"}
 
+            release, administrator = upload_candidate_scope()
+            if release is not None and (
+                not upload_candidate_accepting()
+                or not row.get("is_admin")
+                or str(row.get("user_id")) != administrator
+                or str(row.get("initial_editor_release_id")) != release
+            ):
+                return {"claim_result": "not_found"}
             expected_token_hash = str(row.get("token_hash") or "")
             if (
                 len(presented_token_hash) != 64
@@ -448,6 +476,12 @@ class WorkerRepository:
                     and coalesce(us.heartbeat_at,us.created_at)
                       < clock_timestamp()-(%s * interval '1 second'))
                 )
+                  and (%s::uuid is null or exists (
+                    select 1 from shorts_mvp.video_jobs scope_job
+                    join shorts_mvp.app_users scope_user on scope_user.id=scope_job.user_id
+                    where scope_job.id=us.job_id and scope_job.initial_editor_release_id=%s::uuid
+                      and scope_job.user_id=%s::uuid and scope_user.is_admin
+                  ))
                   and (%s::uuid is null or us.id<>%s::uuid)
                 order by us.created_at
                 limit %s
@@ -455,6 +489,9 @@ class WorkerRepository:
                 (
                     bounded_stale_seconds,
                     bounded_stale_seconds,
+                    upload_candidate_scope()[0],
+                    upload_candidate_scope()[0],
+                    upload_candidate_scope()[1],
                     active_upload_session_id,
                     active_upload_session_id,
                     bounded_limit,
@@ -521,7 +558,13 @@ class WorkerRepository:
                           < clock_timestamp()-(%s * interval '1 second'))
                     ))
                   )
-                    and (%s::uuid is null or us.id<>%s::uuid)
+                    and (%s::uuid is null or exists (
+                    select 1 from shorts_mvp.video_jobs scope_job
+                    join shorts_mvp.app_users scope_user on scope_user.id=scope_job.user_id
+                    where scope_job.id=us.job_id and scope_job.initial_editor_release_id=%s::uuid
+                      and scope_job.user_id=%s::uuid and scope_user.is_admin
+                  ))
+                  and (%s::uuid is null or us.id<>%s::uuid)
                   order by us.created_at
                   for update skip locked
                   limit %s
@@ -559,6 +602,9 @@ class WorkerRepository:
                     verified_ids,
                     bounded_stale_seconds,
                     bounded_stale_seconds,
+                    upload_candidate_scope()[0],
+                    upload_candidate_scope()[0],
+                    upload_candidate_scope()[1],
                     active_upload_session_id,
                     active_upload_session_id,
                     bounded_limit,
@@ -581,6 +627,13 @@ class WorkerRepository:
                   from shorts_mvp.file_upload_capacity_requests request
                   where request.status='waiting'
                     and request.queue_expires_at<=clock_timestamp()
+                    and (%s::uuid is null or exists (
+                      select 1 from shorts_mvp.video_jobs scope_job
+                      join shorts_mvp.app_users scope_user on scope_user.id=scope_job.user_id
+                      where scope_job.id=request.job_id
+                        and scope_job.initial_editor_release_id=%s::uuid
+                        and scope_job.user_id=%s::uuid and scope_user.is_admin
+                    ))
                   order by request.created_at
                   for update skip locked
                   limit %s
@@ -591,7 +644,7 @@ class WorkerRepository:
                 where request.id=candidates.id
                 returning request.id,request.job_id
                 """,
-                (bounded_limit,),
+                (upload_candidate_scope()[0], *upload_candidate_scope(), bounded_limit),
             ).fetchall()
             for row in rows:
                 connection.execute(

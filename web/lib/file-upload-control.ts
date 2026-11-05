@@ -42,6 +42,7 @@ export type FileUploadIntentIdentity = {
   customTemplateVersion?: number;
   videoAspectRatio: string;
   outputLanguage: string;
+  sourceLanguage?: string;
   subtitleTemplateId: string | null;
   subtitleCaptionPlacement: string | null;
   brandColor: string | null;
@@ -179,6 +180,7 @@ export function fileUploadIntentHash(intent: FileUploadIntentIdentity) {
     intent.rightsConfirmed,
     // Omitted by already-running legacy sessions: retain their exact hash.
     ...(intent.customTemplateVersion === undefined ? [] : [intent.customTemplateVersion]),
+    ...(intent.sourceLanguage === undefined ? [] : [{ sourceLanguage: intent.sourceLanguage }]),
   ]), "utf8").digest("hex");
 }
 

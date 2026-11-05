@@ -1,4 +1,5 @@
 import "server-only";
+import { uploadCandidateForUser } from "./file-upload-candidate";
 
 import type { Sql, TransactionSql } from "postgres";
 
@@ -79,6 +80,9 @@ async function readFileUploadReleaseAccess(
   // The deployment switch is the outer ceiling. Keeping it off avoids even
   // consulting runtime state and makes a newly deployed control plane inert.
   if (!fileUploadMasterEnabled()) return disabledAccess();
+  if (process.env.FILE_UPLOAD_CANDIDATE_RELEASE_ID && !uploadCandidateForUser(userId)) {
+    return disabledAccess();
+  }
 
   const flagRows = lock ? await db`
     select flag_key,enabled

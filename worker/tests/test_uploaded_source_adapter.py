@@ -200,15 +200,28 @@ def test_uploaded_source_adapter_rejects_oversized_file_before_probe(
     assert source.exists()
 
 
+@pytest.mark.parametrize("language", [None, "en", "ja"])
 def test_upload_uses_the_existing_ai_pipeline_without_youtube_route_and_cleans_snapshot(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    language: str | None,
 ) -> None:
     receiver_root = tmp_path / "receiver"
     receiver_root.mkdir()
     receiver_source = receiver_root / "source.mov"
     receiver_source.write_bytes(b"receiver-owned-video")
     worker = _upload_project_worker(receiver_root)
+    if language:
+        job = worker.repository.get_job.return_value
+        job.update(output_language=language, initial_editor_release_id="verified-upload",
+                   initial_render_spec_version=4, initial_caption_render_spec_version=4,
+                   template_snapshot={"uploadLanguage": {
+                       "version": 1, "sourceLanguage": language, "outputLanguage": language,
+                       "releaseId": "verified-upload",
+                   }})
+        monkeypatch.setattr(
+            "shorts_worker.worker_pipeline.verify_initial_render_v4_runtime", lambda _: {},
+        )
     monkeypatch.setattr(
         "shorts_worker.worker_pipeline.probe_media",
         lambda _path: {
@@ -242,6 +255,8 @@ def test_upload_uses_the_existing_ai_pipeline_without_youtube_route_and_cleans_s
     worker.repository.record_ingestion_result.assert_not_called()
     worker.repository.release_ingestion_route.assert_not_called()
     worker._transcribe_source.assert_called_once()
+    assert worker._transcribe_source.call_args.kwargs["source_language"] == language
+    assert worker.repository.get_job.return_value.get("source_language_hint") is None
     worker.selector.select.assert_called_once()
     assert worker.selector.select.call_args.kwargs["duration_seconds"] == 300
     assert worker.selector.select.call_args.kwargs["transcript"] == [

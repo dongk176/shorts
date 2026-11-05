@@ -1,7 +1,7 @@
 """Bounded administrator QA routing using canonical attested definitions."""
 
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 QUEUE = "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-editor-test"
 KEYS = {
@@ -46,7 +46,7 @@ def release_for_job(host, job, *, editing=False):
     if not editing and (
         private.get("enabled") is not True
         or datetime.fromisoformat(private["expires_at"].replace("Z", "+00:00"))
-        <= datetime.now(timezone.utc)
+        <= datetime.now(UTC)
     ):
         raise RuntimeError("Silence test creation window ended")
     state = _one(host, "editor_release_state", "select=*&singleton=eq.true&limit=2")
@@ -55,7 +55,7 @@ def release_for_job(host, job, *, editing=False):
         state.get("render_v4_infra_lease_id")
         and lease
         and datetime.fromisoformat(lease.replace("Z", "+00:00"))
-        > datetime.now(timezone.utc)
+        > datetime.now(UTC)
     ):
         raise RuntimeError("Silence test rendering stopped")
     for flag in ("editor_rendering_v2", "admin_shorts_silence"):

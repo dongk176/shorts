@@ -159,6 +159,7 @@ type TransactionOptions = {
   customTemplate?: Record<string, unknown>;
   failUploadSessionInsert?: boolean;
   publicSilence?: boolean;
+  uploadLanguageEvidence?: Record<string, unknown>;
 };
 
 function transactionDb(options: TransactionOptions = {}) {
@@ -169,6 +170,7 @@ function transactionDb(options: TransactionOptions = {}) {
   ) => {
     const sql = Array.from(strings).join("?").replace(/\s+/g, " ").trim();
     queries.push({ sql, values });
+    if (sql.includes("from shorts_mvp.file_upload_release_checks")) return options.uploadLanguageEvidence ? [{ passed: true, details: options.uploadLanguageEvidence, successor: null }] : [];
     if (sql.includes("from shorts_mvp.app_users")) return options.publicSilence ? [{ isAdmin: false, enabled: true, publicEnabled: true }] : [];
     if (sql.includes("where upload.request_id=")) {
       return options.existing ? [{ source: "upload", ...options.existing }] : [];
@@ -216,6 +218,7 @@ function query(
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("NODE_ENV", "test");
+  vi.stubEnv("FILE_UPLOAD_MULTILINGUAL_VERIFIED_RELEASE_ID", "");
   vi.stubEnv("UNIFIED_TEMPLATE_SUBTITLE_LOCAL_UPLOAD_ENABLED", "");
   vi.stubEnv("FILE_UPLOAD_RECEIVER_URL", "https://receiver.example.com/base");
   vi.stubEnv("FILE_UPLOAD_RECEIVER_ALLOWED_HOSTS", "receiver.example.com");
@@ -273,6 +276,37 @@ beforeEach(() => {
 });
 
 describe("file upload job control plane", () => {
+  it.each(["en", "ja"])("blocks unverified %s upload before reserving or starting capacity", async language => {
+    const { db, queries } = transactionDb(); mocks.getDb.mockReturnValue(db);
+    const response = await POST(jsonRequest({ ...validBody, outputLanguage: language, sourceLanguage: language }));
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({ code: "FILE_UPLOAD_LANGUAGE_UNAVAILABLE" });
+    expect(queries.some(q => q.sql.includes("insert into"))).toBe(false);
+    expect(mocks.ensureUploadCapacity).not.toHaveBeenCalled();
+  });
+  it.each(["en", "ja"])("persists verified %s source language and silence opt-in together", async language => {
+    const releaseId = "f223e9e5-6aad-449f-8d2d-99202bfed190", sourceGitSha = "a".repeat(40), workerImageDigest = `sha256:${"b".repeat(64)}`, fontManifestSha256 = "a".repeat(64);
+    vi.stubEnv("FILE_UPLOAD_MULTILINGUAL_VERIFIED_RELEASE_ID", releaseId);
+    vi.stubEnv("FILE_UPLOAD_WORKER_SOURCE_GIT_SHA", sourceGitSha);
+    vi.stubEnv("FILE_UPLOAD_WORKER_IMAGE_DIGEST", workerImageDigest);
+    vi.stubEnv("FILE_UPLOAD_WORKER_FONT_MANIFEST_SHA256", fontManifestSha256);
+    vi.stubEnv("ADMIN_SHORTS_SILENCE_ENABLED", "true"); vi.stubEnv("RANKING_VERCEL_SNAPSHOT_ID", "snapshot");
+    const { db, queries } = transactionDb({ publicSilence: true, uploadLanguageEvidence: {
+      releaseId, sourceGitSha, workerImageDigest, fontManifestSha256,
+      multilingualUpload: { version: 1, phase: "verified", sourceGitSha, workerImageDigest,
+        cases: ["ko", "en", "ja"].map(language => ({ language, generated: true, silenceRemoved: true, restored: true, edited: true, rendered: true })) },
+    } }); mocks.getDb.mockReturnValue(db);
+    const response = await POST(jsonRequest({ ...validBody, outputLanguage: language, sourceLanguage: language, silenceRemoval: { version: 1, preset: "aggressive" } }));
+    expect(response.status).toBe(201);
+    const insert = query(queries, "insert into shorts_mvp.video_jobs");
+    expect(insert?.sql).not.toContain("source_language_hint");
+    expect(insert?.values.filter(v => v === language)).toHaveLength(1);
+    expect(JSON.stringify(insert?.values)).toContain(JSON.stringify({
+      version: 1, sourceLanguage: language, outputLanguage: language, releaseId,
+    }));
+    expect(JSON.stringify(insert?.values)).toContain("shortsSilenceRemoval");
+  });
+
   it("rejects ordinary silence requests while public admission is off before upload allocation", async () => {
     vi.stubEnv("ADMIN_SHORTS_SILENCE_ENABLED", "true"); vi.stubEnv("RANKING_VERCEL_SNAPSHOT_ID", "snapshot");
     const { db } = transactionDb(); mocks.getDb.mockReturnValue(db);

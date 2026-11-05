@@ -1,3 +1,5 @@
+import { uploadCandidateConfig } from "@/lib/file-upload-candidate";
+import { getFileUploadReleaseAccess } from "@/lib/file-upload-release";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getDb } from "@/lib/db";
@@ -53,6 +55,8 @@ export async function GET(_: Request, context: RouteContext) {
 
     const db = getDb();
     await assertEnterpriseSessionServiceAccess(db, session);
+    const candidate = uploadCandidateConfig();
+    if (candidate && !(await getFileUploadReleaseAccess(db, session.userId)).adminEnabled) throw hiddenNotFound();
     // Release mode controls new sessions only. An owner must still be able to
     // recover the authoritative state of an already-issued upload after an
     // operator pauses new traffic or the browser loses the final PUT response.
@@ -68,6 +72,7 @@ export async function GET(_: Request, context: RouteContext) {
       where upload.id=${parsedSessionId.data}
         and upload.user_id=${session.userId}
         and job.user_id=${session.userId}
+        and (${candidate?.releaseId ?? null}::uuid is null or job.initial_editor_release_id=${candidate?.releaseId ?? null}::uuid)
         and job.source_type='upload'
         and job.execution_backend='upload_service'
       limit 1
@@ -84,7 +89,8 @@ export async function GET(_: Request, context: RouteContext) {
         where capacity.id=${parsedSessionId.data}
           and capacity.user_id=${session.userId}
           and job.user_id=${session.userId}
-          and job.source_type='upload'
+          and (${candidate?.releaseId ?? null}::uuid is null or job.initial_editor_release_id=${candidate?.releaseId ?? null}::uuid)
+        and job.source_type='upload'
           and job.execution_backend='upload_service'
         limit 1
       `;
@@ -297,6 +303,8 @@ export async function DELETE(_: Request, context: RouteContext) {
 
     const db = getDb();
     await assertEnterpriseSessionServiceAccess(db, session);
+    const candidate = uploadCandidateConfig();
+    if (candidate && !(await getFileUploadReleaseAccess(db, session.userId)).adminEnabled) throw hiddenNotFound();
 
     const result = await db.begin(async (tx) => {
       await tx`
@@ -313,7 +321,8 @@ export async function DELETE(_: Request, context: RouteContext) {
         where capacity.id=${parsedSessionId.data}
           and capacity.user_id=${session.userId}
           and job.user_id=${session.userId}
-          and job.source_type='upload'
+          and (${candidate?.releaseId ?? null}::uuid is null or job.initial_editor_release_id=${candidate?.releaseId ?? null}::uuid)
+        and job.source_type='upload'
           and job.execution_backend='upload_service'
         limit 1
         for update of capacity,job
@@ -362,7 +371,8 @@ export async function DELETE(_: Request, context: RouteContext) {
         where upload.id=${parsedSessionId.data}
           and upload.user_id=${session.userId}
           and job.user_id=${session.userId}
-          and job.source_type='upload'
+          and (${candidate?.releaseId ?? null}::uuid is null or job.initial_editor_release_id=${candidate?.releaseId ?? null}::uuid)
+        and job.source_type='upload'
           and job.execution_backend='upload_service'
         limit 1
         for update of upload,job

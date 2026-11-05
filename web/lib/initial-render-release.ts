@@ -1,3 +1,4 @@
+import { uploadCandidateConfig } from "./file-upload-candidate";
 import type { TransactionSql } from "postgres";
 import { isEditorRenderSpecV4Enabled } from "@/lib/editor-render-v4-feature";
 import { HttpError } from "@/lib/http";
@@ -210,6 +211,7 @@ export async function resolveFileUploadInitialRenderRelease(
   },
 ): Promise<InitialRenderRelease | null> {
   const identity = fileUploadWorkerIdentity();
+  const candidate = uploadCandidateConfig();
   if (
     !identity
     || (!input.access.adminEnabled && !input.access.publicEnabled)
@@ -234,7 +236,12 @@ export async function resolveFileUploadInitialRenderRelease(
   const runtimeRow = checkRows.find((row) => row.checkKey === "runtime_identity");
   const hasSuccessor = runtimeRow?.successor !== null && runtimeRow?.successor !== undefined;
   let pinnedReleaseId: string | null = null;
-  if (hasSuccessor) {
+  if (candidate) {
+    // The caller already locks actual administrator membership and the exact
+    // configured owner. Public proof and successor state remain untouched.
+    if (!input.access.adminEnabled || candidate.expiresAt <= Date.now() || hasSuccessor) return null;
+    pinnedReleaseId = candidate.releaseId;
+  } else if (hasSuccessor) {
     if (!runtimeRow) return null;
     // The old nine checks remain pinned until atomic promotion. They must not
     // be failed or drift while the separately attested successor is tested.

@@ -13583,7 +13583,16 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
   const completeLanguageGuide = useCallback(() => setLanguageGuideComplete(true), []);
   const [selectedOutputLanguage, setOutputLanguage] = useState<OutputLanguage>(resumedDraft?.outputLanguageChosen ? resumedDraft.outputLanguage : locale);
   const [sourceLanguage, setSourceLanguage] = useState<SourceLanguage>(resumedDraft?.sourceLanguage ?? "auto");
-  const languageAvailable = sourceMode === "youtube" && state?.capabilities.languageTest === true;
+  const uploadLanguageAvailable = sourceMode === "upload" && state?.capabilities.fileUploadLanguages === true;
+  const [uploadLanguageDraftEnabled, setUploadLanguageDraftEnabled] = useState(false);
+  useEffect(() => {
+    if (sourceMode !== "upload" || !uploadVideo) setUploadLanguageDraftEnabled(false);
+    else if (uploadLanguageAvailable) setUploadLanguageDraftEnabled(true);
+  }, [sourceMode, uploadVideo, uploadLanguageAvailable]);
+  // Preserve a selected upload language if access changes; the server rejects
+  // stale admission instead of silently producing a Korean video.
+  const uploadLanguageActive = sourceMode === "upload" && (uploadLanguageAvailable || uploadLanguageDraftEnabled);
+  const languageAvailable = uploadLanguageAvailable || (sourceMode === "youtube" && state?.capabilities.languageTest === true);
   // A draft that exposed language selection stays a language request if public access changes.
   const languageTestActive = sourceMode === "youtube" && (languageAvailable || languageDraftEnabled);
   useEffect(() => {
@@ -13602,7 +13611,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
     setLanguageGuideComplete(false);
     setLanguageGuideReplay(0);
   }, [state?.user?.id, analysis?.analysisId, sourceMode]);
-  const outputLanguage: OutputLanguage = languageTestActive ? selectedOutputLanguage : "ko";
+  const outputLanguage: OutputLanguage = languageTestActive || uploadLanguageActive ? selectedOutputLanguage : "ko";
   const [templateId, setTemplateId] = useState<TemplateId>(resumedDraft?.templateId ?? "comment-capture");
   const [subtitleTemplateId, setSubtitleTemplateId] = useState<SubtitleTemplateSelectionId | null>(resumedDraft?.subtitleTemplateId ?? null);
   const [subtitleCaptionPlacement, setSubtitleCaptionPlacement] = useState<SubtitleCaptionPlacement>(resumedDraft?.subtitleCaptionPlacement ?? "lower");
@@ -13708,7 +13717,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
   const adminTemplateLayoutEnabled = brandColorSelectionEnabled;
   const shortsSilenceAllowed = canSelectShortsSilence({ capability: state?.capabilities.shortsSilenceRemoval,
     customTemplate: Boolean(customTemplateId), snsTemplate: snsTemplateActive, outputLanguage,
-    sourceLanguage: sourceMode === "youtube" ? sourceLanguage : undefined, multilingual: sourceMode === "youtube" });
+    sourceLanguage: sourceMode === "youtube" || uploadLanguageActive ? sourceLanguage : undefined, multilingual: sourceMode === "youtube" || uploadLanguageActive });
   const shortsSilenceActive = shortsSilenceAllowed && shortsSilenceSelected;
   useEffect(() => {
     if (!shortsSilenceAllowed) setShortsSilenceSelected(false);
@@ -14375,6 +14384,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
       brandColorSelectionEnabled && !customTemplateId ? brandColor : null,
       true,
       shortsSilenceActive,
+      uploadLanguageActive ? sourceLanguage : undefined,
     ]);
     if (uploadRequestIntentKey.current !== intentKey) {
       uploadRequestId.current = crypto.randomUUID();
@@ -14426,7 +14436,8 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
             customTemplateVersion: personalTemplates.find((template) => template.id === customTemplateId)?.version,
           } : {}),
           videoAspectRatio: effectiveVideoAspectRatio,
-          outputLanguage: "ko",
+          outputLanguage,
+          ...(uploadLanguageActive ? { sourceLanguage } : {}),
           rightsConfirmed,
           ...(shortsSilenceActive ? { silenceRemoval: SHORTS_SILENCE_REQUEST } : {}),
           ...(subtitleTemplateSelectionEnabled && subtitleTemplateId
@@ -15207,7 +15218,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
               ? "이 템플릿은 아직 무음 삭제를 지원하지 않아요. 기본·자막 템플릿에서 사용할 수 있어요."
               : "무음 삭제는 현재 원본과 자막이 모두 한국어인 영상에서 사용할 수 있어요.")}
             disabled={analysisCreationBlocked || busy} /> : null}
-          {languageTestActive && (
+          {(languageTestActive || uploadLanguageActive) && (
             <section className="rounded-xl border border-white/15 bg-white/[.025] p-4" data-language-selection>
               <div className="flex items-center justify-between gap-4 text-sm font-bold">
                 <h3>{ui(languageText.heading)}</h3>

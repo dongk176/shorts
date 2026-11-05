@@ -35,6 +35,7 @@ from botocore.exceptions import (
 
 from .config import Settings
 from .media import media_duration, probe_media
+from .upload_candidate import upload_candidate_scope
 from .worker_pipeline import (
     UPLOAD_SOURCE_MAX_BYTES,
     BatchWorker,
@@ -417,9 +418,16 @@ class UploadReceiverService:
         split = urlsplit(path)
         if split.query or split.fragment:
             return None
-        match = _CANONICAL_UPLOAD_PATH.fullmatch(split.path)
+        upload_path = split.path
+        candidate_release, _ = upload_candidate_scope()
+        if candidate_release is not None:
+            prefix = f"/admin-upload/{candidate_release}"
+            if not upload_path.startswith(prefix + "/"):
+                return None
+            upload_path = upload_path[len(prefix):]
+        match = _CANONICAL_UPLOAD_PATH.fullmatch(upload_path)
         if not match:
-            match = _COMPATIBLE_UPLOAD_PATH.fullmatch(split.path)
+            match = _COMPATIBLE_UPLOAD_PATH.fullmatch(upload_path)
         if not match:
             return None
         try:
@@ -486,6 +494,11 @@ class UploadReceiverService:
             )
         token_hash = self.bearer_token_hash(authorization)
         content_length = self.content_length(content_length_value)
+        if (upload_candidate_scope()[0] is not None
+                and not self.repository.candidate_upload_session_allowed(
+                    upload_session_id, token_hash,
+                )):
+            raise UploadRequestError(HTTPStatus.NOT_FOUND, "not_found", "찾을 수 없습니다.")
         context = ActiveUpload(upload_session_id=upload_session_id)
         context.abort_stream = abort_stream
         with self._active_guard:

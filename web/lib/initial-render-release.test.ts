@@ -338,3 +338,26 @@ describe("file-upload initial render release", () => {
     })).resolves.toBeNull();
   });
 });
+
+it("pins isolated admin admission without replacing public evidence or accepting public callers", async () => {
+  vi.stubEnv("FILE_UPLOAD_CANDIDATE_RELEASE_ID", releaseId);
+  vi.stubEnv("FILE_UPLOAD_CANDIDATE_ADMIN_ID", "e86821c9-2eb2-4c04-b748-fd269fc46f20");
+  vi.stubEnv("FILE_UPLOAD_CANDIDATE_EXPIRES_AT", new Date(Date.now() + 3600000).toISOString());
+  vi.stubEnv("FILE_UPLOAD_RECEIVER_URL", `https://receiver.example/admin-upload/${releaseId}`);
+  vi.stubEnv("FILE_UPLOAD_CAPACITY_FUNCTION_ARN", "arn:aws:lambda:ap-northeast-2:181651591905:function:shorts-upload-candidate-test");
+  const row = { releaseId, renderSpecVersion: 4, captionRenderSpecVersion: 4,
+    fontManifestSha256, releaseWorkerImageDigest: imageDigest };
+  const { tx, calls } = transaction([row]);
+  expect(await resolveFileUploadInitialRenderRelease(tx as never, {
+    targetKey: "legacy_project", access: { adminEnabled: false, publicEnabled: true },
+  })).toBeNull();
+  expect(await resolveFileUploadInitialRenderRelease(tx as never, {
+    targetKey: "legacy_project", access: { adminEnabled: true, publicEnabled: true },
+  })).toMatchObject({ releaseId });
+  expect(calls.at(-1)?.values).toContain(releaseId);
+  expect(calls.every(c => !/update|insert/i.test(c.sql))).toBe(true);
+  const conflict = transaction([row], readySuccessorChecks().checks);
+  expect(await resolveFileUploadInitialRenderRelease(conflict.tx as never, {
+    targetKey: "legacy_project", access: { adminEnabled: true, publicEnabled: true },
+  })).toBeNull();
+});

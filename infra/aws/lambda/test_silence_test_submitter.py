@@ -3,7 +3,7 @@
 import copy
 import importlib.util
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -29,7 +29,7 @@ class Admission(unittest.TestCase):
                     "enabled": True,
                     "job_queue_arn": m.QUEUE,
                     "expires_at": (
-                        datetime.now(timezone.utc) + timedelta(hours=1)
+                        datetime.now(UTC) + timedelta(hours=1)
                     ).isoformat(),
                 }
             ],

@@ -1,3 +1,4 @@
+import { requireFileUploadLanguage } from "@/lib/file-upload-language";
 import { shortsSilenceRequestSchema } from "@/lib/shorts-silence-contract";
 import { requireShortsSilenceAccess, assertSilenceTemplate } from "@/lib/shorts-silence-access";
 import { midformUploadRelease, requireMidformAdmin } from "@/lib/midform-release";
@@ -12,7 +13,6 @@ import {
 import { getBillingSummary } from "@/lib/billing";
 import {
   expectedShortCount,
-  outputLanguages,
   sourceRangeJobDeadlineMinutes,
   templateIds,
   videoAspectRatios,
@@ -98,7 +98,8 @@ const requestSchema = z.object({
   customTemplateId: z.string().uuid().nullable().optional(),
   customTemplateVersion: z.number().int().positive().optional(),
   videoAspectRatio: z.enum(videoAspectRatios).default("1:1"),
-  outputLanguage: z.enum(outputLanguages).default("ko"),
+  outputLanguage: z.enum(["ko", "en", "ja"]).default("ko"),
+  sourceLanguage: z.enum(["auto", "ko", "en", "ja"]).optional(),
   subtitleTemplateId: z.enum(subtitleTemplateCreationIds).optional(),
   subtitleCaptionPlacement: z.enum(subtitleCaptionPlacements).optional(),
   brandColor: z.enum(templatePresetColors).optional(),
@@ -312,7 +313,7 @@ export async function POST(request: Request) {
       await requireMidformAdmin(db, session.userId);
       if (input.file.durationSeconds < 600 || input.file.durationSeconds > 3600 || input.rangeStartSeconds !== 0 || input.rangeEndSeconds !== input.file.durationSeconds || input.customTemplateId || input.subtitleTemplateId || input.templateId !== "dark-minimal" || input.videoAspectRatio !== "16:9" || input.outputLanguage !== "ko") throw new HttpError(400, "중폼은 10~60분 원본 영상을 선택해 주세요.");
     }
-    if (input.silenceRemoval) { await requireShortsSilenceAccess(db, session.userId); assertSilenceTemplate(input); }
+    if (input.silenceRemoval) { await requireShortsSilenceAccess(db, session.userId); assertSilenceTemplate(input, { multilingual: true }); }
     const originalFilename = sanitizedDisplayFilename(input.file.name);
     const declaredContentType = input.file.contentType
       .split(";", 1)[0]
@@ -333,6 +334,7 @@ export async function POST(request: Request) {
       customTemplateVersion: input.customTemplateVersion,
       videoAspectRatio: input.videoAspectRatio,
       outputLanguage: input.outputLanguage,
+      sourceLanguage: input.sourceLanguage,
       subtitleTemplateId: input.subtitleTemplateId ?? null,
       subtitleCaptionPlacement: input.subtitleTemplateId
         ? input.subtitleCaptionPlacement ?? "lower"
@@ -595,6 +597,14 @@ export async function POST(request: Request) {
           "FILE_UPLOAD_RENDER_RELEASE_UNAVAILABLE",
         );
       }
+      let uploadLanguage: { version: number; sourceLanguage: string; outputLanguage: string; releaseId: string } | undefined;
+      if (input.outputLanguage !== "ko" || input.sourceLanguage !== undefined) {
+        await requireFileUploadLanguage(tx, initialRenderRelease.releaseId, session.userId);
+        uploadLanguage = {
+          version: 1, sourceLanguage: input.sourceLanguage ?? "auto",
+          outputLanguage: input.outputLanguage, releaseId: initialRenderRelease.releaseId,
+        };
+      }
       if (midform && initialRenderRelease.releaseId !== midform.releaseId) throw new HttpError(503, "중폼 업로드 서버를 준비하고 있습니다.");
       if (resolvedExecution.usesCustomTemplateDesign) {
         await assertCustomTemplateDesignRenderRelease(tx, initialRenderRelease.releaseId);
@@ -645,7 +655,7 @@ export async function POST(request: Request) {
           ${null},${null},${originalFilename},${resolvedExecution.channelDisplayName || ""},
           ${null},${thumbnailUrl},${sourceDurationSeconds},
           ${input.rangeStartSeconds},${input.rangeEndSeconds},${resolvedTemplateId},
-          ${input.customTemplateId || null},${tx.json(templateSnapshot)},${resolvedVideoAspectRatio},
+          ${input.customTemplateId || null},${tx.json(uploadLanguage ? { ...templateSnapshot, uploadLanguage } : templateSnapshot)},${resolvedVideoAspectRatio},
           ${subtitleTemplateSnapshot?.subtitleTemplateId || null},
           ${subtitleTemplateSnapshot ? tx.json(subtitleTemplateSnapshot) : null},
           'sec_31_60',${input.outputLanguage},${plannedShortCount},

@@ -96,6 +96,7 @@ from .subtitles import (
     AudioTranscriber,
     TranscriptWord,
 )
+from .upload_language import with_upload_language
 
 EDIT_TIMELINE_PADDING_SECONDS = 30.0
 BRAND_COLOR_VALUES = frozenset({
@@ -1150,6 +1151,7 @@ class BatchWorker:
         if int(job.get("pipeline_version") or 1) != 2:
             raise ValueError("project command requires pipeline_version=2")
         initial_render_v4 = verify_initial_render_v4_runtime(job) is not None
+        job = with_upload_language(job, runtime_verified=initial_render_v4)
         dispatch_generation = int(job.get("project_dispatch_generation") or 0)
         if expected_dispatch_generation is None:
             raw_dispatch_generation = os.getenv("PROJECT_DISPATCH_GENERATION")
