@@ -9169,33 +9169,21 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
         try {
           const value = await requestJson<EditTimeline>(`/api/shorts/${item.id}/edit-timeline`);
           if (!cancelled) {
-            const savedTimelineMatches = Boolean(
-              savedEditorDocument
-              && Math.abs(
-                savedEditorDocument.video.timelineStartSeconds
-                - value.timelineStartSeconds,
-              ) <= 0.051
-              && Math.abs(
-                savedEditorDocument.video.timelineEndSeconds
-                - value.timelineEndSeconds,
-              ) <= 0.051,
-            );
-            const initialVideoClips = savedTimelineMatches
-              ? cloneEditorVideoClips(savedEditorDocument!.video.clips)
+            const restoredDocument = savedEditorDocument
+              ? synchronizeEditorDocumentTimeline(savedEditorDocument, value)
+              : null;
+            const initialVideoClips = restoredDocument
+              ? cloneEditorVideoClips(restoredDocument.video.clips)
               : createEditorVideoClips(
                 value.currentStartSeconds - value.timelineStartSeconds,
                 value.currentEndSeconds - value.timelineStartSeconds,
               );
-            const restoredSelectionStart = savedTimelineMatches
-              ? savedEditorDocument!.video.selectionStartSeconds
-              : value.currentStartSeconds;
-            const restoredSelectionEnd = savedTimelineMatches
-              ? savedEditorDocument!.video.selectionEndSeconds
-              : value.currentEndSeconds;
+            const restoredSelectionStart = restoredDocument?.video.selectionStartSeconds
+              ?? value.currentStartSeconds;
+            const restoredSelectionEnd = restoredDocument?.video.selectionEndSeconds
+              ?? value.currentEndSeconds;
             const restoredSubtitleSegments = cloneEditorSubtitleSegments(
-              savedTimelineMatches
-                ? savedEditorDocument!.subtitles.segments
-                : value.subtitleSegments,
+              restoredDocument?.subtitles.segments ?? value.subtitleSegments,
             );
             setEditTimeline(value);
             setSelectionStart(restoredSelectionStart);

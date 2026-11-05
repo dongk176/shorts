@@ -1,3 +1,4 @@
+import { hasEditorSourceCuts } from "@/lib/editor-source-cuts";
 import { manualRenderVersion } from "@/lib/shorts-silence-allowance";
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
@@ -59,6 +60,9 @@ export async function POST(_: Request, context: { params: Promise<{ shortId: str
     if (!rows[0]) throw new Error("재렌더링할 쇼츠를 찾을 수 없습니다.");
     if (rows[0].templateSnapshot?.snsTemplateVersion === 1) {
       throw new HttpError(409, "SNS 템플릿은 생성·다운로드 테스트만 지원합니다.", "SNS_TEMPLATE_GENERATION_ONLY");
+    }
+    if (hasEditorSourceCuts(rows[0].editorDocument)) {
+      throw new HttpError(409, "잘라낸 구간을 유지하려면 편집기에서 적용해 주세요.", "SOURCE_CUTS_EDITOR_REQUIRED");
     }
     if (storedShortHasCustomDesign(rows[0])) {
       throw new HttpError(409, "내 배경·텍스트를 유지하려면 최신 편집 화면에서 적용해 주세요.", "CUSTOM_TEMPLATE_DESIGN_EDITOR_REQUIRED");

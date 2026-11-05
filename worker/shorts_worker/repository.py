@@ -1924,8 +1924,30 @@ class WorkerRepository:
                 (max(0, min(99, progress)), short_id),
             )
 
+    def inline_silence_admin_allowed(self, short_id: str) -> bool:
+        """Candidate-only admission; never trust browser-supplied admin claims."""
+        with self.connect() as connection:
+            return bool(connection.execute(
+                """select 1 from shorts_mvp.generated_shorts s
+                join shorts_mvp.video_jobs j on j.id=s.job_id
+                join shorts_mvp.app_users u on u.id=j.user_id
+                join shorts_mvp.runtime_feature_flags f
+                  on f.flag_key='admin_shorts_silence' and f.enabled
+                where s.id=%s and s.user_id=u.id and u.is_admin
+                  and not j.is_example and j.midform_request is null
+                  and j.output_language='ko' and s.custom_template_id is null
+                  and coalesce(s.template_snapshot->>'snsTemplateVersion','')=''
+                  and s.render_version=1 and s.editor_document is null
+                  and s.initial_render_spec->>'version'='4'
+                  and j.template_snapshot->'shortsSilenceRemoval'=
+                    '{"version":1,"preset":"aggressive"}'::jsonb
+                  and not exists (select 1 from shorts_mvp.admin_short_silence_tasks t
+                                  where t.short_id=s.id)""", (short_id,),
+            ).fetchone())
+
     def complete_initial_render(
-        self, short_id: str, output_key: str, thumbnail_key: str, size: int
+        self, short_id: str, output_key: str, thumbnail_key: str, size: int,
+        *, silence_result: dict[str, Any] | None = None,
     ) -> bool:
         with self.connect() as connection, connection.transaction():
             updated = connection.execute(
@@ -1959,6 +1981,31 @@ class WorkerRepository:
                 (output_key, thumbnail_key, size, short_id),
             ).fetchone()
             if updated:
+                if silence_result is not None:
+                    # Commit the source map and completed task with the first
+                    # output. A reader must never see ready video without its
+                    # edit map, or enqueue the old post-generation pass.
+                    document = silence_result.get("document")
+                    if document is not None:
+                        connection.execute(
+                            """update shorts_mvp.generated_shorts
+                            set editor_document=%s,editor_document_version=3,
+                              duration_seconds=%s
+                            where id=%s""",
+                            (Jsonb(document), silence_result["output_seconds"], short_id),
+                        )
+                    task = connection.execute(
+                        """insert into shorts_mvp.admin_short_silence_tasks
+                        (short_id,job_id,user_id,request_id,lease_id,lease_until,
+                         state,cut_count,removed_seconds)
+                        select s.id,s.job_id,s.user_id,gen_random_uuid(),gen_random_uuid(),
+                          now(),'completed',%s,%s from shorts_mvp.generated_shorts s
+                        join shorts_mvp.app_users u on u.id=s.user_id
+                        where s.id=%s and u.is_admin returning short_id""",
+                        (silence_result["cut_count"], silence_result["removed_seconds"], short_id),
+                    ).fetchone()
+                    if not task:
+                        raise ValueError("Inline silence administrator access changed")
                 connection.execute(
                     """
                     update shorts_mvp.site_metrics set value=value+1, updated_at=now()

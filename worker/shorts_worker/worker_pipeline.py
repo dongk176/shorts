@@ -3520,45 +3520,96 @@ class BatchWorker:
                 str(item.get("channel_thumbnail_url") or "") or None,
                 work_dir / "channel-thumbnail.png",
             )
-            self.renderer.render_clean_clip(
-                clean_path=clean_path,
-                output_path=output_path,
-                title=str(item["hook_title"]),
-                channel_name=str(item["channel_display_name"]),
-                template_id=TemplateId(str(item["template_id"])),
-                transcript=subtitles,
-                subtitles_enabled=bool(item["subtitles_enabled"]),
-                work_dir=work_dir,
-                prefix="initial",
-                comment_output_language=str(item.get("comment_output_language") or "ko"),
-                title_font_scale=float(item["title_font_scale"]),
-                channel_thumbnail_path=channel_thumbnail_path,
-                video_aspect_ratio=VideoAspectRatio(str(item.get("video_aspect_ratio") or "1:1")),
-                comment_overlays=comments,
-                comment_channel_below=_preset_comment_channel_below(item),
-                comment_channel_fixed=_preset_comment_channel_fixed(item),
-                fixed_preset_channel=_preset_fixed_channel_position(item),
-                preset_version=preset_version(item),
-                title_text_styles=title_text_styles,
-                custom_template_config=_custom_template_config(item),
-                caption_render_spec=(
-                    dict(caption_spec)
-                    if isinstance((caption_spec := item.get("caption_render_spec")), dict)
-                    else None
-                ),
-                initial_render_spec=(
-                    dict(initial_render_spec)
-                    if isinstance(
-                        (initial_render_spec := item.get("initial_render_spec")),
-                        dict,
-                    )
-                    else None
-                ),
-                title_accent_color=_preset_brand_color(item),
-                metrics_callback=render_metrics.update,
-                **({"sns_template_snapshot": sns_snapshot(item)} if sns_snapshot(item) else {}),
-                **self._background_render_arguments(item, work_dir),
-            )
+            silence_result = None
+            silence_document = None
+            if (os.getenv("SHORTS_SILENCE_INLINE_ADMIN_ENABLED") == "true"
+                    and self.repository.inline_silence_admin_allowed(short_id)):
+                from .shorts_silence import analyze, editor_snapshot, plan
+
+                analysis_started = time.monotonic()
+                silence_document = plan(item, analyze(clean_path, clip_duration_seconds))
+                output_seconds = (silence_document.video.output_duration_seconds
+                                  if silence_document else clip_duration_seconds)
+                silence_result = {
+                    "document": (editor_snapshot(silence_document)
+                                 if silence_document else None),
+                    "output_seconds": output_seconds,
+                    "cut_count": len(silence_document.video.clips) - 1 if silence_document else 0,
+                    "removed_seconds": round(clip_duration_seconds - output_seconds, 3),
+                }
+                render_metrics["silenceAnalysisSeconds"] = round(
+                    time.monotonic() - analysis_started, 3
+                )
+            if silence_document is not None:
+                # Retain the original clean clip and padded timeline. Only the
+                # temporary sequence is cut; the saved document addresses source.
+                sequence_started = time.monotonic()
+                sequence = self.editor_renderer.extract_sequence(
+                    timeline_path=clean_path, output_path=work_dir / "sequence.mp4",
+                    document=silence_document, work_dir=work_dir / "sequence",
+                )
+                render_metrics["silenceSequenceSeconds"] = round(
+                    time.monotonic() - sequence_started, 3
+                )
+                final_render_started = time.monotonic()
+                caption_spec = item.get("caption_render_spec")
+                self.editor_renderer.render(
+                    clean_path=sequence, output_path=output_path,
+                    document=silence_document, work_dir=work_dir,
+                    channel_thumbnail_path=channel_thumbnail_path,
+                    caption_render_spec=(
+                        caption_spec if silence_document.subtitles.enabled else None
+                    ),
+                    caption_composition_spec=caption_spec,
+                    comment_output_language=str(item.get("comment_output_language") or "ko"),
+                )
+                render_metrics["silenceFinalRenderSeconds"] = round(
+                    time.monotonic() - final_render_started, 3
+                )
+                render_metrics["silenceOutputSeconds"] = silence_result["output_seconds"]
+                render_metrics["silenceRemovedSeconds"] = silence_result["removed_seconds"]
+            else:
+                self.renderer.render_clean_clip(
+                    clean_path=clean_path,
+                    output_path=output_path,
+                    title=str(item["hook_title"]),
+                    channel_name=str(item["channel_display_name"]),
+                    template_id=TemplateId(str(item["template_id"])),
+                    transcript=subtitles,
+                    subtitles_enabled=bool(item["subtitles_enabled"]),
+                    work_dir=work_dir,
+                    prefix="initial",
+                    comment_output_language=str(item.get("comment_output_language") or "ko"),
+                    title_font_scale=float(item["title_font_scale"]),
+                    channel_thumbnail_path=channel_thumbnail_path,
+                    video_aspect_ratio=VideoAspectRatio(
+                        str(item.get("video_aspect_ratio") or "1:1")
+                    ),
+                    comment_overlays=comments,
+                    comment_channel_below=_preset_comment_channel_below(item),
+                    comment_channel_fixed=_preset_comment_channel_fixed(item),
+                    fixed_preset_channel=_preset_fixed_channel_position(item),
+                    preset_version=preset_version(item),
+                    title_text_styles=title_text_styles,
+                    custom_template_config=_custom_template_config(item),
+                    caption_render_spec=(
+                        dict(caption_spec)
+                        if isinstance((caption_spec := item.get("caption_render_spec")), dict)
+                        else None
+                    ),
+                    initial_render_spec=(
+                        dict(initial_render_spec)
+                        if isinstance(
+                            (initial_render_spec := item.get("initial_render_spec")),
+                            dict,
+                        )
+                        else None
+                    ),
+                    title_accent_color=_preset_brand_color(item),
+                    metrics_callback=render_metrics.update,
+                    **({"sns_template_snapshot": sns_snapshot(item)} if sns_snapshot(item) else {}),
+                    **self._background_render_arguments(item, work_dir),
+                )
             thumbnail_started_at = time.monotonic()
             self._thumbnail(output_path, thumbnail_path, work_dir)
             thumbnail_seconds = time.monotonic() - thumbnail_started_at
@@ -3574,7 +3625,8 @@ class BatchWorker:
             upload_seconds = time.monotonic() - upload_started_at
             completion_started = True
             committed = self.repository.complete_initial_render(
-                short_id, output_key, thumbnail_key, size
+                short_id, output_key, thumbnail_key, size,
+                **({"silence_result": silence_result} if silence_result is not None else {}),
             )
             if not committed:
                 # A duplicate worker may have committed the same deterministic

@@ -12,6 +12,7 @@ export type EditorTimelineIdentity = {
   timelineStartSeconds: number;
   timelineEndSeconds: number;
   version: number;
+  subtitleSegments?: { start: number; end: number; text: string }[];
 };
 
 function sameTimelineSecond(left: number, right: number) {
@@ -79,6 +80,25 @@ export function synchronizeEditorDocumentTimeline(
       end: roundedTimelineSecond(segment.end + offsetSeconds),
     }),
   );
+  // A first-output cut document initially references only the clean clip.
+  // Add subtitles from newly retained handles without overwriting edited text
+  // inside the old source range.
+  if (timeline.subtitleSegments) {
+    const oldStart = previousStart - nextStart;
+    const oldEnd = previousEnd - nextStart;
+    const added = timeline.subtitleSegments.flatMap((segment) => {
+      const parts = [];
+      if (segment.start < oldStart) {
+        parts.push({ ...segment, start: Math.max(0, segment.start), end: Math.min(oldStart, segment.end) });
+      }
+      if (segment.end > oldEnd) {
+        parts.push({ ...segment, start: Math.max(oldEnd, segment.start), end: Math.min(nextDuration, segment.end) });
+      }
+      return parts.filter(part => part.end > part.start);
+    });
+    synchronized.subtitles.segments = [...synchronized.subtitles.segments, ...added]
+      .sort((a, b) => a.start - b.start);
+  }
   if (synchronized.video.clips.some((clip) => (
     clip.sourceStartSeconds < -RANGE_EDIT_BOUNDARY_TOLERANCE_SECONDS
     || clip.sourceEndSeconds > nextDuration + RANGE_EDIT_BOUNDARY_TOLERANCE_SECONDS

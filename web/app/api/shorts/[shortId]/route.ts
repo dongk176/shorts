@@ -1,3 +1,4 @@
+import { hasEditorSourceCuts } from "@/lib/editor-source-cuts";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { deleteShortObjects } from "@/lib/aws";
@@ -88,6 +89,9 @@ export async function PATCH(request: Request, context: { params: Promise<{ short
     if (!existing[0]) throw new Error("편집할 쇼츠를 찾을 수 없습니다.");
     if (existing[0].templateSnapshot?.snsTemplateVersion === 1) {
       throw new HttpError(409, "SNS 템플릿은 생성·다운로드 테스트만 지원합니다.", "SNS_TEMPLATE_GENERATION_ONLY");
+    }
+    if (hasEditorSourceCuts(existing[0].editorDocument)) {
+      throw new HttpError(409, "잘라낸 구간을 유지하려면 편집기에서 적용해 주세요.", "SOURCE_CUTS_EDITOR_REQUIRED");
     }
     if (storedShortHasCustomDesign(existing[0])) {
       throw new HttpError(
