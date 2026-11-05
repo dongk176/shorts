@@ -1,3 +1,6 @@
+import { waitForEditorSource } from "@/lib/wait-editor-source";
+import { synchronizeEditorDocumentTimeline } from "@/lib/editor-timeline-sync";
+import type { EditorDocumentSnapshot } from "@/lib/editor-document-snapshot";
 import { subtitleRatioCases } from "../../test/subtitle-ratio-cases";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
@@ -500,6 +503,56 @@ describe("range editing feature gate and snapshot", () => {
     expect(mocks.signedUrl).toHaveBeenCalledWith(expect.objectContaining({
       url: "https://cdn.example.com/edit-sources/clean.mp4",
     }));
+  });
+
+  it("opens the original source clock after preparation instead of shortening saved cuts", async () => {
+    process.env.RANGE_EDITING_ENABLED = "true";
+    process.env.CLOUDFRONT_DOMAIN = "cdn.example.com";
+    process.env.CLOUDFRONT_KEY_PAIR_ID = "key-pair";
+    process.env.CLOUDFRONT_PRIVATE_KEY_B64 = Buffer.from("private-key").toString("base64");
+    const pending = {
+      silenceTestReleaseId: "45f997e3-5250-4389-a097-f267e124dda1",
+      editTimelineS3Key: null, cleanClipS3Key: "edit-sources/clean.mp4",
+      startSeconds: 35.66, endSeconds: 64.293,
+      initialStartSeconds: 35.66, initialEndSeconds: 66.17,
+      expiresAt: new Date(Date.now() + 60_000),
+    };
+    const ready = { ...pending, editTimelineS3Key: "edit-sources/retained.mp4",
+      editTimelineStartSeconds: 5.66, editTimelineEndSeconds: 96.17,
+      editTimelineVersion: 1, editTimelineSubtitleSegments: [],
+    };
+    const db = dbWithRows([pending], [pending], [ready]);
+    mocks.getDb.mockReturnValue(db);
+    const statuses: number[] = [];
+    const pause = vi.fn(async () => { expect(mocks.signedUrl).not.toHaveBeenCalled(); });
+    const timeline = await waitForEditorSource(async () => {
+      const response = await accessEditTimeline(
+        new Request(`http://localhost/api/shorts/${shortId}/edit-timeline`),
+        { params: Promise.resolve({ shortId }) },
+      );
+      statuses.push(response.status);
+      const body = await response.json();
+      if (!response.ok) throw Object.assign(new Error(body.detail), { code: body.code });
+      return body;
+    }, () => false, pause);
+    expect(statuses).toEqual([409, 409, 200]);
+    expect(pause).toHaveBeenCalledTimes(2);
+    const saved = JSON.parse(readFileSync(new URL("../../../test-fixtures/editor-document-v3.json", import.meta.url), "utf8")) as EditorDocumentSnapshot;
+    saved.video = { ...saved.video, timelineStartSeconds: 35.66, timelineEndSeconds: 66.17,
+      selectionStartSeconds: 35.66, selectionEndSeconds: 66.17,
+      clips: [{ id: "first", sourceStartSeconds: 0, sourceEndSeconds: 10 },
+        { id: "second", sourceStartSeconds: 12, sourceEndSeconds: 30.51 }],
+    };
+    expect(() => synchronizeEditorDocumentTimeline(saved, {
+      timelineStartSeconds: pending.startSeconds, timelineEndSeconds: pending.endSeconds, version: 0,
+    })).toThrow("편집용 영상 범위가 변경되었습니다");
+    const restored = synchronizeEditorDocumentTimeline(saved, timeline);
+    expect(restored.video.timelineStartSeconds).toBe(5.66);
+    expect(restored.video.timelineEndSeconds).toBe(96.17);
+    expect(restored.video.clips.map(c => [c.sourceStartSeconds,c.sourceEndSeconds])).toEqual([[30,40],[42,60.51]]);
+    expect(restored.video.selectionStartSeconds).toBe(35.66);
+    expect(restored.video.selectionEndSeconds).toBe(66.17);
+    expect(mocks.signedUrl).toHaveBeenCalledTimes(1);
   });
 
   it("waits for retained source handles on inline silence QA outputs", async () => {

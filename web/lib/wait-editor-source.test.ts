@@ -18,3 +18,18 @@ it('does not retry authentication errors and bounds preparation retries',async()
  load.mockRejectedValue(pending());await expect(waitForEditorSource(load,()=>false,pause)).rejects.toThrow('preparing');
  expect(pause).toHaveBeenCalledTimes(12);
 });
+it('polls every five seconds and stops at the sixty-second preparation bound',async()=>{
+ vi.useFakeTimers();
+ try {
+  const load=vi.fn().mockRejectedValue(pending());
+  const result=waitForEditorSource(load,()=>false).catch(error=>error);
+  await vi.advanceTimersByTimeAsync(4999);
+  expect(load).toHaveBeenCalledTimes(1);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(load).toHaveBeenCalledTimes(2);
+  await vi.advanceTimersByTimeAsync(55000);
+  expect(load).toHaveBeenCalledTimes(13);
+  expect(await result).toMatchObject({code:'EDITOR_SOURCE_PREPARING'});
+  expect(vi.getTimerCount()).toBe(0);
+ } finally { vi.useRealTimers(); }
+});
