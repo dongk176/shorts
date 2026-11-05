@@ -13,7 +13,8 @@ beforeAll(async()=>{
  create table shorts_mvp.video_jobs(id uuid,user_id uuid,is_example boolean,midform_request jsonb,template_snapshot jsonb);
  create table shorts_mvp.generated_shorts(id uuid,user_id uuid,job_id uuid,render_version int);
  create table shorts_mvp.runtime_feature_flags(flag_key text,enabled boolean);
- create table shorts_mvp.admin_short_silence_tasks(short_id uuid,request_id uuid,state text,cut_count int,removed_seconds numeric);
+ create table shorts_mvp.admin_short_silence_tasks(short_id uuid,request_id uuid,state text,cut_count int,removed_seconds numeric,
+   attempts int default 1,lease_until timestamptz default (clock_timestamp()+interval '3 minutes'));
  create table shorts_mvp.editor_render_requests(id uuid,status text);
  insert into shorts_mvp.app_users values('${owner}',false);
  insert into shorts_mvp.video_jobs values('${job}','${owner}',false,null,'{"shortsSilenceRemoval":{"version":1,"preset":"aggressive"}}');
@@ -41,10 +42,21 @@ describe("ordinary member silence result visibility on the real state query",()=
  });
  it("returns completed cut counts for the same non-admin owner",async()=>{
   vi.stubEnv("ADMIN_SHORTS_SILENCE_ENABLED","true");vi.stubEnv("RANKING_VERCEL_SNAPSHOT_ID","snapshot");
-  await database.exec(`insert into shorts_mvp.admin_short_silence_tasks values('${short}','${request}','rendering',3,1.5);
+  await database.exec(`insert into shorts_mvp.admin_short_silence_tasks(short_id,request_id,state,cut_count,removed_seconds) values('${short}','${request}','rendering',3,1.5);
     insert into shorts_mvp.editor_render_requests values('${request}','succeeded');update shorts_mvp.generated_shorts set render_version=2;`);
   const result=await getShortsForJobs(db(),[job]);
   expect(result.get(job)?.[0].silenceRemoval).toEqual({status:"completed",cutCount:3,removedSeconds:1.5});
+ });
+ it("offers only an unclaimed expired analysis its remaining bounded retry",async()=>{
+  vi.stubEnv("ADMIN_SHORTS_SILENCE_ENABLED","true");vi.stubEnv("RANKING_VERCEL_SNAPSHOT_ID","snapshot");
+  await database.exec(`delete from shorts_mvp.editor_render_requests;
+    update shorts_mvp.generated_shorts set render_version=1;
+    update shorts_mvp.admin_short_silence_tasks set state='processing',attempts=1,lease_until=clock_timestamp()-interval '1 second';`);
+  expect((await getShortsForJobs(db(),[job])).get(job)?.[0].silenceRemoval?.status).toBe("waiting");
+  await database.exec("update shorts_mvp.admin_short_silence_tasks set lease_until=clock_timestamp()+interval '3 minutes'");
+  expect((await getShortsForJobs(db(),[job])).get(job)?.[0].silenceRemoval?.status).toBe("processing");
+  await database.exec("update shorts_mvp.admin_short_silence_tasks set attempts=2,lease_until=clock_timestamp()-interval '1 second'");
+  expect((await getShortsForJobs(db(),[job])).get(job)?.[0].silenceRemoval?.status).toBe("processing");
  });
  it("does not attach silence state from a mismatched job owner",async()=>{
   vi.stubEnv("ADMIN_SHORTS_SILENCE_ENABLED","true");vi.stubEnv("RANKING_VERCEL_SNAPSHOT_ID","snapshot");

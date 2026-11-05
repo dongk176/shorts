@@ -192,6 +192,8 @@ export async function getShortsForJobs(
     const states = await db`select s.id,case
         when s.render_version>1 and r.status='succeeded' then 'completed'
         when t.state='rendering' and r.status in ('failed','superseded') then 'failed'
+        when t.state='processing' and t.lease_until<clock_timestamp()
+          and t.attempts<2 and r.id is null and s.render_version=1 then 'waiting'
         else coalesce(t.state,'waiting') end as state,
         coalesce(t.cut_count,0) as cut_count,coalesce(t.removed_seconds,0) as removed_seconds
       from shorts_mvp.generated_shorts s join shorts_mvp.app_users u on u.id=s.user_id
