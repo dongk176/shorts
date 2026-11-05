@@ -1594,13 +1594,18 @@ def test_subtitle_template_timing_lead_defaults_stable_and_accepts_admin() -> No
 
 @pytest.mark.parametrize("language", ["ja", "ko", "en"])
 @pytest.mark.parametrize("custom", [False, True])
-def test_language_project_caption_font_supports_japanese_without_translation(language, custom):
+@pytest.mark.parametrize(
+    "context", [{"language_test_release_id": "pinned-release"}, {"source_type": "upload"}]
+)
+def test_language_project_caption_font_supports_japanese_without_translation(
+    language, custom, context,
+):
     subtitle = TemplateSubtitleLayer(
         visible=True, y=1400, max_width=900, color="#FFFFFF",
         font_id="paperlogy", font_size=48,
     ) if custom else None
     options = _project_caption_options(
-        {"language_test_release_id": "pinned-release", "output_language": language,
+        {**context, "output_language": language,
          "subtitle_template_snapshot": {"font": {"id": "paperlogy"}}},
         subtitle, template_id="pop", translated=False, initial_render_v4=True,
     )
