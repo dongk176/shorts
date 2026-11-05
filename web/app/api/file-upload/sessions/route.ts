@@ -1,5 +1,5 @@
 import { requireFileUploadLanguage } from "@/lib/file-upload-language";
-import { uploadSilenceRequestMarker } from "@/lib/file-upload-candidate";
+import { uploadCandidateConfig, uploadSilenceRequestMarker } from "@/lib/file-upload-candidate";
 import { shortsSilenceRequestSchema } from "@/lib/shorts-silence-contract";
 import { requireShortsSilenceAccess, assertSilenceTemplate } from "@/lib/shorts-silence-access";
 import { midformUploadRelease, requireMidformAdmin } from "@/lib/midform-release";
@@ -601,7 +601,7 @@ export async function POST(request: Request) {
         );
       }
       let uploadLanguage: { version: number; sourceLanguage: string; outputLanguage: string; releaseId: string } | undefined;
-      if (input.outputLanguage !== "ko" || input.sourceLanguage !== undefined) {
+      if (uploadCandidateConfig() || input.outputLanguage !== "ko" || input.sourceLanguage !== undefined) {
         await requireFileUploadLanguage(tx, initialRenderRelease.releaseId, session.userId);
         uploadLanguage = {
           version: 1, sourceLanguage: input.sourceLanguage ?? "auto",
