@@ -497,7 +497,7 @@ export function PaddlePricing({
           <section id="pricing-plans" className={`pricing-grid ${styles.localPlanGrid} ${styles.paddlePlanGrid}`} aria-label={t.title}>
             {displayedPlans.map((p, i) => {
               const discount=paddleDiscount(p.code,currency);
-              const discountPercent=discount ? Math.ceil(discount.percent) : 0;
+              const discountPercent=discount ? Math.floor(discount.percent) : 0;
               return (
               <article key={p.code}
                 className={`pricing-card ${i === 1 ? "pricing-card-popular" : i === 2 ? "pricing-card-pro" : ""} ${styles.planCard} ${styles.localPlanCard} ${styles.paddlePlanCard} ${i === 1 ? styles.mobilePlanStarter : i === 2 ? styles.mobilePlanExpert : styles.mobilePlanPro}`}>

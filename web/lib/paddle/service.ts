@@ -135,10 +135,18 @@ export async function preparePaddleCheckout(
     if (pending[0]) {
       if (
         pending[0].status === "ready" &&
+        pending[0].transactionId &&
         pending[0].planCode === code &&
         pending[0].currency === currency
-      )
-        return pending[0];
+      ) {
+        const current = await paddleRequest<PaddleTransaction>(`/transactions/${pending[0].transactionId}`);
+        if (current.id !== pending[0].transactionId) throw new Error("Checkout identity mismatch");
+        if (["draft", "ready"].includes(current.status) && !current.subscription_id) return pending[0];
+        if (current.status !== "canceled") throw new HttpError(409,
+          "Payment is being processed. Please wait.", "CHECKOUT_PROCESSING");
+        // A cancellation webhook may lag behind the provider. Reconcile the
+        // canceled transaction under the user lock before creating a new one.
+      }
       if (pending[0].status !== "ready" || !pending[0].transactionId)
         throw new HttpError(
           409,
