@@ -1,5 +1,6 @@
 "use client";
 
+import { rankingShowroomContent } from "@/lib/ranking-showroom-content";
 import { useNavigationLocale } from "@/lib/i18n/provider";
 import { useUiText } from "@/lib/i18n/use-ui-text";
 
@@ -29,10 +30,15 @@ function guideSteps(mobile: boolean): FeatureGuideStep[] {
   ];
 }
 
+export function RankingIntroVideo() {
+  const locale = useNavigationLocale();
+  const ui = useUiText();
+  const { mediaRoot } = rankingShowroomContent[locale];
+  return <video key={locale} src={`${mediaRoot}/dogs.mp4`} poster={`${mediaRoot}/dogs.jpg`} muted playsInline loop aria-label={ui("랭킹 쇼츠 예시")} />;
+}
+
 export function RankingOnboarding({ mode, ownerId }: { mode: "home" | "studio"; ownerId?: string }) {
   const ui = useUiText();
-  const locale = useNavigationLocale();
-  const mediaRoot = locale === "en" ? "/ranking-showroom-en" : "/ranking-showroom-20";
   const pathname = usePathname();
   const { accountId, authenticated, rankingAvailable } = useUsageState();
   const { active: queueActive, complete } = useWelcomeOverlayStage("ranking-launch");
@@ -116,7 +122,7 @@ export function RankingOnboarding({ mode, ownerId }: { mode: "home" | "studio"; 
           <button type="button" className={styles.later} onClick={dismiss}>{ui("나중에 볼게요")}</button>
           <Link href="/ranking-shorts" className={styles.primary} onClick={() => { remember("launch"); complete(); setStage("idle"); }}>{ui("랭킹 쇼츠 시작하기")}<span aria-hidden="true">→</span></Link>
         </div>
-        <div className={styles.movie}><video src={`${mediaRoot}/dogs.mp4`} poster={`${mediaRoot}/dogs.jpg`} muted playsInline loop aria-label={ui("랭킹 쇼츠 예시")} /></div>
+        <div className={styles.movie}><RankingIntroVideo /></div>
       </div> : <div className={styles.beta}>
         <h2 id="ranking-welcome-title">{ui("랭킹 쇼츠 베타")}</h2>
         <p className={styles.intro}>{ui("여러 영상에서 원하는 장면을 골라, 하나의 랭킹 쇼츠로 만들어 보세요.")}</p>

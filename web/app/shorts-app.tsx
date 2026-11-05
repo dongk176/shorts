@@ -18,6 +18,7 @@ const AdminPublishingButton = dynamic(() => import("@/components/admin-publishin
 
 import { ShowcaseCredits } from "@/components/showcase-credits";
 
+import previewCopy from "@/lib/i18n/template-preview-copy.json";
 import { useUiText } from "@/lib/i18n/use-ui-text";
 
 import { browserLocalizedHref } from "@/lib/i18n/routing";
@@ -1426,7 +1427,7 @@ function PresetInlineEditorChannel({
 
 function TemplatePreview({ template, videoAspectRatio, channelName, channelThumbnailUrl, brandColor, titleV4Enabled = false }: { template: (typeof templates)[number]; videoAspectRatio: VideoAspectRatio; channelName: string; channelThumbnailUrl: string | null; brandColor?: TemplatePresetColor; titleV4Enabled?: boolean }) {
   const { locale } = useI18n();
-  const previewTitle = template.label.split("\n").map((line) => translateLegacyText(line, locale)).join("\n");
+  const previewTitle = locale === "ko" ? template.label : previewCopy.titleLines[template.id][locale].join("\n");
   const [firstLine, secondLine] = previewTitle.split("\n");
   const isLight = template.id === "white-yellow" || template.id === "paper";
   const foreground = isLight ? "text-black" : "text-white";
@@ -1514,7 +1515,7 @@ function TemplatePreview({ template, videoAspectRatio, channelName, channelThumb
       </div>
       <div className={`absolute inset-x-0 z-10 overflow-hidden text-[5.5cqw] font-semibold ${template.id === "paper" ? "text-neutral-700" : ""}`} style={layout.fullVertical ? { bottom: "6.25%", height: "9.375%" } : { top: `${layout.videoTop + layout.videoHeight}%`, height: `${layout.bottomHeight}%` }}>
         {template.id === "comment-capture"
-          ? <div className="h-full bg-[#040404]"><CommentCaptureCard outputLanguage={locale} comment={{ ...TEMPLATE_PRESET_COMMENT_SAMPLE, ageLabel: locale === "en" ? "5 months ago" : locale === "ja" ? "5か月前" : TEMPLATE_PRESET_COMMENT_SAMPLE.ageLabel, text: locale === "en" ? "Okay, that made me laugh 😂" : locale === "ja" ? "これは笑った😂" : TEMPLATE_PRESET_COMMENT_SAMPLE.text }} /></div>
+          ? <div className="h-full bg-[#040404]"><CommentCaptureCard outputLanguage={locale} comment={locale === "ko" ? TEMPLATE_PRESET_COMMENT_SAMPLE : { ...TEMPLATE_PRESET_COMMENT_SAMPLE, ...previewCopy.comment[locale] }} /></div>
           : null}
       </div>
       {template.id === "comment-capture"
@@ -10602,7 +10603,7 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
           <div className="editor-header-project">
             <span className="editor-header-project-number">{ui(projectNumber ? `프로젝트 #${projectNumber}` : "영상 편집")}</span>
             <div className="editor-header-title-row">
-              <h1 data-i18n-skip={Boolean(projectLabel) || undefined}>{projectLabel || "제목 없는 영상"}</h1>
+              <h1 data-i18n-skip={Boolean(projectLabel) || undefined}>{projectLabel || ui("제목 없는 영상")}</h1>
             </div>
             <SubtitleTranslationNotice outcome={item.subtitleTranslation} locale={editorLocale} />
           </div>

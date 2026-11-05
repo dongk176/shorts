@@ -1,5 +1,6 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
 import { useEffect, useRef, useState } from "react";
 import type { RankingRemote } from "@/lib/ranking-shorts";
 import { rankingYoutubeCovers } from "@/lib/ranking-covers";
@@ -13,6 +14,7 @@ export function RankingThumbnail({ videoUrl, remote, time = 0.1, fit = "cover", 
   lazy?: boolean;
   portrait?: boolean;
 }) {
+  const ui = useUiText();
   const container = useRef<HTMLDivElement>(null);
   const video = useRef<HTMLVideoElement>(null);
   const [visible, setVisible] = useState(!lazy);
@@ -57,7 +59,7 @@ export function RankingThumbnail({ videoUrl, remote, time = 0.1, fit = "cover", 
           }}
           onError={() => setCoverIndex(index => index === coverIndex ? index + 1 : index)} />
       ) : (
-        <div className="flex h-full min-h-24 items-center justify-center bg-gradient-to-br from-neutral-800 to-neutral-950 text-sm text-neutral-500">랭킹 쇼츠</div>
+        <div className="flex h-full min-h-24 items-center justify-center bg-gradient-to-br from-neutral-800 to-neutral-950 text-sm text-neutral-500">{ui("랭킹 쇼츠")}</div>
       )}
     </div>
   );

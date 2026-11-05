@@ -5,7 +5,7 @@ import { useUiText } from "@/lib/i18n/use-ui-text";
 import Link from "@/lib/i18n/navigation";
 import Image from "next/image";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import englishSamples from "./ranking-showroom-en.json";
+import { rankingShowroomContent } from "@/lib/ranking-showroom-content";
 import { useNavigationLocale } from "@/lib/i18n/provider";
 import originalSamples from "./ranking-showroom-data.json";
 import styles from "./ranking-showroom.module.css";
@@ -121,8 +121,11 @@ function SourceStrip({ sources }: { sources: (typeof originalSamples)[number]["s
 
 export function RankingShowroom() {
   const locale = useNavigationLocale();
-  const samples = locale === "en" ? englishSamples : originalSamples;
-  const mediaRoot = locale === "en" ? "/ranking-showroom-en" : "/ranking-showroom-20";
+  return <LocalizedRankingShowroom key={locale} locale={locale} />;
+}
+
+function LocalizedRankingShowroom({ locale }: { locale: keyof typeof rankingShowroomContent }) {
+  const { samples, mediaRoot } = rankingShowroomContent[locale];
   const ui = useUiText();
   const id = useId();
   const [selected, setSelected] = useState(0);
@@ -186,7 +189,7 @@ export function RankingShowroom() {
       <div ref={result} className={styles.result}>
         <div className={styles.mediaLabel}>{ui("랭킹 쇼츠")}<span>{ui("1개")}</span></div>
         <div className={styles.resultFrame}>
-          <video key={`${sample.name}-${retry}`} ref={video} src={`${mediaRoot}/${sample.name}.mp4`} poster={`${mediaRoot}/${sample.name}.jpg`} muted={muted} loop playsInline preload="none" aria-label={`${ui(sample.subtitle)} — ${ui("완성 영상")}`} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onError={() => setFailed(true)} />
+          <video key={`${locale}-${sample.name}-${retry}`} ref={video} src={`${mediaRoot}/${sample.name}.mp4`} poster={`${mediaRoot}/${sample.name}.jpg`} muted={muted} loop playsInline preload="none" aria-label={`${ui(sample.subtitle)} — ${ui("완성 영상")}`} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onError={() => setFailed(true)} />
           {failed && <div className={styles.error}><span>{ui("영상을 불러오지 못했어요.")}</span><button type="button" onClick={() => { setFailed(false); setRetry(value => value + 1); }}>{ui("다시 재생")}</button></div>}
         </div>
         <div className={styles.controls}>

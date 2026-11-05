@@ -1,0 +1,322 @@
+[
+  {
+    "ko": "매월 크레딧",
+    "en": "Monthly Credit",
+    "ja": "毎月のCredit"
+  },
+  {
+    "ko": "랭킹 쇼츠",
+    "en": "Ranking Shorts",
+    "ja": "ランキングショート"
+  },
+  {
+    "ko": "신규 기능",
+    "en": "New feature",
+    "ja": "新機能"
+  },
+  {
+    "ko": "원본 영상",
+    "en": "Source videos",
+    "ja": "元動画"
+  },
+  {
+    "ko": "다른 랭킹 보기",
+    "en": "Browse rankings",
+    "ja": "他のランキングを見る"
+  },
+  {
+    "ko": "이전 랭킹",
+    "en": "Previous ranking",
+    "ja": "前のランキング"
+  },
+  {
+    "ko": "다음 랭킹",
+    "en": "Next ranking",
+    "ja": "次のランキング"
+  },
+  {
+    "ko": "랭킹 쇼츠 종류",
+    "en": "Ranking Shorts examples",
+    "ja": "ランキングショートの例"
+  },
+  {
+    "ko": "랭킹 쇼츠 만들기",
+    "en": "Create Ranking Shorts",
+    "ja": "ランキングショートを作成"
+  },
+  {
+    "ko": "영상을 불러오지 못했어요.",
+    "en": "Unable to load the video.",
+    "ja": "動画を読み込めませんでした。"
+  },
+  {
+    "ko": "다시 재생",
+    "en": "Retry playback",
+    "ja": "再生を再試行"
+  },
+  {
+    "ko": "랭킹 영상 일시정지",
+    "en": "Pause ranking video",
+    "ja": "ランキング動画を一時停止"
+  },
+  {
+    "ko": "랭킹 영상 재생",
+    "en": "Play ranking video",
+    "ja": "ランキング動画を再生"
+  },
+  {
+    "ko": "음소거 해제",
+    "en": "Unmute",
+    "ja": "ミュート解除"
+  },
+  {
+    "ko": "음소거",
+    "en": "Mute",
+    "ja": "ミュート"
+  },
+  {
+    "ko": "원본 장면",
+    "en": "Source scene",
+    "ja": "元のシーン"
+  },
+  {
+    "ko": "완성 영상",
+    "en": "Finished video",
+    "ja": "完成動画"
+  },
+  {
+    "ko": "좌우로 넘겨보기",
+    "en": "Browse left or right",
+    "ja": "左右にスクロール"
+  },
+  {
+    "ko": "랭킹 쇼츠가 출시됐어요!",
+    "en": "Ranking Shorts is here!",
+    "ja": "ランキングショートが登場！"
+  },
+  {
+    "ko": "여러 영상에서 고른 장면을",
+    "en": "Select scenes from multiple videos",
+    "ja": "複数の動画からシーンを選んで"
+  },
+  {
+    "ko": "하나의 랭킹 쇼츠로 만들어 보세요.",
+    "en": "and combine them into one ranking video.",
+    "ja": "1本のランキングショートにまとめましょう。"
+  },
+  {
+    "ko": "장면 선택",
+    "en": "Choose scenes",
+    "ja": "シーン選択"
+  },
+  {
+    "ko": "순위 편집",
+    "en": "Edit rankings",
+    "ja": "順位編集"
+  },
+  {
+    "ko": "효과음",
+    "en": "Sound effects",
+    "ja": "効果音"
+  },
+  {
+    "ko": "베타 버전으로 먼저 만나보세요.",
+    "en": "Try the beta release.",
+    "ja": "ベータ版をお試しください。"
+  },
+  {
+    "ko": "나중에 볼게요",
+    "en": "Maybe later",
+    "ja": "あとで見る"
+  },
+  {
+    "ko": "랭킹 쇼츠 시작하기",
+    "en": "Start Ranking Shorts",
+    "ja": "ランキングショートを始める"
+  },
+  {
+    "ko": "랭킹 쇼츠 예시",
+    "en": "Ranking Shorts example",
+    "ja": "ランキングショートの例"
+  },
+  {
+    "ko": "안내 닫기",
+    "en": "Close guide",
+    "ja": "案内を閉じる"
+  },
+  {
+    "ko": "랭킹 쇼츠 베타",
+    "en": "Ranking Shorts beta",
+    "ja": "ランキングショート ベータ版"
+  },
+  {
+    "ko": "여러 영상에서 원하는 장면을 골라, 하나의 랭킹 쇼츠로 만들어 보세요.",
+    "en": "Choose scenes from multiple videos and combine them into one ranking video.",
+    "ja": "複数の動画から好きなシーンを選び、1本のランキングショートにまとめましょう。"
+  },
+  {
+    "ko": "베타 기능 · 영상 1개당 3분 사용 · 제작 실패 시 반환",
+    "en": "Beta · Uses 3 minutes per video · Refunded if creation fails",
+    "ja": "ベータ機能 · 1本あたり3分を使用 · 制作失敗時は返還"
+  },
+  {
+    "ko": "사용법 보고 시작하기",
+    "en": "Start with a walkthrough",
+    "ja": "使い方を見て始める"
+  },
+  {
+    "ko": "랭킹 쇼츠 사용법 닫기",
+    "en": "Close Ranking Shorts walkthrough",
+    "ja": "ランキングショートの使い方を閉じる"
+  },
+  {
+    "ko": "직접 만들어 보기",
+    "en": "Create your own",
+    "ja": "自分で作ってみる"
+  },
+  {
+    "ko": "축구 개인기",
+    "en": "Football skills",
+    "ja": "サッカーの神ワザ"
+  },
+  {
+    "ko": "강아지 순간",
+    "en": "Dog moments",
+    "ja": "わんこの名場面"
+  },
+  {
+    "ko": "고양이의 하루",
+    "en": "Life with cats",
+    "ja": "にゃんこの日常"
+  },
+  {
+    "ko": "케이크 반전",
+    "en": "Cake reveals",
+    "ja": "驚きのケーキ"
+  },
+  {
+    "ko": "여행 풍경",
+    "en": "Beautiful places",
+    "ja": "旅先の絶景"
+  },
+  {
+    "ko": "댄스 모먼트",
+    "en": "Dance moments",
+    "ja": "ダンスの名場面"
+  },
+  {
+    "ko": "농구 한 방",
+    "en": "Basketball shots",
+    "ja": "バスケの名場面"
+  },
+  {
+    "ko": "데일리 스타일",
+    "en": "Everyday style",
+    "ja": "毎日のコーデ"
+  },
+  {
+    "ko": "헤어 디테일",
+    "en": "Hair details",
+    "ja": "ヘアの仕上げ"
+  },
+  {
+    "ko": "아이디어 DIY",
+    "en": "Creative DIY",
+    "ja": "ひらめきDIY"
+  },
+  {
+    "ko": "스케일 반전",
+    "en": "Big transformations",
+    "ja": "驚きのスケール"
+  },
+  {
+    "ko": "그림 완성",
+    "en": "Art reveals",
+    "ja": "絵ができる瞬間"
+  },
+  {
+    "ko": "스트리트 라이딩",
+    "en": "Street riding",
+    "ja": "ストリートライド"
+  },
+  {
+    "ko": "MTB 커스텀",
+    "en": "Custom MTB",
+    "ja": "MTBカスタム"
+  },
+  {
+    "ko": "미니 RC",
+    "en": "Mini RC",
+    "ja": "ミニRCの世界"
+  },
+  {
+    "ko": "로봇의 하루",
+    "en": "Robot moments",
+    "ja": "ロボットの日常"
+  },
+  {
+    "ko": "미니어처",
+    "en": "Miniature art",
+    "ja": "ミニチュアの世界"
+  },
+  {
+    "ko": "만드는 기술",
+    "en": "How it's made",
+    "ja": "ものづくりの技"
+  },
+  {
+    "ko": "목공의 기술",
+    "en": "Woodworking",
+    "ja": "木工の技"
+  },
+  {
+    "ko": "바느질 아이디어",
+    "en": "Sewing ideas",
+    "ja": "ソーイングの工夫"
+  },
+  {
+    "ko": "영상에 표시할 채널명",
+    "en": "Channel name on videos",
+    "ja": "動画に表示するチャンネル名"
+  },
+  {
+    "ko": "제목 없는 랭킹 쇼츠",
+    "en": "Untitled ranking video",
+    "ja": "無題のランキング動画"
+  },
+  {
+    "ko": "제작한 랭킹 쇼츠",
+    "en": "Your ranking videos",
+    "ja": "作成したランキング動画"
+  },
+  {
+    "ko": "새 랭킹 쇼츠",
+    "en": "New ranking video",
+    "ja": "ランキング動画を新規作成"
+  },
+  {
+    "ko": "랭킹 쇼츠 삭제",
+    "en": "Delete ranking video",
+    "ja": "ランキング動画を削除"
+  },
+  {
+    "ko": "삭제하지 못했습니다",
+    "en": "Couldn't delete the video",
+    "ja": "動画を削除できませんでした"
+  },
+  {
+    "ko": "이 작업을 삭제할까요?",
+    "en": "Delete this project?",
+    "ja": "このプロジェクトを削除しますか？"
+  },
+  {
+    "ko": "프로젝트 목록에서 제거되며 영상 링크를 사용할 수 없게 됩니다.",
+    "en": "This project will be removed from your list, and its video link will stop working.",
+    "ja": "プロジェクト一覧から削除され、動画のリンクは使えなくなります。"
+  },
+  {
+    "ko": "베타 기능 · 영상 1개당 3분 크레딧 사용 · 제작 실패 시 반환",
+    "en": "Beta · Uses 3 minutes of Credit per video · Refunded if creation fails",
+    "ja": "ベータ機能 · 動画1本につき3分相当のクレジットを使用 · 作成に失敗した場合は返還"
+  }
+]

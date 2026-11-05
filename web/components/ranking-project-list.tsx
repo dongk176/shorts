@@ -1,5 +1,8 @@
 "use client";
 
+import { useUiText } from "@/lib/i18n/use-ui-text";
+import { useNavigationLocale } from "@/lib/i18n/provider";
+import { formatLocale } from "@/lib/i18n/config";
 import { rankingSounds, type RankingSound } from "@/lib/ranking-audio";
 import { useEffect, useRef, useState } from "react";
 import { useUsageState } from "./usage-provider";
@@ -19,6 +22,8 @@ const statusLabels = {
 } as const;
 
 export function RankingProjectList({ projects, embedded = false, onOpen }: { projects: RankingProjectSummary[]; embedded?: boolean; onOpen?: (project: RankingProjectSummary) => void }) {
+  const ui = useUiText();
+  const locale = useNavigationLocale();
   const router = useRouter();
   const { refreshUsage } = useUsageState();
   const usageRefresh = useRef(refreshUsage);
@@ -116,19 +121,19 @@ export function RankingProjectList({ projects, embedded = false, onOpen }: { pro
   }
   if (!visible.length) return null;
   return (
-    <section className="mt-8" aria-labelledby={embedded ? undefined : "ranking-project-list-title"} aria-label={embedded ? "제작한 랭킹 쇼츠" : undefined}>
+    <section className="mt-8" aria-labelledby={embedded ? undefined : "ranking-project-list-title"} aria-label={embedded ? ui("제작한 랭킹 쇼츠") : undefined}>
       {!embedded && <div className="mb-4 flex items-center justify-between gap-4">
         <h2 id="ranking-project-list-title" className="text-lg font-bold text-white">
-          랭킹 쇼츠 <span className="ml-2 text-sm font-medium text-neutral-400">{visible.length}</span>
+          {ui("랭킹 쇼츠")} <span className="ml-2 text-sm font-medium text-neutral-400">{visible.length}</span>
         </h2>
         <Link href="/ranking-shorts" prefetch={false} className="inline-flex min-h-11 items-center rounded-lg px-3 text-sm font-semibold text-[#dfcba5] hover:bg-white/5">
-          새 랭킹 쇼츠 <span className="ml-2" aria-hidden="true">＋</span>
+          {ui("새 랭킹 쇼츠")} <span className="ml-2" aria-hidden="true">＋</span>
         </Link>
       </div>}
       <div className="project-collection-grid grid grid-cols-[minmax(0,1fr)] gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {visible.map((project) => {
           const complete = project.status === "succeeded" && project.operationId;
-          const title = project.title?.trim() || "제목 없는 랭킹 쇼츠";
+          const title = project.title?.trim() || ui("제목 없는 랭킹 쇼츠");
           const href = `/ranking-shorts?project=${project.id}`;
           return (
             <article key={project.id} data-ranking-project={project.id} className="project-card relative overflow-hidden rounded-2xl border border-white/10 bg-white/[.035] transition hover:border-white/20">
@@ -141,13 +146,13 @@ export function RankingProjectList({ projects, embedded = false, onOpen }: { pro
                 />
               </Link>
               <div className="p-4">
-              <h3 className="truncate text-sm font-bold text-white">
+              <h3 data-i18n-skip={Boolean(project.title?.trim()) || undefined} className="truncate text-sm font-bold text-white">
                 <Link href={href} onClick={onOpen ? (event) => { event.preventDefault(); onOpen(project); } : undefined} prefetch={false} className="hover:text-[#dfcba5]">{title}</Link>
               </h3>
               <p className="mt-2 flex items-center justify-between gap-2 text-xs text-neutral-400">
-                <span className={complete ? "text-emerald-400" : project.status === "failed" ? "text-red-300" : "text-neutral-300"}>● {statusLabels[project.status]}</span>
-                <time dateTime={project.createdAt}>{new Intl.DateTimeFormat("ko-KR", { year: "numeric", month: "numeric", day: "numeric", timeZone: "Asia/Seoul" }).format(new Date(project.createdAt))}</time>
-                {complete && project.duration != null ? ` · ${project.duration.toFixed(1)}초` : null}
+                <span className={complete ? "text-emerald-400" : project.status === "failed" ? "text-red-300" : "text-neutral-300"}>● {ui(statusLabels[project.status])}</span>
+                <time dateTime={project.createdAt}>{new Intl.DateTimeFormat(formatLocale(locale), { year: "numeric", month: "numeric", day: "numeric", timeZone: "Asia/Seoul" }).format(new Date(project.createdAt))}</time>
+                {complete && project.duration != null ? ` · ${project.duration.toFixed(1)}${locale === "ko" ? "초" : locale === "ja" ? "秒" : "s"}` : null}
               </p>
               {["queued", "running"].includes(project.status) ? (
                 <div role="status" className="mt-4 flex items-center gap-2 text-sm text-[#dfcba5]">
@@ -185,9 +190,9 @@ export function RankingProjectList({ projects, embedded = false, onOpen }: { pro
         <p className="mt-3 text-xs text-neutral-400">영상 1개당 3분 차감</p><div className="mt-5 flex gap-3"><button type="button" disabled={pending} onClick={()=>setSoundProject(null)} className="min-h-11 flex-1 rounded-lg border border-white/20">취소</button><button type="button" disabled={pending} onClick={()=>void retryRender(soundProject,replacementSound)} className="min-h-11 flex-1 rounded-lg bg-violet-600 font-bold disabled:opacity-50">{pending?"준비 중…":"다시 만들기"}</button></div>
       </dialog>:null}
       <ProjectDeleteOverlay open={Boolean(deleting)} state={error ? "error" : "confirm"}
-        statusLabel="랭킹 쇼츠 삭제" title={error ? "삭제하지 못했습니다" : "이 작업을 삭제할까요?"}
-        message={error || `${deleting?.title?.trim() || "제목 없는 랭킹 쇼츠"}\n프로젝트 목록에서 제거되며 영상 링크를 사용할 수 없게 됩니다.`}
-        actionLabel={error ? "다시 시도" : "삭제하기"} closeLabel="취소" actionPending={pending}
+        statusLabel={ui("랭킹 쇼츠 삭제")} title={ui(error ? "삭제하지 못했습니다" : "이 작업을 삭제할까요?")}
+        message={error || `${deleting?.title?.trim() || ui("제목 없는 랭킹 쇼츠")}\n${ui("프로젝트 목록에서 제거되며 영상 링크를 사용할 수 없게 됩니다.")}`}
+        actionLabel={ui(error ? "다시 시도" : "삭제하기")} closeLabel={ui("취소")} actionPending={pending}
         onAction={() => void remove()} onClose={() => { if (!pending) setDeleting(null); }} />
     </section>
   );

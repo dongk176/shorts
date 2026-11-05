@@ -1,3 +1,4 @@
+import preparedUiCopy from "./ui-copy.json";
 import { rankingEnglish, rankingDynamicEnglish } from "./ranking-en";
 import type { SiteLocale } from "./config";
 
@@ -1747,6 +1748,7 @@ const phrases: readonly Phrase[] = [
   ["확인", "Confirm", "確認"],
   ["저장", "Save", "保存"],
   ["취소", "Cancel", "キャンセル"],
+  ...preparedUiCopy.map(({ ko, en, ja }): Phrase => [ko, en, ja]),
 ] as const;
 
 const phraseMaps: Record<Exclude<SiteLocale, "ko">, Map<string, string>> = {

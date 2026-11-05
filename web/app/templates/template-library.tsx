@@ -2,6 +2,7 @@
 
 import { presetChannelCenterY } from "@/lib/preset-channel-position";
 import { withNewTemplateChannelPosition } from "@/lib/new-template-channel-position";
+import previewCopy from "@/lib/i18n/template-preview-copy.json";
 import { useUiText } from "@/lib/i18n/use-ui-text";
 
 import Link from "@/lib/i18n/navigation";
@@ -185,8 +186,8 @@ function CommentCaptureCard({ comment }: { comment: CommentOverlay }) {
     notation: "compact",
     maximumFractionDigits: 1,
   }).format(comment.likeCount);
-  const sampleText = localizedValue(locale, { ko: comment.text, en: "Okay, that made me laugh 😂", ja: "これは笑った😂" });
-  const ageLabel = locale === "ko" ? comment.ageLabel : locale === "en" ? "5 months ago" : "5か月前";
+  const sampleText = comment.text;
+  const ageLabel = comment.ageLabel;
   return (
     <div className="w-full pb-[0.6cqw] pl-[4.4cqw] pr-[2.8cqw] pt-[4.5cqw] text-left text-white" style={{ backgroundColor: COMMENT_BACKGROUND_COLOR }}>
       <div className="flex items-start gap-[2.7cqw]">
@@ -294,7 +295,7 @@ function TemplatePreview({
       </div>
       <div className={`absolute inset-x-0 z-10 overflow-hidden text-[5.5cqw] font-semibold ${template.id === "paper" ? "text-neutral-700" : ""}`} style={{ top: `${layout.videoTop + layout.videoHeight}%`, height: `${layout.bottomHeight}%` }}>
         {template.id === "comment-capture"
-          ? <div className="h-full bg-[#040404]"><CommentCaptureCard comment={TEMPLATE_PRESET_COMMENT_SAMPLE} /></div>
+          ? <div className="h-full bg-[#040404]"><CommentCaptureCard comment={locale === "ko" ? TEMPLATE_PRESET_COMMENT_SAMPLE : { ...TEMPLATE_PRESET_COMMENT_SAMPLE, ...previewCopy.comment[locale] }} /></div>
           : null}
       </div>
       <FixedPresetChannel template={template} />
@@ -425,23 +426,7 @@ export function TemplateLibrary({
       adminPresetNamesEnabled,
     ), locale),
     category: translateLegacyText(template.category, locale),
-    label: localizedValue(locale, {
-      ko: template.label,
-      en: {
-        "comment-capture": "Add comments\nKeep them watching",
-        "dark-red": "The one thing\nyou need to know",
-        "white-yellow": "A quick tip\nto try today",
-        "dark-minimal": "Let the video\ntell the story",
-        paper: "A simple idea\nput into practice",
-      }[template.id],
-      ja: {
-        "comment-capture": "コメント風の演出で\n見どころを楽しく",
-        "dark-red": "知っておきたい\n大切なこと",
-        "white-yellow": "今日から使える\nちょっとしたコツ",
-        "dark-minimal": "動画そのものの\n魅力を伝える",
-        paper: "シンプルな工夫を\n今日から実践",
-      }[template.id],
-    }),
+    label: locale === "ko" ? template.label : previewCopy.titleLines[template.id][locale].join("\n"),
   })), [adminPresetNamesEnabled, locale]);
   const displayedSubtitlePresets = useMemo(() => unifiedSubtitlePresets.map((preset) => ({
     ...preset,

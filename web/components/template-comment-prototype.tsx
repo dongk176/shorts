@@ -1,5 +1,6 @@
 "use client";
 
+import previewCopy from "@/lib/i18n/template-preview-copy.json";
 import { useUiText } from "@/lib/i18n/use-ui-text";
 import type { CSSProperties, PointerEventHandler } from "react";
 import type { CommentOverlay, OutputLanguage } from "@/lib/contracts";
@@ -59,10 +60,16 @@ function TemplateCommentContents({
   outputLanguage,
 }: ReturnType<typeof commentAppearance> & { comment?: CommentOverlay; japaneseFontEnabled?: boolean; outputLanguage?: OutputLanguage }) {
   const { locale } = useI18n();
-  const initial = comment?.initial || "소";
-  const nickname = comment?.nickname || "소담기록24";
-  const ageLabel = comment?.ageLabel || (locale === "ko" ? "2시간 전" : locale === "en" ? "2 hours ago" : "2時間前");
-  const text = comment?.text || (locale === "ko" ? "잠깐 보려고 눌렀는데 어느새 끝까지 다 봤네 ㅋㅋ" : locale === "en" ? "I meant to watch a second and ended up watching the whole thing 😂" : "ちょっと見るつもりが、気づいたら最後まで見てた😂");
+  const sampleLocale = outputLanguage === "en" || outputLanguage === "ja" || outputLanguage === "ko"
+    ? outputLanguage : locale;
+  const demo = sampleLocale === "ko" ? {
+    initial: "소", nickname: "소담기록24", ageLabel: "2시간 전",
+    text: "잠깐 보려고 눌렀는데 어느새 끝까지 다 봤네 ㅋㅋ",
+  } : previewCopy.comment[sampleLocale];
+  const initial = comment ? comment.initial : demo.initial;
+  const nickname = comment ? comment.nickname : demo.nickname;
+  const ageLabel = comment ? comment.ageLabel : demo.ageLabel;
+  const text = comment ? comment.text : demo.text;
   const likeCount = comment?.likeCount ?? 121;
   const actions = commentActionLabels(likeCount, outputLanguage || locale);
   const formattedLikeCount = outputLanguage ? actions.likes : new Intl.NumberFormat(formatLocale(locale), {

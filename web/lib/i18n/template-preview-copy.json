@@ -1,0 +1,85 @@
+{
+  "usage": "Built-in demos and new empty preview defaults only. Never translate or overwrite user-authored templates, titles, nicknames or project content.",
+  "titleLines": {
+    "comment-capture": {
+      "en": [
+        "The moment",
+        "everyone’s talking about"
+      ],
+      "ja": [
+        "思わず語りたくなる",
+        "この瞬間"
+      ]
+    },
+    "dark-red": {
+      "en": [
+        "One thing",
+        "you need to know"
+      ],
+      "ja": [
+        "今こそ知りたい",
+        "大事なポイント"
+      ]
+    },
+    "white-yellow": {
+      "en": [
+        "Easier",
+        "than you think"
+      ],
+      "ja": [
+        "思ったより簡単",
+        "押さえたいコツ"
+      ]
+    },
+    "dark-minimal": {
+      "en": [
+        "The moment",
+        "you almost missed"
+      ],
+      "ja": [
+        "見逃したくない",
+        "決定的な瞬間"
+      ]
+    },
+    "paper": {
+      "en": [
+        "A simple tip",
+        "to try today"
+      ],
+      "ja": [
+        "今日から使える",
+        "ちょっとしたコツ"
+      ]
+    }
+  },
+  "comment": {
+    "en": {
+      "id": "localized-demo-comment-en",
+      "text": "I came for one second and watched the whole thing 😂",
+      "initial": "A",
+      "nickname": "alex_clips",
+      "ageLabel": "2 hours ago",
+      "likeCount": 121,
+      "reply": "Reply",
+      "disclosure": "AI-generated sample comment"
+    },
+    "ja": {
+      "id": "localized-demo-comment-ja",
+      "text": "ちょっと見るつもりが、最後まで見ちゃった😂",
+      "initial": "そ",
+      "nickname": "そらのメモ",
+      "ageLabel": "2時間前",
+      "likeCount": 121,
+      "reply": "返信",
+      "disclosure": "AIが作成したサンプルコメント"
+    }
+  },
+  "caption": {
+    "en": "Wait for the last moment.",
+    "ja": "最後の瞬間まで見て。"
+  },
+  "channel": {
+    "en": "Easy Cut",
+    "ja": "Easy Cut"
+  }
+}

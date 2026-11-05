@@ -1,0 +1,325 @@
+[
+  {
+    "name": "dogs",
+    "title": "かわいすぎて怒れない",
+    "subtitle": "わんこの名場面",
+    "duration": 21.933333,
+    "rankCount": 3,
+    "sources": [
+      {
+        "id": "iTsmjiVYIa8",
+        "rank": 3,
+        "label": "リズムはマイペース"
+      },
+      {
+        "id": "cT52Q7Frbnk",
+        "rank": 2,
+        "label": "センターはぼく！"
+      },
+      {
+        "id": "7RyaE6phQUo",
+        "rank": 1,
+        "label": "筋トレよりハグ"
+      }
+    ]
+  },
+  {
+    "name": "cats",
+    "title": "今日も猫にはかなわない",
+    "subtitle": "にゃんこの日常",
+    "duration": 17.433333,
+    "rankCount": 3,
+    "sources": [
+      {
+        "id": "TVqgKT4tw6I",
+        "rank": 3,
+        "label": "静電気にびっくり"
+      },
+      {
+        "id": "_A35I-ZzNG8",
+        "rank": 2,
+        "label": "おなかの上でゲーム"
+      },
+      {
+        "id": "IveJnnLLT5A",
+        "rank": 1,
+        "label": "なでなでタイム"
+      }
+    ]
+  },
+  {
+    "name": "dance",
+    "title": "ビートに乗った瞬間",
+    "subtitle": "ダンスの名場面",
+    "duration": 21.533333,
+    "rankCount": 3,
+    "sources": [
+      {
+        "id": "UzOZm0lAaZM",
+        "rank": 3,
+        "label": "息ぴったりのステップ"
+      },
+      {
+        "id": "qVtPsKnSFaI",
+        "rank": 2,
+        "label": "思わず笑っちゃう"
+      },
+      {
+        "id": "t58SwAmuA4g",
+        "rank": 1,
+        "label": "指先までキラリ"
+      }
+    ]
+  },
+  {
+    "name": "basketball",
+    "title": "そのシュート、入るの!?",
+    "subtitle": "バスケの名場面",
+    "duration": 22.933333,
+    "rankCount": 3,
+    "sources": [
+      {
+        "id": "rHnQJJ3A8l8",
+        "rank": 3,
+        "label": "客席からシュート"
+      },
+      {
+        "id": "gnnRPNowMOA",
+        "rank": 2,
+        "label": "屋根を伝ってゴール"
+      },
+      {
+        "id": "Kcz3iAY3PQE",
+        "rank": 1,
+        "label": "パパと初ゴール"
+      }
+    ]
+  },
+  {
+    "name": "09-hair",
+    "title": "最後のひと手間で変わる",
+    "subtitle": "ヘアの仕上げ",
+    "duration": 54.733333,
+    "rankCount": 5,
+    "sources": [
+      {
+        "id": "II-HNiQzYAE",
+        "rank": 5,
+        "label": "すっきりショート"
+      },
+      {
+        "id": "itsII7ue0Lk",
+        "rank": 4,
+        "label": "思い切ってバズカット"
+      },
+      {
+        "id": "aWr-C3WVe0o",
+        "rank": 3,
+        "label": "サイドをすっきり"
+      },
+      {
+        "id": "dzAHZ8hy3GQ",
+        "rank": 2,
+        "label": "テーパーの仕上げ"
+      },
+      {
+        "id": "GzYN2IylsZU",
+        "rank": 1,
+        "label": "ふんわり完成"
+      }
+    ]
+  },
+  {
+    "name": "art",
+    "title": "最後の一筆まで見て",
+    "subtitle": "絵ができる瞬間",
+    "duration": 30.733333,
+    "rankCount": 3,
+    "sources": [
+      {
+        "id": "Fn0LWLRj72w",
+        "rank": 3,
+        "label": "クレヨンの風景画"
+      },
+      {
+        "id": "R3FdervMwh8",
+        "rank": 2,
+        "label": "ペンで描く猫"
+      },
+      {
+        "id": "AlCyMyD6AKo",
+        "rank": 1,
+        "label": "数本の線だけで"
+      }
+    ]
+  },
+  {
+    "name": "06-bikes",
+    "title": "細部までかっこいい",
+    "subtitle": "MTBカスタム",
+    "duration": 57.533333,
+    "rankCount": 7,
+    "sources": [
+      {
+        "id": "_T1aX4fo5dE",
+        "rank": 7,
+        "label": "ブロンソンをじっくり"
+      },
+      {
+        "id": "RLMut_F8SDk",
+        "rank": 6,
+        "label": "グリップを交換"
+      },
+      {
+        "id": "H0nMNhyU-0I",
+        "rank": 5,
+        "label": "ドクロの泥よけ"
+      },
+      {
+        "id": "i8mkYE9Vo7M",
+        "rank": 4,
+        "label": "E-MTBのこだわり"
+      },
+      {
+        "id": "PrN0lVeKfks",
+        "rank": 3,
+        "label": "パープルが差し色"
+      },
+      {
+        "id": "_DqzzTfemWo",
+        "rank": 2,
+        "label": "赤いフレーム"
+      },
+      {
+        "id": "SDumbLbFiZs",
+        "rank": 1,
+        "label": "ネオンカラーで疾走"
+      }
+    ]
+  },
+  {
+    "name": "rc",
+    "title": "小さくても本格派",
+    "subtitle": "ミニRCの世界",
+    "duration": 28.933333,
+    "rankCount": 4,
+    "sources": [
+      {
+        "id": "noE1R94Lxmc",
+        "rank": 4,
+        "label": "手のひらサイズの車"
+      },
+      {
+        "id": "PYPp-VbIL8I",
+        "rank": 3,
+        "label": "水中まで走る"
+      },
+      {
+        "id": "FCBulLAqIuQ",
+        "rank": 2,
+        "label": "カメラ付きボート"
+      },
+      {
+        "id": "rfnHoke1pk4",
+        "rank": 1,
+        "label": "指先で操るレーサー"
+      }
+    ]
+  },
+  {
+    "name": "robots",
+    "title": "思ったより動けるね",
+    "subtitle": "ロボットの日常",
+    "duration": 24.633333,
+    "rankCount": 3,
+    "sources": [
+      {
+        "id": "5C5VRzPRr0U",
+        "rank": 3,
+        "label": "ロボット同士でご挨拶"
+      },
+      {
+        "id": "EK7b1EhZEPw",
+        "rank": 2,
+        "label": "動くロボットハンド"
+      },
+      {
+        "id": "sBZxqsdB7YY",
+        "rank": 1,
+        "label": "走るのはまだ練習中"
+      }
+    ]
+  },
+  {
+    "name": "miniatures",
+    "title": "小さくても細部は本物",
+    "subtitle": "ミニチュアの世界",
+    "duration": 29.233333,
+    "rankCount": 3,
+    "sources": [
+      {
+        "id": "t_9nRo11Z-E",
+        "rank": 3,
+        "label": "指先サイズのキッチン"
+      },
+      {
+        "id": "1bxFnMKD8wc",
+        "rank": 2,
+        "label": "青いよろいが完成"
+      },
+      {
+        "id": "5UTdP9osYa8",
+        "rank": 1,
+        "label": "赤いよろいの細部"
+      }
+    ]
+  },
+  {
+    "name": "wood",
+    "title": "ぴったりはまる瞬間",
+    "subtitle": "木工の技",
+    "duration": 22.433333,
+    "rankCount": 3,
+    "sources": [
+      {
+        "id": "I2LwT3S8EEs",
+        "rank": 3,
+        "label": "隙間なくかみ合う"
+      },
+      {
+        "id": "q6RP2LqB-Bs",
+        "rank": 2,
+        "label": "手で削り出す形"
+      },
+      {
+        "id": "_gsc5pkmz2c",
+        "rank": 1,
+        "label": "見えないつなぎ目"
+      }
+    ]
+  },
+  {
+    "name": "sewing",
+    "title": "ひと針で変わる",
+    "subtitle": "ソーイングの工夫",
+    "duration": 26.533333,
+    "rankCount": 3,
+    "sources": [
+      {
+        "id": "oVbF7BcBKk8",
+        "rank": 3,
+        "label": "スリットをきれいに"
+      },
+      {
+        "id": "xMgSmPenN3Q",
+        "rank": 2,
+        "label": "レースでひと工夫"
+      },
+      {
+        "id": "_Uo22svgJYM",
+        "rank": 1,
+        "label": "ひだとボタンで完成"
+      }
+    ]
+  }
+]
