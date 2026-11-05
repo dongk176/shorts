@@ -21,6 +21,8 @@ def run(args):
 
 if mode == 'prepare':
     offset = float(sys.argv[3]) if len(sys.argv) > 3 else 0
+    language = sys.argv[4] if len(sys.argv) > 4 else 'ko'
+    labels = {'ko': ['첫말', '다음말', '끝말'], 'en': ['First', 'Next', 'Last'], 'ja': ['最初', '次の言葉', '最後']}[language]
     source = folder / 'source.mp4'
     run(['ffmpeg','-v','error','-y','-f','lavfi','-i','color=c=blue:s=320x180:r=30:d=12',
          '-f','lavfi','-i','aevalsrc=0.15*sin(2*PI*440*t)*(between(t\\,0\\,3)+between(t\\,5\\,8)+between(t\\,10\\,12)):s=48000:d=12',
@@ -29,7 +31,7 @@ if mode == 'prepare':
     spec = importlib.util.spec_from_file_location('silence_analyzer', root/'web/private/shorts-silence/analyze.py')
     module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
     silences = module.parse_silences(detected.stderr,0,12)
-    words = [TranscriptWord(text=t,start=a,end=b,provider='elevenlabs') for t,a,b in [('첫말',.5,1.5),('다음말',5.5,6.5),('끝말',10.5,11.5)]]
+    words = [TranscriptWord(text=t,start=a,end=b,provider='elevenlabs') for t,a,b in zip(labels, [.5,5.5,10.5], [1.5,6.5,11.5])]
     captions = compile_caption_render_spec(words,template_id='pop',clip_start=0,clip_end=12,video_aspect_ratio=VideoAspectRatio.LANDSCAPE,schema_version=4)
     render_spec = compile_initial_editor_render_spec_v4(title='무음 테스트',template_id='dark-minimal',video_aspect_ratio='16:9',font_scale=1,caption_render_spec=captions)
     value = {'short':{'id':'77777777-7777-4777-8777-777777777777','renderVersion':1,'templateId':'dark-minimal','customTemplateId':None,'templateSnapshot':{'presetVersion':3},'videoAspectRatio':'16:9','hookTitle':'무음 테스트','channelDisplayName':'테스트','titleTextStyles':[],'initialRenderSpec':render_spec,'subtitlesEnabled':True,'commentOverlays':[],'startSeconds':offset,'endSeconds':offset+12},
@@ -42,6 +44,7 @@ elif mode == 'render':
     document = EditorDocument.model_validate(plan['document'])
     segments = retime_editor_subtitles(document,source['captions'])
     assert len(segments) >= 3
+    assert [s.text for s in segments] == [s["text"] for s in source["timeline"]["subtitles"]]
     assert 3 < segments[1].start < 4.5, segments
     assert segments[-1].end < 9, segments
     output = folder/'output.mp4'

@@ -122,7 +122,7 @@ export async function POST(request: Request) {
     const session = await requireAuthenticatedMvpSession();
     const db = getDb();
     if (input.silenceRemoval) {
-      await requireShortsSilenceAccess(db, session.userId); assertSilenceTemplate(input);
+      await requireShortsSilenceAccess(db, session.userId); assertSilenceTemplate(input, { multilingual: true });
       if (request.headers.get("origin") !== new URL(request.url).origin || request.headers.get("sec-fetch-site") === "cross-site") throw new HttpError(403, "이지컷 화면에서 다시 시도해 주세요.");
     }
     if (input.midform) {
@@ -353,7 +353,12 @@ export async function POST(request: Request) {
         ? { presetVersion: 4, snsTemplateVersion: 1, brandColor: input.brandColor ?? "#000000",
             ...(input.communityTemplate ? { communityTemplateVersion: 1 } : {}) }
         : renderContract.templateSnapshot;
-      const templateSnapshot = input.silenceRemoval ? { ...baseTemplateSnapshot, shortsSilenceRemoval: input.silenceRemoval } : baseTemplateSnapshot;
+      const silenceCandidate = input.silenceRemoval && languageTest && session.isAdmin === true
+        ? process.env.ADMIN_SILENCE_TEST_RELEASE_ID : undefined;
+      const templateSnapshot = input.silenceRemoval ? { ...baseTemplateSnapshot,
+        ...(silenceCandidate
+          ? { shortsSilenceRemovalCandidate: input.silenceRemoval, shortsSilenceCandidateId: silenceCandidate }
+          : { shortsSilenceRemoval: input.silenceRemoval }) } : baseTemplateSnapshot;
       const subtitleTemplateSnapshot = renderContract.subtitleTemplateSnapshot;
       const usesUnifiedTemplateSubtitleCandidate =
         renderContract.usesUnifiedTemplateSubtitleCandidate;
@@ -401,7 +406,8 @@ export async function POST(request: Request) {
         if (!dispatchTarget) throw new HttpError(503, "중폼 제작 서버를 준비하고 있습니다.");
         dispatchTarget = midformTarget(midform, dispatchTarget.targetKey);
       }
-      const silenceTest = input.silenceRemoval && dispatchTarget
+      // Language jobs keep their verified language worker and use silence post-processing.
+      const silenceTest = input.silenceRemoval && !languageTest && dispatchTarget
         ? await silenceTestTarget(tx, session.userId, dispatchTarget) : null;
       if (silenceTest) dispatchTarget = silenceTest.target;
       let initialRenderSpecVersion: 4 | null = null;

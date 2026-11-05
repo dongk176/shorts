@@ -6,6 +6,19 @@ import { canSelectShortsSilence, shortsSilenceEnabled, shortsSilenceRequestSchem
 
 afterEach(() => vi.unstubAllEnvs());
 describe("owned opt-in silence admission", () => {
+  it.each(["ko", "en", "ja"])("accepts supported multilingual link settings for %s", outputLanguage => {
+    for (const sourceLanguage of ["auto", "ko", "en", "ja"]) {
+      expect(canSelectShortsSilence({ capability: true, customTemplate: false, snsTemplate: false,
+        multilingual: true, outputLanguage, sourceLanguage })).toBe(true);
+      expect(() => assertSilenceTemplate({ languageTest: true, outputLanguage, sourceLanguage }, { multilingual: true })).not.toThrow();
+    }
+    expect(() => assertSilenceTemplate({ outputLanguage: "en" })).toThrow();
+  });
+  it("keeps unsupported languages and templates blocked in multilingual mode", () => {
+    for (const input of [{ outputLanguage: "fr" }, { sourceLanguage: "fr" }, { snsTemplate: true }, { customTemplateId: "custom" }, { midform: {} }]) {
+      expect(() => assertSilenceTemplate(input, { multilingual: true })).toThrow();
+    }
+  });
   it("shows the option for the default automatic Korean input without enabling foreign-language combinations", () => {
     const input = { capability: true, customTemplate: false, snsTemplate: false, outputLanguage: "ko", sourceLanguage: "auto" };
     expect(canSelectShortsSilence(input)).toBe(true);

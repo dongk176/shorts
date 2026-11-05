@@ -24,9 +24,16 @@ export async function shortsSilenceRuntimeEnabled(db: Sql | TransactionSql) {
 }
 
 export function assertSilenceTemplate(input: { customTemplateId?: unknown; snsTemplate?: boolean;
-  midform?: unknown; languageTest?: boolean; outputLanguage?: string; sourceLanguage?: string }) {
-  if (input.customTemplateId || input.snsTemplate || input.midform || input.languageTest || input.sourceLanguage
-    || input.outputLanguage && input.outputLanguage !== "ko") {
-    throw new HttpError(400, "무음 삭제는 한국어 기본·자막 템플릿에서 사용할 수 있습니다.");
+  midform?: unknown; languageTest?: boolean; outputLanguage?: string; sourceLanguage?: string }, options: { multilingual?: boolean } = {}) {
+  if (input.customTemplateId || input.snsTemplate || input.midform) {
+    throw new HttpError(400, "무음 삭제는 기본·자막 템플릿에서 사용할 수 있습니다.");
+  }
+  if (options.multilingual) {
+    if ((input.outputLanguage && !["ko", "en", "ja"].includes(input.outputLanguage))
+      || (input.sourceLanguage && !["auto", "ko", "en", "ja"].includes(input.sourceLanguage))) {
+      throw new HttpError(400, "언어 설정을 확인해 주세요.", "LANGUAGE_TEST_INVALID_INPUT");
+    }
+  } else if (input.languageTest || input.sourceLanguage || input.outputLanguage && input.outputLanguage !== "ko") {
+    throw new HttpError(400, "파일 업로드 무음 삭제는 현재 한국어만 지원합니다.");
   }
 }

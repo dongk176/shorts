@@ -11,9 +11,11 @@ export type SilenceRemovalState = { status: "waiting" | "processing" | "renderin
   cutCount: number; removedSeconds: number };
 
 export function canSelectShortsSilence(input: { capability?: boolean; customTemplate: boolean;
-  snsTemplate: boolean; outputLanguage: string; sourceLanguage?: string }) {
+  snsTemplate: boolean; outputLanguage: string; sourceLanguage?: string; multilingual?: boolean }) {
   return input.capability === true && !input.customTemplate && !input.snsTemplate
-    && input.outputLanguage === "ko" && (!input.sourceLanguage || ["auto", "ko"].includes(input.sourceLanguage));
+    && (input.multilingual ? ["ko", "en", "ja"].includes(input.outputLanguage)
+      && (!input.sourceLanguage || ["auto", "ko", "en", "ja"].includes(input.sourceLanguage))
+      : input.outputLanguage === "ko" && (!input.sourceLanguage || ["auto", "ko"].includes(input.sourceLanguage)));
 }
 
 export function shortsSilenceEnabled(env: Record<string, string | undefined> = process.env) {

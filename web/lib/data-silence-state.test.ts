@@ -23,13 +23,13 @@ beforeAll(async()=>{
 afterAll(async()=>{await database?.close();});
 afterEach(()=>vi.unstubAllEnvs());
 function db(){
- return Object.assign(async (strings:TemplateStringsArray|string[])=>{
+ return Object.assign(async (strings:TemplateStringsArray|string[], ...values: unknown[])=>{
   if(!("raw" in strings))return strings;
   const query=strings.join("?");
   if(query.includes("select id, job_id, clip_index"))return [{id:short,jobId:job,status:"ready",renderVersion:1,
     templateSnapshot:{shortsSilenceRemoval:{version:1,preset:"aggressive"}},durationSeconds:10}];
-  const actual=query.replace("in ?",`in ('${short}')`);
-  const result=await database.query(actual);
+  const actual=query.replace("in ?",`in ('${short}')`).replace("?", "$1");
+  const result=await database.query(actual, values.slice(1));
   return result.rows.map(row=>Object.fromEntries(Object.entries(row as Record<string, unknown>).map(([key,value])=>[key.replace(/_([a-z])/g,(_,c)=>c.toUpperCase()),value])));
  },{json:(v:unknown)=>v}) as unknown as Sql;
 }

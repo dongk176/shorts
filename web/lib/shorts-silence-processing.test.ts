@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
-const mocks = vi.hoisted(() => ({ analyze: vi.fn(), release: vi.fn(), ownedRelease: vi.fn(), plan: vi.fn() }));
+const mocks = vi.hoisted(() => ({ analyze: vi.fn(), release: vi.fn(), ownedRelease: vi.fn(), pinnedRelease: vi.fn(), plan: vi.fn() }));
 vi.mock("./shorts-silence-analysis", () => ({ analyzeShortSilences: mocks.analyze }));
 vi.mock("./editor-rendering-release", () => ({ resolveEditorRelease: mocks.release,
   editorReleaseSupportsRenderSpecV4: () => true, subtitleEditingReleaseEnabled: () => true }));
-vi.mock("./language-test", () => ({ resolveOwnedProjectEditorRelease: mocks.ownedRelease }));
+vi.mock("./language-test", () => ({ resolveOwnedProjectEditorRelease: mocks.ownedRelease, languageTestEditorRelease: mocks.pinnedRelease }));
 vi.mock("./editor-document-contract", () => ({ parseInitialEditorRenderSpec: () => ({ version: 4 }) }));
 vi.mock("./shorts-silence-contract", async original => ({ ...await original<Record<string, unknown>>(), silenceEditDocument: mocks.plan }));
 import { processAdminShortSilence } from "./shorts-silence-processing";
@@ -35,6 +35,7 @@ function database({ active = 0, stopDuringAnalysis = false, sourceChanged = fals
 }
 beforeEach(() => {
   vi.stubEnv("ADMIN_SHORTS_SILENCE_ENABLED", "true"); vi.stubEnv("RANKING_VERCEL_SNAPSHOT_ID", "snapshot");
+  mocks.pinnedRelease.mockReset().mockResolvedValue(null);
   mocks.analyze.mockReset().mockResolvedValue([[3,5]]);
   mocks.release.mockReset().mockResolvedValue(release); mocks.ownedRelease.mockReset().mockResolvedValue(release);
   mocks.plan.mockReset().mockReturnValue({ document: { version: 3, channel: {} }, cutCount: 1, removedSeconds: 1.8 });
@@ -42,6 +43,24 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 const writesOutput = (q: string) => /insert into shorts_mvp.editor_render_(requests|outbox)|update shorts_mvp.generated_shorts/.test(q);
 describe("bounded administrator post-processing", () => {
+  it("retains the owned language release instead of switching to the ordinary renderer", async () => {
+    const pinned = { ...release, channel: "canary", releaseId: "55555555-5555-4555-8555-555555555555" };
+    mocks.pinnedRelease.mockResolvedValue(pinned);
+    mocks.ownedRelease.mockResolvedValue(pinned);
+    const { sql } = database();
+    expect(await processAdminShortSilence(sql, short, user)).toMatchObject({ status: "rendering" });
+    expect(mocks.pinnedRelease).toHaveBeenCalledWith(sql, user, short);
+    expect(mocks.release).not.toHaveBeenCalled();
+    expect(mocks.ownedRelease).toHaveBeenCalledWith(expect.anything(), user,
+      { releaseId: pinned.releaseId, channel: "canary", uiVersion: 3, documentVersion: 3 }, short);
+  });
+  it("preserves the output when a pinned language release is unavailable", async () => {
+    mocks.pinnedRelease.mockRejectedValue(new Error("unavailable"));
+    const { sql, queries } = database();
+    await expect(processAdminShortSilence(sql, short, user)).rejects.toMatchObject({ status: 503 });
+    expect(mocks.release).not.toHaveBeenCalled();
+    expect(queries.some(q => writesOutput(q.text))).toBe(false);
+  });
   it("does not touch the database when the deployment gate is off", async () => {
     vi.stubEnv("ADMIN_SHORTS_SILENCE_ENABLED", "false"); const { sql, queries } = database();
     expect(await processAdminShortSilence(sql)).toEqual({ status: "disabled" }); expect(queries).toEqual([]);

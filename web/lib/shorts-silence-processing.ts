@@ -5,7 +5,7 @@ import { analyzeShortSilences } from "./shorts-silence-analysis";
 import { silenceEditDocument, shortsSilenceEnabled, type SilenceEditableShort } from "./shorts-silence-contract";
 import { parseInitialEditorRenderSpec } from "./editor-document-contract";
 import { resolveEditorRelease, editorReleaseSupportsRenderSpecV4, subtitleEditingReleaseEnabled } from "./editor-rendering-release";
-import { resolveOwnedProjectEditorRelease } from "./language-test";
+import { languageTestEditorRelease, resolveOwnedProjectEditorRelease } from "./language-test";
 import { HttpError } from "./http";
 import { shortsSilenceRuntimeEnabled } from "./shorts-silence-access";
 
@@ -39,7 +39,9 @@ export async function processAdminShortSilence(db: Sql, shortId?: string, userId
       join shorts_mvp.app_users u on u.id=j.user_id
       left join shorts_mvp.admin_short_silence_tasks t on t.short_id=s.id
       where s.user_id=u.id and not j.is_example and j.midform_request is null
-        and j.template_snapshot->'shortsSilenceRemoval'='{"version":1,"preset":"aggressive"}'::jsonb
+        and (j.template_snapshot->'shortsSilenceRemoval'='{"version":1,"preset":"aggressive"}'::jsonb
+          or (u.is_admin and j.template_snapshot->>'shortsSilenceCandidateId'=${process.env.ADMIN_SILENCE_TEST_RELEASE_ID ?? null}
+            and j.template_snapshot->'shortsSilenceRemovalCandidate'='{"version":1,"preset":"aggressive"}'::jsonb))
         and j.status='completed' and j.user_deleted_at is null
         and s.status='ready' and s.render_version=1 and s.editor_document is null
         and s.pending_edit_request_id is null and s.deleted_at is null and s.expires_at>clock_timestamp()
@@ -63,7 +65,8 @@ export async function processAdminShortSilence(db: Sql, shortId?: string, userId
   const { source, requestId } = claimed;
   try {
     const initialSpec = parseInitialEditorRenderSpec(source.initialRenderSpec);
-    const release = await resolveEditorRelease(db, source.userId);
+    const release = await languageTestEditorRelease(db, source.userId, source.id)
+      ?? await resolveEditorRelease(db, source.userId);
     if (!editorReleaseSupportsRenderSpecV4(release) || release.channel === "legacy" || !release.releaseId
       || source.subtitleTemplateId && !subtitleEditingReleaseEnabled(release)) throw new Error("SILENCE_EDITOR_UNAVAILABLE");
     const silences = await analyzeShortSilences(String(source.sourceKey), Number(source.startSeconds) - Number(source.timelineStart), Number(source.endSeconds) - Number(source.timelineStart));
@@ -95,7 +98,9 @@ export async function processAdminShortSilence(db: Sql, shortId?: string, userId
       const [current] = await tx`select s.id from shorts_mvp.generated_shorts s
         join shorts_mvp.video_jobs j on j.id=s.job_id join shorts_mvp.app_users u on u.id=j.user_id
         where s.id=${source.id} and s.user_id=${source.userId} and u.id=s.user_id
-          and j.template_snapshot->'shortsSilenceRemoval'='{"version":1,"preset":"aggressive"}'::jsonb
+          and (j.template_snapshot->'shortsSilenceRemoval'='{"version":1,"preset":"aggressive"}'::jsonb
+          or (u.is_admin and j.template_snapshot->>'shortsSilenceCandidateId'=${process.env.ADMIN_SILENCE_TEST_RELEASE_ID ?? null}
+            and j.template_snapshot->'shortsSilenceRemovalCandidate'='{"version":1,"preset":"aggressive"}'::jsonb))
           and not j.is_example and j.midform_request is null and j.user_deleted_at is null
           and s.status='ready' and s.render_version=1 and s.editor_document is null
           and s.pending_edit_request_id is null and s.deleted_at is null and s.expires_at>clock_timestamp()

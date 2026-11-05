@@ -58,3 +58,7 @@
 @keyframes play { 0%, 51% { left: 0; opacity: 0; } 55% { left: 0; opacity: 1; } 85% { left: 100%; opacity: 1; } 86%, 100% { left: 100%; opacity: 0; } }
 @media(max-width: 560px) { .dialog { width: calc(100vw - 24px); max-height: calc(100dvh - 24px); padding: 25px 20px 20px; border-radius: 20px; } .dialog h2 { font-size: 22px; } .description { font-size: 13px; margin-bottom: 22px; } .demonstration { padding: 19px 13px 17px; } .track { height: 78px; } .speech { padding-inline: 3px; gap: 1px; } .speech i { width: 2px; } .trackHeading { gap: 8px; font-size: 12px; } .beforeHint, .afterHint { font-size: 11px; } .option { padding: 16px; gap: 12px; } .optionCopy > span { font-size: 12px; } .optionStatus { font-size: 12px; gap: 5px; } .optionIcon { width: 40px; height: 42px; gap: 2px; } .optionIcon i { width: 2px; } .actions { margin-top: 20px; } }
 @media(prefers-reduced-motion: reduce) { .dialog, .trimmed .gap, .cutPiece, .playhead { animation: none !important; } .trimmed .gap { width: 0; border-color: transparent; } .cutPiece, .playhead { display: none; } .option { transition: none; } }
+
+.primary:disabled { opacity: .45; cursor: not-allowed; }
+.optionStatus { max-width: 30%; overflow-wrap: anywhere; }
+@media(max-width: 560px) { .option { flex-wrap: wrap; } .optionStatus { margin-left: 52px; max-width: calc(100% - 52px); } .actions { flex-wrap: wrap; } }

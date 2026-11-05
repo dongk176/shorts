@@ -187,7 +187,7 @@ export async function getShortsForJobs(
     ? await getWordTimedShortIds(db, jobIds)
     : new Set<string>();
   const silenceStates = new Map<string, SilenceRemovalState>();
-  const silenceIds = rows.filter(row => row.templateSnapshot?.shortsSilenceRemoval).map(row => String(row.id));
+  const silenceIds = rows.filter(row => row.templateSnapshot?.shortsSilenceRemoval || (process.env.ADMIN_SILENCE_TEST_RELEASE_ID && row.templateSnapshot?.shortsSilenceCandidateId === process.env.ADMIN_SILENCE_TEST_RELEASE_ID && row.templateSnapshot?.shortsSilenceRemovalCandidate)).map(row => String(row.id));
   if (shortsSilenceEnabled() && silenceIds.length) {
     const states = await db`select s.id,case
         when s.render_version>1 and r.status='succeeded' then 'completed'
@@ -200,7 +200,9 @@ export async function getShortsForJobs(
       left join shorts_mvp.admin_short_silence_tasks t on t.short_id=s.id
       left join shorts_mvp.editor_render_requests r on r.id=t.request_id
       where s.id in ${db(silenceIds)} and not j.is_example and j.midform_request is null
-        and j.template_snapshot->'shortsSilenceRemoval'='{"version":1,"preset":"aggressive"}'::jsonb`;
+        and (j.template_snapshot->'shortsSilenceRemoval'='{"version":1,"preset":"aggressive"}'::jsonb
+          or (u.is_admin and j.template_snapshot->>'shortsSilenceCandidateId'=${process.env.ADMIN_SILENCE_TEST_RELEASE_ID ?? null}
+            and j.template_snapshot->'shortsSilenceRemovalCandidate'='{"version":1,"preset":"aggressive"}'::jsonb))`;
     for (const row of states) silenceStates.set(String(row.id), { status: row.state, cutCount: Number(row.cutCount), removedSeconds: Number(row.removedSeconds) });
   }
   const result = new Map<string, GeneratedShort[]>();

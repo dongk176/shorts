@@ -13708,8 +13708,11 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
   const adminTemplateLayoutEnabled = brandColorSelectionEnabled;
   const shortsSilenceAllowed = canSelectShortsSilence({ capability: state?.capabilities.shortsSilenceRemoval,
     customTemplate: Boolean(customTemplateId), snsTemplate: snsTemplateActive, outputLanguage,
-    sourceLanguage: sourceMode === "youtube" ? sourceLanguage : undefined });
+    sourceLanguage: sourceMode === "youtube" ? sourceLanguage : undefined, multilingual: sourceMode === "youtube" });
   const shortsSilenceActive = shortsSilenceAllowed && shortsSilenceSelected;
+  useEffect(() => {
+    if (!shortsSilenceAllowed) setShortsSilenceSelected(false);
+  }, [shortsSilenceAllowed]);
   const sourceVideoEmbedUrl = !uploadSourceActive && sourceRangeSelectionEnabled && analysis
     ? youtubePrivacyEnhancedEmbedUrl(analysis.videoId)
     : null;
@@ -14681,7 +14684,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
       } : {}),
       videoAspectRatio: effectiveVideoAspectRatio,
       outputLanguage,
-      ...(languageTestActive && !shortsSilenceActive ? { languageTest: true, sourceLanguage } : {}),
+      ...(languageTestActive && (!shortsSilenceActive || outputLanguage !== "ko" || !["auto", "ko"].includes(sourceLanguage)) ? { languageTest: true, sourceLanguage } : {}),
       rightsConfirmed,
       ...(shortsSilenceActive ? { silenceRemoval: SHORTS_SILENCE_REQUEST } : {}),
       ...(sourceRangeSelectionEnabled
@@ -15199,7 +15202,11 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
               )}
             </>
           )}
-          {shortsSilenceAllowed ? <SilenceRemovalChoice enabled={shortsSilenceSelected} onChange={setShortsSilenceSelected} disabled={analysisCreationBlocked || busy} /> : null}
+          {state?.capabilities.shortsSilenceRemoval ? <SilenceRemovalChoice enabled={shortsSilenceActive} onChange={setShortsSilenceSelected}
+            unavailableReason={shortsSilenceAllowed ? undefined : ui(customTemplateId || snsTemplateActive
+              ? "이 템플릿은 아직 무음 삭제를 지원하지 않아요. 기본·자막 템플릿에서 사용할 수 있어요."
+              : "무음 삭제는 현재 원본과 자막이 모두 한국어인 영상에서 사용할 수 있어요.")}
+            disabled={analysisCreationBlocked || busy} /> : null}
           {languageTestActive && (
             <section className="rounded-xl border border-white/15 bg-white/[.025] p-4" data-language-selection>
               <div className="flex items-center justify-between gap-4 text-sm font-bold">

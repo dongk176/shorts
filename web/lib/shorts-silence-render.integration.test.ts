@@ -26,13 +26,13 @@ with patch.object(module.subprocess,'run',side_effect=subprocess.TimeoutExpired(
     expect(execFileSync(path.join(root, "worker/.venv/bin/python"), ["-c", script,
       path.join(root, "web/private/shorts-silence/analyze.py")], { encoding: "utf8", timeout: 10_000 }).trim()).toBe("redacted");
   });
-  it.each([0, 240])("removes silence and retimes captions with source-clock offset %s", offset => {
+  it.each([[0, "ko"], [240, "ko"], [240, "en"], [240, "ja"]] as const)("removes silence and retimes captions at offset %s in %s", (offset, language) => {
     const folder = mkdtempSync(path.join(os.tmpdir(), "shorts-silence-media-"));
     const root = path.resolve(import.meta.dirname, "../..");
     const python = path.join(root, "worker/.venv/bin/python");
     const helper = path.join(root, "test-tools/silence-media-proof.py");
     try {
-      const detected = JSON.parse(execFileSync(python, [helper, "prepare", folder, String(offset)], { encoding: "utf8", timeout: 120_000 }));
+      const detected = JSON.parse(execFileSync(python, [helper, "prepare", folder, String(offset), language], { encoding: "utf8", timeout: 120_000 }));
       expect(detected.silences).toHaveLength(2);
       const input = JSON.parse(readFileSync(path.join(folder, "input.json"), "utf8"));
       const plan = silenceEditDocument(input.short, input.timeline, input.silences);

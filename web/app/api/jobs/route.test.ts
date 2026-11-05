@@ -95,6 +95,28 @@ beforeEach(() => {
 });
 
 describe("language job admission through the actual POST handler", () => {
+  it.each(["en", "ja"])("keeps %s silence jobs on the language release even in an admin speed-test candidate", async outputLanguage => {
+    admin = true; publicSilence = true;
+    mocks.session.mockResolvedValue({ userId: user, id: user, isAdmin: true });
+    vi.stubEnv("ADMIN_SILENCE_TEST_RELEASE_ID", releaseId);
+    vi.stubEnv("ADMIN_SHORTS_SILENCE_ENABLED", "true");
+    vi.stubEnv("RANKING_VERCEL_SNAPSHOT_ID", "snapshot");
+    const body = { outputLanguage, sourceLanguage: "ja", silenceRemoval: { version: 1, preset: "aggressive" }, requestId: crypto.randomUUID() };
+    expect((await POST(request(body))).status).toBe(202);
+    expect((await POST(request(body))).status).toBe(200);
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({ output: outputLanguage, release: releaseId, silenceRelease: null,
+      snapshot: { shortsSilenceRemovalCandidate: { version: 1, preset: "aggressive" }, shortsSilenceCandidateId: releaseId } });
+    expect(reservations).toHaveLength(1);
+  });
+  it("silence selection cannot bypass disabled public language admission", async () => {
+    publicSilence = true; publicPercent = 0;
+    vi.stubEnv("ADMIN_SHORTS_SILENCE_ENABLED", "true");
+    vi.stubEnv("RANKING_VERCEL_SNAPSHOT_ID", "snapshot");
+    expect((await POST(request({ silenceRemoval: { version: 1, preset: "aggressive" } }))).status).toBe(403);
+    expect(jobs).toHaveLength(0);
+    expect(reservations).toHaveLength(0);
+  });
   it("blocks ordinary-user silence requests when public admission is off", async () => {
     vi.stubEnv("ADMIN_SHORTS_SILENCE_ENABLED", "true"); vi.stubEnv("RANKING_VERCEL_SNAPSHOT_ID", "snapshot");
     expect((await POST(request({ languageTest: false, sourceLanguage: undefined, outputLanguage: "ko",
