@@ -14684,7 +14684,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
       } : {}),
       videoAspectRatio: effectiveVideoAspectRatio,
       outputLanguage,
-      ...(languageTestActive && (!shortsSilenceActive || outputLanguage !== "ko" || !["auto", "ko"].includes(sourceLanguage)) ? { languageTest: true, sourceLanguage } : {}),
+      ...(languageTestActive && (!shortsSilenceActive || customTemplateId || snsTemplateActive || outputLanguage !== "ko" || !["auto", "ko"].includes(sourceLanguage)) ? { languageTest: true, sourceLanguage } : {}),
       rightsConfirmed,
       ...(shortsSilenceActive ? { silenceRemoval: SHORTS_SILENCE_REQUEST } : {}),
       ...(sourceRangeSelectionEnabled

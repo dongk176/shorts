@@ -4,8 +4,8 @@ const nextConfig = {
   output: "standalone",
   serverExternalPackages: ["postgres"],
   outputFileTracingIncludes: {
-    "/api/cron/admin-shorts-silence": ["./private/shorts-silence/analyze.py"],
-    "/api/shorts/*/silence-removal": ["./private/shorts-silence/analyze.py"],
+    "/api/cron/admin-shorts-silence": ["./private/shorts-silence/analyze.py", "./public/fonts/editor/Pretendard-Bold.woff2", "./public/fonts/editor/NotoSansCJKjp-Variable.ttf"],
+    "/api/shorts/*/silence-removal": ["./private/shorts-silence/analyze.py", "./public/fonts/editor/Pretendard-Bold.woff2", "./public/fonts/editor/NotoSansCJKjp-Variable.ttf"],
     "/api/ranking-shorts/**/*": ["./private/ranking-runtime/runtime.tar.gz", "./private/ranking-runtime/manifest.json"],
     "/api/shorts-guides/*/download": ["./private/shorts-guides/**/*.pdf"],
     "/api/ebooks/*/download": ["./private/ebooks/**/*.pdf"],

@@ -25,8 +25,8 @@ export async function shortsSilenceRuntimeEnabled(db: Sql | TransactionSql) {
 
 export function assertSilenceTemplate(input: { customTemplateId?: unknown; snsTemplate?: boolean;
   midform?: unknown; languageTest?: boolean; outputLanguage?: string; sourceLanguage?: string }, options: { multilingual?: boolean } = {}) {
-  if (input.customTemplateId || input.snsTemplate || input.midform) {
-    throw new HttpError(400, "무음 삭제는 기본·자막 템플릿에서 사용할 수 있습니다.");
+  if (input.midform) {
+    throw new HttpError(400, "미들폼은 전용 무음 정리 처리를 사용합니다.");
   }
   if (options.multilingual) {
     if ((input.outputLanguage && !["ko", "en", "ja"].includes(input.outputLanguage))

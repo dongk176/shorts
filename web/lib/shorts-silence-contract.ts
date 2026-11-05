@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { templateConfigSchema } from "./template-config";
 import type { CommentOverlay, GeneratedShort } from "./contracts";
 import { editorDocumentSnapshotSchema } from "./editor-document-contract";
 import { createInitialEditorOverlayLayout } from "./editor-overlay-preview";
@@ -12,7 +13,7 @@ export type SilenceRemovalState = { status: "waiting" | "processing" | "renderin
 
 export function canSelectShortsSilence(input: { capability?: boolean; customTemplate: boolean;
   snsTemplate: boolean; outputLanguage: string; sourceLanguage?: string; multilingual?: boolean }) {
-  return input.capability === true && !input.customTemplate && !input.snsTemplate
+  return input.capability === true
     && (input.multilingual ? ["ko", "en", "ja"].includes(input.outputLanguage)
       && (!input.sourceLanguage || ["auto", "ko", "en", "ja"].includes(input.sourceLanguage))
       : input.outputLanguage === "ko" && (!input.sourceLanguage || ["auto", "ko"].includes(input.sourceLanguage)));
@@ -48,7 +49,7 @@ export type SilenceEditableShort = Pick<GeneratedShort, "id" | "renderVersion" |
 export type SilenceTimeline = { start: number; end: number; subtitles: { start: number; end: number; text: string }[] };
 
 export function silenceEditDocument(short: SilenceEditableShort, timeline: SilenceTimeline, silences: number[][]) {
-  if (short.renderVersion !== 1 || short.customTemplateId || short.templateSnapshot?.snsTemplateVersion
+  if (short.renderVersion !== 1 || (short.templateSnapshot?.snsTemplateVersion && short.templateSnapshot.unifiedEditorVersion !== 1)
     || short.initialRenderSpec?.version !== 4) throw new Error("기본·자막 템플릿의 새 쇼츠에서 무음 정리를 사용할 수 있습니다.");
   const ranges = silenceKeptRanges(short.startSeconds - timeline.start, short.endSeconds - timeline.start, silences);
   const outputSeconds = Math.round(ranges.reduce((n, [a, b]) => n + b - a, 0) * 1000) / 1000;
@@ -59,12 +60,30 @@ export function silenceEditDocument(short: SilenceEditableShort, timeline: Silen
     return endSeconds - startSeconds >= 1 / 30 ? [{ ...c, startSeconds, endSeconds }] : [];
   });
   const spec = structuredClone(short.initialRenderSpec);
-  spec.comments = comments.map(c => ({ id: c.id, offsetY: 0, startFrame: Math.round(c.startSeconds * 30), endFrame: Math.round(c.endSeconds * 30) }));
+  spec.comments = comments.map(c => ({ id: c.id, offsetY: spec.comments.find(original => original.id === c.id)?.offsetY ?? 0, startFrame: Math.round(c.startSeconds * 30), endFrame: Math.round(c.endSeconds * 30) }));
   const overlays = seedEditorOverlayLayoutFromInitialRenderSpec(createInitialEditorOverlayLayout(), spec);
   overlays.visible.comment = comments.length > 0;
+  // Initial text timing is output-relative, unlike retained subtitle timestamps.
+  spec.textOverlays = spec.textOverlays.flatMap(layer => {
+    const startFrame = Math.round(outputAt(sourceOffset + layer.startFrame / 30) * 30);
+    const endFrame = Math.round(outputAt(sourceOffset + layer.endFrame / 30) * 30);
+    return endFrame > startFrame ? [{ ...layer, startFrame, endFrame }] : [];
+  });
+  const templateConfig = templateConfigSchema.safeParse(short.templateSnapshot?.config);
+  const authoredTexts = templateConfig.success && "textOverlays" in templateConfig.data ? templateConfig.data.textOverlays ?? [] : [];
+  overlays.textOverlays = spec.textOverlays.map(layer => ({
+    id: layer.id, text: authoredTexts.find(t => t.id === layer.id || `tpl:${short.customTemplateId}:${t.id}` === layer.id)?.text ?? layer.lines.join("\n"), fontId: layer.font.fontId,
+    color: layer.color, effect: layer.effect, offset: { x: layer.centerX - 540, y: layer.centerY - 960 },
+    width: layer.width, scale: layer.scale,
+    startSeconds: layer.startFrame / 30, endSeconds: layer.endFrame / 30,
+  }));
+  const textIds = new Set(overlays.textOverlays.map(layer => `text:${layer.id}`));
+  spec.layerOrder = spec.layerOrder.filter(id => !id.startsWith("text:") || textIds.has(id));
+  overlays.layerOrder = overlays.layerOrder.filter(id => !id.startsWith("text:") || textIds.has(id));
+  overlays.commentOffsets = Object.fromEntries(spec.comments.map(c => [c.id, { x: 0, y: c.offsetY }]));
   const document: EditorDocumentSnapshotV3 = {
     version: 3, sourceShortId: short.id, baseRenderVersion: short.renderVersion,
-    template: { id: short.templateId, customTemplateId: null,
+    template: { id: short.templateId, customTemplateId: short.customTemplateId ?? null,
       presetVersion: Number(short.templateSnapshot?.presetVersion ?? 3), snapshot: short.templateSnapshot as EditorDocumentJsonObject | null },
     title: { text: short.hookTitle, textStyles: short.titleTextStyles, fontScale: 1 },
     channel: { displayName: short.channelDisplayName, thumbnailUrl: null, thumbnailAssetKey: null },
@@ -74,6 +93,8 @@ export function silenceEditDocument(short: SilenceEditableShort, timeline: Silen
       selectionStartSeconds: timeline.start + ranges[0][0], selectionEndSeconds: timeline.start + ranges.at(-1)![1] },
     renderSpec: spec,
   };
-  return { document: editorDocumentSnapshotSchema.parse(document), cutCount: ranges.length - 1,
+  const validated = editorDocumentSnapshotSchema.parse(document);
+  if (validated.version !== 3) throw new Error("SILENCE_EDITOR_UNAVAILABLE");
+  return { document: validated, cutCount: ranges.length - 1,
     outputSeconds, removedSeconds: Math.round(Math.max(0, short.endSeconds - short.startSeconds - outputSeconds) * 1000) / 1000 };
 }

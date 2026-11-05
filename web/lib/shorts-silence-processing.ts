@@ -1,7 +1,9 @@
 import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 import type { Sql } from "postgres";
-import { analyzeShortSilences } from "./shorts-silence-analysis";
+import { analyzeShortSilences, analyzeShortSilenceComposition } from "./shorts-silence-analysis";
+import { silenceSocialEditDocument } from "./shorts-silence-social";
+import { assertUnifiedSnsDesignRelease } from "./unified-sns-editor-validation";
 import { silenceEditDocument, shortsSilenceEnabled, type SilenceEditableShort } from "./shorts-silence-contract";
 import { parseInitialEditorRenderSpec } from "./editor-document-contract";
 import { resolveEditorRelease, editorReleaseSupportsRenderSpecV4, subtitleEditingReleaseEnabled } from "./editor-rendering-release";
@@ -69,7 +71,14 @@ export async function processAdminShortSilence(db: Sql, shortId?: string, userId
       ?? await resolveEditorRelease(db, source.userId);
     if (!editorReleaseSupportsRenderSpecV4(release) || release.channel === "legacy" || !release.releaseId
       || source.subtitleTemplateId && !subtitleEditingReleaseEnabled(release)) throw new Error("SILENCE_EDITOR_UNAVAILABLE");
-    const silences = await analyzeShortSilences(String(source.sourceKey), Number(source.startSeconds) - Number(source.timelineStart), Number(source.endSeconds) - Number(source.timelineStart));
+    const social = source.templateSnapshot?.snsTemplateVersion === 1;
+    if (social && !release.unifiedTemplateEditingCapable) throw new Error("SILENCE_EDITOR_UNAVAILABLE");
+    const start = Number(source.startSeconds) - Number(source.timelineStart);
+    const end = Number(source.endSeconds) - Number(source.timelineStart);
+    const analysis = social
+      ? await analyzeShortSilenceComposition(String(source.sourceKey), start, end,
+        { text: source.hookTitle, language: source.templateSnapshot.snsLanguage })
+      : { silences: await analyzeShortSilences(String(source.sourceKey), start, end), titleMeasurements: undefined };
     const input: SilenceEditableShort = {
       id: source.id, renderVersion: Number(source.renderVersion), templateId: source.templateId,
       customTemplateId: source.customTemplateId, templateSnapshot: source.templateSnapshot,
@@ -78,7 +87,10 @@ export async function processAdminShortSilence(db: Sql, shortId?: string, userId
       subtitlesEnabled: source.subtitlesEnabled, commentOverlays: source.commentOverlays || [],
       startSeconds: Number(source.startSeconds), endSeconds: Number(source.endSeconds),
     };
-    const plan = silenceEditDocument(input, { start: Number(source.timelineStart), end: Number(source.timelineEnd), subtitles: source.sourceSubtitles || [] }, silences);
+    const timeline = { start: Number(source.timelineStart), end: Number(source.timelineEnd), subtitles: source.sourceSubtitles || [] };
+    const plan = social
+      ? await silenceSocialEditDocument(input, timeline, analysis.silences, release, analysis.titleMeasurements ?? {})
+      : silenceEditDocument(input, timeline, analysis.silences);
     plan.document.channel.thumbnailUrl = source.channelThumbnailUrl || null;
     if (!plan.cutCount) {
       await db`update shorts_mvp.admin_short_silence_tasks set state='completed',updated_at=now()
@@ -91,6 +103,7 @@ export async function processAdminShortSilence(db: Sql, shortId?: string, userId
       const [gate] = await tx`select enabled from shorts_mvp.runtime_feature_flags where flag_key='admin_shorts_silence' for share`;
       if (gate?.enabled !== true) throw new Error("SILENCE_STOPPED");
       const locked = await resolveOwnedProjectEditorRelease(tx, source.userId, requested, source.id);
+      if (social) await assertUnifiedSnsDesignRelease(tx, locked.releaseId!);
       if (!editorReleaseSupportsRenderSpecV4(locked) || source.subtitleTemplateId && !subtitleEditingReleaseEnabled(locked)) throw new Error("SILENCE_EDITOR_CHANGED");
       const [task] = await tx`select short_id from shorts_mvp.admin_short_silence_tasks
         where short_id=${source.id} and lease_id=${leaseId} and state='processing' and lease_until>clock_timestamp() for update`;

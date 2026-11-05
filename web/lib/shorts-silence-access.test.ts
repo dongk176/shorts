@@ -14,10 +14,17 @@ describe("owned opt-in silence admission", () => {
     }
     expect(() => assertSilenceTemplate({ outputLanguage: "en" })).toThrow();
   });
-  it("keeps unsupported languages and templates blocked in multilingual mode", () => {
-    for (const input of [{ outputLanguage: "fr" }, { sourceLanguage: "fr" }, { snsTemplate: true }, { customTemplateId: "custom" }, { midform: {} }]) {
+  it("keeps unsupported languages and midform outside this admission", () => {
+    for (const input of [{ outputLanguage: "fr" }, { sourceLanguage: "fr" }, { midform: {} }]) {
       expect(() => assertSilenceTemplate(input, { multilingual: true })).toThrow();
     }
+  });
+  it("admits custom and social layouts through the same explicit opt-in", () => {
+    for (const input of [{ customTemplateId: "custom" }, { snsTemplate: true }]) {
+      expect(() => assertSilenceTemplate(input, { multilingual: true })).not.toThrow();
+    }
+    expect(canSelectShortsSilence({ capability: true, customTemplate: true, snsTemplate: false, multilingual: true, outputLanguage: "ja" })).toBe(true);
+    expect(canSelectShortsSilence({ capability: false, customTemplate: false, snsTemplate: true, multilingual: true, outputLanguage: "en" })).toBe(false);
   });
   it("shows the option for the default automatic Korean input without enabling foreign-language combinations", () => {
     const input = { capability: true, customTemplate: false, snsTemplate: false, outputLanguage: "ko", sourceLanguage: "auto" };
@@ -57,7 +64,7 @@ describe("owned opt-in silence admission", () => {
     expect(shortsSilenceRequestSchema.safeParse({ version: 1, preset: "aggressive", admin: true }).success).toBe(false);
   });
   it("does not combine unsupported private pipelines", () => {
-    for (const input of [{ midform: {} }, { snsTemplate: true }, { languageTest: true }, { outputLanguage: "ja" }, { customTemplateId: "custom" }]) {
+    for (const input of [{ midform: {} }, { languageTest: true }, { outputLanguage: "ja" }]) {
       expect(() => assertSilenceTemplate(input)).toThrow();
     }
     expect(() => assertSilenceTemplate({ outputLanguage: "ko" })).not.toThrow();

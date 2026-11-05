@@ -42,16 +42,17 @@ elif mode == 'render':
     source = json.loads((folder/'input.json').read_text())
     plan = json.loads((folder/'plan.json').read_text())
     document = EditorDocument.model_validate(plan['document'])
-    segments = retime_editor_subtitles(document,source['captions'])
-    assert len(segments) >= 3
-    assert [s.text for s in segments] == [s["text"] for s in source["timeline"]["subtitles"]]
-    assert 3 < segments[1].start < 4.5, segments
-    assert segments[-1].end < 9, segments
+    segments = retime_editor_subtitles(document,source['captions']) if document.subtitles.enabled else []
+    if document.subtitles.enabled:
+        assert len(segments) >= 3
+        assert [s.text for s in segments] == [s["text"] for s in source["timeline"]["subtitles"]]
+        assert 3 < segments[1].start < 4.5, segments
+        assert segments[-1].end < 9, segments
     output = folder/'output.mp4'
     settings = Settings(temp_dir=folder,ffmpeg_threads=1)
     renderer = EditorDocumentRenderer(settings)
     sequence = renderer.extract_sequence(timeline_path=folder/'source.mp4',output_path=folder/'sequence.mp4',document=document,work_dir=folder/'sequence')
-    renderer.render(clean_path=sequence,output_path=output,document=document,work_dir=folder/'render',channel_thumbnail_path=None,caption_render_spec=source['captions'])
+    renderer.render(clean_path=sequence,output_path=output,document=document,work_dir=folder/'render',channel_thumbnail_path=None,caption_render_spec=source['captions'] if document.subtitles.enabled else None)
     probe = json.loads(run(['ffprobe','-v','error','-show_format','-show_streams','-of','json',str(output)]).stdout)
     duration = float(probe['format']['duration'])
     assert abs(duration - plan['outputSeconds']) < .08, (duration,plan)
