@@ -3421,7 +3421,9 @@ class BatchWorker:
                     prefix="initial",
                     title_font_scale=float(item["title_font_scale"]),
                     channel_thumbnail_path=channel_thumbnail_path,
-                    video_aspect_ratio=VideoAspectRatio(str(item.get("video_aspect_ratio") or "1:1")),
+                    video_aspect_ratio=VideoAspectRatio(
+                        str(item.get("video_aspect_ratio") or "1:1")
+                    ),
                     comment_overlays=comments,
                     comment_channel_below=_preset_comment_channel_below(item),
                     comment_channel_fixed=_preset_comment_channel_fixed(item),
