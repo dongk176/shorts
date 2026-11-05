@@ -1990,9 +1990,12 @@ class WorkerRepository:
                         connection.execute(
                             """update shorts_mvp.generated_shorts
                             set editor_document=%s,editor_document_version=3,
-                              duration_seconds=%s
+                              initial_start_seconds=coalesce(initial_start_seconds,start_seconds),
+                              initial_end_seconds=coalesce(initial_end_seconds,end_seconds),
+                              end_seconds=start_seconds+%s,duration_seconds=%s
                             where id=%s""",
-                            (Jsonb(document), silence_result["output_seconds"], short_id),
+                            (Jsonb(document), silence_result["output_seconds"],
+                             silence_result["output_seconds"], short_id),
                         )
                     task = connection.execute(
                         """insert into shorts_mvp.admin_short_silence_tasks

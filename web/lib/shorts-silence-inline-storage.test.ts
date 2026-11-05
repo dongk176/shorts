@@ -29,6 +29,10 @@ it("admits only opted-in administrators and atomically stores output with its ed
       create table shorts_mvp.generated_shorts(id uuid primary key,job_id uuid,user_id uuid,
         custom_template_id uuid,template_snapshot jsonb default '{}', render_version int default 1,editor_document jsonb,
         initial_render_spec jsonb default '{"version":4}',editor_document_version int,duration_seconds numeric default 4,
+        start_seconds numeric default 10,end_seconds numeric default 14,
+        initial_start_seconds numeric,initial_end_seconds numeric,
+        constraint generated_shorts_duration_range_check check
+          (duration_seconds>=1 and end_seconds>start_seconds and duration_seconds=end_seconds-start_seconds),
         output_s3_key text,thumbnail_s3_key text,file_size_bytes bigint,status text default 'rendering',render_progress int,
         rendered_config_hash text,hook_title text,channel_display_name text,subtitles_enabled boolean,
         subtitle_segments jsonb,comment_overlays jsonb,template_id text,video_aspect_ratio text,title_font_scale numeric,
@@ -49,7 +53,7 @@ it("admits only opted-in administrators and atomically stores output with its ed
     await db.exec("update shorts_mvp.app_users set is_admin=true");
     const save = async (invalidOwner: boolean) => db.transaction(async tx => {
       await tx.query(sql("update shorts_mvp.generated_shorts s"), ["new.mp4", "new.jpg", 100, short]);
-      await tx.query(sql("set editor_document=%s"), [{ version: 3 }, 2.2, short]);
+      await tx.query(sql("set editor_document=%s"), [{ version: 3 }, 2.2, 2.2, short]);
       if (invalidOwner) await tx.exec("update shorts_mvp.video_jobs set template_snapshot='{}'");
       const task = await tx.query(sql("insert into shorts_mvp.admin_short_silence_tasks"), [1, 1.8, short]);
       if (!task.rows.length) throw new Error("administrator revoked");
@@ -58,6 +62,8 @@ it("admits only opted-in administrators and atomically stores output with its ed
     expect((await db.query("select status,editor_document,output_s3_key from shorts_mvp.generated_shorts")).rows)
       .toEqual([{ status: "rendering", editor_document: null, output_s3_key: null }]);
     await save(false);
+    expect((await db.query("select start_seconds,end_seconds,duration_seconds,initial_start_seconds,initial_end_seconds from shorts_mvp.generated_shorts")).rows)
+      .toEqual([{ start_seconds: "10", end_seconds: "12.2", duration_seconds: "2.2", initial_start_seconds: "10", initial_end_seconds: "14" }]);
     expect((await db.query("select state,cut_count from shorts_mvp.admin_short_silence_tasks")).rows)
       .toEqual([{ state: "completed", cut_count: 1 }]);
     expect((await admit()).rows).toHaveLength(0);
