@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import os from "node:os";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { resolveEditorFontFaceV4 } from "./editor-fonts";
 import { wrapPreviewTitle } from "./title-preview";
 import { compileEditorRenderTitleSpecV4 } from "./editor-render-spec";
@@ -87,7 +87,7 @@ print(json.dumps(m.measure_title(json.loads(sys.argv[2]),Path(sys.argv[3]))))
       short.initialRenderSpec!.title = compileEditorRenderTitleSpecV4(initialDocument, (text, size) => ({
         width: measurements[String(size)][text], actualBoundingBoxAscent: size, actualBoundingBoxDescent: 0,
       }));
-      const plan = await silenceSocialEditDocument(short, timeline, [[3, 5]], release, measurements);
+      let plan = await silenceSocialEditDocument(short, timeline, [[3, 5]], release, measurements);
       expect(plan.cutCount).toBe(1);
       expect(plan.document.template.snapshot!.snsLanguage).toBe(language);
       expect(plan.document.overlays.textOverlays.every(l => Math.abs(l.endSeconds - plan.outputSeconds) < .001)).toBe(true);
@@ -98,10 +98,21 @@ print(json.dumps(m.measure_title(json.loads(sys.argv[2]),Path(sys.argv[3]))))
       const helper = path.join(root, "test-tools/silence-media-proof.py");
       try {
         execFileSync(python, [helper, "prepare", folder, "240", language], { timeout: 120_000 });
+        if (community) {
+          const captionInput = JSON.parse(readFileSync(path.join(folder, "input.json"), "utf8"));
+          short.subtitlesEnabled = true;
+          if (short.initialRenderSpec?.version !== 4) throw new Error("Expected v4 source");
+          short.initialRenderSpec.subtitles = captionInput.short.initialRenderSpec.subtitles;
+          plan = await silenceSocialEditDocument(short, captionInput.timeline, [[3, 5], [8, 10]], release, measurements);
+          expect(plan.document.subtitles.enabled).toBe(true);
+          if (plan.document.renderSpec.version !== 4) throw new Error("Expected v4 output");
+          expect(plan.document.renderSpec.subtitles).toEqual(short.initialRenderSpec.subtitles);
+        }
         writeFileSync(path.join(folder, "plan.json"), JSON.stringify(plan));
         const result = JSON.parse(execFileSync(python, [helper, "render", folder], { encoding: "utf8", timeout: 120_000 }));
         expect(result.outputSeconds).toBeCloseTo(plan.outputSeconds, 1);
         expect(result.codecs).toEqual(expect.arrayContaining(["h264", "aac"]));
+        if (community) expect(result.subtitleStarts).toHaveLength(3);
       } finally { rmSync(folder, { recursive: true, force: true }); }
     }
   }, 180_000);

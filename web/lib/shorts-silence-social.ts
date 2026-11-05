@@ -25,7 +25,7 @@ export async function silenceSocialEditDocument(short: SilenceEditableShort, tim
   overlays.textOverlays = overlays.textOverlays.map(layer => ({ ...layer, endSeconds: overlayEnd }));
   const draft: EditorDocumentSnapshotV3 = { ...plan.document, overlays,
     template: { ...plan.document.template, snapshot: unifiedSnsSnapshot(original, template.config, short.hookTitle, overlays.textOverlays) } };
-  draft.subtitles.enabled = false;
+  draft.subtitles.enabled = original.communityTemplateVersion === 1 && plan.document.subtitles.enabled;
   const legacy = createEditorRenderSpec(draft, undefined, 3);
   const title = compileEditorRenderTitleSpecV4(draft, (text, size) => {
     const width = measurements[String(size)]?.[text];
@@ -35,7 +35,9 @@ export async function silenceSocialEditDocument(short: SilenceEditableShort, tim
   draft.renderSpec = { canvas: legacy.canvas, fps: legacy.fps, version: 4,
     video: legacy.video, comments: legacy.comments, layerOrder: legacy.layerOrder, title,
     channel: { ...legacy.channel, visible: overlays.visible.channel, font: resolveEditorFontFaceV4(overlays.fonts.channel, "channel") },
-    textOverlays: legacy.textOverlays.map((layer, i) => ({ ...layer, font: resolveEditorFontFaceV4(overlays.textOverlays[i].fontId, "text") })) };
+    textOverlays: legacy.textOverlays.map((layer, i) => ({ ...layer, font: resolveEditorFontFaceV4(overlays.textOverlays[i].fontId, "text") })),
+    ...(short.initialRenderSpec?.version === 4 && short.initialRenderSpec.subtitles
+      ? { subtitles: structuredClone(short.initialRenderSpec.subtitles) } : {}) };
   const compiled = editorDocumentSnapshotSchema.parse(draft);
   if (compiled.version !== 3) throw new Error("SILENCE_EDITOR_UNAVAILABLE");
   plan.document = compiled;
