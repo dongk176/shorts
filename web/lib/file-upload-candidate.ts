@@ -28,3 +28,14 @@ export function uploadCandidateForUser(userId: string | null, now = Date.now()) 
   return config && config.administratorId === userId && config.expiresAt > now
     ? config : null;
 }
+
+/** Keep isolated uploads invisible to the public silence cron. */
+export function uploadSilenceRequestMarker(userId: string, request: { version: 1; preset: "aggressive" }) {
+  const config = uploadCandidateConfig();
+  if (!config) return { shortsSilenceRemoval: request };
+  if (!uploadCandidateForUser(userId)
+    || process.env.ADMIN_SILENCE_TEST_RELEASE_ID !== config.releaseId) {
+    throw new Error("Upload candidate silence processor identity is not configured");
+  }
+  return { shortsSilenceRemovalCandidate: request, shortsSilenceCandidateId: config.releaseId };
+}

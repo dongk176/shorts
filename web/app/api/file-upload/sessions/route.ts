@@ -1,4 +1,5 @@
 import { requireFileUploadLanguage } from "@/lib/file-upload-language";
+import { uploadSilenceRequestMarker } from "@/lib/file-upload-candidate";
 import { shortsSilenceRequestSchema } from "@/lib/shorts-silence-contract";
 import { requireShortsSilenceAccess, assertSilenceTemplate } from "@/lib/shorts-silence-access";
 import { midformUploadRelease, requireMidformAdmin } from "@/lib/midform-release";
@@ -547,7 +548,9 @@ export async function POST(request: Request) {
       const resolvedTemplateId = renderContract.templateId;
       const resolvedVideoAspectRatio = renderContract.videoAspectRatio;
       if (input.silenceRemoval) await requireShortsSilenceAccess(tx, session.userId);
-      const templateSnapshot = input.silenceRemoval ? { ...renderContract.templateSnapshot, shortsSilenceRemoval: input.silenceRemoval } : renderContract.templateSnapshot;
+      const templateSnapshot = input.silenceRemoval
+        ? { ...renderContract.templateSnapshot, ...uploadSilenceRequestMarker(session.userId, input.silenceRemoval) }
+        : renderContract.templateSnapshot;
       const subtitleTemplateSnapshot = renderContract.subtitleTemplateSnapshot;
       const dispatchTarget = projectDispatchTargetForFeatures({
         usesUnifiedTemplateSubtitleCandidate:

@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
-import { uploadCandidateConfig, uploadCandidateForUser } from "./file-upload-candidate";
+import { uploadCandidateConfig, uploadCandidateForUser, uploadSilenceRequestMarker } from "./file-upload-candidate";
 import { fileUploadLanguageEnabled } from "./file-upload-language";
 const release = "d201e5fe-5b29-4ad8-8817-9d584ac902dd";
 const owner = "e86821c9-2eb2-4c04-b748-fd269fc46f20";
@@ -13,6 +13,20 @@ function configure() {
   return env;
 }
 afterEach(() => vi.unstubAllEnvs());
+it("keeps candidate silence requests out of the public cron and rejects a mismatched processor", () => {
+  const request = { version: 1, preset: "aggressive" } as const;
+  vi.stubEnv("FILE_UPLOAD_CANDIDATE_RELEASE_ID", "");
+  vi.stubEnv("FILE_UPLOAD_CANDIDATE_ADMIN_ID", "");
+  vi.stubEnv("FILE_UPLOAD_CANDIDATE_EXPIRES_AT", "");
+  expect(uploadSilenceRequestMarker(owner, request)).toEqual({ shortsSilenceRemoval: request });
+  configure();
+  expect(() => uploadSilenceRequestMarker(owner, request)).toThrow();
+  vi.stubEnv("ADMIN_SILENCE_TEST_RELEASE_ID", release);
+  const marker = uploadSilenceRequestMarker(owner, request);
+  expect(marker).not.toHaveProperty("shortsSilenceRemoval");
+  expect(marker).toEqual({ shortsSilenceRemovalCandidate: request, shortsSilenceCandidateId: release });
+  expect(() => uploadSilenceRequestMarker("other", request)).toThrow();
+});
 it("fails closed for public receiver routing or incomplete candidate configuration", () => {
   const env = configure();
   expect(uploadCandidateConfig(env)?.releaseId).toBe(release);
