@@ -67,6 +67,8 @@ beforeAll(async () => {
   pg = new PGlite();
   await pg.exec(`create schema shorts_mvp;create role anon;create role authenticated;create role service_role;
  create table shorts_mvp.app_users(id uuid primary key,withdrawn_at timestamptz);
+ create table shorts_mvp.paypal_one_time_orders(user_id uuid, status text, capture_started_at timestamptz);
+ create table shorts_mvp.paypal_checkouts(user_id uuid,status text);
  create table shorts_mvp.billing_orders(id uuid primary key default gen_random_uuid(),user_id uuid,status text,checkout_expires_at timestamptz);
  create table shorts_mvp.billing_toss_checkout_intents(id uuid primary key default gen_random_uuid(),user_id uuid,status text,expires_at timestamptz);
  create table shorts_mvp.plans(code text primary key constraint plans_code_check check(code in ('free','easycut_pro_v2')),display_name text,monthly_source_seconds int,retention_days int,sort_order int,monthly_price_krw int,yearly_price_krw int,max_active_jobs int,is_active boolean,prepaid_months int);
@@ -93,6 +95,7 @@ beforeEach(async () => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date("2026-09-26T00:00:00Z"));
   vi.stubEnv("PADDLE_ENABLED", "true");
+  await pg.exec("truncate shorts_mvp.paypal_one_time_orders,shorts_mvp.paypal_checkouts");
   vi.stubEnv("PADDLE_ENVIRONMENT", "sandbox");
   vi.stubEnv("PADDLE_PRICE_LITE_USD", price);
   vi.stubEnv("PADDLE_PRICE_LITE_JPY", "pri_" + "j".repeat(26));
@@ -850,3 +853,12 @@ describe("JPY price cohort renewals", () => {
   expect(paddleRequest).not.toHaveBeenCalled();
  });
 });
+
+ it("blocks uncertain PayPal capture before starting Paddle", async () => {
+  await pg.query("insert into shorts_mvp.paypal_one_time_orders values($1,'capturing',now())",[user]);
+  await expect(preparePaddleCheckout(user,"paddle_lite","USD",tag(pg))).rejects.toMatchObject({code:"CHECKOUT_PROCESSING"});
+ });
+ it("allows an uncharged old PayPal order after checkout switches", async () => {
+  await pg.query("insert into shorts_mvp.paypal_one_time_orders values($1,'ready',null)",[user]);
+  expect(await preparePaddleCheckout(user,"paddle_lite","USD",tag(pg))).toBe(txn);
+ });

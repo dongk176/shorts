@@ -1,4 +1,6 @@
-import { paypalEnabled } from "@/lib/paypal/api";
+import { paypalNewCheckoutEnabled } from "@/lib/paypal/checkout-availability";
+import { latestOneTimeOrder } from "@/lib/paypal/one-time";
+import { PayPalOrderResult } from "@/components/paypal-order-result";
 import { oneTimeEnabled } from "@/lib/paypal/one-time-config";
 import { hasLegacyPaymentHistory } from "@/lib/paypal/eligibility";
 import { getRequestLocale } from "@/lib/i18n/server";
@@ -36,13 +38,18 @@ export default async function PricingPage() {
   const user = await getAuthenticatedUser();
   const profile = user ? authProfile(user) : null;
   const locale = await getRequestLocale();
-  const paypalSession = user && paypalEnabled() && locale !== "ko"
+  const paypalSession = user && paypalNewCheckoutEnabled() && locale !== "ko"
     ? await requireMvpSession(user, { createIfMissing: false }) : null;
-  const paypalCheckout = paypalEnabled() && locale !== "ko" && !paypalSession?.isEnterprise
+  const paypalCheckout = paypalNewCheckoutEnabled() && locale !== "ko" && !paypalSession?.isEnterprise
     && (!user || Boolean(paypalSession?.userId && !(await hasLegacyPaymentHistory(paypalSession.userId))));
   if (!paypalCheckout && paddleConfigured()) {
     const session = user ? await requireMvpSession(user, { createIfMissing: false }) : null;
     const billing = session?.userId ? await getBillingSummary(getDb(), session.userId) : null;
+    if (billing?.paymentProvider === "paypal" && ["active", "past_due"].includes(billing.status)) {
+      const order = session?.userId ? await latestOneTimeOrder(session.userId) : null;
+      if (order?.paid && order.accessEnd && Date.parse(order.accessEnd) > Date.now())
+        return <PayPalOrderResult checkoutId={order.checkoutId} canceled={false} japanese={locale === "ja"}/>;
+    }
     const paddle = billing?.paymentProvider === "paddle";
     const domestic = billing && billing.paymentProvider !== "paddle"
       && ["pending", "active", "past_due"].includes(billing.status);
