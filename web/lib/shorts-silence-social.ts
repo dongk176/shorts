@@ -17,7 +17,12 @@ export async function silenceSocialEditDocument(short: SilenceEditableShort, tim
   delete baseSnapshot.snsTemplateVersion;
   const plan = silenceEditDocument({ ...short, templateSnapshot: baseSnapshot }, timeline, silences);
   const overlays = seedSnsEditorLayers(short);
-  overlays.textOverlays = overlays.textOverlays.map(layer => ({ ...layer, endSeconds: plan.outputSeconds }));
+  // Semantic overlay bounds must fit the exact retained duration. Rounding
+  // upward can exceed the validator boundary by a floating-point fraction.
+  const retainedSeconds = plan.document.video.clips.reduce((sum, clip) =>
+    sum + clip.sourceEndSeconds - clip.sourceStartSeconds, 0);
+  const overlayEnd = Math.floor((retainedSeconds + 1e-9) * 1000) / 1000;
+  overlays.textOverlays = overlays.textOverlays.map(layer => ({ ...layer, endSeconds: overlayEnd }));
   const draft: EditorDocumentSnapshotV3 = { ...plan.document, overlays,
     template: { ...plan.document.template, snapshot: unifiedSnsSnapshot(original, template.config, short.hookTitle, overlays.textOverlays) } };
   draft.subtitles.enabled = false;

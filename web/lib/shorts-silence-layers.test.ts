@@ -41,6 +41,26 @@ describe("silence removal preserves editable template layers", () => {
     expect(plan.document.renderSpec.layerOrder).not.toContain("text:silent");
     expect(short).toEqual(original);
   });
+  it("keeps social text within a fractional retained duration", async () => {
+    const short = input();
+    short.endSeconds = 278.2;
+    const texts = [...new Set(wrapPreviewTitle(short.hookTitle).flatMap(line => [line, ...line.split(" ")]))];
+    const measurements = Object.fromEntries(Array.from({ length: 183 }, (_, i) => [String(i + 18),
+      Object.fromEntries(texts.map(text => [text, text.length * (i + 18) * .5]))]));
+    const plan = await silenceSocialEditDocument(short, { start: 240, end: 278.2, subtitles: [] },
+      [[2.336599, 2.677279], [19.93254, 20.453469], [33.923628, 35.592222]],
+      { channel: "canary", releaseId: UNIFIED_SNS_EDITOR_RELEASE_ID, uiVersion: 3,
+        documentVersion: 3, unifiedTemplateEditingCapable: true,
+        subtitleEditingCapable: true, subtitleEditingPublicEnabled: false }, measurements);
+    const actualDuration = plan.document.video.clips.reduce((sum, clip) =>
+      sum + clip.sourceEndSeconds - clip.sourceStartSeconds, 0);
+    expect(plan.cutCount).toBe(3);
+    for (const text of plan.document.overlays.textOverlays) {
+      expect(text.endSeconds).toBeLessThanOrEqual(actualDuration + 1e-9);
+      expect(actualDuration - text.endSeconds).toBeLessThan(.0011);
+    }
+    expect(() => editorDocumentSnapshotSchema.parse(plan.document)).not.toThrow();
+  });
   it.each(["ko", "en", "ja"])("preserves social copy and duration in %s", async language => {
     for (const community of [false, true]) {
       const short = input();
