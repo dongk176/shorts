@@ -34,7 +34,7 @@ const registry = { version: 1, environment: "production", lanes: Object.fromEntr
 let publicPercent = 100;
 let admin = false;
 let publicSilence = false;
-const jobs: { id: string; user: string; request: string; projectNumber: number; output: unknown; release: unknown; snapshot: unknown }[] = [];
+const jobs: { id: string; user: string; request: string; projectNumber: number; output: unknown; release: unknown; silenceRelease: unknown; snapshot: unknown }[] = [];
 const reservations: unknown[][] = [];
 const locks = new Map<string, Promise<void>>();
 const request = (change: Record<string, unknown> = {}) => new Request("https://www.easycut.co.kr/api/jobs", {
@@ -72,9 +72,14 @@ beforeEach(() => {
         registryJson: JSON.stringify(registry), gitSha: sha, workerImageDigest: image, fontManifestSha256: font,
         status: "canary_ready", uiVersion: 3, documentVersion: 3, renderSpecVersion: 4, captionRenderSpecVersion: 4,
       }];
+      if (q.includes("from shorts_mvp.silence_test_releases")) return [{
+        id: releaseId, jobQueueArn: "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-editor-test",
+        gitSha: sha, workerImageDigest: image, fontManifestSha256: font,
+        batchTargetReleaseId: "private-test", jobDefinitionArn: "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-v4-legacy-project-aaaaaaaaaaaa:1",
+      }];
       if (q.includes("with scoped_jobs")) return [{ active: jobs.filter((j) => j.user === owner).length, restrictedContentCooldownMinutes: 0 }];
       if (q.includes("insert into shorts_mvp.video_jobs")) {
-        const job = { id: v[0] as string, user: v[2] as string, request: v[3] as string, projectNumber: jobs.length + 1, output: v[19], release: v.at(-3), snapshot: v[15] };
+        const job = { id: v[0] as string, user: v[2] as string, request: v[3] as string, projectNumber: jobs.length + 1, output: v[19], release: v.at(-4), silenceRelease: v.at(-1), snapshot: v[15] };
         jobs.push(job); return [{ projectNumber: job.projectNumber }];
       }
       if (q.includes("insert into shorts_mvp.usage_reservations")) { reservations.push(v); return [{ id: releaseId }]; }
@@ -104,6 +109,17 @@ describe("language job admission through the actual POST handler", () => {
     expect((await POST(request(body))).status).toBe(200);
     expect(jobs).toHaveLength(1); expect(reservations).toHaveLength(1);
     expect(jobs[0].snapshot).toEqual({ shortsSilenceRemoval: { version: 1, preset: "aggressive" } });
+  });
+  it.each([true, false])("private candidate setting routes only administrators: %s", async isAdmin => {
+    admin = isAdmin; publicSilence = true;
+    vi.stubEnv("ADMIN_SILENCE_TEST_RELEASE_ID", releaseId);
+    vi.stubEnv("ADMIN_SHORTS_SILENCE_ENABLED", "true");
+    vi.stubEnv("RANKING_VERCEL_SNAPSHOT_ID", "snapshot");
+    const response = await POST(request({ languageTest: false, sourceLanguage: undefined,
+      outputLanguage: "ko", silenceRemoval: { version: 1, preset: "aggressive" } }));
+    expect(response.status).toBe(202);
+    expect(jobs[0].silenceRelease).toBe(isAdmin ? releaseId : null);
+    expect(reservations).toHaveLength(1);
   });
   it("accepts public ON and preserves the requested output and pinned worker", async () => {
     expect((await POST(request())).status).toBe(202);

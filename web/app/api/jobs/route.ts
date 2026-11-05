@@ -1,3 +1,4 @@
+import { silenceTestTarget } from "@/lib/silence-test-release";
 import { shortsSilenceRequestSchema } from "@/lib/shorts-silence-contract";
 import { requireShortsSilenceAccess, assertSilenceTemplate } from "@/lib/shorts-silence-access";
 import { midformRelease, midformTarget, requireMidformAdmin } from "@/lib/midform-release";
@@ -400,6 +401,9 @@ export async function POST(request: Request) {
         if (!dispatchTarget) throw new HttpError(503, "중폼 제작 서버를 준비하고 있습니다.");
         dispatchTarget = midformTarget(midform, dispatchTarget.targetKey);
       }
+      const silenceTest = input.silenceRemoval && dispatchTarget
+        ? await silenceTestTarget(tx, session.userId, dispatchTarget) : null;
+      if (silenceTest) dispatchTarget = silenceTest.target;
       let initialRenderSpecVersion: 4 | null = null;
       let initialCaptionRenderSpecVersion: 4 | null = null;
       let initialEditorReleaseId: string | null = null;
@@ -452,7 +456,7 @@ export async function POST(request: Request) {
       // The DB resolver takes shared locks on the runtime/state rows until this
       // transaction commits, so an emergency stop or infrastructure lease is
       // strictly ordered before or after this job instead of racing the INSERT.
-      const initialRenderRelease = midform ? { releaseId: midform.releaseId } : languageTest ? { releaseId: languageTest.releaseId } : await resolveInitialRenderRelease(tx, {
+      const initialRenderRelease = silenceTest ? { releaseId: silenceTest.releaseId } : midform ? { releaseId: midform.releaseId } : languageTest ? { releaseId: languageTest.releaseId } : await resolveInitialRenderRelease(tx, {
         userId: session.userId,
         dispatchTarget,
       });
@@ -481,7 +485,7 @@ export async function POST(request: Request) {
           batch_job_definition, batch_job_queue,
           initial_editor_release_id,
           initial_render_spec_version, initial_caption_render_spec_version
-          ,selected_source_duration_seconds,billable_source_seconds,source_language_hint,language_test_release_id,midform_request,midform_release_id
+          ,selected_source_duration_seconds,billable_source_seconds,source_language_hint,language_test_release_id,midform_request,midform_release_id,silence_test_release_id
         ) values (
           ${jobId}, ${session.id}, ${session.userId}, ${input.requestId}, ${metadata.normalizedUrl}, ${metadata.videoId}, ${metadata.title},
           ${resolvedExecution.channelDisplayName || metadata.channelName}, ${metadata.channelThumbnailUrl}, ${metadata.thumbnailUrl}, ${sourceDurationSeconds}, ${rangeStartSeconds},
@@ -498,7 +502,7 @@ export async function POST(request: Request) {
           ${initialEditorReleaseId},
           ${initialRenderSpecVersion}, ${initialCaptionRenderSpecVersion},
           ${selectedDurationSeconds},${usageSeconds},
-          ${languageTest ? input.sourceLanguage || "auto" : null},${languageTest?.releaseId || null},${input.midform ? tx.json(input.midform) : null},${midform?.releaseId || null}
+          ${languageTest ? input.sourceLanguage || "auto" : null},${languageTest?.releaseId || null},${input.midform ? tx.json(input.midform) : null},${midform?.releaseId || null},${silenceTest?.releaseId || null}
         )
         returning project_number
       `;
