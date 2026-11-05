@@ -102,6 +102,13 @@ export async function preparePaddleCheckout(
     const accounts =
       await tx`select id from shorts_mvp.app_users where id=${userId} and withdrawn_at is null`;
     if (!accounts[0]) throw new HttpError(401, "Account not available.");
+    // Never start another provider while a PayPal capture may still settle.
+    const paypalInFlight = await tx`select 1 from shorts_mvp.paypal_one_time_orders
+      where user_id=${userId} and status in ('capturing','unknown') and capture_started_at is not null
+      union all select 1 from shorts_mvp.paypal_checkouts
+      where user_id=${userId} and status in ('creating','ready','unknown') limit 1`;
+    if (paypalInFlight.length) throw new HttpError(409,
+      "An earlier payment is still being confirmed. Please check payment status.", "CHECKOUT_PROCESSING");
     const active =
       await tx`select id from shorts_mvp.user_subscriptions where user_id=${userId}
    and status in ('pending','trialing','active','past_due') and (billing_cycle='monthly' or current_period_end is null or current_period_end>now()) limit 1`;
@@ -128,10 +135,18 @@ export async function preparePaddleCheckout(
     if (pending[0]) {
       if (
         pending[0].status === "ready" &&
+        pending[0].transactionId &&
         pending[0].planCode === code &&
         pending[0].currency === currency
-      )
-        return pending[0];
+      ) {
+        const current = await paddleRequest<PaddleTransaction>(`/transactions/${pending[0].transactionId}`);
+        if (current.id !== pending[0].transactionId) throw new Error("Checkout identity mismatch");
+        if (["draft", "ready"].includes(current.status) && !current.subscription_id) return pending[0];
+        if (current.status !== "canceled") throw new HttpError(409,
+          "Payment is being processed. Please wait.", "CHECKOUT_PROCESSING");
+        // A cancellation webhook may lag behind the provider. Reconcile the
+        // canceled transaction under the user lock before creating a new one.
+      }
       if (pending[0].status !== "ready" || !pending[0].transactionId)
         throw new HttpError(
           409,

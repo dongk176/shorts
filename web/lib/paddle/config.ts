@@ -1,3 +1,4 @@
+import { livePaddlePrices } from "./live-prices";
 import { HttpError } from "@/lib/http";
 import { paddlePlans, isNewJpyPlan, type PaddleCurrency } from "./catalog";
 export function paddleConfigured() {
@@ -32,7 +33,7 @@ export function paddlePriceId(code: string, currency: PaddleCurrency) {
   const value =
     process.env[
       `PADDLE_PRICE_${code.replace("paddle_", "").toUpperCase()}_${currency}`
-    ];
+    ] || (paddleEnvironment() === "live" ? livePaddlePrices[code]?.[currency] : undefined);
   if (!value || !/^pri_[a-z0-9]{26}$/.test(value))
     throw new Error("Paddle price is not configured");
   return value;

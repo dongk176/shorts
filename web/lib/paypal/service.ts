@@ -1,3 +1,4 @@
+import { assertPayPalNewCheckoutEnabled } from "./checkout-availability";
 import "server-only";
 import { randomUUID } from "node:crypto";
 import type { Sql, TransactionSql } from "postgres";
@@ -45,6 +46,7 @@ async function lookupSubscription(id:string,db:Db) {
   catch(error){await recordLookupFailure(id,error,db);throw error;}
 }
 export async function preparePayPalCheckout(userId:string,code:string,locale:"en"|"ja",db=getDb()) {
+  assertPayPalNewCheckoutEnabled();
   if(!paypalEnabled())throw new HttpError(503,"PayPal is unavailable.");
   const plan=paypalPlan(code), planId=paypalPlanId(code), environment=paypalEnvironment();
   // Validate the actual merchant plan before a buyer is sent to a payable checkout.

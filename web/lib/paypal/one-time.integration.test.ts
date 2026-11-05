@@ -79,6 +79,21 @@ it("never grants on approval alone and captures exactly once", async () => {
   expect((await pg.query("select * from shorts_mvp.usage_grants")).rows).toHaveLength(1);
   expect((await pg.query("select cancel_at_period_end,next_charge_at from shorts_mvp.user_subscriptions")).rows[0]).toEqual({ cancel_at_period_end: true, next_charge_at: null });
 });
+it("blocks a stale approved PayPal checkout after switching new sales to Paddle", async () => {
+  const { checkoutId, remote } = await ready(); remote.status = "APPROVED";
+  vi.stubEnv("PADDLE_ENABLED", "true");
+  await expect(confirmOneTimeOrder(user, checkoutId, db())).rejects.toMatchObject({ code: "CHECKOUT_REFRESH_REQUIRED" });
+  expect(vi.mocked(paypalRequest).mock.calls.filter(([path]) => path.endsWith("/capture"))).toHaveLength(0);
+  expect((await pg.query("select * from shorts_mvp.usage_grants")).rows).toHaveLength(0);
+});
+it("settles previously completed PayPal money exactly once after switching to Paddle", async () => {
+  const { checkoutId, remote } = await ready(); completed(remote.id);
+  vi.stubEnv("PADDLE_ENABLED", "true");
+  expect((await confirmOneTimeOrder(user, checkoutId, db())).paid).toBe(true);
+  expect((await confirmOneTimeOrder(user, checkoutId, db())).paid).toBe(true);
+  expect(vi.mocked(paypalRequest).mock.calls.filter(([path]) => path.endsWith("/capture"))).toHaveLength(0);
+  expect((await pg.query("select * from shorts_mvp.usage_grants")).rows).toHaveLength(1);
+});
 it("cancels unpaid checkout and allows a different plan; old approval cannot capture", async () => {
   const first = await ready(); await cancelOneTimeOrder(user, first.checkoutId, db());
   await ready("starter_6m"); first.remote.status = "APPROVED";

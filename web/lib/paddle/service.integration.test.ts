@@ -67,6 +67,8 @@ beforeAll(async () => {
   pg = new PGlite();
   await pg.exec(`create schema shorts_mvp;create role anon;create role authenticated;create role service_role;
  create table shorts_mvp.app_users(id uuid primary key,withdrawn_at timestamptz);
+ create table shorts_mvp.paypal_one_time_orders(user_id uuid, status text, capture_started_at timestamptz);
+ create table shorts_mvp.paypal_checkouts(user_id uuid,status text);
  create table shorts_mvp.billing_orders(id uuid primary key default gen_random_uuid(),user_id uuid,status text,checkout_expires_at timestamptz);
  create table shorts_mvp.billing_toss_checkout_intents(id uuid primary key default gen_random_uuid(),user_id uuid,status text,expires_at timestamptz);
  create table shorts_mvp.plans(code text primary key constraint plans_code_check check(code in ('free','easycut_pro_v2')),display_name text,monthly_source_seconds int,retention_days int,sort_order int,monthly_price_krw int,yearly_price_krw int,max_active_jobs int,is_active boolean,prepaid_months int);
@@ -84,6 +86,8 @@ beforeAll(async () => {
   await pg.exec(packages);
   await pg.exec(packages);
   await pg.exec(fs.readFileSync(path.resolve("../supabase/migrations/20261020152718_paddle_jpy_new_subscriptions.sql"),"utf8"));
+  const repricing=fs.readFileSync(path.resolve("../supabase/migrations/20261105114603_paddle_prices_20261105.sql"),"utf8");
+  await pg.exec(repricing); await pg.exec(repricing);
   const changes=fs.readFileSync(path.resolve("../supabase/migrations/202609260030_paddle_plan_changes.sql"),"utf8");
   await pg.exec(changes); await pg.exec(changes);
   const cancellation=fs.readFileSync(path.resolve("../supabase/migrations/202609260040_paddle_change_cancellation.sql"),"utf8");
@@ -93,8 +97,11 @@ beforeEach(async () => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date("2026-09-26T00:00:00Z"));
   vi.stubEnv("PADDLE_ENABLED", "true");
+  await pg.exec("truncate shorts_mvp.paypal_one_time_orders,shorts_mvp.paypal_checkouts");
   vi.stubEnv("PADDLE_ENVIRONMENT", "sandbox");
   vi.stubEnv("PADDLE_PRICE_LITE_USD", price);
+  vi.stubEnv("PADDLE_PRICE_LITE_V20261105_USD", "pri_"+"v".repeat(26));
+  vi.stubEnv("PADDLE_PRICE_LITE_V20261105_JPY", "pri_"+"w".repeat(26));
   vi.stubEnv("PADDLE_PRICE_LITE_JPY", "pri_" + "j".repeat(26));
   vi.stubEnv("PADDLE_PRICE_LITE_JPY_20261021_JPY", "pri_" + "n".repeat(26));
   await pg.exec(
@@ -175,7 +182,7 @@ describe("Paddle ledger using real SQL and migration", () => {
       `update shorts_mvp.app_users set withdrawn_at=now() where id='${user}'`,
     );
     await expect(
-      preparePaddleCheckout(user, "paddle_lite", "USD", tag(pg)),
+      preparePaddleCheckout(user, "paddle_lite_v20261105", "USD", tag(pg)),
     ).rejects.toThrow("Account not available");
   });
   it("blocks domestic charges while a Paddle checkout is payable, releases after cancellation", async () => {
@@ -190,7 +197,7 @@ describe("Paddle ledger using real SQL and migration", () => {
       `insert into shorts_mvp.billing_orders(user_id,status) values('${user}','processing')`,
     );
     await expect(
-      preparePaddleCheckout(user, "paddle_lite", "USD", tag(pg)),
+      preparePaddleCheckout(user, "paddle_lite_v20261105", "USD", tag(pg)),
     ).rejects.toThrow("pending");
   });
   it("does not overlap an uncertain domestic payment or a review intent whose checkout expired", async () => {
@@ -199,12 +206,12 @@ describe("Paddle ledger using real SQL and migration", () => {
       `insert into shorts_mvp.billing_orders(user_id,status) values('${user}','unknown')`,
     );
     await expect(
-      preparePaddleCheckout(user, "paddle_lite", "USD", tag(pg)),
+      preparePaddleCheckout(user, "paddle_lite_v20261105", "USD", tag(pg)),
     ).rejects.toThrow("pending");
     await pg.exec(`truncate shorts_mvp.billing_orders;
       insert into shorts_mvp.billing_toss_checkout_intents(user_id,status,expires_at) values('${user}','manual_review',now()-interval '1 day')`);
     await expect(
-      preparePaddleCheckout(user, "paddle_lite", "USD", tag(pg)),
+      preparePaddleCheckout(user, "paddle_lite_v20261105", "USD", tag(pg)),
     ).rejects.toThrow("pending");
     expect(paddleRequest).not.toHaveBeenCalled();
   });
@@ -251,7 +258,7 @@ describe("Paddle ledger using real SQL and migration", () => {
       "customer-portal.paddle.com",
     );
     await expect(
-      preparePaddleCheckout(user, "paddle_lite", "USD", tag(pg)),
+      preparePaddleCheckout(user, "paddle_lite_v20261105", "USD", tag(pg)),
     ).rejects.toThrow("not available");
   });
   it("grants only after completed payment, deduplicates different notifications for the same transaction", async () => {
@@ -426,17 +433,21 @@ describe("Paddle ledger using real SQL and migration", () => {
     expect(paddleRequest).not.toHaveBeenCalled();
   });
   it("reuses a payable transaction, never retries an unknown creation outcome", async () => {
+    await pg.exec("update shorts_mvp.paddle_checkouts set plan_code='paddle_lite_v20261105'");
+    transaction.status="ready";
+    transaction.subscription_id=null;
     expect(
-      await preparePaddleCheckout(user, "paddle_lite", "USD", tag(pg)),
+      await preparePaddleCheckout(user, "paddle_lite_v20261105", "USD", tag(pg)),
     ).toBe(txn);
-    expect(paddleRequest).not.toHaveBeenCalled();
+    expect(paddleRequest).toHaveBeenCalledTimes(1);
+    vi.mocked(paddleRequest).mockClear();
     await pg.exec("truncate shorts_mvp.paddle_checkouts");
     vi.mocked(paddleRequest).mockRejectedValue(Error("timeout"));
     await expect(
-      preparePaddleCheckout(user, "paddle_lite", "USD", tag(pg)),
+      preparePaddleCheckout(user, "paddle_lite_v20261105", "USD", tag(pg)),
     ).rejects.toThrow();
     await expect(
-      preparePaddleCheckout(user, "paddle_lite", "USD", tag(pg)),
+      preparePaddleCheckout(user, "paddle_lite_v20261105", "USD", tag(pg)),
     ).rejects.toThrow();
     expect(paddleRequest).toHaveBeenCalledTimes(1);
     expect((await rows("paddle_checkouts"))[0].status).toBe("unknown");
@@ -446,7 +457,7 @@ describe("Paddle ledger using real SQL and migration", () => {
     async (oldStatus) => {
       const nextId = "txn_" + "b".repeat(26);
       const creatorPrice = "pri_" + "c".repeat(26);
-      vi.stubEnv("PADDLE_PRICE_CREATOR_USD", creatorPrice);
+      vi.stubEnv("PADDLE_PRICE_CREATOR_3M_V20261105_USD", creatorPrice);
       vi.mocked(paddleRequest).mockImplementation(async (path, body, method) => {
         if (path === "/transactions") {
           expect((await rows("paddle_checkouts")).find(r => r.id === checkout)?.status).toBe("canceled");
@@ -460,11 +471,11 @@ describe("Paddle ledger using real SQL and migration", () => {
         }
         return { ...transaction, status: oldStatus };
       });
-      expect(await preparePaddleCheckout(user, "paddle_creator", "USD", tag(pg))).toBe(nextId);
+      expect(await preparePaddleCheckout(user, "paddle_creator_3m_v20261105", "USD", tag(pg))).toBe(nextId);
       const checkouts = await rows("paddle_checkouts");
       expect(checkouts).toHaveLength(2);
       expect(checkouts.find(r => r.id === checkout)?.status).toBe("canceled");
-      expect(checkouts.find(r => r.transaction_id === nextId)).toMatchObject({status: "ready", plan_code: "paddle_creator"});
+      expect(checkouts.find(r => r.transaction_id === nextId)).toMatchObject({status: "ready", plan_code: "paddle_creator_3m_v20261105"});
       expect(await rows("usage_grants")).toHaveLength(0);
     },
   );
@@ -472,7 +483,7 @@ describe("Paddle ledger using real SQL and migration", () => {
     "does not replace a %s payment even before its webhook arrives",
     async (status) => {
       vi.mocked(paddleRequest).mockResolvedValue({ ...transaction, status });
-      await expect(preparePaddleCheckout(user, "paddle_lite_jpy_20261021", "JPY", tag(pg))).rejects.toMatchObject({ code: "CHECKOUT_PROCESSING" });
+      await expect(preparePaddleCheckout(user, "paddle_lite_v20261105", "JPY", tag(pg))).rejects.toMatchObject({ code: "CHECKOUT_PROCESSING" });
       expect(paddleRequest).toHaveBeenCalledTimes(1);
       expect(await rows("paddle_checkouts")).toHaveLength(1);
       expect((await rows("paddle_checkouts"))[0].status).toBe("ready");
@@ -480,14 +491,14 @@ describe("Paddle ledger using real SQL and migration", () => {
   );
   it("does not create a replacement when cancellation cannot be confirmed", async () => {
     vi.mocked(paddleRequest).mockResolvedValue({ ...transaction, status: "ready" });
-    await expect(preparePaddleCheckout(user, "paddle_lite_jpy_20261021", "JPY", tag(pg))).rejects.toThrow("unconfirmed");
+    await expect(preparePaddleCheckout(user, "paddle_lite_v20261105", "JPY", tag(pg))).rejects.toThrow("unconfirmed");
     expect(paddleRequest).toHaveBeenCalledTimes(2);
     expect(await rows("paddle_checkouts")).toHaveLength(1);
     expect((await rows("paddle_checkouts"))[0].status).toBe("ready");
   });
   it("keeps an uncertain creation blocked when choosing another plan", async () => {
     await pg.exec("update shorts_mvp.paddle_checkouts set status='unknown',transaction_id=null");
-    await expect(preparePaddleCheckout(user, "paddle_lite_jpy_20261021", "JPY", tag(pg))).rejects.toMatchObject({ code: "CHECKOUT_UNCONFIRMED" });
+    await expect(preparePaddleCheckout(user, "paddle_lite_v20261105", "JPY", tag(pg))).rejects.toMatchObject({ code: "CHECKOUT_UNCONFIRMED" });
     expect(paddleRequest).not.toHaveBeenCalled();
     expect(await rows("paddle_checkouts")).toHaveLength(1);
   });
@@ -500,7 +511,7 @@ describe("Paddle ledger using real SQL and migration", () => {
   it("rejects a second subscription while the first is live", async () => {
     await processPaddleEvent(event(), tag(pg));
     await expect(
-      preparePaddleCheckout(user, "paddle_lite", "USD", tag(pg)),
+      preparePaddleCheckout(user, "paddle_lite_v20261105", "USD", tag(pg)),
     ).rejects.toThrow("existing");
   });
 });
@@ -849,4 +860,45 @@ describe("JPY price cohort renewals", () => {
   await expect(preparePaddleCheckout(user,"paddle_lite","JPY",tag(pg))).rejects.toMatchObject({code:"PRICE_CHANGED"});
   expect(paddleRequest).not.toHaveBeenCalled();
  });
+});
+
+ it("blocks uncertain PayPal capture before starting Paddle", async () => {
+  await pg.query("insert into shorts_mvp.paypal_one_time_orders values($1,'capturing',now())",[user]);
+  await expect(preparePaddleCheckout(user,"paddle_lite_v20261105","USD",tag(pg))).rejects.toMatchObject({code:"CHECKOUT_PROCESSING"});
+ });
+ it("allows an uncharged old PayPal order after checkout switches", async () => {
+  await pg.exec("update shorts_mvp.paddle_checkouts set plan_code='paddle_lite_v20261105'");
+  transaction.status="ready"; transaction.subscription_id=null;
+  await pg.query("insert into shorts_mvp.paypal_one_time_orders values($1,'ready',null)",[user]);
+  expect(await preparePaddleCheckout(user,"paddle_lite_v20261105","USD",tag(pg))).toBe(txn);
+ });
+
+it("replaces a same-plan checkout after provider cancellation even when the webhook is delayed",async()=>{
+ await pg.exec("update shorts_mvp.paddle_checkouts set plan_code='paddle_lite_v20261105'");
+ const nextId="txn_"+"z".repeat(26);
+ vi.mocked(paddleRequest).mockImplementation(async(path)=>path==="/transactions"?{id:nextId}:{...transaction,status:"canceled",subscription_id:null});
+ expect(await preparePaddleCheckout(user,"paddle_lite_v20261105","USD",tag(pg))).toBe(nextId);
+ expect((await rows("paddle_checkouts")).find(r=>r.id===checkout)?.status).toBe("canceled");
+ expect(await rows("usage_grants")).toHaveLength(0);
+});
+it("does not reopen a same-plan checkout whose payment has already completed",async()=>{
+ await pg.exec("update shorts_mvp.paddle_checkouts set plan_code='paddle_lite_v20261105'");
+ await expect(preparePaddleCheckout(user,"paddle_lite_v20261105","USD",tag(pg))).rejects.toMatchObject({code:"CHECKOUT_PROCESSING"});
+ expect(paddleRequest).toHaveBeenCalledTimes(1);
+ expect(await rows("paddle_checkouts")).toHaveLength(1);
+});
+
+it.each([['USD',1200,'v'],['JPY',1900,'w']] as const)("grants exactly once for the new %s Pro price",async(currency,amount,letter)=>{
+ const id="pri_"+letter.repeat(26);
+ await pg.query("update shorts_mvp.paddle_checkouts set plan_code='paddle_lite_v20261105',currency=$1,price_id=$2",[currency,id]);
+ transaction.currency_code=currency;
+ transaction.items[0].price.id=id;
+ transaction.items[0].price.unit_price={amount:String(amount),currency_code:currency};
+ transaction.details.totals={total:String(amount),subtotal:String(amount),tax:"0",discount:"0"};
+ subscription.items[0].price.id=id;
+ await processPaddleEvent(event(),tag(pg)); await processPaddleEvent(event(),tag(pg));
+ expect((await rows("user_subscriptions"))[0].plan_code).toBe("paddle_lite_v20261105");
+ expect(await rows("usage_grants")).toHaveLength(1);
+ expect((await rows("usage_grants"))[0].total_seconds).toBe(3600);
+ expect((await rows("paddle_payments"))[0].amount_minor).toBe(amount);
 });

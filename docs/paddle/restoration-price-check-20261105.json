@@ -1,0 +1,170 @@
+[
+  {
+    "code": "paddle_lite",
+    "status": 200,
+    "amount": "399",
+    "currency": "USD",
+    "cycle": {
+      "interval": "month",
+      "frequency": 1
+    },
+    "taxMode": "internal",
+    "valid": true
+  },
+  {
+    "code": "paddle_creator_3m",
+    "status": 200,
+    "amount": "4497",
+    "currency": "USD",
+    "cycle": {
+      "interval": "month",
+      "frequency": 3
+    },
+    "taxMode": "internal",
+    "valid": true
+  },
+  {
+    "code": "paddle_creator_6m",
+    "status": 200,
+    "amount": "7194",
+    "currency": "USD",
+    "cycle": {
+      "interval": "month",
+      "frequency": 6
+    },
+    "taxMode": "internal",
+    "valid": true
+  },
+  {
+    "code": "paddle_creator_12m",
+    "status": 200,
+    "amount": "11988",
+    "currency": "USD",
+    "cycle": {
+      "interval": "month",
+      "frequency": 12
+    },
+    "taxMode": "internal",
+    "valid": true
+  },
+  {
+    "code": "paddle_pro_3m",
+    "status": 200,
+    "amount": "10797",
+    "currency": "USD",
+    "cycle": {
+      "interval": "month",
+      "frequency": 3
+    },
+    "taxMode": "internal",
+    "valid": true
+  },
+  {
+    "code": "paddle_pro_6m",
+    "status": 200,
+    "amount": "20994",
+    "currency": "USD",
+    "cycle": {
+      "interval": "month",
+      "frequency": 6
+    },
+    "taxMode": "internal",
+    "valid": true
+  },
+  {
+    "code": "paddle_pro_12m",
+    "status": 200,
+    "amount": "31188",
+    "currency": "USD",
+    "cycle": {
+      "interval": "month",
+      "frequency": 12
+    },
+    "taxMode": "internal",
+    "valid": true
+  },
+  {
+    "code": "paddle_lite_jpy_20261021",
+    "status": 200,
+    "amount": "750",
+    "currency": "JPY",
+    "cycle": {
+      "interval": "month",
+      "frequency": 1
+    },
+    "taxMode": "internal",
+    "valid": true
+  },
+  {
+    "code": "paddle_creator_3m_jpy_20261021",
+    "status": 200,
+    "amount": "6870",
+    "currency": "JPY",
+    "cycle": {
+      "interval": "month",
+      "frequency": 3
+    },
+    "taxMode": "internal",
+    "valid": true
+  },
+  {
+    "code": "paddle_creator_6m_jpy_20261021",
+    "status": 200,
+    "amount": "11340",
+    "currency": "JPY",
+    "cycle": {
+      "interval": "month",
+      "frequency": 6
+    },
+    "taxMode": "internal",
+    "valid": true
+  },
+  {
+    "code": "paddle_creator_12m_jpy_20261021",
+    "status": 200,
+    "amount": "17880",
+    "currency": "JPY",
+    "cycle": {
+      "interval": "month",
+      "frequency": 12
+    },
+    "taxMode": "internal",
+    "valid": true
+  },
+  {
+    "code": "paddle_pro_3m_jpy_20261021",
+    "status": 200,
+    "amount": "16470",
+    "currency": "JPY",
+    "cycle": {
+      "interval": "month",
+      "frequency": 3
+    },
+    "taxMode": "internal",
+    "valid": true
+  },
+  {
+    "code": "paddle_pro_6m_jpy_20261021",
+    "status": 200,
+    "amount": "29940",
+    "currency": "JPY",
+    "cycle": {
+      "interval": "month",
+      "frequency": 6
+    },
+    "taxMode": "internal",
+    "valid": true
+  },
+  {
+    "code": "paddle_pro_12m_jpy_20261021",
+    "status": 200,
+    "amount": "47880",
+    "currency": "JPY",
+    "cycle": {
+      "interval": "month",
+      "frequency": 12
+    },
+    "taxMode": "internal",
+    "valid": true
+  }
+]

@@ -1,3 +1,4 @@
+import { assertPayPalNewCheckoutEnabled } from "./checkout-availability";
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { getDb } from "@/lib/db";
@@ -81,6 +82,7 @@ export async function latestOneTimeOrder(userId:string,db=getDb()) {
 }
 
 export async function prepareOneTimeOrder(userId: string, code: string, locale: "en" | "ja", db = getDb(), replacements = 0): Promise<{ checkoutId: string; approvalUrl: string }> {
+  assertPayPalNewCheckoutEnabled();
   const origin = oneTimeReturnOrigin(), plan = paypalPlan(code);
   await assertPayPalNewCustomer(userId,db);
   // Retire only canonically unpaid old checkouts. A missing/uncertain reference
@@ -233,6 +235,7 @@ export async function confirmOneTimeOrder(userId: string, id: string, db = getDb
   const claimed = await db.begin(async tx => {
     await tx`select pg_advisory_xact_lock(hashtextextended(${userId},0))`;
     const [current] = await tx<LocalOrder[]>`select * from shorts_mvp.paypal_one_time_orders where id=${id} for update`;
+    if (!current.captureStartedAt) assertPayPalNewCheckoutEnabled();
     const retry=['capturing','unknown'].includes(current.status)&&current.captureStartedAt&&Date.now()-new Date(current.captureStartedAt).getTime()<5*60_000&&Date.now()-new Date(current.updatedAt).getTime()>30_000;
     if (current.status !== "ready" && !(current.status==='unknown'&&!current.captureStartedAt) && !retry) return false;
     await tx`update shorts_mvp.paypal_one_time_orders set status='capturing',merchant_id=coalesce(merchant_id,${unit.payee.merchant_id}),capture_started_at=coalesce(capture_started_at,now()),updated_at=now() where id=${id}`;
