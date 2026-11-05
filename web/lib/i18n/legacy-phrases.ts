@@ -7,6 +7,11 @@ type Phrase = readonly [ko: string, en: string, ja: string];
 // Legacy page copy is kept here while the product moves to semantic message keys.
 // User-provided and generated content is intentionally excluded from this table.
 const phrases: readonly Phrase[] = [
+  ["잘라낼 무음이 없어 원래 흐름을 유지했어요.", "No silence to remove. Your original pacing is preserved.", "削除する無音区間がないため、元の流れを維持しました。"],
+  ["무음 정리를 완료하지 못했어요. 원본 결과를 확인할 수 있어요.", "Silence removal could not be completed. Your original video is available.", "無音の削除を完了できませんでした。元の動画をご確認いただけます。"],
+  ["무음 구간을 정리하고 있어요.", "Removing silent sections.", "無音区間を削除しています。"],
+  ["정리 중…", "Removing silence…", "無音を削除中…"],
+  ["지금 정리하기", "Remove silence now", "無音を削除する"],
   ["원본 쇼츠", "Original short", "元のショート"],
   ["말 사이에 긴 쉼", "Long pauses between words", "会話の間に長い無音"],
   ["무음", "Silence", "無音"],
@@ -1782,6 +1787,11 @@ function withOriginalWhitespace(original: string, translated: string) {
 }
 
 function translateDynamicText(value: string, locale: Exclude<SiteLocale, "ko">) {
+  const silence = /^무음 (\d+)곳 정리 · ([\d.]+)초 단축$/.exec(value.trim());
+  if (silence) return withOriginalWhitespace(value, locale === "en"
+    ? `${silence[1]} silent sections removed · ${silence[2]}s shorter`
+    : `無音${silence[1]}か所を削除 · ${silence[2]}秒短縮`);
+
   const trimmed = value.trim();
   const editorPatterns: readonly [RegExp, (m: RegExpExecArray) => string, (m: RegExpExecArray) => string][] = [
     [/^게시판 이름 · (\d+)~(\d+)자$/, m => `Board name · ${m[1]}–${m[2]} characters`, m => `掲示板名・${m[1]}〜${m[2]}文字`],
