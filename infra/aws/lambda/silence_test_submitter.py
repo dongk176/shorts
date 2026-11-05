@@ -170,3 +170,17 @@ def editor_target(host, request_id, job):
     ):
         raise RuntimeError("Silence test editor target invalid")
     return QUEUE, definition, release["worker_image_digest"], result["id"]
+
+
+def bind_request(request, job):
+    """The isolated FIFO queue must not inherit public fair-share fields."""
+    if not job.get("silence_test_release_id"):
+        return
+    if (
+        job.get("silence_test_release_id") != job.get("initial_editor_release_id")
+        or request.get("jobQueue") != QUEUE
+    ):
+        raise RuntimeError("Silence test submission target mismatch")
+    request.pop("shareIdentifier", None)
+    request.pop("schedulingPriorityOverride", None)
+    request["timeout"] = {"attemptDurationSeconds": 1800}

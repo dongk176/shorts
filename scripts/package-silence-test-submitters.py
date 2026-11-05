@@ -80,6 +80,21 @@ def overlay(source, editor=False):
     if source.count(marker) != 1:
         raise ValueError("Submitter insertion point changed")
     source = source.replace(marker, marker + branch)
+    runtime_marker = (
+        '        submission_key = f"rerender:{short_id}:{version}:{rerender_attempt}"'
+        if editor
+        else '        submission_key = (\n            f"project:{job_id}:resume:1"'
+    )
+    if source.count(runtime_marker) != 1:
+        raise ValueError("Submission boundary changed")
+    runtime_job = "parent_job" if editor else "job"
+    source = source.replace(
+        runtime_marker,
+        f'        if {runtime_job}.get("silence_test_release_id"):\n'
+        "            import silence_test_submitter\n"
+        f"            silence_test_submitter.bind_request(request, {runtime_job})\n"
+        + runtime_marker,
+    )
     before = {
         n.name: ast.dump(n)
         for n in ast.parse(original).body

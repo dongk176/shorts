@@ -107,6 +107,20 @@ class Admission(unittest.TestCase):
             resume=False,
         )
 
+    def test_fifo_request_and_bounded_timeout(self):
+        request = {
+            "jobQueue": m.QUEUE,
+            "shareIdentifier": "paid",
+            "schedulingPriorityOverride": 1000,
+        }
+        m.bind_request(request, self.job)
+        self.assertEqual(
+            request, {"jobQueue": m.QUEUE, "timeout": {"attemptDurationSeconds": 1800}}
+        )
+        ordinary = {"jobQueue": "public", "shareIdentifier": "paid"}
+        m.bind_request(ordinary, {})
+        self.assertEqual(ordinary, {"jobQueue": "public", "shareIdentifier": "paid"})
+
     def test_complete_registry_and_environment(self):
         result = m.release_for_job(self.host, self.job)
         self.assertEqual(set(result["registry"]["lanes"]), m.KEYS)
