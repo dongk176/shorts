@@ -2048,8 +2048,30 @@ def _artifact_contract(
     return value
 
 
+def _additive_japanese_font_manifest(
+    manifest: dict[str, Any] | None, previous_sha256: str, next_sha256: str,
+) -> bool:
+    """Accept only the attested new JP face; hash every existing face and metric."""
+    if not isinstance(manifest, dict) or set(manifest) != {"sha256", "entries", "fallbackDetected"}:
+        return False
+    entries = manifest.get("entries")
+    if (manifest.get("fallbackDetected") is not False or manifest.get("sha256") != next_sha256
+            or not isinstance(entries, list) or len(entries) != 21
+            or any(not isinstance(entry, dict) or not isinstance(entry.get("fontId"), str) for entry in entries)
+            or len({entry["fontId"] for entry in entries}) != 21
+            or sum(entry["fontId"] == "noto-sans-jp" for entry in entries) != 1):
+        return False
+    unsigned = {key: value for key, value in manifest.items() if key != "sha256"}
+    previous = {**unsigned, "entries": [entry for entry in entries if entry["fontId"] != "noto-sans-jp"]}
+    def digest(value: dict[str, Any]) -> str:
+        return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True,
+                                         separators=(",", ":")).encode("utf-8")).hexdigest()
+    return digest(unsigned) == next_sha256 and digest(previous) == previous_sha256
+
+
 def _read_successor_predecessor(
     font_manifest_sha256: str,
+    font_manifest: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
     """Read the actual admitted stable targets, never the bootstrap registry."""
     states = rest("editor_release_state", query=(
@@ -2070,7 +2092,9 @@ def _read_successor_predecessor(
         or not stable.get("promoted_at")
         or stable.get("render_spec_version") != 4
         or stable.get("caption_render_spec_version") != 4
-        or stable.get("font_manifest_sha256") != font_manifest_sha256
+        or (stable.get("font_manifest_sha256") != font_manifest_sha256
+            and not _additive_japanese_font_manifest(
+                font_manifest, str(stable.get("font_manifest_sha256") or ""), font_manifest_sha256))
         or not _SHA.fullmatch(str(stable.get("git_sha") or ""))
         or not _DIGEST.fullmatch(str(stable.get("worker_image_digest") or ""))
         or not _PRODUCTION_DEFINITION.fullmatch(
@@ -2159,26 +2183,27 @@ def _register_v4_production_definitions(
     font_manifest_sha256: str,
     preserve_production_contract: bool = False,
     predecessor_contract: dict[str, Any] | None = None,
+    font_manifest: dict[str, Any] | None = None,
 ) -> tuple[str, dict[str, dict[str, Any]]]:
     image = f"{_repository_identity()[0]}@{digest}"
     stable: dict[str, Any] | None = None
     successor: dict[str, Any] | None = None
     trusted_projects: dict[str, dict[str, Any]] = {}
     if preserve_production_contract:
-        stable, baseline_targets = _read_successor_predecessor(font_manifest_sha256)
+        stable, baseline_targets = _read_successor_predecessor(font_manifest_sha256, font_manifest)
         trusted_rerender = _job_definition(stable["production_job_definition_arn"])
         _verify_successor_definition_identity(
             trusted_rerender,
             expected_arn=stable["production_job_definition_arn"],
             git_sha=stable["git_sha"], digest=stable["worker_image_digest"],
-            font_manifest_sha256=font_manifest_sha256,
+            font_manifest_sha256=stable["font_manifest_sha256"],
         )
         successor = {
             "version": 1,
             "predecessorReleaseId": stable["id"],
             "sourceGitSha": stable["git_sha"],
             "workerImageDigest": stable["worker_image_digest"],
-            "fontManifestSha256": font_manifest_sha256,
+            "fontManifestSha256": stable["font_manifest_sha256"],
             "editor": {
                 "jobDefinitionArn": stable["production_job_definition_arn"],
                 "contractSha256": _successor_contract_sha256(trusted_rerender),
@@ -2192,7 +2217,7 @@ def _register_v4_production_definitions(
             _verify_successor_definition_identity(
                 trusted, expected_arn=baseline["jobDefinitionArn"],
                 git_sha=stable["git_sha"], digest=stable["worker_image_digest"],
-                font_manifest_sha256=font_manifest_sha256,
+                font_manifest_sha256=stable["font_manifest_sha256"],
             )
             trusted_projects[lane] = trusted
             successor["projectTargets"][lane] = {
@@ -2275,7 +2300,7 @@ def _register_v4_production_definitions(
             "renderSpecVersion": 4,
         }
     if successor is not None:
-        current_stable, current_targets = _read_successor_predecessor(font_manifest_sha256)
+        current_stable, current_targets = _read_successor_predecessor(font_manifest_sha256, font_manifest)
         if current_stable != stable or current_targets != baseline_targets:
             raise RuntimeError("Successor production baseline changed during registration")
         if predecessor_contract is not None:
@@ -2400,6 +2425,7 @@ def _finalize_v4_release(event: dict[str, Any]) -> dict[str, Any]:
         font_manifest_sha256=font_manifest_sha256,
         preserve_production_contract=custom_design is not None,
         predecessor_contract=predecessor_contract,
+        font_manifest=manifest.get("fontManifest"),
     )
     check_sources = manifest.get("checkSources") or {}
     required_checks = sorted(

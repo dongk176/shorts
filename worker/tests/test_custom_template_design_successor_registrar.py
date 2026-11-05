@@ -422,3 +422,47 @@ def test_finalizer_binds_successor_evidence_without_weakening_fifteen_checks(
     assert design_check["details"]["customTemplateDesign"] == manifest["customTemplateDesign"]
     assert all("compatibleSuccessor" not in item["details"] for item in checks
                if item["checkName"] != "render-spec-v4")
+
+
+def test_successor_accepts_only_hash_bound_additive_japanese_face(monkeypatch):
+    import hashlib
+    fixture = successor_fixture(monkeypatch)
+    entries = [
+        {"fontId": f"font-{i}", "sha256": str(i), "metrics": {"width": i + 1}}
+        for i in range(20)
+    ]
+    unsigned = {"entries": entries, "fallbackDetected": False}
+    def digest(value):
+        canonical = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(canonical.encode()).hexdigest()
+    old = digest(unsigned)
+    successor = {**unsigned, "entries": [*entries, {"fontId": "noto-sans-jp", "sha256": "jp"}]}
+    new = digest(successor)
+    manifest = {**successor, "sha256": new}
+    fixture.stable["font_manifest_sha256"] = old
+    for definition in fixture.definitions.values():
+        for value in definition["containerProperties"]["environment"]:
+            if value["name"] == "EDITOR_FONT_MANIFEST_SHA256":
+                value["value"] = old
+    assert fixture.module._additive_japanese_font_manifest(manifest, old, new)
+    for mutation in [
+        {**manifest, "sha256": "0" * 64},
+        {**manifest, "fallbackDetected": True},
+        {**manifest, "entries": manifest["entries"][:-1]},
+        {**manifest, "entries": [*manifest["entries"], {"fontId": "another"}]},
+        {**manifest, "entries": [
+            {**entries[0], "metrics": {"width": 999}}, *manifest["entries"][1:],
+        ]},
+        {**manifest, "extra": "unattested"},
+    ]:
+        assert not fixture.module._additive_japanese_font_manifest(mutation, old, new)
+    fixture.module._register_v4_production_definitions(
+        git_sha=NEW_SHA, digest=NEW_DIGEST, font_manifest_sha256=new,
+        preserve_production_contract=True, predecessor_contract=fixture.proof,
+        font_manifest=manifest,
+    )
+    assert len(fixture.created) == 6
+    assert fixture.proof["fontManifestSha256"] == old
+    for definition in fixture.created:
+        values = {e["name"]: e["value"] for e in definition["containerProperties"]["environment"]}
+        assert values["EDITOR_FONT_MANIFEST_SHA256"] == new
