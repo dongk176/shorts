@@ -336,7 +336,7 @@ import {
 } from "@/lib/editor-document-contract";
 import { EditorStudioTopbar, EditorStudioBackButton, EditorViewportZoomControl } from "@/components/editor-studio-chrome";
 import { SocialEditorDecoration } from "@/components/social-editor-decoration";
-import { communityHeadingColor, socialTemplateBrandColor, isUnifiedSnsSnapshot, seedSnsEditorLayers, unifiedSnsSnapshot, unifiedSnsTemplate } from "@/lib/unified-sns-editor";
+import { fitSnsBodyRow, communityHeadingColor, socialTemplateBrandColor, isUnifiedSnsSnapshot, seedSnsEditorLayers, unifiedSnsSnapshot, unifiedSnsTemplate } from "@/lib/unified-sns-editor";
 import { SnsShortEditor } from "@/components/sns-short-editor";
 import {
   createEditorRenderSpec,
@@ -7000,10 +7000,14 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
     updateEditorOverlayLayout((current) => ({
       ...current,
       textOverlays: current.textOverlays.map((textOverlay) => (
-        textOverlay.id === id ? clampEditorTextOverlay(updater(textOverlay)) : textOverlay
+        textOverlay.id === id ? (() => {
+          const next = updater(textOverlay);
+          return clampEditorTextOverlay(item.templateSnapshot?.snsTemplateVersion === 1 && next.text !== textOverlay.text
+            ? fitSnsBodyRow(next) : next);
+        })() : textOverlay
       )),
     }));
-  }, [updateEditorOverlayLayout]);
+  }, [updateEditorOverlayLayout, item.templateSnapshot?.snsTemplateVersion]);
 
   const beginEditorTitleInlineEdit = useCallback(() => {
     if (!overlayPreviewEnabled) return;

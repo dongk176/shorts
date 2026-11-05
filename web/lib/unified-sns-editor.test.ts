@@ -6,7 +6,7 @@ import { editorDocumentSnapshotSchema } from "./editor-document-contract";
 import { templateConfigSchema } from "./template-config";
 import { snsCopyLimits, SNS_GENERATION_RELEASE_IDS, SNS_EDITOR_RELEASE_ID } from "./sns-editor-contract";
 import { snsEditorRelease } from "./sns-editor-release";
-import { seedSnsEditorLayers, unifiedSnsTemplate, UNIFIED_SNS_EDITOR_RELEASE_ID } from "./unified-sns-editor";
+import { fitSnsBodyRow, seedSnsEditorLayers, unifiedSnsTemplate, UNIFIED_SNS_EDITOR_RELEASE_ID } from "./unified-sns-editor";
 import { assertUnifiedSnsDesignRelease, validateUnifiedSnsEdit } from "./unified-sns-editor-validation";
 import { wrapEditorRenderText } from "./editor-render-spec";
 
@@ -113,4 +113,16 @@ describe("dedicated social design attestation", () => {
       await expect(assertUnifiedSnsDesignRelease(db(p),UNIFIED_SNS_EDITOR_RELEASE_ID)).rejects.toMatchObject({status:503});
     }
   });
+});
+
+it("refits a changed SNS body without moving its neighbors or losing timing", () => {
+ const item={videoAspectRatio:"16:9" as const,startSeconds:10,endSeconds:40,templateSnapshot:{snsTemplateVersion:1,snsContent:{body:["Short","Next"],hashtags:[]}}};
+ const original=seedSnsEditorLayers(item).textOverlays[0];
+ const changed={...original,text:"살짝 밟았을 뿐인데 모두가 놀란 순간"};
+ const fitted=fitSnsBodyRow(changed);
+ expect(fitted.text).toBe(changed.text);expect(fitted.offset).toEqual(original.offset);
+ expect([fitted.startSeconds,fitted.endSeconds]).toEqual([0,30]);
+ expect((wrapEditorRenderText(fitted.text,fitted.width).length*86+22)*fitted.scale).toBeLessThanOrEqual(82);
+ expect(fitSnsBodyRow({...changed,id:"user-text"})).toEqual({...changed,id:"user-text"});
+ expect(fitSnsBodyRow({...changed,scale:0.2}).scale).toBe(0.2);
 });

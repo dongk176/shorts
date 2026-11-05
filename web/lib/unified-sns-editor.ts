@@ -58,6 +58,13 @@ export function unifiedSnsTemplate(item: Pick<GeneratedShort, "templateSnapshot"
   return { id: "builtin-social", socialBrandColor: brand, name: l.community ? "커뮤니티" : "SNS", baseTemplateId: "white-yellow", config, version: 1, createdAt: "", updatedAt: "" };
 }
 
+/** Fit built-in body rows again when copy changes; preserve manual placement and timing. */
+export function fitSnsBodyRow(overlay: EditorTextOverlay): EditorTextOverlay {
+  if (!overlay.id.startsWith("sns-body-")) return overlay;
+  const lines = wrapEditorRenderText(overlay.text, overlay.width).length;
+  return lines > 1 ? { ...overlay, scale: Math.min(overlay.scale, Math.max(0.1, 82 / (86 * lines + 22))) } : overlay;
+}
+
 export function seedSnsEditorLayers(item: Pick<GeneratedShort, "templateSnapshot" | "videoAspectRatio" | "startSeconds" | "endSeconds">): EditorOverlayLayoutSnapshot {
   const snapshot = item.templateSnapshot!;
   const l = snsEditorLayout(snapshot, item.videoAspectRatio);
@@ -71,10 +78,7 @@ export function seedSnsEditorLayers(item: Pick<GeneratedShort, "templateSnapshot
   result.textOverlays = content.body.map((text, i) => layer(`sns-body-${i}`, text, l.community ? 636 : 524 + l.offset + 90 * i, l.community ? 46 : 72));
   // Keep all copy editable while fitting wrapped text inside its original row.
   // Use the renderer's wrapping so the preview and output have the same bounds.
-  result.textOverlays = result.textOverlays.map(overlay => {
-    const lines = wrapEditorRenderText(overlay.text, overlay.width).length;
-    return lines > 1 ? { ...overlay, scale: Math.min(overlay.scale, 82 / (86 * lines)) } : overlay;
-  });
+  result.textOverlays = result.textOverlays.map(fitSnsBodyRow);
   if (content.hashtags.length) result.textOverlays.push(layer("sns-tags", content.hashtags.join("  "), 718 + l.offset, 47, "#111111"));
   if (l.community) {
     result.textOverlays.unshift(layer("sns-board", content.boardName || communityLegacyHeading[language], 210, 96, communityHeadingColor(String(snapshot.brandColor))));
