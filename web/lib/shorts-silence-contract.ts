@@ -53,7 +53,8 @@ export function silenceEditDocument(short: SilenceEditableShort, timeline: Silen
     || short.initialRenderSpec?.version !== 4) throw new Error("기본·자막 템플릿의 새 쇼츠에서 무음 정리를 사용할 수 있습니다.");
   const ranges = silenceKeptRanges(short.startSeconds - timeline.start, short.endSeconds - timeline.start, silences);
   const outputSeconds = Math.round(ranges.reduce((n, [a, b]) => n + b - a, 0) * 1000) / 1000;
-  const outputAt = (t: number) => Math.round(ranges.reduce((n, [a, b]) => n + Math.max(0, Math.min(b, t) - a), 0) * 1000) / 1000;
+  // Round overlay timestamps inward so their end cannot exceed the retained duration.
+  const outputAt = (t: number) => Math.floor((ranges.reduce((n, [a, b]) => n + Math.max(0, Math.min(b, t) - a), 0) + 1e-9) * 1000) / 1000;
   const sourceOffset = short.startSeconds - timeline.start;
   const comments = short.commentOverlays.flatMap((c): CommentOverlay[] => {
     const startSeconds = outputAt(sourceOffset + c.startSeconds), endSeconds = outputAt(sourceOffset + c.endSeconds);

@@ -24,6 +24,21 @@ function input(): SilenceEditableShort {
 }
 const timeline = { start: 240, end: 252, subtitles: [] };
 describe("silence removal preserves editable template layers", () => {
+  it("keeps final comments inside fractional frame boundaries", () => {
+    const short = input();
+    short.startSeconds = .42;
+    short.endSeconds = 36.13;
+    short.commentOverlays = [{ id: "final", startSeconds: 32.288, endSeconds: 35.71,
+      text: "最後のコメント", initial: "A", avatarColor: "#ffffff", nickname: "test",
+      likeCount: 10, ageLabel: "today" }];
+    for (const silences of [[], [[5, 6], [10, 11]]]) {
+      const plan = silenceEditDocument(short, { start: 0, end: 66.13, subtitles: [] }, silences);
+      const duration = plan.document.video.clips.reduce((n, c) => n + c.sourceEndSeconds - c.sourceStartSeconds, 0);
+      expect(plan.document.comments[0].endSeconds).toBeLessThanOrEqual(duration);
+      expect(duration - plan.document.comments[0].endSeconds).toBeLessThan(.0011);
+      expect(() => editorDocumentSnapshotSchema.parse(plan.document)).not.toThrow();
+    }
+  });
   it("keeps custom identity and removes only layers wholly inside the cut", () => {
     const short = input();
     short.customTemplateId = "11111111-1111-4111-8111-111111111111";
