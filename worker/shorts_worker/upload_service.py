@@ -419,9 +419,10 @@ class UploadReceiverService:
         if split.query or split.fragment:
             return None
         upload_path = split.path
-        candidate_release, _ = upload_candidate_scope()
+        candidate_release, candidate_admin = upload_candidate_scope()
         if candidate_release is not None:
-            prefix = f"/admin-upload/{candidate_release}"
+            prefix = (f"/admin-upload/{candidate_release}" if candidate_admin is not None
+                      else f"/silence-upload/{candidate_release}")
             if not upload_path.startswith(prefix + "/"):
                 return None
             upload_path = upload_path[len(prefix):]

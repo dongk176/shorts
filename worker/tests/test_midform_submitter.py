@@ -218,7 +218,8 @@ def test_initial_render_overlay_preserves_every_ordinary_statement():
                     and node.name == "_initial_render_v4_environment")
     modified = next(node for node in after.body if isinstance(node, ast.FunctionDef)
                     and node.name == original.name)
-    assert isinstance(modified.body[0], ast.If)
-    assert ast.unparse(modified.body[0].test) == "job.get('midform_release_id')"
-    modified.body.pop(0)
+    inserted = [node for node in modified.body if isinstance(node, ast.If)
+                and ast.unparse(node.test) == "job.get('midform_release_id')"]
+    assert len(inserted) == 1
+    modified.body.remove(inserted[0])
     assert ast.dump(before) == ast.dump(after)

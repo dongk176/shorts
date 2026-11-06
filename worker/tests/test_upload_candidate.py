@@ -77,7 +77,7 @@ def test_expired_candidate_can_cleanup_only_its_own_scope(candidate, monkeypatch
         query, params = call.args
         assert "scope_job.initial_editor_release_id=%s::uuid" in query
         assert "scope_user.is_admin" in query
-        assert params.count(RELEASE) == 2 and params.count(ADMIN) == 1
+        assert params.count(RELEASE) == 2 and params.count(ADMIN) == 2
 
 
 def test_incomplete_scope_fails_closed(candidate, monkeypatch):
@@ -94,3 +94,48 @@ def test_private_receiver_rejects_public_or_other_candidate_paths(candidate):
     assert UploadReceiverService.parse_session_id(suffix) is None
     assert UploadReceiverService.parse_session_id(f"/admin-upload/{ADMIN}{suffix}") is None
     assert UploadReceiverService.parse_session_id(f"/admin-upload/{RELEASE}{suffix}?x=1") is None
+
+
+@pytest.fixture
+def parallel(monkeypatch):
+    for key in ("FILE_UPLOAD_CANDIDATE_RELEASE_ID", "FILE_UPLOAD_CANDIDATE_ADMIN_ID",
+                "FILE_UPLOAD_CANDIDATE_EXPIRES_AT"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("FILE_UPLOAD_PARALLEL_RELEASE_ID", RELEASE)
+
+
+def test_parallel_scope_requires_exact_separate_path(parallel):
+    from shorts_worker.upload_service import UploadReceiverService
+    session = "10000000-0000-4000-8000-000000000001"
+    suffix = f"/v1/upload-sessions/{session}/source"
+    assert upload_candidate_scope() == (RELEASE, None)
+    assert upload_candidate_accepting()
+    assert UploadReceiverService.parse_session_id(f"/silence-upload/{RELEASE}{suffix}") == session
+    for prefix in ("", f"/admin-upload/{RELEASE}", f"/silence-upload/{ADMIN}"):
+        assert UploadReceiverService.parse_session_id(prefix + suffix) is None
+
+
+def test_parallel_preclaim_keeps_token_owner_and_immutable_marker_checks(parallel):
+    repo, conn = repository({"token_hash": "a" * 64})
+    assert repo.candidate_upload_session_allowed("session", "a" * 64)
+    query, params = conn.execute.call_args.args
+    assert params == ("session", RELEASE, RELEASE)
+    assert "j.user_id=us.user_id" in query
+    assert "silence_inline_release_id" in query
+    assert "j.initial_editor_release_id=%s::uuid" in query
+    assert not repo.candidate_upload_session_allowed("session", "b" * 64)
+
+
+@pytest.mark.parametrize("marker", [None, ADMIN])
+def test_parallel_receiver_rejects_old_or_foreign_session_before_writes(parallel, marker):
+    repo, conn = repository({"user_id": ADMIN, "is_admin": False,
+                             "initial_editor_release_id": RELEASE,
+                             "silence_inline_release_id": marker})
+    assert repo.claim_upload_session("session", "a" * 64, 1) == {"claim_result": "not_found"}
+    assert conn.execute.call_count == 1
+
+
+def test_parallel_cannot_mix_private_admin_scope(parallel, monkeypatch):
+    monkeypatch.setenv("FILE_UPLOAD_CANDIDATE_ADMIN_ID", ADMIN)
+    with pytest.raises(RuntimeError):
+        upload_candidate_scope()

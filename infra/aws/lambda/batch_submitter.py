@@ -277,8 +277,12 @@ def _language_test_release(job: dict[str, Any]) -> dict[str, Any] | None:
 def _project_registry_for_job(job: dict[str, Any]) -> dict[str, Any] | None:
     if job.get("silence_inline_release_id"):
         import sys
+
         import silence_inline_submitter
-        return _validate_project_target_registry(silence_inline_submitter.release_for_job(sys.modules[__name__], job)["registry"])
+
+        return _validate_project_target_registry(
+            silence_inline_submitter.release_for_job(sys.modules[__name__], job)["registry"]
+        )
     release = _language_test_release(job)
     return release["registry"] if release else _production_project_target_registry()
 
@@ -831,9 +835,16 @@ def _initial_render_v4_environment(
 ) -> list[dict[str, str]]:
     if job.get("silence_inline_release_id"):
         import sys
+
         import silence_inline_submitter
-        return silence_inline_submitter.initial_render_environment(sys.modules[__name__], job,
-            job_definition=job_definition, job_queue=job_queue, resume=resume)
+
+        return silence_inline_submitter.initial_render_environment(
+            sys.modules[__name__],
+            job,
+            job_definition=job_definition,
+            job_queue=job_queue,
+            resume=resume,
+        )
     render_version = job.get("initial_render_spec_version")
     caption_version = job.get("initial_caption_render_spec_version")
     if render_version is None and caption_version is None:
@@ -1099,8 +1110,12 @@ def _editor_release_target(
 ) -> tuple[str, str, str, str] | None:
     if parent_job and parent_job.get("silence_inline_release_id"):
         import sys
+
         import silence_inline_submitter
-        return silence_inline_submitter.editor_target(sys.modules[__name__], parent_job, pending_request_id)
+
+        return silence_inline_submitter.editor_target(
+            sys.modules[__name__], parent_job, pending_request_id
+        )
     if not pending_request_id:
         if parent_job and parent_job.get("language_test_release_id"):
             raise BatchTargetTrustRejected("Language-test editing requires a pinned request")

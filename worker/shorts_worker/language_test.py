@@ -19,6 +19,35 @@ def verify_language_test_job(job: dict[str, Any]) -> None:
                 or job.get("initial_caption_render_spec_version") != 4):
             raise RenderError("중폼 프로젝트와 워커 연결이 일치하지 않습니다.")
         return
+    inline = job.get("silence_inline_release_id")
+    if inline:
+        upload = job.get("source_type") == "upload"
+        upload_context = (job.get("template_snapshot") or {}).get("uploadLanguage") or {}
+        language_bound = (
+            isinstance(upload_context, dict)
+            and upload_context.get("version") == 1
+            and str(upload_context.get("releaseId")) == str(inline)
+            and upload_context.get("outputLanguage") == job.get("output_language")
+            and upload_context.get("sourceLanguage") in {"auto", "ko", "en", "ja"}
+            and job.get("source_language_hint") in {None, upload_context.get("sourceLanguage")}
+        ) if upload else job.get("source_language_hint") in {"auto", "ko", "en", "ja"}
+        # Set by the pinned production submitter, never by a client option.
+        # Runtime source/image/font verification follows this admission check.
+        if (os.getenv("SHORTS_SILENCE_INLINE_ENABLED") != "true"
+                or str(inline) != os.getenv("SHORTS_SILENCE_INLINE_RELEASE_ID")
+                or inline != job.get("initial_editor_release_id")
+                or job.get("language_test_release_id") is not None
+                or job.get("silence_test_release_id") is not None
+                or job.get("source_type") not in {"youtube", "upload"}
+                or job.get("output_language") not in {"ko", "en", "ja"}
+                or not language_bound
+                or job.get("pipeline_version") != 2
+                or job.get("initial_render_spec_version") != 4
+                or job.get("initial_caption_render_spec_version") != 4
+                or (job.get("template_snapshot") or {}).get("shortsSilenceRemoval")
+                != {"version": 1, "preset": "aggressive"}):
+            raise RenderError("무음 편집 프로젝트와 워커 연결이 일치하지 않습니다.")
+        return
     private = job.get("silence_test_release_id")
     if private:
         # This opt-in is supplied only by the owner-bound, bounded QA submitter.

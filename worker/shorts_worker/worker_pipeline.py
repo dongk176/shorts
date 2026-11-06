@@ -282,6 +282,7 @@ def _project_caption_options(
         if job.get("output_language") == "ja"
         and (
             translated or job.get("language_test_release_id") or job.get("silence_test_release_id")
+            or job.get("silence_inline_release_id")
             or job.get("source_type") == "upload"
         )
         else subtitle.font_id if subtitle is not None else font.get("id"),

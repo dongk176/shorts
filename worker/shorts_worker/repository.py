@@ -95,6 +95,18 @@ class WorkerRepository:
             return True
         if not upload_candidate_accepting():
             return False
+        if administrator is None:
+            with self.connect() as connection:
+                row = connection.execute(
+                    """select us.token_hash from shorts_mvp.upload_sessions us
+                    join shorts_mvp.video_jobs j on j.id=us.job_id and j.user_id=us.user_id
+                    where us.id=%s and j.source_type='upload'
+                      and j.initial_editor_release_id=%s::uuid
+                      and to_jsonb(j)->>'silence_inline_release_id'=%s
+                      and us.status='awaiting_upload' and us.expires_at>clock_timestamp()
+                    """, (session_id, release, release),
+                ).fetchone()
+            return bool(row and hmac.compare_digest(str(row["token_hash"]), token_hash))
         with self.connect() as connection:
             row = connection.execute(
                 """select us.token_hash from shorts_mvp.upload_sessions us
@@ -130,7 +142,8 @@ class WorkerRepository:
                   us.expires_at<=clock_timestamp() as is_expired,
                   u.is_admin,j.status as job_status,j.source_type,
                   j.execution_backend,j.pipeline_version,
-                  j.source_range_selection_enabled,j.initial_editor_release_id
+                  j.source_range_selection_enabled,j.initial_editor_release_id,
+                  to_jsonb(j)->>'silence_inline_release_id' as silence_inline_release_id
                 from shorts_mvp.upload_sessions us
                 join shorts_mvp.app_users u on u.id=us.user_id
                 join shorts_mvp.video_jobs j on j.id=us.job_id
@@ -147,8 +160,9 @@ class WorkerRepository:
             release, administrator = upload_candidate_scope()
             if release is not None and (
                 not upload_candidate_accepting()
-                or not row.get("is_admin")
-                or str(row.get("user_id")) != administrator
+                or (administrator is not None and (
+                    not row.get("is_admin") or str(row.get("user_id")) != administrator))
+                or (administrator is None and str(row.get("silence_inline_release_id")) != release)
                 or str(row.get("initial_editor_release_id")) != release
             ):
                 return {"claim_result": "not_found"}
@@ -480,7 +494,10 @@ class WorkerRepository:
                     select 1 from shorts_mvp.video_jobs scope_job
                     join shorts_mvp.app_users scope_user on scope_user.id=scope_job.user_id
                     where scope_job.id=us.job_id and scope_job.initial_editor_release_id=%s::uuid
-                      and scope_job.user_id=%s::uuid and scope_user.is_admin
+                      and case when %s::uuid is null then
+                        to_jsonb(scope_job)->>'silence_inline_release_id'
+                          =scope_job.initial_editor_release_id::text
+                        else scope_job.user_id=%s::uuid and scope_user.is_admin end
                   ))
                   and (%s::uuid is null or us.id<>%s::uuid)
                 order by us.created_at
@@ -491,6 +508,7 @@ class WorkerRepository:
                     bounded_stale_seconds,
                     upload_candidate_scope()[0],
                     upload_candidate_scope()[0],
+                    upload_candidate_scope()[1],
                     upload_candidate_scope()[1],
                     active_upload_session_id,
                     active_upload_session_id,
@@ -562,7 +580,10 @@ class WorkerRepository:
                     select 1 from shorts_mvp.video_jobs scope_job
                     join shorts_mvp.app_users scope_user on scope_user.id=scope_job.user_id
                     where scope_job.id=us.job_id and scope_job.initial_editor_release_id=%s::uuid
-                      and scope_job.user_id=%s::uuid and scope_user.is_admin
+                      and case when %s::uuid is null then
+                        to_jsonb(scope_job)->>'silence_inline_release_id'
+                          =scope_job.initial_editor_release_id::text
+                        else scope_job.user_id=%s::uuid and scope_user.is_admin end
                   ))
                   and (%s::uuid is null or us.id<>%s::uuid)
                   order by us.created_at
@@ -605,6 +626,7 @@ class WorkerRepository:
                     upload_candidate_scope()[0],
                     upload_candidate_scope()[0],
                     upload_candidate_scope()[1],
+                    upload_candidate_scope()[1],
                     active_upload_session_id,
                     active_upload_session_id,
                     bounded_limit,
@@ -632,7 +654,10 @@ class WorkerRepository:
                       join shorts_mvp.app_users scope_user on scope_user.id=scope_job.user_id
                       where scope_job.id=request.job_id
                         and scope_job.initial_editor_release_id=%s::uuid
-                        and scope_job.user_id=%s::uuid and scope_user.is_admin
+                        and case when %s::uuid is null then
+                        to_jsonb(scope_job)->>'silence_inline_release_id'
+                          =scope_job.initial_editor_release_id::text
+                        else scope_job.user_id=%s::uuid and scope_user.is_admin end
                     ))
                   order by request.created_at
                   for update skip locked
@@ -644,7 +669,8 @@ class WorkerRepository:
                 where request.id=candidates.id
                 returning request.id,request.job_id
                 """,
-                (upload_candidate_scope()[0], *upload_candidate_scope(), bounded_limit),
+                (upload_candidate_scope()[0], *upload_candidate_scope(),
+                 upload_candidate_scope()[1], bounded_limit),
             ).fetchall()
             for row in rows:
                 connection.execute(
@@ -833,6 +859,7 @@ class WorkerRepository:
                   to_jsonb(j)->>'language_test_release_id' as language_test_release_id,
                   case when to_jsonb(j)->>'language_test_release_id' is not null
                     or to_jsonb(j)->>'silence_test_release_id'=j.initial_editor_release_id::text
+                    or to_jsonb(j)->>'silence_inline_release_id'=j.initial_editor_release_id::text
                     or (j.source_type='upload'
                       and j.template_snapshot#>>'{uploadLanguage,version}'='1'
                       and j.template_snapshot#>>'{uploadLanguage,releaseId}'
@@ -1267,6 +1294,7 @@ class WorkerRepository:
                   to_jsonb(j)->>'language_test_release_id' as language_test_release_id,
                   case when to_jsonb(j)->>'language_test_release_id' is not null
                     or to_jsonb(j)->>'silence_test_release_id'=j.initial_editor_release_id::text
+                    or to_jsonb(j)->>'silence_inline_release_id'=j.initial_editor_release_id::text
                     or (j.source_type='upload'
                       and j.template_snapshot#>>'{uploadLanguage,version}'='1'
                       and j.template_snapshot#>>'{uploadLanguage,releaseId}'
@@ -1957,6 +1985,7 @@ class WorkerRepository:
                   to_jsonb(j)->>'language_test_release_id' as language_test_release_id,
                   case when to_jsonb(j)->>'language_test_release_id' is not null
                     or to_jsonb(j)->>'silence_test_release_id'=j.initial_editor_release_id::text
+                    or to_jsonb(j)->>'silence_inline_release_id'=j.initial_editor_release_id::text
                     or (j.source_type='upload'
                       and j.template_snapshot#>>'{uploadLanguage,version}'='1'
                       and j.template_snapshot#>>'{uploadLanguage,releaseId}'
