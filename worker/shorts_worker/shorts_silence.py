@@ -75,12 +75,16 @@ def analyze(path: Path, duration: float) -> list[list[float]]:
 
 def plan(item: dict, silences: list[list[float]]) -> EditorDocument | None:
     """Keep source subtitles untouched; comments live on the output clock."""
+    if (item.get("template_snapshot") or {}).get("snsTemplateVersion") == 1:
+        from .social_silence import social_initial_item
+
+        item = social_initial_item(item)
     spec = copy.deepcopy(item.get("initial_render_spec"))
     snapshot = item.get("template_snapshot") or {}
     if (
         not isinstance(spec, dict)
         or spec.get("version") != 4
-        or snapshot.get("snsTemplateVersion")
+        or (snapshot.get("snsTemplateVersion") and snapshot.get("unifiedEditorVersion") != 1)
         or item.get("editor_document")
     ):
         raise ValueError("Inline silence requires an unedited standard v4 short")
@@ -137,7 +141,8 @@ def plan(item: dict, silences: list[list[float]]) -> EditorDocument | None:
         text_layers.append(layer)
         text = next((t["text"] for t in authored if t["id"] == layer["id"]
                      or f"tpl:{custom_id}:{t['id']}" == layer["id"]),
-                    "\n".join(layer["lines"]))
+                    item.get("silence_text_content", {}).get(
+                        layer["id"], "\n".join(layer["lines"])))
         overlays["textOverlays"].append(dict(
             id=layer["id"], text=text, fontId=layer["font"]["fontId"],
             color=layer["color"], effect=layer["effect"],

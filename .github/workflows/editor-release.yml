@@ -13,7 +13,7 @@ concurrency:
 
 env:
   AWS_REGION: ap-northeast-2
-  EDITOR_RELEASE_TAG: editor-v4-render-parity-20261106-2
+  EDITOR_RELEASE_TAG: editor-v4-render-parity-20261106-3
   EDITOR_RELEASE_BUILD_ROLE_ARN: ${{ vars.EDITOR_RELEASE_BUILD_ROLE_ARN }}
   EDITOR_RELEASE_VERIFIER_ROLE_ARN: ${{ vars.EDITOR_RELEASE_VERIFIER_ROLE_ARN }}
   EDITOR_RELEASE_ECR_REPOSITORY_URI: ${{ vars.EDITOR_RELEASE_ECR_REPOSITORY_URI }}
@@ -30,7 +30,7 @@ jobs:
   build:
     # A mutable branch is never a release identity. AWS independently verifies
     # this exact protected tag before it allows an image push.
-    if: github.ref == 'refs/tags/editor-v4-render-parity-20261106-2'
+    if: github.ref == 'refs/tags/editor-v4-render-parity-20261106-3'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     outputs:
@@ -131,6 +131,7 @@ jobs:
           push: true
           build-args: |
             WORKER_SOURCE_GIT_SHA=${{ github.sha }}
+            SHORTS_SILENCE_INLINE_ADMIN_ENABLED=true
           # ECR basic scanning cannot scan the OCI index emitted for build
           # provenance. Publish one linux/amd64 image manifest so the digest
           # that is scanned is exactly the digest later registered in Batch.
@@ -251,7 +252,7 @@ jobs:
 
   verify-and-register:
     needs: build
-    if: github.ref == 'refs/tags/editor-v4-render-parity-20261106-2'
+    if: github.ref == 'refs/tags/editor-v4-render-parity-20261106-3'
     environment: editor-v4-release-approval
     runs-on: ubuntu-latest
     timeout-minutes: 120

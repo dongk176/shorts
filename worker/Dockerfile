@@ -71,6 +71,8 @@ COPY . .
 # Legacy/local images deliberately carry a non-release marker. The v4 worker
 # path accepts only a 40-character SHA that the release workflow supplied as a
 # build argument, and compares it with the immutable Job Definition identity.
+ARG SHORTS_SILENCE_INLINE_ADMIN_ENABLED=false
+ENV SHORTS_SILENCE_INLINE_ADMIN_ENABLED=${SHORTS_SILENCE_INLINE_ADMIN_ENABLED}
 ARG WORKER_SOURCE_GIT_SHA=legacy
 RUN printf '%s\n' "$WORKER_SOURCE_GIT_SHA" > /app/worker/.worker-source-git-sha
 

@@ -1992,7 +1992,7 @@ class WorkerRepository:
                     where p.flag_key='public_shorts_silence' and p.enabled)))
                   and not j.is_example and j.midform_request is null
                   and j.output_language in ('ko','en','ja')
-                  and coalesce(s.template_snapshot->>'snsTemplateVersion','')=''
+                  and coalesce(s.template_snapshot->>'snsTemplateVersion','') in ('','1')
                   and s.render_version=1 and s.editor_document is null
                   and s.initial_render_spec->>'version'='4'
                   and j.template_snapshot->'shortsSilenceRemoval'=
