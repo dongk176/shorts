@@ -505,13 +505,14 @@ describe("range editing feature gate and snapshot", () => {
     }));
   });
 
-  it("opens the original source clock after preparation instead of shortening saved cuts", async () => {
+  it.each(["link", "upload"])("opens the original %s source clock after preparation instead of shortening saved cuts", async (source) => {
     process.env.RANGE_EDITING_ENABLED = "true";
     process.env.CLOUDFRONT_DOMAIN = "cdn.example.com";
     process.env.CLOUDFRONT_KEY_PAIR_ID = "key-pair";
     process.env.CLOUDFRONT_PRIVATE_KEY_B64 = Buffer.from("private-key").toString("base64");
     const pending = {
-      silenceTestReleaseId: "45f997e3-5250-4389-a097-f267e124dda1",
+      silenceTestReleaseId: source === "link" ? "45f997e3-5250-4389-a097-f267e124dda1" : null,
+      savedVideo: { timelineStartSeconds: 35.66, timelineEndSeconds: 66.17 },
       editTimelineS3Key: null, cleanClipS3Key: "edit-sources/clean.mp4",
       startSeconds: 35.66, endSeconds: 64.293,
       initialStartSeconds: 35.66, initialEndSeconds: 66.17,
