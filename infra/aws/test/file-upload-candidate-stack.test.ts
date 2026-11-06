@@ -11,6 +11,7 @@ const props: UploadCandidateProps = {
   clusterArn: "arn:aws:ecs:ap-northeast-2:181651591905:cluster/shorts-mvp-file-upload-production",
   listenerArn: "arn:aws:elasticloadbalancing:ap-northeast-2:181651591905:listener/app/test/1/2",
   listenerPriority: 41, loadBalancerDns: "internal-existing.ap-northeast-2.elb.amazonaws.com",
+  vpcOriginId: "vo_VerifiedExistingOrigin",
   vpcId: "vpc-12345678", subnets: ["subnet-12345678", "subnet-87654321"], securityGroups: ["sg-12345678"],
   executionRoleArn: "arn:aws:iam::181651591905:role/existing-upload-execution",
   controlPlaneRoleArn: "arn:aws:iam::181651591905:role/existing-web", mediaBucket: "existing-media",
@@ -24,6 +25,12 @@ it("adds only an isolated zero-idle-capacity receiver and never a new ALB/VPC or
   const template = Template.fromStack(stack);
   template.resourceCountIs("AWS::ElasticLoadBalancingV2::LoadBalancer", 0);
   template.resourceCountIs("AWS::EC2::VPC", 0);
+  template.resourceCountIs("AWS::CloudFront::VpcOrigin", 0);
+  template.hasResourceProperties("AWS::CloudFront::Distribution", { DistributionConfig: {
+    Origins: [{ Id: "candidate", DomainName: props.loadBalancerDns,
+      VpcOriginConfig: { VpcOriginId: props.vpcOriginId, OriginReadTimeout: 120, OriginKeepaliveTimeout: 120 },
+      OriginCustomHeaders: [{ HeaderName: "x-easycut-origin-verify", HeaderValue: { Ref: "OriginSecret" } }] }],
+  } });
   template.resourceCountIs("AWS::KMS::Key", 0);
   template.resourceCountIs("AWS::ECS::Service", 1);
   template.hasResourceProperties("AWS::ECS::Service", { DesiredCount: 0, ServiceName: "shorts-upload-candidate-d201e5fe" });

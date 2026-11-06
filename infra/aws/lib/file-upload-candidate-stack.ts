@@ -23,6 +23,7 @@ export interface UploadCandidateProps extends cdk.StackProps {
   listenerArn: string;
   listenerPriority: number;
   loadBalancerDns: string;
+  vpcOriginId: string;
   vpcId: string;
   subnets: string[];
   securityGroups: string[];
@@ -51,6 +52,7 @@ export class UploadCandidateStack extends cdk.Stack {
       || !/^181651591905\.dkr\.ecr\.ap-northeast-2\.amazonaws\.com\/shorts-mvp-editor-releases-production@sha256:[a-f0-9]{64}$/.test(props.image)
       || !/^https:\/\/shorts-[a-z0-9]+-artiroom\.vercel\.app$/.test(props.previewOrigin)
       || !Number.isFinite(Date.parse(props.expiresAt))
+      || !/^vo_[A-Za-z0-9]+$/.test(props.vpcOriginId ?? "")
       || !props.clusterArn.startsWith(`${prefix}ecs:ap-northeast-2:181651591905:cluster/`)
       || !props.listenerArn.startsWith(`${prefix}elasticloadbalancing:ap-northeast-2:181651591905:listener/`)
       || !props.executionRoleArn.startsWith(`${prefix}iam::181651591905:role/`)
@@ -157,7 +159,7 @@ export class UploadCandidateStack extends cdk.Stack {
     const cdn = new cloudfront.CfnDistribution(this, "ReceiverCdn", { distributionConfig: {
       enabled: true, priceClass: "PriceClass_200",
       origins: [{ id: "candidate", domainName: props.loadBalancerDns,
-        customOriginConfig: { originProtocolPolicy: "http-only", originReadTimeout: 120, originKeepaliveTimeout: 120 },
+        vpcOriginConfig: { vpcOriginId: props.vpcOriginId, originReadTimeout: 120, originKeepaliveTimeout: 120 },
         originCustomHeaders: [{ headerName: "x-easycut-origin-verify", headerValue: originSecret.valueAsString }] }],
       defaultCacheBehavior: { targetOriginId: "candidate", viewerProtocolPolicy: "https-only",
         allowedMethods: ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"], cachedMethods: ["GET", "HEAD"],
