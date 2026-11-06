@@ -78,4 +78,28 @@ each at most 12 minutes with explicit stop/cleanup. No new fixed commitment.
 - Production web build passes. All 312 app route entries match baseline, including home,
   guidebook, pricing, `/admin/easycutcutcutcutcutcut` and the project editor route.
 - Focused ranking worker tests retain real synthetic FFmpeg/ffprobe rendering checks.
-  Full worker regression results and actual candidate verification are recorded after completion.
+  The full worker suite completed without failure markers and with an empty failed-test cache.
+
+## First verified promotion and saved-project recovery
+
+Candidate `dpl_ARuNxfqX58yF2yn18r8ksUortWte` / source `b900c067` passed authenticated
+home/guidebook/pricing/admin/existing-editor checks. The previously authorized DongK test
+identity used a temporary API authentication session without email or callback configuration
+changes; it was signed out locally afterward. Instagram and TikTok preparation succeeded.
+Two YouTube children started together, used the current registry version, and succeeded after
+one eligible bot-check failover. Four-rank rendering with lip-bass completed in 60 seconds.
+The downloaded final MP4 is 720x1280 H.264/AAC, 10.621333 seconds. Contact-sheet inspection
+confirms order, fixed rank colors, dimming and a full black transition. All leases were released
+and the sandbox stopped. Current production's existing 180-second credit reservation was
+consumed once; this recovery does not change the current billing policy.
+
+That exact deployment was promoted to both production domains. Anonymous ranking APIs remain
+401, the ranking page redirects to sign-in, and public pages respond normally. The obsolete
+project-level `RANKING_PROXY_ROUTES_JSON` variable was removed; deployed code does not read it.
+
+A follow-up preserves retryability of saved remote sources with failed acquisition status.
+Only supported, registered remote URLs may be reacquired. Ownership, range limits, audio/file
+validation and the worker's restriction gate remain intact. Failed uploaded files still require
+re-upload. Focused saved-source/retry/registry/monitor tests: 61 passed. A controlled fixture
+under the same test owner's newly created project is used for actual retry verification;
+no customer jobs are automatically resubmitted.

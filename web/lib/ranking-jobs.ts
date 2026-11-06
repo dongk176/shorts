@@ -248,9 +248,12 @@ export async function queueRankingOperation(
           continue;
         }
         const source = sources.find((s) => s.id === clip.sourceId);
+        // Retry saved remote links after acquisition failure. The worker still
+        // revalidates access/ranges; missing uploaded files remain unavailable.
+        const retryableRemote = source?.status === "failed" && source.remoteUrl && rankingSourceRemote(source.remoteUrl);
         if (source?.metadata?.durationKnown !== false)
           clip.end = rankingSourceEnd(clip.start, clip.end, source?.metadata?.duration);
-        if (!source || source.status !== "ready" || !source.metadata || source.metadata.kind === "audio" ||
+        if (!source || (source.status !== "ready" && !retryableRemote) || !source.metadata || source.metadata.kind === "audio" ||
             (source.metadata.durationKnown === false ? !source.remoteUrl : clip.end > source.metadata.duration))
           throw new HttpError(400, `${clip.rank}위 영상의 구간을 다시 확인해 주세요.`);
       }
