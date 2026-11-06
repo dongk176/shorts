@@ -60,10 +60,10 @@ export function isNewJpyPlan(code: string) {
 }
 export function newPaddlePlanCode(code: string, currency: PaddleCurrency) {
   if (currency !== "USD" && currency !== "JPY") throw new Error("Unsupported Paddle currency");
-  return `${code}${currentPriceVersion}`;
+  return currency === "JPY" ? `${code}${jpyPriceVersion}` : code;
 }
 export function isNewCheckoutPlan(code: string, currency: PaddleCurrency) {
-  return currentPaddlePlans.some(plan => plan.code === code) && ["USD", "JPY"].includes(currency);
+  return currency === "JPY" ? isNewJpyPlan(code) : legacyPaddlePlans.some(plan => plan.code === code);
 }
 export type PaddlePlanCode = (typeof paddlePlans)[number]["code"];
 export type PaddleCurrency = "USD" | "JPY";
@@ -87,8 +87,8 @@ export function formatPaddlePrice(code: string, currency: PaddleCurrency, monthl
 export const paddlePackageTerms = [3, 6, 12] as const;
 export function paddleDisplayPlans(months: (typeof paddlePackageTerms)[number], currency: PaddleCurrency = "USD", currentCode?: string) {
   // Existing subscribers keep their original catalog, including management previews.
-  const suffix = !currentCode || currentCode.endsWith(currentPriceVersion) ? currentPriceVersion
-    : currency === "JPY" && isNewJpyPlan(currentCode) ? jpyPriceVersion : "";
+  const suffix = currentCode?.endsWith(currentPriceVersion) ? currentPriceVersion
+    : currency === "JPY" && (!currentCode || isNewJpyPlan(currentCode)) ? jpyPriceVersion : "";
   return [paddlePlan(`paddle_lite${suffix}`), paddlePlan(`paddle_creator_${months}m${suffix}`), paddlePlan(`paddle_pro_${months}m${suffix}`)];
 }
 
