@@ -96,6 +96,8 @@ def download_failure_category(output: str, *, media: bool = False) -> str:
             "proxy error",
             "unable to connect",
             "certificate verify failed",
+            "proxy authentication required",
+            "tunnel connection failed: 407",
         )
     ) or (media and "unable to download video data" in value and "http error 403" in value):
         return "network_error"
@@ -108,7 +110,18 @@ def download_failure_reason(output: str, category: str) -> str:
     if category == "bot_check":
         return "rate_limited" if "429" in value or "too many requests" in value else "bot_challenge"
     if category == "network_error":
-        return "media_forbidden" if "http error 403" in value else "connection_error"
+        for markers, reason in (
+            (("proxy authentication required", "tunnel connection failed: 407"), "proxy_auth"),
+            (("http error 403",), "media_forbidden"),
+            (("name or service not known", "temporary failure in name resolution"), "dns_error"),
+            (("certificate verify failed", "tlsv1 alert"), "tls_error"),
+            (("connection refused",), "connection_refused"),
+            (("connection reset",), "connection_reset"),
+            (("timed out",), "timeout"),
+        ):
+            if any(marker in value for marker in markers):
+                return reason
+        return "connection_error"
     if "requested format is not available" in value:
         return "format_unavailable"
     return "restricted_or_unavailable"

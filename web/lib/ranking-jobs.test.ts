@@ -87,6 +87,24 @@ describe("durable ranking render submission", () => {
 });
 
 
+it("retries a failed saved remote without duplicating sources or changing the selection", async () => {
+  state.query.mockResolvedValueOnce([{id:project}]).mockResolvedValueOnce([]).mockResolvedValueOnce([])
+    .mockResolvedValueOnce([{id:sourceId,status:"failed",remoteUrl:url,metadata:{duration:1200,durationKnown:false}}]);
+  const value=input();value.links=[];
+  await expect(queueRankingOperation(project,"owner","render",value)).resolves.toHaveProperty("operationId");
+  const queries=statements();
+  expect(queries.some(q=>q.sql.includes("insert into shorts_mvp.ranking_sources"))).toBe(false);
+  expect(queries.find(q=>q.sql.includes("insert into shorts_mvp.ranking_operations"))?.args[4]).toMatchObject({
+    playbackOrder:[2],clips:[{rank:2,sourceId,start:1,end:4,label:"선택한 장면"}],
+  });
+});
+it.each([null,"https://127.0.0.1/video","https://www.youtube.com.evil.test/watch?v=vtQV5zRU71o"])("never retries a failed upload or an unsupported saved target: %s",async(remoteUrl)=>{
+  state.query.mockResolvedValueOnce([{id:project}]).mockResolvedValueOnce([]).mockResolvedValueOnce([])
+    .mockResolvedValueOnce([{id:sourceId,status:"failed",remoteUrl,metadata:{duration:1200,durationKnown:false}}]);
+  const value=input();value.links=[];
+  await expect(queueRankingOperation(project,"owner","render",value)).rejects.toMatchObject({status:400});
+  expect(statements().some(q=>q.sql.includes("insert into shorts_mvp.ranking_operations"))).toBe(false);
+});
 describe("Instagram preparation", () => {
   it("queues one validated preview instead of a redundant metadata job", async () => {
     state.query.mockImplementation((strings: TemplateStringsArray) => Promise.resolve(strings.join("?").includes("count(*)") ? [{count: 0}] : strings.join("?").includes("for update") ? [{id:project}] : []));

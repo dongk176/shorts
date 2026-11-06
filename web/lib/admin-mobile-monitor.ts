@@ -12,7 +12,13 @@ type Incident = { key: string; active: boolean | null; title: string; detail: st
 export function operationalIncidents(row: Record<string, unknown>): Incident[] {
   const waiting = Number(row.waiting), oldest = Number(row.oldestWait), running = Number(row.running);
   const failures = Number(row.failures), customers = Number(row.failedCustomers);
+  const ranking = row.rankingDownloadHealth as {attempts?: number; successes?: number; operations?: number} | undefined;
+  const rankingStalled = Number(ranking?.attempts)>=10 && Number(ranking?.operations)>=3 && Number(ranking?.successes)===0;
   return [
+    {key:"ranking-youtube-download",active:rankingStalled?true:Number(ranking?.successes)>=2?false:null,
+      title:"랭킹 쇼츠의 유튜브 수집이 반복 실패하고 있어요",
+      detail:"최근 15분간 "+Number(ranking?.attempts||0)+"회 경로 시도 · 성공 "+Number(ranking?.successes||0)+"회",
+      nextStep:"랭킹의 최신 프록시 목록 버전과 연결 오류를 확인해주세요.",impact:Number(ranking?.operations||0)+"개 영상 수집 영향",urgent:true},
     { key: "queue-stalled", active: waiting >= 3 && oldest >= 10 && running === 0,
       title: "제작 대기가 길어지고 있어요", detail: "대기 3건 이상 · 최장 대기 10분 이상 · 실행 중인 작업 없음",
       nextStep: "관리자 페이지에서 대기열과 작업 시작 상태를 확인해주세요.", impact: waiting + "건 대기", urgent: true },
@@ -100,7 +106,11 @@ export async function scanMobileEvents() {
       count(distinct user_id) filter(where status='failed' and created_at>=now()-interval '30 minutes')::integer as failed_customers,
       (select count(*)::integer from shorts_mvp.billing_orders where status='manual_review' and created_at>=now()-interval '24 hours') as billing_review,
       coalesce((select blocked_until>now() from shorts_mvp.ingestion_circuit where singleton),false) as circuit_blocked,
-      exists(select 1 from shorts_mvp.ingestion_attempts where result='success' and created_at>=now()-interval '5 minutes') as recent_ingestion_success
+      exists(select 1 from shorts_mvp.ingestion_attempts where result='success' and created_at>=now()-interval '5 minutes') as recent_ingestion_success,
+      (select json_build_object('attempts',count(*),'successes',count(*) filter(where result='success'),
+         'operations',count(distinct operation_id) filter(where result<>'success'))
+       from shorts_mvp.ranking_route_attempts where created_at>=now()-interval '15 minutes'
+         and result in ('success','network_error','bot_check')) as ranking_download_health
       from shorts_mvp.video_jobs where created_at>=now()-interval '30 minutes'
         or status in ('queued','retry_waiting','validating','starting','downloading','transcribing','selecting','extracting','rendering','uploading')`;
     for (const incident of operationalIncidents(health)) await syncIncident(tx, incident);

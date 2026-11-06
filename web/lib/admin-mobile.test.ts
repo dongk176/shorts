@@ -38,6 +38,7 @@ beforeAll(async () => {
     create table shorts_mvp.paddle_adjustments(transaction_id text,amount_minor bigint,status text,action text);
     create table shorts_mvp.usage_grants(billing_order_id uuid);
     create table shorts_mvp.video_jobs(id uuid default gen_random_uuid(),user_id uuid,status text,created_at timestamptz default now());
+    create table shorts_mvp.ranking_route_attempts(operation_id uuid, result text, created_at timestamptz default now());
     create table shorts_mvp.user_subscriptions(user_id uuid,status text);
     create table shorts_mvp.customer_inquiries(status text);
     create table shorts_mvp.ingestion_route_slots(route_id text,enabled boolean,cooldown_until timestamptz);
@@ -50,6 +51,13 @@ beforeAll(async () => {
   await pg.exec(`create table shorts_mvp.paypal_one_time_orders(id uuid primary key,user_id uuid,subscription_id uuid,plan_code text,status text,capture_id text,amount_minor integer,currency text,refunded_minor integer default 0,reversed boolean default false,entitlement_hold boolean default false,environment text,paid_at timestamptz,access_end timestamptz,created_at timestamptz default now(),last_error_code text);`);
 });
 afterAll(async () => { await pg.close(); });
+it("alerts on repeated ranking download failures and does not call inactivity recovery",()=>{
+  const incident=(rankingDownloadHealth:Record<string,number>)=>operationalIncidents({rankingDownloadHealth}).find(r=>r.key==="ranking-youtube-download");
+  expect(incident({attempts:10,operations:3,successes:0})?.active).toBe(true);
+  expect(incident({attempts:10,operations:1,successes:0})?.active).toBeNull();
+  expect(incident({attempts:0,operations:0,successes:0})?.active).toBeNull();
+  expect(incident({attempts:12,operations:3,successes:2})?.active).toBe(false);
+});
 beforeEach(async () => {
   vi.clearAllMocks();vi.unstubAllEnvs();nativeCookie=undefined;inventoryMock.mockResolvedValue([]);
   await pg.exec(`truncate shorts_mvp.paypal_one_time_orders,shorts_mvp.admin_mobile_events,shorts_mvp.admin_mobile_deliveries,shorts_mvp.admin_mobile_receipts,

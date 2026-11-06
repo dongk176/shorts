@@ -114,3 +114,11 @@ it("returns sanitized live progress without marking an operation complete", asyn
   expect(state.release).not.toHaveBeenCalled();
   expect(state.query.mock.calls.some(([strings])=>strings.join("?").startsWith("update"))).toBe(false);
 });
+it("does not spend ten attempts on proxy authentication configuration errors", async () => {
+  state.fetch.mockResolvedValue(Response.json({status:"failed",attempt:0,failureCategory:"network_error",failureReason:"proxy_auth",error:"private diagnostic"}));
+  await syncRankingVercelOperation(project,operation);
+  expect(state.lease).not.toHaveBeenCalled();
+  expect(state.release).toHaveBeenCalledWith(operation,"vercel:generation","network_error");
+  expect(state.query.mock.calls.some(([s])=>s.join("").includes("finished_at=now()"))).toBe(true);
+  expect(state.query.mock.calls.flat().join(" ")).not.toContain("private diagnostic");
+});

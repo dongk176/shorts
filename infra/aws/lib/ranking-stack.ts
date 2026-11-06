@@ -343,9 +343,15 @@ export class RankingAdminStack extends cdk.Stack {
         CLUSTER: cluster.clusterArn,
         SERVICE: service.serviceName,
         TARGET_GROUP_ARN: target.targetGroupArn,
+        PROXY_REGISTRY_SECRET_ARN: props.runtimeSecretArn,
       },
     });
     lease.grantReadWriteData(capacity);
+    capacity.addToRolePolicy(new iam.PolicyStatement({
+      sid: "ReadCurrentProxyRegistryOnly",
+      actions: ["secretsmanager:GetSecretValue"],
+      resources: [props.runtimeSecretArn],
+    }));
     capacity.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ["ecs:DescribeServices", "ecs:UpdateService"],
