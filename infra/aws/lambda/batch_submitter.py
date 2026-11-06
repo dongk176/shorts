@@ -960,7 +960,7 @@ def _initial_render_v4_environment(
         raise BatchTargetTrustRejected(
             "Selected project target differs from verified v4 release evidence"
         )
-    return [
+    environment = [
         {"name": "EDITOR_RELEASE_GIT_SHA", "value": worker_source_git_sha},
         {"name": "EDITOR_RENDER_SPEC_VERSION", "value": "4"},
         {"name": "EDITOR_CAPTION_RENDER_SPEC_VERSION", "value": "4"},
@@ -969,6 +969,15 @@ def _initial_render_v4_environment(
             "value": font_manifest_sha256,
         },
     ]
+
+    # Enable the single-pass path only for the explicitly selected, already
+    # verified immutable release. Older and unrelated language jobs keep their
+    # existing behavior; the worker still checks the owned request and DB flag.
+    inline_release = os.environ.get("SHORTS_SILENCE_INLINE_RELEASE_ID", "")
+    if (inline_release and inline_release == str(release.get("id") or "")
+            and inline_release == str(job.get("initial_editor_release_id") or "")):
+        environment.append({"name": "SHORTS_SILENCE_INLINE_ENABLED", "value": "true"})
+    return environment
 
 
 def _verify_recorded_previous_project_job(

@@ -1772,6 +1772,13 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       environment: lambdaEnvironment,
     });
     const batchSubmitterFunctionName = `shorts-mvp-batch-submitter-${props.environment}`;
+    const shortsSilenceInlineReleaseId = String(
+      this.node.tryGetContext("shortsSilenceInlineReleaseId") || "",
+    ).trim();
+    if (shortsSilenceInlineReleaseId
+      && !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(shortsSilenceInlineReleaseId)) {
+      throw new Error("shortsSilenceInlineReleaseId must be an exact release UUID");
+    }
     const registryResult = projectTargetRegistry(this, props.environment);
     const registry = registryResult?.registry;
     const lane = (name: (typeof projectTargetLaneNames)[number]) => (
@@ -1910,6 +1917,9 @@ export class ShortsMvpComputeStack extends cdk.Stack {
         ...(unifiedTemplateSubtitlesPreviousJobDefinitionArn ? {
           UNIFIED_TEMPLATE_SUBTITLES_PREVIOUS_JOB_DEFINITION_ARN:
             unifiedTemplateSubtitlesPreviousJobDefinitionArn,
+        } : {}),
+        ...(shortsSilenceInlineReleaseId ? {
+          SHORTS_SILENCE_INLINE_RELEASE_ID: shortsSilenceInlineReleaseId,
         } : {}),
         ...(registryResult ? {
           PROJECT_TARGET_REGISTRY_PATH:

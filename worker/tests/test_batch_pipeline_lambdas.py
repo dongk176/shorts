@@ -1250,7 +1250,9 @@ def test_production_registry_rejects_conflicting_modes_for_a_shared_queue() -> N
         module._production_project_target_registry()
 
 
-def test_initial_render_v4_environment_requires_exact_release_and_lane_evidence() -> None:
+def test_initial_render_v4_environment_requires_exact_release_and_lane_evidence(
+    monkeypatch,
+) -> None:
     module, _ = _load_lambda("batch_submitter")
     git_sha = "a" * 40
     digest = f"sha256:{'b' * 64}"
@@ -1326,6 +1328,23 @@ def test_initial_render_v4_environment_requires_exact_release_and_lane_evidence(
         {"name": "EDITOR_CAPTION_RENDER_SPEC_VERSION", "value": "4"},
         {"name": "EDITOR_FONT_MANIFEST_SHA256", "value": font_hash},
     ]
+
+    job = {"initial_render_spec_version": 4, "initial_caption_render_spec_version": 4,
+           "initial_editor_release_id": release_id}
+    monkeypatch.setenv("SHORTS_SILENCE_INLINE_RELEASE_ID", release_id)
+    args = {"job_definition": definition, "job_queue": queue, "resume": False}
+    assert module._initial_render_v4_environment(job, **args)[-1] == {
+        "name": "SHORTS_SILENCE_INLINE_ENABLED", "value": "true",
+    }
+    for other in ("", "different-release"):
+        job["initial_editor_release_id"] = other
+        assert all(e["name"] != "SHORTS_SILENCE_INLINE_ENABLED"
+                   for e in module._initial_render_v4_environment(job, **args))
+    job["initial_editor_release_id"] = release_id
+    monkeypatch.setenv("SHORTS_SILENCE_INLINE_RELEASE_ID", "different-release")
+    assert all(e["name"] != "SHORTS_SILENCE_INLINE_ENABLED"
+               for e in module._initial_render_v4_environment(job, **args))
+    monkeypatch.setenv("SHORTS_SILENCE_INLINE_RELEASE_ID", release_id)
 
     target["fontManifestSha256"] = "d" * 64
     with pytest.raises(
