@@ -281,7 +281,8 @@ def _project_caption_options(
         "font_id": "noto-sans-jp"
         if job.get("output_language") == "ja"
         and (
-            translated or job.get("language_test_release_id") or job.get("source_type") == "upload"
+            translated or job.get("language_test_release_id") or job.get("silence_test_release_id")
+            or job.get("source_type") == "upload"
         )
         else subtitle.font_id if subtitle is not None else font.get("id"),
         "timing_lead_frames": CAPTION_STABLE_TIMING_LEAD_FRAMES if translated

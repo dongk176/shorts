@@ -28,11 +28,12 @@ beforeAll(async () => {
   await db.exec(baseline);
   await db.exec(`create trigger admission before insert on shorts_mvp.video_jobs for each row execute function shorts_mvp.enforce_project_target_successor_admission()`);
   await db.exec(await readFile(new URL('../../supabase/migrations/20261105075326_admin_silence_isolated_admission.sql', import.meta.url), 'utf8'));
+  await db.exec(await readFile(new URL('../../supabase/migrations/20261106103733_silence_admin_matrix_scope.sql', import.meta.url), 'utf8'));
   await db.exec(`insert into shorts_mvp.silence_test_releases(id,administrator_id,expires_at,enabled,verified_at,job_queue_arn) values('${release}','${admin}',now()+interval '3 hours',true,now(),'${queue}')`);
 });
 beforeEach(async () => {
   await db.exec(`delete from shorts_mvp.editor_render_requests; delete from shorts_mvp.generated_shorts; delete from shorts_mvp.video_jobs;
-    update shorts_mvp.silence_test_releases set enabled=true,admitted_jobs=0,max_jobs=2,expires_at=created_at+interval '3 hours';
+    update shorts_mvp.silence_test_releases set enabled=true,admitted_jobs=0,max_jobs=2,verification='{}',expires_at=created_at+interval '3 hours';
     update shorts_mvp.editor_release_state set render_v4_kill_switch=false,render_v4_infra_lease_id=null;
     update shorts_mvp.runtime_feature_flags set enabled=true;`);
 });
@@ -44,6 +45,18 @@ describe('isolated silence admission against the actual production guard', () =>
   it('admits an opted-in administrator and atomically counts it', async () => {
     await insert(); expect((await db.query('select admitted_jobs from shorts_mvp.silence_test_releases')).rows).toEqual([{admitted_jobs:1}]);
   });
+  it.each(['ko', 'en', 'ja'])('requires an exact authorized scope for %s SNS QA', async language => {
+    const fields = ',output_language,source_language_hint,template_snapshot';
+    const values = `,'${language}','auto','{"snsTemplateVersion":1,"shortsSilenceRemoval":{"version":1,"preset":"aggressive"}}'`;
+    await expect(insert(admin, fields, values)).rejects.toThrow('SILENCE_TEST_SCOPE_INVALID');
+    const scope = { authorizedTestScope: { version: 1, sourceGitSha: 'sha', workerImageDigest: 'digest',
+      outputLanguages: ['ko','en','ja'], templateKinds: ['standard','custom','sns','community'] } };
+    await db.query('update shorts_mvp.silence_test_releases set verification=$1', [scope]);
+    await insert(admin, fields, values);
+    scope.authorizedTestScope.workerImageDigest = 'other';
+    await db.query('update shorts_mvp.silence_test_releases set verification=$1', [scope]);
+    await expect(insert(admin, fields, values)).rejects.toThrow('SILENCE_TEST_SCOPE_INVALID');
+  });
   it('preserves ordinary production target validation', async () => {
     await db.exec(`insert into shorts_mvp.video_jobs(user_id,batch_target_release_id,batch_job_definition,batch_job_queue) values('${user}','stable','stable-definition','stable-queue')`);
     await expect(db.exec(`insert into shorts_mvp.video_jobs(user_id) values('${user}')`)).rejects.toThrow('INITIAL_RENDER_RELEASE_HANDOFF');
@@ -51,7 +64,7 @@ describe('isolated silence admission against the actual production guard', () =>
   });
   it('rejects a member spoofing the private marker', async () => { await expect(insert(user)).rejects.toThrow('SILENCE_TEST_UNAVAILABLE'); });
   it.each([
-    ['source_type',"'upload'"], ['output_language',"'ja'"], ['is_example','true'],
+    ['source_type',"'upload'"], ['output_language',"'de'"], ['is_example','true'],
     ['template_snapshot',"'{}'"], ['initial_render_spec_version','3'],
     ['initial_editor_release_id','null'],
   ])('rejects incompatible %s', async (field,value) => {

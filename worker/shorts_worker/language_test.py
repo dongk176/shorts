@@ -19,6 +19,22 @@ def verify_language_test_job(job: dict[str, Any]) -> None:
                 or job.get("initial_caption_render_spec_version") != 4):
             raise RenderError("중폼 프로젝트와 워커 연결이 일치하지 않습니다.")
         return
+    private = job.get("silence_test_release_id")
+    if private:
+        # This opt-in is supplied only by the owner-bound, bounded QA submitter.
+        # The caller also verifies the running image against the immutable release.
+        if (os.getenv("SHORTS_SILENCE_INLINE_ADMIN_ENABLED") != "true"
+                or str(private) != os.getenv("EASYCUT_SILENCE_TEST_RELEASE_ID")
+                or private != job.get("initial_editor_release_id")
+                or job.get("language_test_release_id") is not None
+                or job.get("source_type", "youtube") != "youtube"
+                or job.get("output_language") not in {"ko", "en", "ja"}
+                or job.get("source_language_hint") not in {None, "auto", "ko", "en", "ja"}
+                or job.get("pipeline_version") != 2
+                or job.get("initial_render_spec_version") != 4
+                or job.get("initial_caption_render_spec_version") != 4):
+            raise RenderError("무음 검증 프로젝트와 워커 연결이 일치하지 않습니다.")
+        return
     from .sns_template import sns_snapshot
     sns = sns_snapshot(job) is not None
     sns_worker = os.environ.get("EASYCUT_SNS_TEMPLATE_WORKER") == "true"

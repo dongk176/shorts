@@ -95,9 +95,9 @@ beforeEach(() => {
 });
 
 describe("language job admission through the actual POST handler", () => {
-  it.each(["en", "ja"])("keeps %s silence jobs on the language release even in an admin speed-test candidate", async outputLanguage => {
-    admin = true; publicSilence = true;
-    mocks.session.mockResolvedValue({ userId: user, id: user, isAdmin: true });
+  it.each(["en", "ja"].flatMap(outputLanguage => [true, false].map(isAdmin => ({ outputLanguage, isAdmin }))))("pins only administrator $outputLanguage silence jobs to the private candidate ($isAdmin)", async ({ outputLanguage, isAdmin }) => {
+    admin = isAdmin; publicSilence = true;
+    mocks.session.mockResolvedValue({ userId: user, id: user, isAdmin });
     vi.stubEnv("ADMIN_SILENCE_TEST_RELEASE_ID", releaseId);
     vi.stubEnv("ADMIN_SHORTS_SILENCE_ENABLED", "true");
     vi.stubEnv("RANKING_VERCEL_SNAPSHOT_ID", "snapshot");
@@ -105,8 +105,8 @@ describe("language job admission through the actual POST handler", () => {
     expect((await POST(request(body))).status).toBe(202);
     expect((await POST(request(body))).status).toBe(200);
     expect(jobs).toHaveLength(1);
-    expect(jobs[0]).toMatchObject({ output: outputLanguage, release: releaseId, silenceRelease: null,
-      snapshot: { shortsSilenceRemovalCandidate: { version: 1, preset: "aggressive" }, shortsSilenceCandidateId: releaseId } });
+    expect(jobs[0]).toMatchObject({ output: outputLanguage, release: isAdmin ? null : releaseId, silenceRelease: isAdmin ? releaseId : null,
+      snapshot: { shortsSilenceRemoval: { version: 1, preset: "aggressive" } } });
     expect(reservations).toHaveLength(1);
   });
   it("silence selection cannot bypass disabled public language admission", async () => {

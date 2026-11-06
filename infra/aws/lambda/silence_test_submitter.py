@@ -136,6 +136,7 @@ def initial_render_environment(host, job, *, job_definition, job_queue, resume):
     # the submitter needs no new cloud permissions or mutable-name resolution.
     release = result["release"]
     return [
+        {"name": "EASYCUT_SILENCE_TEST_RELEASE_ID", "value": result["id"]},
         {"name": "EDITOR_RELEASE_GIT_SHA", "value": release["git_sha"]},
         {"name": "EDITOR_RENDER_SPEC_VERSION", "value": "4"},
         {"name": "EDITOR_CAPTION_RENDER_SPEC_VERSION", "value": "4"},

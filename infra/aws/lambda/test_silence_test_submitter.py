@@ -124,7 +124,8 @@ class Admission(unittest.TestCase):
     def test_complete_registry_and_environment(self):
         result = m.release_for_job(self.host, self.job)
         self.assertEqual(set(result["registry"]["lanes"]), m.KEYS)
-        self.assertEqual(len(self.environment()), 4)
+        self.assertEqual(len(self.environment()), 5)
+        self.assertIn({"name": "EASYCUT_SILENCE_TEST_RELEASE_ID", "value": RID}, self.environment())
 
     def test_member_rejected(self):
         self.rows["app_users"][0]["is_admin"] = False

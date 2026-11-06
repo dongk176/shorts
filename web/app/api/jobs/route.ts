@@ -355,7 +355,7 @@ export async function POST(request: Request) {
         : renderContract.templateSnapshot;
       const silenceCandidate = input.silenceRemoval && languageTest && session.isAdmin === true
         ? process.env.ADMIN_SILENCE_TEST_RELEASE_ID : undefined;
-      const templateSnapshot = input.silenceRemoval ? { ...baseTemplateSnapshot,
+      let templateSnapshot = input.silenceRemoval ? { ...baseTemplateSnapshot,
         ...(silenceCandidate
           ? { shortsSilenceRemovalCandidate: input.silenceRemoval, shortsSilenceCandidateId: silenceCandidate }
           : { shortsSilenceRemoval: input.silenceRemoval }) } : baseTemplateSnapshot;
@@ -406,10 +406,14 @@ export async function POST(request: Request) {
         if (!dispatchTarget) throw new HttpError(503, "중폼 제작 서버를 준비하고 있습니다.");
         dispatchTarget = midformTarget(midform, dispatchTarget.targetKey);
       }
-      // Language jobs keep their verified language worker and use silence post-processing.
-      const silenceTest = input.silenceRemoval && !languageTest && dispatchTarget
+      // A bounded administrator candidate pins every supported template to its verified image.
+      const silenceTest = input.silenceRemoval && !midform && dispatchTarget
         ? await silenceTestTarget(tx, session.userId, dispatchTarget) : null;
-      if (silenceTest) dispatchTarget = silenceTest.target;
+      if (silenceTest && input.silenceRemoval) {
+        dispatchTarget = silenceTest.target;
+        const inlineTemplateSnapshot = { ...baseTemplateSnapshot, shortsSilenceRemoval: input.silenceRemoval };
+        templateSnapshot = inlineTemplateSnapshot;
+      }
       let initialRenderSpecVersion: 4 | null = null;
       let initialCaptionRenderSpecVersion: 4 | null = null;
       let initialEditorReleaseId: string | null = null;
@@ -467,7 +471,7 @@ export async function POST(request: Request) {
         dispatchTarget,
       });
       if (resolvedExecution.usesCustomTemplateDesign) {
-        if (languageTest) {
+        if (languageTest && !silenceTest) {
           await assertCustomTemplateDesignRenderRelease(tx, initialRenderRelease?.releaseId, { languageTest: true });
         } else {
           await assertCustomTemplateDesignRenderRelease(tx, initialRenderRelease?.releaseId);
@@ -508,7 +512,7 @@ export async function POST(request: Request) {
           ${initialEditorReleaseId},
           ${initialRenderSpecVersion}, ${initialCaptionRenderSpecVersion},
           ${selectedDurationSeconds},${usageSeconds},
-          ${languageTest ? input.sourceLanguage || "auto" : null},${languageTest?.releaseId || null},${input.midform ? tx.json(input.midform) : null},${midform?.releaseId || null},${silenceTest?.releaseId || null}
+          ${languageTest ? input.sourceLanguage || "auto" : null},${silenceTest ? null : languageTest?.releaseId || null},${input.midform ? tx.json(input.midform) : null},${midform?.releaseId || null},${silenceTest?.releaseId || null}
         )
         returning project_number
       `;

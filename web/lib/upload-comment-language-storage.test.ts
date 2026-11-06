@@ -14,8 +14,8 @@ it("keeps verified upload comment language through initial and subsequent render
   const db = new PGlite();
   const release = "11111111-1111-4111-8111-111111111111";
   try {
-    await db.exec(`create table jobs(source_type text,template_snapshot jsonb,initial_editor_release_id uuid,output_language text,language_test_release_id uuid);
-      insert into jobs values('upload','{}','${release}','ko',null)`);
+    await db.exec(`create table jobs(source_type text,template_snapshot jsonb,initial_editor_release_id uuid,output_language text,language_test_release_id uuid,silence_test_release_id uuid);
+      insert into jobs values('upload','{}','${release}','ko',null,null)`);
     for (const query of queries) {
       const expression = query.match(/case when[\s\S]*?end as comment_output_language/)![0];
       for (const language of ["ko", "en", "ja"]) {
@@ -33,7 +33,9 @@ it("keeps verified upload comment language through initial and subsequent render
       }
       await db.exec(`update jobs set source_type='youtube',language_test_release_id='${release}',output_language='en'`);
       expect((await db.query(`select ${expression} from jobs j`)).rows).toEqual([{ comment_output_language: "en" }]);
-      await db.exec("update jobs set source_type='upload',language_test_release_id=null");
+      await db.exec(`update jobs set source_type='youtube',language_test_release_id=null,silence_test_release_id='${release}',output_language='ja'`);
+      expect((await db.query(`select ${expression} from jobs j`)).rows).toEqual([{ comment_output_language: "ja" }]);
+      await db.exec("update jobs set source_type='upload',language_test_release_id=null,silence_test_release_id=null");
     }
   } finally { await db.close(); }
 }, 30_000);

@@ -832,9 +832,11 @@ class WorkerRepository:
                 select s.*, j.channel_thumbnail_url,
                   to_jsonb(j)->>'language_test_release_id' as language_test_release_id,
                   case when to_jsonb(j)->>'language_test_release_id' is not null
+                    or to_jsonb(j)->>'silence_test_release_id'=j.initial_editor_release_id::text
                     or (j.source_type='upload'
                       and j.template_snapshot#>>'{uploadLanguage,version}'='1'
-                      and j.template_snapshot#>>'{uploadLanguage,releaseId}'=j.initial_editor_release_id::text
+                      and j.template_snapshot#>>'{uploadLanguage,releaseId}'
+                        =j.initial_editor_release_id::text
                       and j.template_snapshot#>>'{uploadLanguage,outputLanguage}'=j.output_language
                       and j.output_language in ('ko','en','ja'))
                   then j.output_language else 'ko' end as comment_output_language,
@@ -1264,9 +1266,11 @@ class WorkerRepository:
                 select s.*,j.channel_thumbnail_url,a.slot_index,
                   to_jsonb(j)->>'language_test_release_id' as language_test_release_id,
                   case when to_jsonb(j)->>'language_test_release_id' is not null
+                    or to_jsonb(j)->>'silence_test_release_id'=j.initial_editor_release_id::text
                     or (j.source_type='upload'
                       and j.template_snapshot#>>'{uploadLanguage,version}'='1'
-                      and j.template_snapshot#>>'{uploadLanguage,releaseId}'=j.initial_editor_release_id::text
+                      and j.template_snapshot#>>'{uploadLanguage,releaseId}'
+                        =j.initial_editor_release_id::text
                       and j.template_snapshot#>>'{uploadLanguage,outputLanguage}'=j.output_language
                       and j.output_language in ('ko','en','ja'))
                   then j.output_language else 'ko' end as comment_output_language
@@ -1952,9 +1956,11 @@ class WorkerRepository:
                 select s.*, j.channel_thumbnail_url,
                   to_jsonb(j)->>'language_test_release_id' as language_test_release_id,
                   case when to_jsonb(j)->>'language_test_release_id' is not null
+                    or to_jsonb(j)->>'silence_test_release_id'=j.initial_editor_release_id::text
                     or (j.source_type='upload'
                       and j.template_snapshot#>>'{uploadLanguage,version}'='1'
-                      and j.template_snapshot#>>'{uploadLanguage,releaseId}'=j.initial_editor_release_id::text
+                      and j.template_snapshot#>>'{uploadLanguage,releaseId}'
+                        =j.initial_editor_release_id::text
                       and j.template_snapshot#>>'{uploadLanguage,outputLanguage}'=j.output_language
                       and j.output_language in ('ko','en','ja'))
                   then j.output_language else 'ko' end as comment_output_language

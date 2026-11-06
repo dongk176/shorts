@@ -143,3 +143,23 @@ def test_culture_release_uses_existing_submitter_registry_protocol():
     assert module._language_test_release({
         "language_test_release_id": ID, "initial_editor_release_id": ID,
     }) == record
+
+
+@pytest.mark.parametrize("language", ["ko", "en", "ja"])
+@pytest.mark.parametrize("snapshot", [{}, {"snsTemplateVersion": 1},
+                                      {"snsTemplateVersion": 1, "communityTemplateVersion": 1}])
+def test_private_inline_worker_keeps_exact_release_binding(monkeypatch, language, snapshot):
+    job = {"silence_test_release_id": ID, "initial_editor_release_id": ID,
+           "source_type": "youtube", "pipeline_version": 2, "output_language": language,
+           "source_language_hint": "auto", "template_snapshot": snapshot,
+           "initial_render_spec_version": 4, "initial_caption_render_spec_version": 4}
+    with pytest.raises(RenderError):
+        verify_language_test_job(job)
+    monkeypatch.setenv("SHORTS_SILENCE_INLINE_ADMIN_ENABLED", "true")
+    monkeypatch.setenv("EASYCUT_SILENCE_TEST_RELEASE_ID", ID)
+    verify_language_test_job(job)
+    for mutation in [{"initial_editor_release_id": "other"}, {"source_type": "upload"},
+                     {"language_test_release_id": ID}, {"output_language": "de"},
+                     {"initial_render_spec_version": 3}]:
+        with pytest.raises(RenderError):
+            verify_language_test_job({**job, **mutation})
