@@ -16,7 +16,11 @@ const SUCCESSOR_MIGRATION = path.join(
   ROOT,
   "supabase/migrations/202608310003_project_target_successor.sql",
 );
+const ADDITIVE_FONT_MIGRATION = path.join(ROOT, "supabase/migrations/20261106162500_project_additive_font_proof.sql");
 const FUNCTION_MIGRATIONS = Object.freeze({
+  _project_target_successor_contract: ADDITIVE_FONT_MIGRATION,
+  record_project_font_successor_proof: ADDITIVE_FONT_MIGRATION,
+  _project_successor_fonts_compatible: ADDITIVE_FONT_MIGRATION,
   enforce_project_target_successor_admission: path.join(
     ROOT,
     "supabase/migrations/202609020001_project_successor_admin_dual_admission.sql",
@@ -131,6 +135,8 @@ export async function withProjectSuccessorDatabase(callback, environment = proce
 }
 
 const FUNCTIONS = {
+  record_project_font_successor_proof: true,
+  _project_successor_fonts_compatible: false,
   _project_target_successor_contract: true,
   _project_target_successor_flags: true,
   _assert_project_successor_registry: false,
@@ -140,6 +146,23 @@ const FUNCTIONS = {
   editor_target_successor_admin_release: true,
   enforce_project_target_successor_admission: false,
 };
+
+export function successorMigrationFunctionBody(source, name) {
+  if (!/^[a-z_][a-z0-9_]*$/.test(name)) throw new Error("Invalid function name");
+  return new RegExp(`create(?: or replace)? function shorts_mvp\\.${name}\\([\\s\\S]*?\\bas\\s+\\$\\$\\r?\\n([\\s\\S]*?)\\r?\\n\\$\\$;`, "i").exec(source)?.[1];
+}
+
+export function successorAdmissionBody(baseBody, overlays) {
+  let body = baseBody;
+  for (const source of overlays) {
+    const encoded = /body:=overlay\(body placing E'([^']+)'/u.exec(source)?.[1];
+    if (!encoded || !encoded.startsWith("begin\\n") || !body.includes("begin\n")) {
+      throw new Error("Unknown successor admission migration overlay");
+    }
+    body = body.replace("begin\n", () => encoded.replace(/\\n/gu, "\n"));
+  }
+  return body;
+}
 
 export async function verifyProjectSuccessorSchema(tx) {
   const sources = new Map();
@@ -160,7 +183,14 @@ export async function verifyProjectSuccessorSchema(tx) {
   if (rows.length !== Object.keys(FUNCTIONS).length) throw new Error("successor additive SQL 함수가 누락됐습니다.");
   for (const row of rows) {
     const source = sourceFor(row.proname);
-    const body = new RegExp(`create or replace function shorts_mvp\\.${row.proname}\\([\\s\\S]*?\\nas \\$\\$\\n([\\s\\S]*?)\\n\\$\\$;`, "i").exec(source)?.[1];
+    let body = successorMigrationFunctionBody(source, row.proname);
+    if (row.proname === "enforce_project_target_successor_admission") {
+      body = successorAdmissionBody(body, [
+        "202609120001_admin_language_test.sql",
+        "202611030001_admin_midform_projects.sql",
+        "20261105075326_admin_silence_isolated_admission.sql",
+      ].map(file => fs.readFileSync(path.join(ROOT, "supabase/migrations", file), "utf8")));
+    }
     const normalized = (text) => String(text || "").trim().replace(/\s+/gu, " ");
     if (!body || normalized(body) !== normalized(row.prosrc) || row.prosecdef !== true
       || row.serviceExecute !== FUNCTIONS[row.proname] || row.unexpectedGrant !== false) {

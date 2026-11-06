@@ -5,7 +5,7 @@ import test from "node:test";
 import {
   assertProjectSuccessorLease, countSuccessorActiveJobs, exactJson,
   successorDefinitionHash, successorHash, validateProjectSuccessorOptions,
-  readProjectSuccessorSnapshot,
+  readProjectSuccessorSnapshot, successorMigrationFunctionBody, successorAdmissionBody,
   validateSuccessorDefinitions, validateSuccessorLambdaEnvironment,
   validateSuccessorRegistryTransition, validateSuccessorSnapshot,
   verifySuccessorAwsDefinitions,
@@ -335,4 +335,28 @@ test("additive fonts bind each registry and AWS definition to its own finalized 
   const next = staleDefinitions.find(d => d.containerProperties.image.endsWith(proof.workerImageDigest));
   next.containerProperties.environment.find(e => e.name === "EDITOR_FONT_MANIFEST_SHA256").value = FONT;
   assert.throws(() => validateSuccessorDefinitions(staleDefinitions, context, proof));
+});
+
+
+test("exact migration bodies include additive font proof functions without crossing names", () => {
+  const source = fs.readFileSync(new URL("../supabase/migrations/20261106162500_project_additive_font_proof.sql", import.meta.url), "utf8");
+  const record = successorMigrationFunctionBody(source, "record_project_font_successor_proof");
+  const compatible = successorMigrationFunctionBody(source, "_project_successor_fonts_compatible");
+  const contract = successorMigrationFunctionBody(source, "_project_target_successor_contract");
+  assert.match(record, /existing font bytes or metrics changed/);
+  assert.match(compatible, /proof.previous_release_id=p_previous/);
+  assert.match(contract, /_project_successor_fonts_compatible/);
+  assert.doesNotMatch(compatible, /create.*function/i);
+  assert.equal(successorMigrationFunctionBody(source, "not_present"), undefined);
+  assert.throws(() => successorMigrationFunctionBody(source, ".*"));
+});
+
+
+test("admission verifier composes the three committed guards in migration order", () => {
+  const read = file => fs.readFileSync(new URL(`../supabase/migrations/${file}`, import.meta.url), "utf8");
+  const base = successorMigrationFunctionBody(read("202609020001_project_successor_admin_dual_admission.sql"), "enforce_project_target_successor_admission");
+  const body = successorAdmissionBody(base, ["202609120001_admin_language_test.sql", "202611030001_admin_midform_projects.sql", "20261105075326_admin_silence_isolated_admission.sql"].map(read));
+  assert.match(body, /assert_silence_test_job[\s\S]*assert_midform_job[\s\S]*assert_language_test_job/);
+  assert.ok(body.endsWith(base.slice(base.indexOf("  if new.source_type"))));
+  assert.throws(() => successorAdmissionBody(base, ["unexpected migration"]));
 });
