@@ -41,6 +41,7 @@ it("adds only an isolated zero-idle-capacity receiver and never a new ALB/VPC or
     Priority: 41, Conditions: [{ Field: "path-pattern", Values: [`/admin-upload/${props.releaseId}/*`] },
       { Field: "http-header", HttpHeaderConfig: { HttpHeaderName: "x-easycut-origin-verify", Values: [{ Ref: "OriginSecret" }] } }],
   });
+  template.hasResourceProperties("AWS::Events::Rule", { State: "DISABLED" });
   const json = template.toJSON();
   expect(json.Parameters.OriginSecret.NoEcho).toBe(true);
   const serialized = JSON.stringify(json);
@@ -78,4 +79,5 @@ it("parallel receiver pins its release and keeps private scope empty on a separa
   expect(JSON.stringify(template)).toContain(`/silence-upload/${props.releaseId}/*`);
   expect(JSON.stringify(template)).not.toContain(`/admin-upload/${props.releaseId}`);
   Template.fromJSON(template).hasResourceProperties("AWS::ECS::Service", {DesiredCount:0});
+  Template.fromJSON(template).hasResourceProperties("AWS::Events::Rule", {State:"ENABLED", ScheduleExpression:"rate(1 minute)"});
 });

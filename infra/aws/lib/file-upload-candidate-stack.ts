@@ -106,7 +106,7 @@ export class UploadCandidateStack extends cdk.Stack {
       actions: ["elasticloadbalancing:DescribeTargetHealth"], resources: ["*"],
     }));
     new events.Rule(this, "Reconcile", {
-      enabled: false,
+      enabled: props.parallel === true,
       schedule: events.Schedule.rate(cdk.Duration.minutes(1)),
       targets: [new targets.LambdaFunction(coordinator, {
         event: events.RuleTargetInput.fromObject({ action: "reconcile" }),
