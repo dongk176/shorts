@@ -58,6 +58,22 @@ describe("ordinary member silence result visibility on the real state query",()=
   await database.exec("update shorts_mvp.admin_short_silence_tasks set attempts=2,lease_until=clock_timestamp()-interval '1 second'");
   expect((await getShortsForJobs(db(),[job])).get(job)?.[0].silenceRemoval?.status).toBe("processing");
  });
+ it("shows the initial inline result as ready without a second render request",async()=>{
+  vi.stubEnv("ADMIN_SHORTS_SILENCE_ENABLED","true");vi.stubEnv("RANKING_VERCEL_SNAPSHOT_ID","snapshot");
+  await database.exec(`delete from shorts_mvp.editor_render_requests;
+    update shorts_mvp.generated_shorts set render_version=1;
+    update shorts_mvp.admin_short_silence_tasks set state='completed',cut_count=3,removed_seconds=1.5;`);
+  expect((await getShortsForJobs(db(),[job])).get(job)?.[0]).toMatchObject({
+    status:"ready",silenceRemoval:{status:"completed",cutCount:3,removedSeconds:1.5},
+  });
+ });
+ it("keeps the original short usable when optional inline analysis fails",async()=>{
+  vi.stubEnv("ADMIN_SHORTS_SILENCE_ENABLED","true");vi.stubEnv("RANKING_VERCEL_SNAPSHOT_ID","snapshot");
+  await database.exec("update shorts_mvp.admin_short_silence_tasks set state='failed',cut_count=0,removed_seconds=0");
+  expect((await getShortsForJobs(db(),[job])).get(job)?.[0]).toMatchObject({
+    status:"ready",silenceRemoval:{status:"failed",cutCount:0,removedSeconds:0},
+  });
+ });
  it("does not attach silence state from a mismatched job owner",async()=>{
   vi.stubEnv("ADMIN_SHORTS_SILENCE_ENABLED","true");vi.stubEnv("RANKING_VERCEL_SNAPSHOT_ID","snapshot");
   await database.exec("update shorts_mvp.video_jobs set user_id='55555555-5555-4555-8555-555555555555'");
