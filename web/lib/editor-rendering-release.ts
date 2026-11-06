@@ -10,6 +10,8 @@ export type EditorReleaseAssignment = {
   languageTest?: boolean;
   /** Server-resolved, owner-bound isolated silence QA release. Never client supplied. */
   silenceTest?: boolean;
+  /** Immutable owner-bound public parallel generation release. */
+  silenceInline?: boolean;
   /** SNS/community worker passed the shared-editor compatibility probe. */
   unifiedTemplateEditingCapable?: boolean;
   channel: EditorReleaseChannel;

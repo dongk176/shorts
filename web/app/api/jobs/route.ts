@@ -1,3 +1,4 @@
+import { parallelSilenceTarget } from "@/lib/shorts-silence-parallel";
 import { silenceTestTarget } from "@/lib/silence-test-release";
 import { shortsSilenceRequestSchema } from "@/lib/shorts-silence-contract";
 import { requireShortsSilenceAccess, assertSilenceTemplate } from "@/lib/shorts-silence-access";
@@ -398,6 +399,7 @@ export async function POST(request: Request) {
             transcriptionEnabled: transcriptionAccess.enabled,
             sourceRangeSelectionEnabled,
           });
+      const canonicalDispatchTarget = dispatchTarget;
       if (languageTest) {
         if (!dispatchTarget) throw languageTestUnavailable();
         dispatchTarget = languageTestTarget(languageTest, dispatchTarget.targetKey);
@@ -411,6 +413,17 @@ export async function POST(request: Request) {
         ? await silenceTestTarget(tx, session.userId, dispatchTarget) : null;
       if (silenceTest && input.silenceRemoval) {
         dispatchTarget = silenceTest.target;
+        const inlineTemplateSnapshot = { ...baseTemplateSnapshot, shortsSilenceRemoval: input.silenceRemoval };
+        templateSnapshot = inlineTemplateSnapshot;
+      }
+      const silenceInline = !silenceTest && !midform && input.silenceRemoval && dispatchTarget && canonicalDispatchTarget && session.userId
+        ? await parallelSilenceTarget(tx, {
+          userId: session.userId, silenceRequested: true, sourceType: "youtube",
+          language: input.outputLanguage || "ko", isExample: false, midform: false,
+          templateKind: input.communityTemplate ? "community" : input.snsTemplate ? "sns" : input.customTemplateId ? "custom" : "standard",
+        }, dispatchTarget, canonicalDispatchTarget) : null;
+      if (silenceInline && input.silenceRemoval) {
+        dispatchTarget = silenceInline.target;
         const inlineTemplateSnapshot = { ...baseTemplateSnapshot, shortsSilenceRemoval: input.silenceRemoval };
         templateSnapshot = inlineTemplateSnapshot;
       }
@@ -466,12 +479,12 @@ export async function POST(request: Request) {
       // The DB resolver takes shared locks on the runtime/state rows until this
       // transaction commits, so an emergency stop or infrastructure lease is
       // strictly ordered before or after this job instead of racing the INSERT.
-      const initialRenderRelease = silenceTest ? { releaseId: silenceTest.releaseId } : midform ? { releaseId: midform.releaseId } : languageTest ? { releaseId: languageTest.releaseId } : await resolveInitialRenderRelease(tx, {
+      const initialRenderRelease = silenceInline ? { releaseId: silenceInline.releaseId } : silenceTest ? { releaseId: silenceTest.releaseId } : midform ? { releaseId: midform.releaseId } : languageTest ? { releaseId: languageTest.releaseId } : await resolveInitialRenderRelease(tx, {
         userId: session.userId,
         dispatchTarget,
       });
       if (resolvedExecution.usesCustomTemplateDesign) {
-        if (languageTest && !silenceTest) {
+        if (languageTest && !silenceTest && !silenceInline) {
           await assertCustomTemplateDesignRenderRelease(tx, initialRenderRelease?.releaseId, { languageTest: true });
         } else {
           await assertCustomTemplateDesignRenderRelease(tx, initialRenderRelease?.releaseId);
@@ -495,7 +508,7 @@ export async function POST(request: Request) {
           batch_job_definition, batch_job_queue,
           initial_editor_release_id,
           initial_render_spec_version, initial_caption_render_spec_version
-          ,selected_source_duration_seconds,billable_source_seconds,source_language_hint,language_test_release_id,midform_request,midform_release_id,silence_test_release_id
+          ,selected_source_duration_seconds,billable_source_seconds,source_language_hint,language_test_release_id,midform_request,midform_release_id,silence_test_release_id,silence_inline_release_id
         ) values (
           ${jobId}, ${session.id}, ${session.userId}, ${input.requestId}, ${metadata.normalizedUrl}, ${metadata.videoId}, ${metadata.title},
           ${resolvedExecution.channelDisplayName || metadata.channelName}, ${metadata.channelThumbnailUrl}, ${metadata.thumbnailUrl}, ${sourceDurationSeconds}, ${rangeStartSeconds},
@@ -512,7 +525,7 @@ export async function POST(request: Request) {
           ${initialEditorReleaseId},
           ${initialRenderSpecVersion}, ${initialCaptionRenderSpecVersion},
           ${selectedDurationSeconds},${usageSeconds},
-          ${languageTest ? input.sourceLanguage || "auto" : null},${silenceTest ? null : languageTest?.releaseId || null},${input.midform ? tx.json(input.midform) : null},${midform?.releaseId || null},${silenceTest?.releaseId || null}
+          ${languageTest ? input.sourceLanguage || "auto" : null},${silenceTest || silenceInline ? null : languageTest?.releaseId || null},${input.midform ? tx.json(input.midform) : null},${midform?.releaseId || null},${silenceTest?.releaseId || null},${silenceInline?.releaseId || null}
         )
         returning project_number
       `;

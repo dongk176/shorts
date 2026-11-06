@@ -1,3 +1,4 @@
+import { parallelSilenceEditorRelease } from "./shorts-silence-parallel";
 import { silenceTestEditorRelease } from "./silence-test-release";
 import { uploadLanguageEditorRelease } from "./upload-language-editor";
 import { snsEditorRelease } from "./sns-editor-release";
@@ -89,11 +90,13 @@ export function languageTestTarget(state: { registry: z.infer<typeof languageTes
 export async function languageTestEditorRelease(db: Db, userId: string | null, shortId: string): Promise<EditorReleaseAssignment | null> {
   const marker = await db`select to_jsonb(j)->>'language_test_release_id' as language_test_release_id,
     to_jsonb(j)->>'silence_test_release_id' as silence_test_release_id,
+    to_jsonb(j)->>'silence_inline_release_id' as silence_inline_release_id,
     (j.source_type='upload' and j.template_snapshot->'uploadLanguage' is not null) as upload_language,
     s.template_snapshot->>'communityTemplateVersion' as community_template_version,
     s.template_snapshot->>'snsTemplateVersion' as sns_template_version
     from shorts_mvp.generated_shorts s join shorts_mvp.video_jobs j on j.id=s.job_id
     where s.id=${shortId} and j.user_id=${userId} and s.user_id=${userId}`;
+  if (marker[0]?.silenceInlineReleaseId) return parallelSilenceEditorRelease(db, userId, shortId);
   if (marker[0]?.uploadLanguage) return uploadLanguageEditorRelease(db, userId, shortId);
   if (marker[0]?.silenceTestReleaseId) return silenceTestEditorRelease(db, userId, shortId);
   if (marker[0]?.snsTemplateVersion) {
