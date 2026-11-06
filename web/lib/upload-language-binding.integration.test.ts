@@ -35,6 +35,12 @@ end;$$;
  await db.exec(await readFile(new URL('../../supabase/migrations/20261105134650_candidate_language_silence_tasks.sql',import.meta.url),'utf8'));
  await db.exec(`create trigger silence_guard before insert or update on shorts_mvp.admin_short_silence_tasks for each row execute function shorts_mvp.guard_admin_short_silence_task();`);
  await db.exec(await readFile(new URL('../../supabase/migrations/20261105185406_verified_upload_language_binding.sql',import.meta.url),'utf8'));
+ await db.exec('alter table shorts_mvp.video_jobs add column silence_test_release_id uuid');
+ const silenceMigration=await readFile(new URL('../../supabase/migrations/20261105075326_admin_silence_isolated_admission.sql',import.meta.url),'utf8');
+ await db.exec(silenceMigration.slice(silenceMigration.indexOf('create function shorts_mvp.enforce_silence_test_editor_binding()')));
+ await db.exec(await readFile(new URL('../../supabase/migrations/20261106135240_silence_upload_editor_binding.sql',import.meta.url),'utf8'));
+ // Same verified worker is registered for link and upload QA; this used to reject all upload edits.
+ await db.exec(`insert into shorts_mvp.silence_test_releases values('${release}','${owner}',now(),now()+interval '1 hour')`);
  await db.exec(`insert into shorts_mvp.upload_language_candidates(release_id,administrator_id,expires_at) values('${release}','${owner}',clock_timestamp()+interval '1 hour');`);
 });
 afterAll(async()=>{await db?.close();});
@@ -55,7 +61,7 @@ it('rejects mismatched candidates without consuming allowance; preserves ordinar
 });
 it('pins editor requests and retains editing after candidate admission expires',async()=>{
  const render=(id=release,user=owner)=>db.query("insert into shorts_mvp.editor_render_requests values($1,$2,$3,$4,'canary',1)",[uuid(),short,user,id]);
- await expect(render(other)).rejects.toThrow('UPLOAD_LANGUAGE_EDITOR_BINDING_INVALID');await expect(render(release,other)).rejects.toThrow('UPLOAD_LANGUAGE_EDITOR_BINDING_INVALID');await render();
+ await expect(render(other)).rejects.toThrow('UPLOAD_LANGUAGE_EDITOR_BINDING_INVALID');await expect(render(release,other)).rejects.toThrow('SILENCE_TEST_EDITOR_BINDING_INVALID');await render();
  await db.exec("update shorts_mvp.upload_language_candidates set expires_at=clock_timestamp()-interval '1 millisecond'");await expect(insert()).rejects.toThrow();await render();
  await db.exec('update shorts_mvp.test_attestation set enabled=false');await expect(render()).rejects.toThrow('unverified probe');await db.exec('update shorts_mvp.test_attestation set enabled=true');
 });
