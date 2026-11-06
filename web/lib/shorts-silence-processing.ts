@@ -32,6 +32,8 @@ export async function processAdminShortSilence(db: Sql, shortId?: string, userId
     const [active] = await tx`select count(*)::int as count from shorts_mvp.admin_short_silence_tasks
       where state='processing' and lease_until>clock_timestamp()`;
     if (active.count > 0) return null;
+    // Upload jobs become completed before timeline capture returns. Wait for
+    // receiver finalization so analysis cannot race that source replacement.
     const [source] = await tx`select s.*,j.channel_thumbnail_url,j.status as job_status,
         coalesce(s.edit_timeline_s3_key,s.clean_clip_s3_key) as source_key,
         case when s.edit_timeline_s3_key is not null then s.edit_timeline_start_seconds else s.start_seconds end as timeline_start,
@@ -45,6 +47,10 @@ export async function processAdminShortSilence(db: Sql, shortId?: string, userId
           or (u.is_admin and j.template_snapshot->>'shortsSilenceCandidateId'=${process.env.ADMIN_SILENCE_TEST_RELEASE_ID ?? null}
             and j.template_snapshot->'shortsSilenceRemovalCandidate'='{"version":1,"preset":"aggressive"}'::jsonb))
         and j.status='completed' and j.user_deleted_at is null
+        and (j.source_type is distinct from 'upload' or exists (
+          select 1 from shorts_mvp.upload_sessions us where us.job_id=j.id
+            and us.status='completed' and us.source_deleted_at is not null
+        ))
         and s.status='ready' and s.render_version=1 and s.editor_document is null
         and s.pending_edit_request_id is null and s.deleted_at is null and s.expires_at>clock_timestamp()
         and s.output_s3_key is not null and coalesce(s.edit_timeline_s3_key,s.clean_clip_s3_key) is not null

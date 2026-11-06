@@ -2057,12 +2057,16 @@ def _additive_japanese_font_manifest(
     entries = manifest.get("entries")
     if (manifest.get("fallbackDetected") is not False or manifest.get("sha256") != next_sha256
             or not isinstance(entries, list) or len(entries) != 21
-            or any(not isinstance(entry, dict) or not isinstance(entry.get("fontId"), str) for entry in entries)
+            or any(not isinstance(entry, dict) or not isinstance(entry.get("fontId"), str)
+                   for entry in entries)
             or len({entry["fontId"] for entry in entries}) != 21
             or sum(entry["fontId"] == "noto-sans-jp" for entry in entries) != 1):
         return False
     unsigned = {key: value for key, value in manifest.items() if key != "sha256"}
-    previous = {**unsigned, "entries": [entry for entry in entries if entry["fontId"] != "noto-sans-jp"]}
+    previous = {
+        **unsigned,
+        "entries": [entry for entry in entries if entry["fontId"] != "noto-sans-jp"],
+    }
     def digest(value: dict[str, Any]) -> str:
         return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True,
                                          separators=(",", ":")).encode("utf-8")).hexdigest()
@@ -2300,7 +2304,9 @@ def _register_v4_production_definitions(
             "renderSpecVersion": 4,
         }
     if successor is not None:
-        current_stable, current_targets = _read_successor_predecessor(font_manifest_sha256, font_manifest)
+        current_stable, current_targets = _read_successor_predecessor(
+            font_manifest_sha256, font_manifest,
+        )
         if current_stable != stable or current_targets != baseline_targets:
             raise RuntimeError("Successor production baseline changed during registration")
         if predecessor_contract is not None:

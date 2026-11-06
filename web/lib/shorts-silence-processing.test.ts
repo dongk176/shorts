@@ -1,3 +1,4 @@
+import { PGlite } from "../../test-tools/node_modules/@electric-sql/pglite";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 const mocks = vi.hoisted(() => ({ analyze: vi.fn(), release: vi.fn(), ownedRelease: vi.fn(), pinnedRelease: vi.fn(), plan: vi.fn() }));
@@ -90,4 +91,30 @@ describe("bounded administrator post-processing", () => {
     expect(mocks.analyze).toHaveBeenCalledTimes(1);
     expect(queries.some(q=>q.text.includes("s.user_id=?") && q.values.includes(user))).toBe(true);
   });
+});
+
+it("waits for upload timeline capture and source cleanup while leaving links eligible", async () => {
+  const { sql, queries } = database();
+  await processAdminShortSilence(sql);
+  const claim = queries.find(q => q.text.includes("select s.*,j.channel_thumbnail_url"))!.text;
+  // Execute the actual claim predicate against PostgreSQL, not a simulated boolean.
+  const predicate = claim.slice(claim.indexOf("and (j.source_type"), claim.indexOf("and s.status='ready'"));
+  expect(predicate).toContain("upload_sessions");
+  const pg = new PGlite();
+  try {
+    await pg.exec(`create schema shorts_mvp;
+      create table shorts_mvp.upload_sessions(job_id text,status text,source_deleted_at timestamptz);
+      create table jobs(id text,source_type text);
+      insert into jobs values ('link','youtube'),('upload','upload');`);
+    const eligible = async () => (await pg.query<{id:string}>(`select j.id from jobs j where true ${predicate} order by j.id`)).rows.map(r=>r.id);
+    expect(await eligible()).toEqual(["link"]);
+    await pg.exec("insert into shorts_mvp.upload_sessions values ('upload','processing',null)");
+    expect(await eligible()).toEqual(["link"]);
+    await pg.exec("update shorts_mvp.upload_sessions set status='completed'");
+    expect(await eligible()).toEqual(["link"]);
+    await pg.exec("update shorts_mvp.upload_sessions set source_deleted_at=now()");
+    expect(await eligible()).toEqual(["link","upload"]);
+    await pg.exec("update shorts_mvp.upload_sessions set status='failed'");
+    expect(await eligible()).toEqual(["link"]);
+  } finally { await pg.close(); }
 });
