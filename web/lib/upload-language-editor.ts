@@ -12,11 +12,12 @@ export async function uploadLanguageEditorRelease(db: Sql | TransactionSql, user
     where s.id=${shortId} and s.user_id=${userId} and j.user_id=${userId}
       and s.deleted_at is null and j.user_deleted_at is null and s.expires_at>clock_timestamp()
       and j.source_type='upload' and j.template_snapshot->'uploadLanguage' is not null
-      and e.ui_version=3 and e.document_version=3 for share of e`;
-  if (!row || row.proof?.releaseId !== row.id || row.proof?.fontManifestSha256 !== row.fontManifestSha256) {
+      and e.ui_version in (3,4) and e.document_version=3 for share of e`;
+  if (!row || ![3,4].includes(Number(row.uiVersion)) || Number(row.documentVersion) !== 3
+      || row.proof?.releaseId !== row.id || row.proof?.fontManifestSha256 !== row.fontManifestSha256) {
     throw new HttpError(409, "이 업로드 영상의 편집기 연결을 확인할 수 없습니다.", "UPLOAD_LANGUAGE_EDITOR_UNAVAILABLE");
   }
-  return { languageTest: true, channel: "canary", releaseId: row.id, uiVersion: 3, documentVersion: 3,
+  return { languageTest: true, channel: "canary", releaseId: row.id, uiVersion: Number(row.uiVersion), documentVersion: 3,
     subtitleEditingCapable: true, subtitleEditingPublicEnabled: true, unifiedTemplateEditingCapable: true,
     renderSpecVersion: 4, captionRenderSpecVersion: 4, fontManifestSha256: row.fontManifestSha256,
     renderV4Authorized: true };
