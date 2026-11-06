@@ -3288,6 +3288,7 @@ type EditTimeline = {
   subtitleSegments: EditorSubtitleSegment[];
   version: number;
   canExtendSelection: boolean;
+  captionRenderSpec?: CaptionRenderSpec | null;
 };
 
 type EditorDraftSaveState = "idle" | "saving" | "saved" | "error";
@@ -4111,10 +4112,14 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
   const availableEditorFontOptions = (fullSubtitleStyleEditingEnabled || japaneseFontEnabled
     ? editorFontOptions
     : stableEditorFontOptions).filter((font) => font.id !== "noto-sans-jp" || japaneseFontEnabled);
+  const [editTimeline, setEditTimeline] = useState<EditTimeline | null>(null);
+  // Source handles and their padded caption clock finish after initial output.
+  // Use the same fresh response for both, even when the editor was opened early.
+  const timelineCaptionSpec = editTimeline?.captionRenderSpec ?? item.captionRenderSpec;
   const captionTemplateEditorSpec = adminSubtitleLayoutEnabled
-    && item.captionRenderSpec
-    && captionSpecMatchesTemplate(item.captionRenderSpec, item.subtitleTemplateId)
-    ? captionRenderSpecForEditor(item.captionRenderSpec)
+    && timelineCaptionSpec
+    && captionSpecMatchesTemplate(timelineCaptionSpec, item.subtitleTemplateId)
+    ? captionRenderSpecForEditor(timelineCaptionSpec)
     : null;
   const dynamicWordTimedSubtitleEditing = unifiedSubtitleLayoutEnabled
     && !translationUnavailable && !captionTemplateEditorSpec;
@@ -4404,7 +4409,6 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
     setTitleFontScale(nextValue);
   }, []);
   const [cleanVideoUrl, setCleanVideoUrl] = useState<string | null>(null);
-  const [editTimeline, setEditTimeline] = useState<EditTimeline | null>(null);
   const [selectionStart, setSelectionStart] = useState(
     savedEditorDocument?.video.selectionStartSeconds ?? item.startSeconds,
   );

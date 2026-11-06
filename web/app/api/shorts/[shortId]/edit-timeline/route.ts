@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { parseCaptionRenderSpec } from "@/lib/caption-render-spec";
 import { assertEnterpriseSessionServiceAccess } from "@/lib/enterprise-access";
 import {
   subtitleEditingReleaseEnabled,
@@ -34,7 +35,8 @@ export async function GET(_: Request, context: { params: Promise<{ shortId: stri
         s.initial_start_seconds, s.initial_end_seconds, s.subtitle_segments,
         s.expires_at, s.subtitle_template_id, s.subtitle_template_snapshot,
         j.silence_test_release_id,
-        s.editor_document->'video' as saved_video
+        s.editor_document->'video' as saved_video,
+        s.caption_render_spec::text as caption_render_spec_json
       from shorts_mvp.generated_shorts s
       join shorts_mvp.video_jobs j on j.id=s.job_id
       where s.id=${shortId} and not j.is_example
@@ -115,6 +117,8 @@ export async function GET(_: Request, context: { params: Promise<{ shortId: stri
       initialEndSeconds: hasCapturedTimeline
         ? Number(row.initialEndSeconds)
         : currentEndSeconds,
+      captionRenderSpec: row.captionRenderSpecJson
+        ? parseCaptionRenderSpec(JSON.parse(row.captionRenderSpecJson)) : null,
       subtitleSegments: hasCapturedTimeline
         ? row.editTimelineSubtitleSegments || []
         : row.subtitleSegments || [],

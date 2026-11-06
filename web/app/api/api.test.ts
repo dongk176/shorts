@@ -1,3 +1,4 @@
+import { parseCaptionRenderSpec } from "@/lib/caption-render-spec";
 import { waitForEditorSource } from "@/lib/wait-editor-source";
 import { synchronizeEditorDocumentTimeline } from "@/lib/editor-timeline-sync";
 import type { EditorDocumentSnapshot } from "@/lib/editor-document-snapshot";
@@ -518,9 +519,14 @@ describe("range editing feature gate and snapshot", () => {
       initialStartSeconds: 35.66, initialEndSeconds: 66.17,
       expiresAt: new Date(Date.now() + 60_000),
     };
+    const caption = JSON.parse(readFileSync(new URL("../../../test-fixtures/caption-composition-5x4.json", import.meta.url), "utf8")).stored;
+    const capturedCaption = { ...caption, editorSource: {
+      timelineStartSeconds: 5.66, timelineEndSeconds: 96.17, spec: caption,
+    } };
     const ready = { ...pending, editTimelineS3Key: "edit-sources/retained.mp4",
       editTimelineStartSeconds: 5.66, editTimelineEndSeconds: 96.17,
       editTimelineVersion: 1, editTimelineSubtitleSegments: [],
+      captionRenderSpecJson: JSON.stringify(capturedCaption),
     };
     const db = dbWithRows([pending], [pending], [ready]);
     mocks.getDb.mockReturnValue(db);
@@ -537,6 +543,8 @@ describe("range editing feature gate and snapshot", () => {
       return body;
     }, () => false, pause);
     expect(statuses).toEqual([409, 409, 200]);
+    expect(timeline.captionRenderSpec).toEqual(parseCaptionRenderSpec(capturedCaption));
+    expect(timeline.captionRenderSpec.editorSource.timelineStartSeconds).toBe(5.66);
     expect(pause).toHaveBeenCalledTimes(2);
     const saved = JSON.parse(readFileSync(new URL("../../../test-fixtures/editor-document-v3.json", import.meta.url), "utf8")) as EditorDocumentSnapshot;
     saved.video = { ...saved.video, timelineStartSeconds: 35.66, timelineEndSeconds: 66.17,
