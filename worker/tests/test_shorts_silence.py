@@ -5,6 +5,7 @@ import json
 import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock
+from uuid import UUID
 
 import pytest
 
@@ -296,11 +297,12 @@ def test_analysis_failure_preserves_generation(tmp_path, monkeypatch, failure):
     assert result["removed_seconds"] == 0
 
 
-def test_custom_text_and_comment_positions_survive_inline_cuts():
+@pytest.mark.parametrize("id_type", [str, UUID])
+def test_custom_text_and_comment_positions_survive_inline_cuts(id_type):
     fixture = json.loads((Path(__file__).parents[2] /
                           "test-fixtures/unified-social-editor-v4.json").read_text())
     source = item()
-    source["custom_template_id"] = "22222222-2222-4222-8222-222222222222"
+    source["custom_template_id"] = id_type("22222222-2222-4222-8222-222222222222")
     layer = copy.deepcopy(fixture["renderSpec"]["textOverlays"][0])
     source["initial_render_spec"]["textOverlays"] = [
         dict(layer, id="whole", startFrame=0, endFrame=120),
@@ -313,7 +315,7 @@ def test_custom_text_and_comment_positions_survive_inline_cuts():
     before = copy.deepcopy(source)
     doc = plan(source, [[1, 3]])
     assert source == before
-    assert str(doc.template.custom_template_id) == source["custom_template_id"]
+    assert doc.template.custom_template_id == str(source["custom_template_id"])
     assert len(doc.overlays.text_overlays) == 1
     assert doc.overlays.text_overlays[0].text == "사용자가 작성한 글"
     assert doc.overlays.text_overlays[0].end_seconds == pytest.approx(2.2)

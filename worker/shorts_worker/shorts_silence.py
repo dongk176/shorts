@@ -164,7 +164,7 @@ def plan(item: dict, silences: list[list[float]]) -> EditorDocument | None:
             baseRenderVersion=1,
             template=dict(
                 id=item["template_id"],
-                customTemplateId=item.get("custom_template_id"),
+                customTemplateId=str(custom_id) if custom_id is not None else None,
                 presetVersion=snapshot.get("presetVersion", 3),
                 snapshot=snapshot,
             ),
