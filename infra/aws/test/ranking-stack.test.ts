@@ -72,6 +72,8 @@ describe("isolated ranking infrastructure", () => {
     expect(serialized).toContain("RANKING_ORIGIN_SECRET");
     expect(serialized).toContain("RANKING_WEBSHARE_ENABLED");
     expect(serialized).toContain("INGESTION_PROXY_ROUTES_JSON");
+    expect(serialized).toContain("PROXY_REGISTRY_SECRET_ARN");
+    expect(serialized).toContain("ReadCurrentProxyRegistryOnly");
     expect(serialized).not.toContain("WARP_CONF");
   });
   it("rejects unpinned images and cross-account dependencies", () => {

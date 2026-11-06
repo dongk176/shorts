@@ -165,6 +165,13 @@ def test_safe_failure_reasons_never_contain_credentials():
         ),
         ("HTTP Error 429: Too Many Requests", "rate_limited"),
         ("not available in your country; HTTP Error 429", "restricted_or_unavailable"),
+        ("Proxy Authentication Required; tunnel connection failed: 407", "proxy_auth"),
+        ("Connection refused https://user:password@proxy.invalid", "connection_refused"),
+        ("temporary failure in name resolution", "dns_error"),
+        ("certificate verify failed", "tls_error"),
+        ("connection reset", "connection_reset"),
+        ("connection timed out", "timeout"),
+        ("private video; connection refused", "restricted_or_unavailable"),
     ]:
         assert download_failure_reason(message, download_failure_category(message)) == expected
 

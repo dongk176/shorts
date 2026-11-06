@@ -7,6 +7,8 @@ type Phrase = readonly [ko: string, en: string, ja: string];
 // Legacy page copy is kept here while the product moves to semantic message keys.
 // User-provided and generated content is intentionally excluded from this table.
 const phrases: readonly Phrase[] = [
+  ["다운로드 연결 설정을 확인하고 있어요. 잠시 후 다시 시도해 주세요.", "We’re checking the download connection. Please try again shortly.", "ダウンロード接続を確認しています。しばらくしてから再試行してください。"],
+  ["영상 연결이 원활하지 않아 가져오지 못했어요. 입력 내용은 유지돼요. 잠시 후 다시 시도해 주세요.", "We couldn’t connect to the video. Your edits are saved. Please try again shortly.", "動画への接続が不安定なため取得できませんでした。入力内容は保持されています。しばらくしてから再試行してください。"],
   ["잘라낼 무음이 없어 원래 흐름을 유지했어요.", "No silence to remove. Your original pacing is preserved.", "削除する無音区間がないため、元の流れを維持しました。"],
   ["무음 정리를 완료하지 못했어요. 원본 결과를 확인할 수 있어요.", "Silence removal could not be completed. Your original video is available.", "無音の削除を完了できませんでした。元の動画をご確認いただけます。"],
   ["무음 구간을 정리하고 있어요.", "Removing silent sections.", "無音区間を削除しています。"],

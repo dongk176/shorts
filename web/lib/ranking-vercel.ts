@@ -401,6 +401,7 @@ export async function syncRankingVercelOperation(
     state.status === "failed" &&
     op.taskId &&
     session &&
+    state.failureReason !== "proxy_auth" &&
     ["bot_check", "network_error"].includes(state.failureCategory || "")
   ) {
     const attempts =
@@ -426,8 +427,14 @@ export async function syncRankingVercelOperation(
   }
 
   if (state.status === "failed" && state.failureCategory) {
-    const reason = ["rate_limited","bot_challenge","media_forbidden","connection_error","timeout","format_unavailable","restricted_or_unavailable"].includes(state.failureReason || "") ? state.failureReason : "unknown";
-    console.warn("ranking_download_failed", {operation, category:state.failureCategory, reason});
+    const reason = ["rate_limited","bot_challenge","media_forbidden","connection_error","timeout","format_unavailable","restricted_or_unavailable","proxy_auth","dns_error","tls_error","connection_refused","connection_reset"].includes(state.failureReason || "") ? state.failureReason : "unknown";
+    const egress = op.payload?.egress;
+    const routeId = typeof egress?.routeId === "string" && /^[a-z0-9][a-z0-9_-]{0,31}$/.test(egress.routeId) ? egress.routeId : undefined;
+    const registryVersion = typeof egress?.registryVersion === "string" && /^[A-Za-z0-9-]{1,128}$/.test(egress.registryVersion) ? egress.registryVersion : undefined;
+    console.warn("ranking_download_failed", {operation, category:state.failureCategory, reason,routeId,registryVersion});
+    if (state.failureCategory === "network_error") state.error = reason === "proxy_auth"
+      ? "다운로드 연결 설정을 확인하고 있어요. 잠시 후 다시 시도해 주세요."
+      : "영상 연결이 원활하지 않아 가져오지 못했어요. 입력 내용은 유지돼요. 잠시 후 다시 시도해 주세요.";
     if (state.failureCategory === "bot_check") state.error = reason === "rate_limited"
       ? "영상 제공처에서 요청을 일시적으로 제한했어요. 잠시 후 다시 시도하거나 영상 파일을 넣어 주세요. 다른 순위는 계속 편집할 수 있어요."
       : "영상 제공처의 봇 확인으로 영상을 가져오지 못했어요. 잠시 후 다시 시도하거나 영상 파일을 넣어 주세요. 다른 순위는 계속 편집할 수 있어요.";

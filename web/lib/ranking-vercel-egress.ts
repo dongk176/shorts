@@ -1,14 +1,10 @@
 import "server-only";
 import { getDb } from "./db";
 import { HttpError } from "./http";
+import { createHash } from "node:crypto";
+import { currentRankingProxyRegistry } from "./ranking-proxy-registry";
 export async function leaseRankingVercelRoute(operation: string, task: string) {
-  const raw = process.env.RANKING_PROXY_ROUTES_JSON;
-  if (!raw) throw new HttpError(503, "유튜브 다운로드 경로를 준비 중입니다.");
-  const routes = JSON.parse(raw) as {
-    id: string;
-    proxy_url: string;
-    egress_class: string;
-  }[];
+  const { routes, registryVersion } = await currentRankingProxyRegistry();
   const allowed = routes.filter(
     (r) =>
       r.egress_class === "webshare_isp" &&
@@ -27,6 +23,11 @@ export async function leaseRankingVercelRoute(operation: string, task: string) {
       await db`select shorts_ranking_runtime.claim_route_beta(${operation}::uuid,${task},${allowed.map((r) => r.id)}::text[],${previous.map((r) => r.routeId)}::text[]) as route_id`
     )[0];
   const match = allowed.find((r) => r.id === row?.routeId);
+  if (match) {
+    const url = new URL(match.proxy_url);
+    const endpointFingerprint = createHash("sha256").update(`${url.hostname}:${url.port}`).digest("hex").slice(0,16);
+    await db`update shorts_mvp.ranking_operations set payload=jsonb_set(coalesce(payload,'{}'::jsonb),'{egress}',${db.json({routeId:match.id,registryVersion,endpointFingerprint})}::jsonb) where id=${operation} and task_id=${task} and status='running'`;
+  }
   return match ? match.proxy_url : null;
 }
 export async function releaseRankingVercelRoutes(
