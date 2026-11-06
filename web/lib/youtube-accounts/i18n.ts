@@ -2,6 +2,17 @@ import type { SiteLocale } from "@/lib/i18n/config";
 
 // Product copy only. Never pass channel names, video titles or descriptions here.
 export const youtubeCopy: Record<string, readonly [string, string]> = {
+ "YouTube 채널의 업로드 한도에 도달했습니다. YouTube Studio에서 제한 안내를 확인해 주세요.": ["This channel has reached its YouTube upload limit. Check YouTube Studio for restrictions.", "チャンネルのアップロード上限に達しました。YouTube Studio で制限を確認してください。"],
+ "이지컷의 YouTube API 할당량을 초과했습니다. 고객지원에 문의해 주세요.": ["EasyCut has exceeded its YouTube API quota. Please contact support.", "EasyCut の YouTube API 割り当てを超過しました。サポートにお問い合わせください。"],
+ "YouTube 인증을 확인하지 못했습니다. 연결 상태를 확인해 주세요.": ["YouTube authorization could not be verified. Check your connection status.", "YouTube の認証を確認できませんでした。接続状態を確認してください。"],
+ "YouTube가 업로드 권한을 허용하지 않았습니다. 채널 권한과 제한 상태를 확인해 주세요.": ["YouTube denied permission. Check channel permissions and restrictions.", "YouTube が許可しませんでした。チャンネルの権限と制限を確認してください。"],
+ "YouTube 요청이 일시적으로 제한됐습니다. 잠시 후 상태를 확인해 주세요.": ["YouTube temporarily limited requests. Check the status again shortly.", "YouTube のリクエストが一時的に制限されました。しばらくしてから状態を確認してください。"],
+ "YouTube 서버 오류로 업로드가 중단됐습니다. 잠시 후 상태를 확인해 주세요.": ["A YouTube server error interrupted the upload. Check the status again shortly.", "YouTube のサーバーエラーで中断されました。しばらくしてから状態を確認してください。"],
+ "YouTube와 통신하지 못해 업로드가 중단됐습니다. 연결 상태를 확인해 주세요.": ["Communication with YouTube failed. Check the connection status.", "YouTube との通信に失敗しました。接続状態を確認してください。"],
+ "YouTube 응답 대기 시간이 초과됐습니다. 업로드 상태를 확인해 주세요.": ["The YouTube response timed out. Check the upload status.", "YouTube の応答待ちがタイムアウトしました。アップロード状態を確認してください。"],
+ "이전 업로드 시작 결과를 확인할 수 없어 중복 방지를 위해 재전송을 멈췄습니다. 고객지원에 문의해 주세요.": ["The previous upload start could not be confirmed. Resending is blocked to prevent duplicates. Please contact support.", "前回のアップロード開始結果を確認できないため、重複防止のため再送を停止しました。サポートにお問い合わせください。"],
+ "YouTube가 요청을 거절했습니다. 고객지원에 문의해 주세요.": ["YouTube rejected the request. Please contact support.", "YouTube がリクエストを拒否しました。サポートにお問い合わせください。"],
+ "업로드 처리 중 오류가 발생했습니다. 고객지원에 문의해 주세요.": ["An error occurred while processing the upload. Please contact support.", "アップロード処理中にエラーが発生しました。サポートにお問い合わせください。"],
  "추가 플랫폼 준비 중": ["More platforms coming soon", "ほかのプラットフォームも準備中"],
  "관리": ["Manage", "管理"],
  "해당 플랫폼은 서비스 준비중입니다.": ["This platform is coming soon.", "このプラットフォームはサービス準備中です。"],
