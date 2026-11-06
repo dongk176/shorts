@@ -14,3 +14,14 @@ it("uses only the owned upload's verified release identity", async () => {
     await expect(uploadLanguageEditorRelease(db as never, "owner", "short")).rejects.toMatchObject({ code: "UPLOAD_LANGUAGE_EDITOR_UNAVAILABLE" });
   }
 });
+
+ it.each([true, false, undefined])("keeps private silence attestation limited to the owned candidate: %s", async (silenceTest) => {
+  const row = { id: "upload-release", uiVersion: 4, documentVersion: 3, fontManifestSha256: "font", silenceTest,
+    proof: { releaseId: "upload-release", fontManifestSha256: "font" } };
+  const db = vi.fn().mockResolvedValue([row]);
+  expect((await uploadLanguageEditorRelease(db as never, "owner", "short")).silenceTest).toBe(silenceTest === true);
+  const sql = db.mock.calls[0][0].join("?");
+  expect(sql).toContain("u.is_admin");
+  expect(sql).toContain("c.administrator_id=j.user_id");
+  expect(sql).toContain("j.created_at<c.expires_at");
+});

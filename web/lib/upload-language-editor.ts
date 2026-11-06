@@ -6,6 +6,11 @@ import { HttpError } from "./http";
 export async function uploadLanguageEditorRelease(db: Sql | TransactionSql, userId: string | null,
   shortId: string): Promise<EditorReleaseAssignment> {
   const [row] = await db`select e.id,e.ui_version,e.document_version,e.font_manifest_sha256,
+      (j.template_snapshot->>'shortsSilenceCandidateId'=e.id::text
+        and exists(select 1 from shorts_mvp.upload_language_candidates c
+          join shorts_mvp.app_users u on u.id=c.administrator_id and u.is_admin
+          where c.release_id=e.id and c.administrator_id=j.user_id
+            and j.created_at>=c.created_at and j.created_at<c.expires_at)) as silence_test,
       shorts_mvp.upload_language_project_release(j) as proof
     from shorts_mvp.generated_shorts s join shorts_mvp.video_jobs j on j.id=s.job_id
     join shorts_mvp.editor_releases e on e.id=j.initial_editor_release_id
@@ -17,7 +22,7 @@ export async function uploadLanguageEditorRelease(db: Sql | TransactionSql, user
       || row.proof?.releaseId !== row.id || row.proof?.fontManifestSha256 !== row.fontManifestSha256) {
     throw new HttpError(409, "이 업로드 영상의 편집기 연결을 확인할 수 없습니다.", "UPLOAD_LANGUAGE_EDITOR_UNAVAILABLE");
   }
-  return { languageTest: true, channel: "canary", releaseId: row.id, uiVersion: Number(row.uiVersion), documentVersion: 3,
+  return { silenceTest: row.silenceTest === true, languageTest: true, channel: "canary", releaseId: row.id, uiVersion: Number(row.uiVersion), documentVersion: 3,
     subtitleEditingCapable: true, subtitleEditingPublicEnabled: true, unifiedTemplateEditingCapable: true,
     renderSpecVersion: 4, captionRenderSpecVersion: 4, fontManifestSha256: row.fontManifestSha256,
     renderV4Authorized: true };
