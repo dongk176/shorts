@@ -14,6 +14,7 @@ export type SilenceRolloutSnapshot = {
   languages: readonly string[];
   templateKinds: readonly string[];
   targets: readonly ProjectDispatchTarget[];
+  uploadVerified?: boolean;
 };
 export type SilenceAdmission = {
   userId: string;
@@ -48,7 +49,7 @@ export function selectSilenceAdmissionTarget(
   const keep = { mode: "existing" as const, target: existing };
   // Upload stays on its original receiver until an independently verified
   // parallel receiver/capacity route is available. Never silently reroute it.
-  if (!request.silenceRequested || request.sourceType !== "youtube"
+  if (!request.silenceRequested || (request.sourceType !== "youtube" && !rollout?.uploadVerified)
     || request.isExample || request.midform || !uuid.test(request.userId)
     || !rollout?.enabled) return keep;
   if (!uuid.test(rollout.releaseId) || !/^[a-f0-9]{40}$/.test(rollout.sourceGitSha)

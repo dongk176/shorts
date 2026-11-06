@@ -248,11 +248,12 @@ export async function wakeOutboxDispatcher() {
 
 export async function ensureFileUploadCapacity(input: {
   desiredCount: number;
+  capacityFunctionArn?: string;
   uploadSessionId: string;
   expiresAt: Date | string;
   tokenHash: string;
 }) {
-  const functionArn = process.env.FILE_UPLOAD_CAPACITY_FUNCTION_ARN;
+  const functionArn = input.capacityFunctionArn || process.env.FILE_UPLOAD_CAPACITY_FUNCTION_ARN;
   if (!functionArn) {
     throw new Error("FILE_UPLOAD_CAPACITY_FUNCTION_ARN이 설정되지 않았습니다.");
   }
@@ -298,8 +299,8 @@ export async function ensureFileUploadCapacity(input: {
   };
 }
 
-export async function getFileUploadCapacityStatus(uploadSessionId: string) {
-  const functionArn = process.env.FILE_UPLOAD_CAPACITY_FUNCTION_ARN;
+export async function getFileUploadCapacityStatus(uploadSessionId: string, capacityFunctionArn?: string) {
+  const functionArn = capacityFunctionArn || process.env.FILE_UPLOAD_CAPACITY_FUNCTION_ARN;
   if (!functionArn || !/^[0-9a-f-]{36}$/i.test(uploadSessionId)) {
     throw new Error("파일 업로드 용량 예약 정보를 확인하지 못했습니다.");
   }
@@ -332,8 +333,8 @@ export async function getFileUploadCapacityStatus(uploadSessionId: string) {
   };
 }
 
-export async function releaseFileUploadCapacity(uploadSessionId: string) {
-  const functionArn = process.env.FILE_UPLOAD_CAPACITY_FUNCTION_ARN;
+export async function releaseFileUploadCapacity(uploadSessionId: string, capacityFunctionArn?: string) {
+  const functionArn = capacityFunctionArn || process.env.FILE_UPLOAD_CAPACITY_FUNCTION_ARN;
   if (!functionArn || !/^[0-9a-f-]{36}$/i.test(uploadSessionId)) return;
   await invokeFileUploadCapacity({
     FunctionName: functionArn,

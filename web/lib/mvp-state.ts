@@ -1,3 +1,4 @@
+import { parallelUploadAvailable } from "./file-upload-parallel";
 import { fileUploadLanguageEnabled } from "./file-upload-language";
 import { shortsSilenceAccessEnabled } from "./shorts-silence-access";
 import { midformRelease, midformUploadRelease } from "./midform-release";
@@ -157,6 +158,7 @@ async function readMvpState(
           .catch(() => false))
         : false,
       fileUpload: fileUploadAccess.enabled,
+      fileUploadSilenceLanguages: fileUploadAccess.enabled && await parallelUploadAvailable(db, session.userId ?? undefined).catch(() => false),
       fileUploadLanguages: fileUploadAccess.enabled && await fileUploadLanguageEnabled(db, undefined, session.userId ?? undefined).catch(() => false),
       customTemplateDesign: customTemplateDesignAccess.enabled,
       unifiedTemplateSubtitles:

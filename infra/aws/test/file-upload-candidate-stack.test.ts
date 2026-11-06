@@ -61,3 +61,21 @@ it("rejects wrong accounts, mutable images and overlapping routing priorities", 
     expect(() => new UploadCandidateStack(new cdk.App(), "Invalid", {...props,...change})).toThrow();
   }
 });
+it("parallel receiver pins its release and keeps private scope empty on a separate path", () => {
+  const template = Template.fromStack(new UploadCandidateStack(new cdk.App(), "Parallel", {
+    ...props, parallel: true, previewOrigin: "https://shorts-silence-qa-artiroom.vercel.app",
+  })).toJSON();
+  const task = Object.values(template.Resources).find((r: any) => r.Type === "AWS::ECS::TaskDefinition") as any;
+  const receiver = task.Properties.ContainerDefinitions.find((c: any) => c.Name === "file-upload-receiver");
+  const env = Object.fromEntries(receiver.Environment.map((e: any) => [e.Name, e.Value]));
+  expect(env.FILE_UPLOAD_PARALLEL_RELEASE_ID).toBe(props.releaseId);
+  expect(env.FILE_UPLOAD_CANDIDATE_RELEASE_ID).toBe("");
+  expect(env.FILE_UPLOAD_CANDIDATE_ADMIN_ID).toBe("");
+  expect(env.FILE_UPLOAD_CANDIDATE_EXPIRES_AT).toBe("");
+  expect(env.SHORTS_SILENCE_INLINE_ENABLED).toBe("true");
+  expect(env.SHORTS_SILENCE_INLINE_RELEASE_ID).toBe(props.releaseId);
+  expect(env.FILE_UPLOAD_CORS_ALLOWED_ORIGINS).toBe("https://shorts-silence-qa-artiroom.vercel.app,https://www.easycut.co.kr");
+  expect(JSON.stringify(template)).toContain(`/silence-upload/${props.releaseId}/*`);
+  expect(JSON.stringify(template)).not.toContain(`/admin-upload/${props.releaseId}`);
+  Template.fromJSON(template).hasResourceProperties("AWS::ECS::Service", {DesiredCount:0});
+});

@@ -91,7 +91,7 @@ function transactionDb(input: {
     }
     return [];
   });
-  const db = Object.assign(vi.fn(), {
+  const db = Object.assign(vi.fn().mockResolvedValue([]), {
     begin: vi.fn(async (callback: (transaction: typeof tx) => unknown) => (
       callback(tx)
     )),
@@ -343,7 +343,7 @@ describe("file upload browser abort", () => {
       entry.sql.includes("update shorts_mvp.file_upload_capacity_requests")
       && entry.sql.includes("status='cancelled'")
     ))).toBe(true);
-    expect(mocks.releaseCapacity).toHaveBeenCalledWith(UPLOAD_SESSION_ID);
+    expect(mocks.releaseCapacity).toHaveBeenCalledWith(UPLOAD_SESSION_ID, undefined);
   });
 
   it("returns the same hidden 404 when the owner-scoped session is absent", async () => {

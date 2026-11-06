@@ -7,6 +7,7 @@ import { HttpError } from "@/lib/http";
 vi.mock("server-only", () => ({}));
 
 const mocks = vi.hoisted(() => ({
+  parallelTarget: vi.fn(),
   authenticatedSession: vi.fn(),
   getDb: vi.fn(),
   releaseAccess: vi.fn(),
@@ -22,6 +23,7 @@ const mocks = vi.hoisted(() => ({
   releaseUploadCapacity: vi.fn(),
 }));
 
+vi.mock("@/lib/shorts-silence-parallel", () => ({ parallelSilenceTarget: mocks.parallelTarget }));
 vi.mock("@/lib/session", () => ({
   requireAuthenticatedMvpSession: mocks.authenticatedSession,
 }));
@@ -160,6 +162,8 @@ type TransactionOptions = {
   failUploadSessionInsert?: boolean;
   publicSilence?: boolean;
   uploadLanguageEvidence?: Record<string, unknown>;
+  parallelRelease?: string;
+  capacityFunctionArn?: string;
 };
 
 function transactionDb(options: TransactionOptions = {}) {
@@ -199,7 +203,8 @@ function transactionDb(options: TransactionOptions = {}) {
   }), {
     json: vi.fn((value: unknown) => value),
   });
-  const db = Object.assign(vi.fn(async (strings: TemplateStringsArray) => strings.join("?").includes("from shorts_mvp.app_users")
+  const db = Object.assign(vi.fn(async (strings: TemplateStringsArray) => strings.join("?").includes("silence_upload_routes")
+    ? [{silenceInlineReleaseId: options.parallelRelease,capacityFunctionArn:options.capacityFunctionArn}] : strings.join("?").includes("from shorts_mvp.app_users")
     ? (options.publicSilence ? [{ isAdmin: false, enabled: true, publicEnabled: true }] : []) : [{ desiredCount: 1 }]), {
     begin: vi.fn(async (callback: (transaction: typeof tx) => unknown) => (
       callback(tx)
@@ -217,6 +222,7 @@ function query(
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.parallelTarget.mockResolvedValue(null);
   vi.stubEnv("NODE_ENV", "test");
   vi.stubEnv("FILE_UPLOAD_MULTILINGUAL_VERIFIED_RELEASE_ID", "");
   vi.stubEnv("UNIFIED_TEMPLATE_SUBTITLE_LOCAL_UPLOAD_ENABLED", "");
@@ -998,4 +1004,24 @@ describe("file upload job control plane", () => {
     expect(source).toContain("ensureFileUploadCapacity");
     expect(source).not.toContain("submitProjectJob");
   });
+});
+
+it.each(['ko','en','ja'])('pins parallel %s upload to its own receiver, worker and capacity service',async language=>{
+  const releaseId='11111111-1111-4111-8111-111111111111';
+  const receiverUrl=`https://dexample.cloudfront.net/silence-upload/${releaseId}`;
+  const capacityFunctionArn='arn:aws:lambda:ap-northeast-2:181651591905:function:shorts-upload-candidate-test';
+  const target={...mocks.uploadDispatchTarget(),releaseId:'parallel-worker'};
+  mocks.parallelTarget.mockResolvedValue({releaseId,target,uploadRoute:{receiverUrl,capacityFunctionArn}});
+  const {db,queries}=transactionDb({publicSilence:true,parallelRelease:releaseId,capacityFunctionArn});
+  mocks.getDb.mockReturnValue(db);
+  const response=await POST(jsonRequest({...validBody,outputLanguage:language,sourceLanguage:'auto',silenceRemoval:{version:1,preset:'aggressive'}}));
+  expect(response.status).toBe(201);
+  const result=await response.json();
+  expect(result.uploadUrl).toContain(receiverUrl);
+  expect(mocks.initialRenderRelease).not.toHaveBeenCalled();
+  expect(mocks.ensureUploadCapacity).toHaveBeenCalledWith(expect.objectContaining({capacityFunctionArn}));
+  const insert=query(queries,'insert into shorts_mvp.video_jobs');
+  expect(insert?.sql).toContain('silence_inline_release_id,batch_target_key,batch_target_release_id');
+  expect(insert?.values.slice(-3)).toEqual([releaseId,target.targetKey,target.releaseId]);
+  expect(insert?.values).toContainEqual(expect.objectContaining({uploadLanguage:{version:1,sourceLanguage:'auto',outputLanguage:language,releaseId}}));
 });

@@ -12,6 +12,8 @@ import { Construct } from "constructs";
 import path from "node:path";
 
 export interface UploadCandidateProps extends cdk.StackProps {
+  /** Separate owner-bound route; does not replace the public upload service. */
+  parallel?: boolean;
   releaseId: string;
   administratorId: string;
   expiresAt: string;
@@ -46,11 +48,13 @@ export class UploadCandidateStack extends cdk.Stack {
     super(scope, id, props);
     const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
     const prefix = "arn:aws:";
+    const routePrefix = props.parallel ? "silence-upload" : "admin-upload";
     if (props.env?.account !== "181651591905" || props.env.region !== "ap-northeast-2"
       || !uuid.test(props.releaseId) || !uuid.test(props.administratorId)
       || !/^[a-f0-9]{40}$/.test(props.sourceSha) || !/^[a-f0-9]{64}$/.test(props.fontManifest)
       || !/^181651591905\.dkr\.ecr\.ap-northeast-2\.amazonaws\.com\/shorts-mvp-editor-releases-production@sha256:[a-f0-9]{64}$/.test(props.image)
-      || !/^https:\/\/shorts-[a-z0-9]+-artiroom\.vercel\.app$/.test(props.previewOrigin)
+      || (!/^https:\/\/shorts-[a-z0-9]+-artiroom\.vercel\.app$/.test(props.previewOrigin)
+        && props.previewOrigin !== "https://shorts-silence-qa-artiroom.vercel.app")
       || !Number.isFinite(Date.parse(props.expiresAt))
       || !/^vo_[A-Za-z0-9]+$/.test(props.vpcOriginId ?? "")
       || !props.clusterArn.startsWith(`${prefix}ecs:ap-northeast-2:181651591905:cluster/`)
@@ -124,9 +128,13 @@ export class UploadCandidateStack extends cdk.Stack {
     if (!Array.isArray(containers) || containers.length !== 2
       || !containers.some(c => c.name === "file-upload-receiver")) throw new Error("Exact receiver task template required");
     const environment = {
-      FILE_UPLOAD_CANDIDATE_RELEASE_ID: props.releaseId, FILE_UPLOAD_CANDIDATE_ADMIN_ID: props.administratorId,
-      FILE_UPLOAD_CANDIDATE_EXPIRES_AT: props.expiresAt, FILE_UPLOAD_CAPACITY_FUNCTION_ARN: coordinator.functionArn,
-      FILE_UPLOAD_CORS_ALLOWED_ORIGINS: props.previewOrigin, MIDFORM_ENABLED: "false", MIDFORM_RELEASE_ID: "",
+      FILE_UPLOAD_CANDIDATE_RELEASE_ID: props.parallel ? "" : props.releaseId,
+      FILE_UPLOAD_CANDIDATE_ADMIN_ID: props.parallel ? "" : props.administratorId,
+      FILE_UPLOAD_CANDIDATE_EXPIRES_AT: props.parallel ? "" : props.expiresAt,
+      FILE_UPLOAD_PARALLEL_RELEASE_ID: props.parallel ? props.releaseId : "",
+      ...(props.parallel ? { SHORTS_SILENCE_INLINE_ENABLED: "true", SHORTS_SILENCE_INLINE_RELEASE_ID: props.releaseId } : {}),
+      FILE_UPLOAD_CAPACITY_FUNCTION_ARN: coordinator.functionArn,
+      FILE_UPLOAD_CORS_ALLOWED_ORIGINS: props.parallel ? `${props.previewOrigin},https://www.easycut.co.kr` : props.previewOrigin, MIDFORM_ENABLED: "false", MIDFORM_RELEASE_ID: "",
       EDITOR_RELEASE_GIT_SHA: props.sourceSha, WORKER_IMAGE_DIGEST: props.image.split("@")[1],
       WORKER_IMAGE_TAG: `editor-release-${props.sourceSha}`, EDITOR_FONT_MANIFEST_SHA256: props.fontManifest,
     };
@@ -144,7 +152,7 @@ export class UploadCandidateStack extends cdk.Stack {
     });
     const rule = new elbv2.CfnListenerRule(this, "PrivateRoute", {
       listenerArn: props.listenerArn, priority: props.listenerPriority,
-      conditions: [{ field: "path-pattern", values: [`/admin-upload/${props.releaseId}/*`] },
+      conditions: [{ field: "path-pattern", values: [`/${routePrefix}/${props.releaseId}/*`] },
         { field: "http-header", httpHeaderConfig: { httpHeaderName: "x-easycut-origin-verify", values: [originSecret.valueAsString] } }],
       actions: [{ type: "forward", targetGroupArn: group.ref }],
     });
@@ -166,7 +174,7 @@ export class UploadCandidateStack extends cdk.Stack {
         cachePolicyId: cloudfront.CachePolicy.CACHING_DISABLED.cachePolicyId,
         originRequestPolicyId: cloudfront.OriginRequestPolicy.ALL_VIEWER.originRequestPolicyId },
     } });
-    new cdk.CfnOutput(this, "ReceiverUrl", { value: `https://${cdn.attrDomainName}/admin-upload/${props.releaseId}` });
+    new cdk.CfnOutput(this, "ReceiverUrl", { value: `https://${cdn.attrDomainName}/${routePrefix}/${props.releaseId}` });
     new cdk.CfnOutput(this, "CapacityFunctionArn", { value: coordinator.functionArn });
   }
 }

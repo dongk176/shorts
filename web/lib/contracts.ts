@@ -331,6 +331,7 @@ export type MvpState = {
     languageTest?: boolean;
     fileUpload: boolean;
     fileUploadLanguages?: boolean;
+    fileUploadSilenceLanguages?: boolean;
     customTemplateDesign?: boolean;
     unifiedTemplateSubtitles: boolean;
     unifiedTemplateSubtitleLocalUpload: boolean;

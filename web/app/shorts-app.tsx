@@ -13592,7 +13592,8 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
   const completeLanguageGuide = useCallback(() => setLanguageGuideComplete(true), []);
   const [selectedOutputLanguage, setOutputLanguage] = useState<OutputLanguage>(resumedDraft?.outputLanguageChosen ? resumedDraft.outputLanguage : locale);
   const [sourceLanguage, setSourceLanguage] = useState<SourceLanguage>(resumedDraft?.sourceLanguage ?? "auto");
-  const uploadLanguageAvailable = sourceMode === "upload" && state?.capabilities.fileUploadLanguages === true;
+  const uploadLanguageAvailable = sourceMode === "upload" && (state?.capabilities.fileUploadLanguages === true
+    || (shortsSilenceSelected && state?.capabilities.shortsSilenceRemoval === true && state?.capabilities.fileUploadSilenceLanguages === true));
   const [uploadLanguageDraftEnabled, setUploadLanguageDraftEnabled] = useState(false);
   useEffect(() => {
     if (sourceMode !== "upload" || !uploadVideo) setUploadLanguageDraftEnabled(false);

@@ -1,3 +1,5 @@
+import { parallelSilenceTarget } from "@/lib/shorts-silence-parallel";
+import { uploadCapacityFunctionForJob } from "@/lib/file-upload-parallel";
 import { requireFileUploadLanguage } from "@/lib/file-upload-language";
 import { uploadCandidateConfig, uploadSilenceRequestMarker } from "@/lib/file-upload-candidate";
 import { shortsSilenceRequestSchema } from "@/lib/shorts-silence-contract";
@@ -376,7 +378,7 @@ export async function POST(request: Request) {
 
       // Resolve receiver credentials only after both administrator gates pass,
       // so hidden callers always see the same 404 regardless of configuration.
-      const receiver = getFileUploadReceiverConfig();
+      let receiver = getFileUploadReceiverConfig();
       const existingRows = await tx`
         select
           upload.id as upload_session_id,
@@ -552,7 +554,7 @@ export async function POST(request: Request) {
         ? { ...renderContract.templateSnapshot, ...uploadSilenceRequestMarker(session.userId, input.silenceRemoval) }
         : renderContract.templateSnapshot;
       const subtitleTemplateSnapshot = renderContract.subtitleTemplateSnapshot;
-      const dispatchTarget = projectDispatchTargetForFeatures({
+      let dispatchTarget = projectDispatchTargetForFeatures({
         usesUnifiedTemplateSubtitleCandidate:
           renderContract.usesUnifiedTemplateSubtitleCandidate,
         usesLegacySubtitleSuiteCandidate: Boolean(
@@ -561,6 +563,17 @@ export async function POST(request: Request) {
         transcriptionEnabled: transcriptionAccess.enabled,
         sourceRangeSelectionEnabled,
       });
+
+      const silenceInline = input.silenceRemoval && !input.midform
+        ? await parallelSilenceTarget(tx, {
+          userId: session.userId, silenceRequested: true, sourceType: "upload",
+          language: input.outputLanguage, isExample: false, midform: false,
+          templateKind: input.customTemplateId ? "custom" : "standard",
+        }, dispatchTarget) : null;
+      if (silenceInline?.uploadRoute) {
+        dispatchTarget = silenceInline.target;
+        receiver = { ...receiver, receiverBaseUrl: new URL(silenceInline.uploadRoute.receiverUrl) };
+      }
 
       const limits = await tx`
         select count(*)::int as active
@@ -589,7 +602,11 @@ export async function POST(request: Request) {
       // verified upload release without rotating ordinary link dispatch.
       // Public admission additionally requires the audited release evidence.
       const midform = input.midform ? await midformUploadRelease(tx, session.userId) : null;
-      const initialRenderRelease = await resolveFileUploadInitialRenderRelease(tx, {
+      const initialRenderRelease = silenceInline?.uploadRoute ? {
+        releaseId: silenceInline.releaseId, renderSpecVersion: 4 as const, captionRenderSpecVersion: 4 as const,
+        fontManifestSha256: silenceInline.target.v4Capability!.fontManifestSha256,
+        workerImageDigest: silenceInline.target.workerImageDigest!,
+      } : await resolveFileUploadInitialRenderRelease(tx, {
         targetKey: dispatchTarget.targetKey,
         access: lockedAccess,
       });
@@ -601,8 +618,8 @@ export async function POST(request: Request) {
         );
       }
       let uploadLanguage: { version: number; sourceLanguage: string; outputLanguage: string; releaseId: string } | undefined;
-      if (uploadCandidateConfig() || input.outputLanguage !== "ko" || input.sourceLanguage !== undefined) {
-        await requireFileUploadLanguage(tx, initialRenderRelease.releaseId, session.userId);
+      if (silenceInline || uploadCandidateConfig() || input.outputLanguage !== "ko" || input.sourceLanguage !== undefined) {
+        if (!silenceInline) await requireFileUploadLanguage(tx, initialRenderRelease.releaseId, session.userId);
         uploadLanguage = {
           version: 1, sourceLanguage: input.sourceLanguage ?? "auto",
           outputLanguage: input.outputLanguage, releaseId: initialRenderRelease.releaseId,
@@ -652,7 +669,8 @@ export async function POST(request: Request) {
           transcription_policy,batch_job_definition,batch_job_queue,
           selected_source_duration_seconds,billable_source_seconds,
           source_type,initial_editor_release_id,
-          initial_render_spec_version,initial_caption_render_spec_version,midform_request,midform_release_id
+          initial_render_spec_version,initial_caption_render_spec_version,midform_request,midform_release_id,
+          silence_inline_release_id,batch_target_key,batch_target_release_id
         ) values (
           ${jobId},${projectNumber},${session.id},${session.userId},${input.requestId},
           ${null},${null},${originalFilename},${resolvedExecution.channelDisplayName || ""},
@@ -665,9 +683,9 @@ export async function POST(request: Request) {
           ${true},'upload_service','uploading','uploading',0,
           now() + ${deadlineMinutes} * interval '1 minute',${plannedShortCount},
           ${billing.retentionDays},2,${sourceRangeSelectionEnabled},
-          ${transcriptionAccess.policy},${null},${null},
+          ${transcriptionAccess.policy},${silenceInline?.target.jobDefinitionArn || null},${silenceInline?.target.jobQueueArn || null},
           ${selectedDurationSeconds},${usageSeconds},'upload',
-          ${initialRenderRelease.releaseId},4,4,${input.midform ? tx.json(input.midform) : null},${midform?.releaseId || null}
+          ${initialRenderRelease.releaseId},4,4,${input.midform ? tx.json(input.midform) : null},${midform?.releaseId || null},${silenceInline?.releaseId || null},${silenceInline?.target.targetKey || null},${silenceInline?.target.releaseId || null}
         )
       `;
       const reservations = await tx`
@@ -736,8 +754,10 @@ export async function POST(request: Request) {
       };
     });
 
+    const capacityFunctionArn = await uploadCapacityFunctionForJob(db, result.jobId, session.userId);
     try {
       await ensureFileUploadCapacity({
+        capacityFunctionArn,
         // The capacity coordinator owns the authoritative count through one
         // expiring lease per upload session. Recounting stale database rows here
         // could over-scale or race concurrent requests.
@@ -758,7 +778,7 @@ export async function POST(request: Request) {
           uploadSessionId: result.uploadSessionId,
           jobId: result.jobId,
         });
-        await releaseFileUploadCapacity(result.uploadSessionId).catch(() => undefined);
+        await releaseFileUploadCapacity(result.uploadSessionId, capacityFunctionArn).catch(() => undefined);
         throw new HttpError(
           503,
           "업로드 작업 서버를 준비하지 못했습니다. 잠시 후 다시 시도해 주세요.",

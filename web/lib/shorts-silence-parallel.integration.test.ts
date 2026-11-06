@@ -45,17 +45,33 @@ beforeAll(async () => {
     create function shorts_mvp._project_target_successor_contract(uuid,uuid,boolean) returns jsonb language sql as $$select '{}'::jsonb$$;`);
   await db.exec(await readFile(new URL('../../supabase/migrations/20261106181941_shorts_silence_parallel_admission.sql', import.meta.url), 'utf8'));
   await db.exec(await readFile(new URL('../../supabase/migrations/20261106185344_editor_control_renewal_lease.sql', import.meta.url), 'utf8'));
+  await db.exec(`alter table shorts_mvp.app_users add column withdrawn_at timestamptz;
+    alter table shorts_mvp.video_jobs add column created_at timestamptz default now();
+    create function shorts_mvp._verified_file_upload_successor_identity(uuid,text) returns jsonb language sql as $$select '{"verified":true}'::jsonb$$;
+    create function shorts_mvp.upload_language_project_release(p_job shorts_mvp.video_jobs) returns jsonb language plpgsql as $$
+    declare font text;proof jsonb;
+    begin
+      raise exception 'UPLOAD_LANGUAGE_IDENTITY_INVALID';
+    end;$$;
+    create function shorts_mvp.admit_upload_language_job() returns trigger language plpgsql as $$
+    begin
+      raise exception 'UPLOAD_LANGUAGE_CANDIDATE_LIMIT';
+    end;$$;`);
+  await db.exec(await readFile(new URL('../../supabase/migrations/20261106190928_silence_parallel_upload_routes.sql', import.meta.url), 'utf8'));
+
 });
 
 afterAll(async () => { await db?.close(); });
 beforeEach(async () => {
-  await db.exec(`delete from shorts_mvp.editor_render_requests;delete from shorts_mvp.generated_shorts;delete from shorts_mvp.video_jobs;
+  await db.exec(`truncate shorts_mvp.silence_upload_acceptance,shorts_mvp.silence_upload_routes;
+    delete from shorts_mvp.editor_render_requests;delete from shorts_mvp.generated_shorts;delete from shorts_mvp.video_jobs;
     update shorts_mvp.shorts_silence_routing set enabled=true,percentage=100,release_id=null;
     delete from shorts_mvp.shorts_silence_routes;
     update shorts_mvp.editor_release_state set render_v4_kill_switch=false,control_renewal_lease_id=null,control_renewal_lease_owner=null,control_renewal_lease_expires_at=null;
     update shorts_mvp.runtime_feature_flags set enabled=true;`);
   // Fixture evidence only; registration's real finalized checks are tested in
   // test_project_target_successor_postgres.py. No production writes here.
+  await db.exec(`insert into shorts_mvp.runtime_feature_flags(flag_key,enabled) select 'file_upload',true where not exists(select 1 from shorts_mvp.runtime_feature_flags where flag_key='file_upload');`);
   const proof = { sourceGitSha:'sha', workerImageDigest:'digest',fontManifestSha256:'font',newTargets:{source_range:{jobDefinitionArn:'definition',jobQueueArn:'production-queue'}} };
   await db.query(`insert into shorts_mvp.shorts_silence_routes(release_id,predecessor_release_id,proof,registered_by) values($1,$1,$2,$3)`,[release,proof,admin]);
   await db.exec(`update shorts_mvp.shorts_silence_routing set release_id='${release}'`);
@@ -108,5 +124,42 @@ describe('parallel admission with private guards retained',()=>{
   });
   it('does not grant browser roles the route registration RPC',async()=>{
     expect((await db.query(`select has_function_privilege('anon','shorts_mvp.register_shorts_silence_route(uuid,uuid,uuid)','EXECUTE') as allowed`)).rows).toEqual([{allowed:false}]);
+  });
+});
+
+const uploadRuntime = {releaseId:release,sourceGitSha:'sha',workerImageDigest:'digest',fontManifestSha256:'font',noProxyEnvironment:true,receiverReady:true};
+async function registerUpload() {
+  await db.query(`insert into shorts_mvp.silence_upload_routes(release_id,administrator_id,receiver_url,capacity_function_arn,runtime_evidence)
+    values($1,$2,$3,$4,$5)`,[release,admin,`https://dexample.cloudfront.net/silence-upload/${release}`,
+      'arn:aws:lambda:ap-northeast-2:181651591905:function:shorts-upload-candidate-test',uploadRuntime]);
+}
+async function upload(owner=admin,language='ja') {
+  return db.query(`insert into shorts_mvp.video_jobs(user_id,source_type,silence_inline_release_id,output_language,batch_job_queue,template_snapshot)
+    values($1,'upload',$2,$3,'production-queue',$4) returning *`,[owner,release,language,
+      {shortsSilenceRemoval:{version:1,preset:'aggressive'},uploadLanguage:{version:1,releaseId:release,sourceLanguage:'auto',outputLanguage:language}}]);
+}
+describe('parallel upload ownership and acceptance',()=>{
+  it.each(['ko','en','ja'])('allows only the registered administrator to test %s before public acceptance',async language=>{
+    await registerUpload();
+    await upload(admin,language);
+    await expect(upload(user,language)).rejects.toThrow('PUBLIC_ACCEPTANCE_REQUIRED');
+  });
+  it('rejects missing receiver registration and mismatched runtime evidence',async()=>{
+    await expect(upload()).rejects.toThrow('BINDING_INVALID');
+    await expect(db.query(`insert into shorts_mvp.silence_upload_routes values($1,$2,$3,$4,$5,now())`,
+      [release,admin,`https://dexample.cloudfront.net/silence-upload/${release}`,
+      'arn:aws:lambda:ap-northeast-2:181651591905:function:shorts-upload-candidate-test',{}])).rejects.toThrow('RUNTIME_IDENTITY_REQUIRED');
+  });
+  it('requires all nine checks and all language roundtrips before opening public uploads',async()=>{
+    await registerUpload();
+    const keys=['admin_end_to_end','render_parity','upload_1gb','upload_5gb','source_cleanup','usage_integrity','runtime_identity','no_proxy_environment','no_stuck_sessions'];
+    const checks=Object.fromEntries(keys.map(key=>[key,{...uploadRuntime,passed:true,evidenceId:key}]));
+    const languages=Object.fromEntries(['ko','en','ja'].map(language=>[language,{generated:true,silenceRemoved:true,restored:true,edited:true,rendered:true,evidenceId:language}]));
+    await expect(db.query('insert into shorts_mvp.silence_upload_acceptance(release_id,recorded_by,checks,languages) values($1,$2,$3,$4)',[release,admin,{},languages])).rejects.toThrow('NINE_CHECKS_REQUIRED');
+    await expect(db.query('insert into shorts_mvp.silence_upload_acceptance(release_id,recorded_by,checks,languages) values($1,$2,$3,$4)',[release,admin,checks,{}])).rejects.toThrow('LANGUAGE_ROUNDTRIP_REQUIRED');
+    await db.query('insert into shorts_mvp.silence_upload_acceptance(release_id,recorded_by,checks,languages) values($1,$2,$3,$4)',[release,admin,checks,languages]);
+    await db.exec("insert into shorts_mvp.runtime_feature_flags values('file_upload_public',true)");
+    await upload(user);
+    await expect(db.exec('update shorts_mvp.silence_upload_routes set administrator_id=administrator_id')).rejects.toThrow('IMMUTABLE');
   });
 });

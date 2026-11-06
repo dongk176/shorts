@@ -1,3 +1,4 @@
+import { uploadCapacityFunctionForJob } from "@/lib/file-upload-parallel";
 import { uploadCandidateConfig } from "@/lib/file-upload-candidate";
 import { getFileUploadReleaseAccess } from "@/lib/file-upload-release";
 import { NextResponse } from "next/server";
@@ -96,11 +97,12 @@ export async function GET(_: Request, context: RouteContext) {
       `;
       const capacity = capacityRows[0];
       if (!capacity) throw hiddenNotFound();
+      const capacityFunctionArn = await uploadCapacityFunctionForJob(db, String(capacity.jobId), session.userId);
       const queueExpired = new Date(capacity.queueExpiresAt).getTime() <= Date.now();
       let capacityStatus: CapacityLeaseStatus = { leaseState: "expired" };
       if (!queueExpired) {
         try {
-          capacityStatus = await getFileUploadCapacityStatus(parsedSessionId.data);
+          capacityStatus = await getFileUploadCapacityStatus(parsedSessionId.data, capacityFunctionArn);
         } catch (error) {
           if (!(error instanceof FileUploadCapacityTransientError)) throw error;
           console.warn(JSON.stringify({
@@ -132,6 +134,7 @@ export async function GET(_: Request, context: RouteContext) {
         ) {
           try {
             capacityStatus = await ensureFileUploadCapacity({
+              capacityFunctionArn,
               desiredCount: 1,
               uploadSessionId: parsedSessionId.data,
               expiresAt: capacity.queueExpiresAt,
@@ -218,7 +221,7 @@ export async function GET(_: Request, context: RouteContext) {
             )
           `;
         });
-        await releaseFileUploadCapacity(parsedSessionId.data).catch(() => undefined);
+        await releaseFileUploadCapacity(parsedSessionId.data, capacityFunctionArn).catch(() => undefined);
         return noStore(NextResponse.json({
           uploadSessionId: parsedSessionId.data,
           jobId: String(capacity.jobId),
@@ -430,7 +433,7 @@ export async function DELETE(_: Request, context: RouteContext) {
 
     const usage = await getUsageSnapshot(db, session);
     if (!result.alreadyCancelled) {
-      await releaseFileUploadCapacity(result.uploadSessionId).catch(() => undefined);
+      await releaseFileUploadCapacity(result.uploadSessionId, await uploadCapacityFunctionForJob(db, result.jobId, session.userId)).catch(() => undefined);
     }
     return noStore(NextResponse.json({
       ...result,

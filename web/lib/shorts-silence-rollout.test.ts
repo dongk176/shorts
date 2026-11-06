@@ -42,3 +42,8 @@ describe("silence routing without stopping existing admissions", () => {
     expect(pinned.target.workerSourceGitSha).toBe("b".repeat(40));
   });
 });
+it("upload selection needs a separately verified receiver snapshot", () => {
+  const {rollout,existing}=fixture();
+  expect(selectSilenceAdmissionTarget({...request,sourceType:"upload"},existing,rollout).mode).toBe("existing");
+  expect(selectSilenceAdmissionTarget({...request,sourceType:"upload"},existing,{...rollout,uploadVerified:true}).mode).toBe("inline");
+});

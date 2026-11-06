@@ -11,7 +11,7 @@ export async function parallelSilenceTarget(
   existing: ProjectDispatchTarget, canonical: ProjectDispatchTarget = existing,
 ) {
   const releaseId = process.env.SHORTS_SILENCE_PARALLEL_RELEASE_ID;
-  if (!releaseId || !request.silenceRequested || request.sourceType !== "youtube") return null;
+  if (!releaseId || !request.silenceRequested) return null;
   if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(releaseId)) return null;
   const [r] = await db`select q.enabled,q.percentage,u.is_admin,
       e.id,e.git_sha,e.worker_image_digest,e.font_manifest_sha256,
@@ -44,17 +44,33 @@ export async function parallelSilenceTarget(
       || p.workerSourceGitSha !== t.workerSourceGitSha || p.workerImageDigest !== t.workerImageDigest
       || p.jobDefinitionArn !== t.jobDefinitionArn || p.jobQueueArn !== t.jobQueueArn;
   })) return null;
+  let uploadRoute: { receiverUrl: string; capacityFunctionArn: string } | null = null;
+  if (request.sourceType === "upload") {
+    if (process.env.FILE_UPLOAD_CANDIDATE_RELEASE_ID || process.env.FILE_UPLOAD_PARALLEL_RELEASE_ID !== releaseId) return null;
+    const [u] = await db`select r.receiver_url,r.capacity_function_arn
+      from shorts_mvp.silence_upload_routes r
+      left join shorts_mvp.silence_upload_acceptance a on a.release_id=r.release_id
+      where r.release_id=${releaseId}
+        and (r.administrator_id=${request.userId} or a.release_id is not null)
+        and r.runtime_evidence->>'sourceGitSha'=${r.gitSha}
+        and r.runtime_evidence->>'workerImageDigest'=${r.workerImageDigest}
+        and r.runtime_evidence->>'fontManifestSha256'=${r.fontManifestSha256}
+      for share of r`;
+    if (!u) return null;
+    uploadRoute = { receiverUrl: u.receiverUrl, capacityFunctionArn: u.capacityFunctionArn };
+  }
   const snapshot: SilenceRolloutSnapshot = {
     enabled: r.enabled, releaseId, sourceGitSha: r.gitSha, imageDigest: r.workerImageDigest,
     fontManifestSha256: r.fontManifestSha256, percentage: r.isAdmin ? 100 : Number(r.percentage),
     languages: ["ko", "en", "ja"], templateKinds: ["standard", "custom", "sns", "community"],
+    uploadVerified: uploadRoute !== null,
     targets: targets.map(t => ({ targetKey: t.targetKey, releaseId: t.batchTargetReleaseId,
       workerSourceGitSha: t.workerSourceGitSha, workerImageDigest: t.workerImageDigest,
       jobDefinitionArn: t.jobDefinitionArn, jobQueueArn: t.jobQueueArn,
       v4Capability: { renderSpecVersion: 4, captionRenderSpecVersion: 4, fontManifestSha256: r.fontManifestSha256 } })),
   };
   const decision = selectSilenceAdmissionTarget(request, canonical, snapshot);
-  return decision.mode === "inline" ? { releaseId: decision.editorReleaseId, target: decision.target } : null;
+  return decision.mode === "inline" ? { releaseId: decision.editorReleaseId, target: decision.target, uploadRoute } : null;
 }
 
 export async function parallelSilenceEditorRelease(db: Sql | TransactionSql, userId: string | null, shortId: string): Promise<EditorReleaseAssignment> {
