@@ -16,9 +16,9 @@ it('does not retry authentication errors and bounds preparation retries',async()
  const load=vi.fn().mockRejectedValue(new Error('unauthorized'));const pause=vi.fn().mockResolvedValue(undefined);
  await expect(waitForEditorSource(load,()=>false,pause)).rejects.toThrow('unauthorized');expect(pause).not.toHaveBeenCalled();
  load.mockRejectedValue(pending());await expect(waitForEditorSource(load,()=>false,pause)).rejects.toThrow('preparing');
- expect(pause).toHaveBeenCalledTimes(12);
+ expect(pause).toHaveBeenCalledTimes(120);
 });
-it('polls every five seconds and stops at the sixty-second preparation bound',async()=>{
+it('polls every five seconds and stops at the ten-minute preparation bound',async()=>{
  vi.useFakeTimers();
  try {
   const load=vi.fn().mockRejectedValue(pending());
@@ -27,9 +27,16 @@ it('polls every five seconds and stops at the sixty-second preparation bound',as
   expect(load).toHaveBeenCalledTimes(1);
   await vi.advanceTimersByTimeAsync(1);
   expect(load).toHaveBeenCalledTimes(2);
-  await vi.advanceTimersByTimeAsync(55000);
-  expect(load).toHaveBeenCalledTimes(13);
+  await vi.advanceTimersByTimeAsync(595000);
+  expect(load).toHaveBeenCalledTimes(121);
   expect(await result).toMatchObject({code:'EDITOR_SOURCE_PREPARING'});
   expect(vi.getTimerCount()).toBe(0);
  } finally { vi.useRealTimers(); }
+});
+it('automatically opens a source that finishes after the other shorts render',async()=>{
+ const load=vi.fn();
+ for(let i=0;i<36;i+=1) load.mockRejectedValueOnce(pending());
+ load.mockResolvedValue({start:0,end:72.7});
+ expect(await waitForEditorSource(load,()=>false,async()=>{})).toEqual({start:0,end:72.7});
+ expect(load).toHaveBeenCalledTimes(37);
 });
