@@ -8,7 +8,10 @@ const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"..");
 const fn="shorts-ranking-capacity-production",region="ap-northeast-2";
 const role="ShortsRankingAdmin-produc-CapacityServiceRole08EF8A-sSvRW2N5NW8S";
 const baseline="aa83f99e4b31bb75e85ec616a369a150a75b76db";
-const aws=(args)=>JSON.parse(execFileSync("aws",[...args,"--region",region,"--output","json"],{encoding:"utf8",stdio:["ignore","pipe","pipe"],timeout:45000}));
+const aws=(args)=>{
+ const output=execFileSync("aws",[...args,"--region",region,"--output","json"],{encoding:"utf8",stdio:["ignore","pipe","pipe"],timeout:45000});
+ return output.trim()?JSON.parse(output):{};
+};
 const digest=b=>createHash("sha256").update(b).digest("hex");
 const routes=s=>JSON.parse(JSON.parse(s.SecretString).INGESTION_PROXY_ROUTES_JSON).map(({id,proxy_url,egress_class})=>({id,proxy_url,egress_class})).sort((a,b)=>a.id.localeCompare(b.id));
 const main=()=>aws(["secretsmanager","get-secret-value","--secret-id","shorts-mvp/production/worker-runtime"]);
