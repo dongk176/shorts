@@ -6,6 +6,7 @@ PostgreSQL container with network=none, no published ports, and disposable data.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -685,3 +686,57 @@ def test_inflight_old_admission_cannot_cross_the_begin_fence():
         if attempt and attempt.poll() is None:
             attempt.kill()
             attempt.wait(timeout=5)
+
+
+def test_finalized_additive_font_proof_preserves_successor_checks():
+    migration = ROOT / "supabase/migrations/20261106154300_upload_additive_font_proof.sql"
+    sql(migration.read_text())
+    font_next = "f" * 64
+    old_face = {"fontId": "original", "sha256": "1" * 64, "cssToAssScale": 0.9}
+
+    def manifest(source, image, font, entries):
+        return json.dumps({"gitSha": source, "workerImageDigest": image,
+                           "fontManifestSha256": font, "fontManifest": {
+                               "sha256": font, "fallbackDetected": False, "entries": entries}})
+
+    old_text = manifest(OLD_SHA, OLD_IMAGE, FONT, [old_face])
+    new_text = manifest(NEW_SHA, NEW_IMAGE, font_next, [old_face, {
+        "fontId": "noto-sans-jp", "sha256": "2" * 64, "cssToAssScale": 0.8}])
+    old_hash = hashlib.sha256(old_text.encode()).hexdigest()
+    new_hash = hashlib.sha256(new_text.encode()).hexdigest()
+    try:
+        sql(f"""
+          insert into shorts_mvp.editor_release_probe_runs values(
+            '{OLD}','{OLD}','finalized','{OLD_SHA}','{OLD_IMAGE}','{FONT}',
+            's3://private-test-artifacts/old/manifest.json','{old_hash}','old-v1',repeat('e',64),'matrix-v1');
+          update shorts_mvp.editor_releases set font_manifest_sha256='{font_next}' where id='{NEW}';
+          update shorts_mvp.editor_release_probe_runs set font_manifest_sha256='{font_next}',
+            manifest_sha256='{new_hash}' where id='{PROBE}';
+          update shorts_mvp.editor_release_checks set details=jsonb_set(details,
+            '{{customTemplateDesign,fontManifestSha256}}','"{font_next}"') where release_id='{NEW}';
+        """)
+        assert_rejected(
+            "select shorts_mvp.begin_file_upload_successor("
+            f"'{OLD}','{OLD_SHA}','{OLD_IMAGE}','{NEW}','{ADMIN}');",
+            "finalized additive font proof required",
+        )
+        # SQL text is generated only from fixed local fixtures, never user input.
+        old_literal = "'" + old_text.replace("'", "''") + "'"
+        new_literal = "'" + new_text.replace("'", "''") + "'"
+        sql("select shorts_mvp.record_file_upload_font_successor_proof("
+            f"'{OLD}','{NEW}',{old_literal},{new_literal},'{ADMIN}');")
+        snapshot = ("select jsonb_agg(to_jsonb(c)-'successor' order by check_key) "
+                    "from shorts_mvp.file_upload_release_checks c;")
+        before = sql(snapshot)
+        assert begin()["phase"] == "draining"
+        assert sql(snapshot) == before
+        assert sql("select count(*) from shorts_mvp.file_upload_font_successor_proofs;") == "1"
+    finally:
+        sql("""
+          drop function shorts_mvp._verified_file_upload_successor_identity(uuid,text);
+          alter function shorts_mvp._verified_file_upload_successor_identity_same_fonts(uuid,text)
+            rename to _verified_file_upload_successor_identity;
+          drop function shorts_mvp.record_file_upload_font_successor_proof(
+            uuid,uuid,text,text,uuid);
+          drop table shorts_mvp.file_upload_font_successor_proofs;
+        """)

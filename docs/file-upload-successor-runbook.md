@@ -30,7 +30,8 @@ handoff fence, not another public feature flag.
    release registrar. It must have the exact existing fifteen isolated checks,
    finalized versioned probe evidence, the attested `customTemplateDesign`
    result, render/caption versions **4/4**, and the **same font manifest** as the
-   currently pinned receiver. Do not mark unfinished tests passed.
+   currently pinned receiver, or a finalized additive-font proof as described
+   below. Do not mark unfinished tests passed.
 3. Call `begin_file_upload_successor(expectedReleaseId, expectedSourceGitSha,
    expectedImageDigest, successorReleaseId, adminUserId)`. Use a fresh read of
    the current published runtime check, not a remembered identity. The RPC
@@ -161,3 +162,21 @@ migration/RPCs against an opt-in **network-none disposable PostgreSQL** containe
 including a concurrent old-web insert, exact-nine rollback, CAS, permissions,
 drain checks and preservation of flags/jobs/sessions. These tests never use the
 application `DATABASE_URL` and never publish release evidence.
+
+## Additive font compatibility
+
+A different manifest is permitted only when all existing font entries remain
+exactly equal and additional faces are added. Fetch both finalized probe
+manifest artifacts at their registered S3 version IDs. Pass the original UTF-8
+artifact text to `record_file_upload_font_successor_proof` with the old/new
+release IDs and administrator ID. The database hashes each complete artifact
+and compares it to its finalized probe hash before comparing identities, font
+bytes and every recorded layout metric. It rejects changed or missing existing
+faces, duplicate IDs, fallback fonts, missing versioned evidence and a changed
+public receiver identity. The proof is immutable and grants no client access.
+
+This proof replaces only equality of the entire font manifest for this exact
+release pair. The existing fifteen checks, custom design attestation, source and
+image identities, runtime versions, drain requirements and nine real public
+receiver acceptance checks remain mandatory. It does not promote a receiver or
+change the public admission state.
