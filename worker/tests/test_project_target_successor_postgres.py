@@ -29,6 +29,10 @@ ADMIN_READY_FALLBACK = (
     Path(__file__).parents[2]
     / "supabase/migrations/202609020001_project_successor_admin_dual_admission.sql"
 )
+FONT_PROOF = (
+    Path(__file__).parents[2]
+    / "supabase/migrations/20261106162500_project_additive_font_proof.sql"
+)
 ADMIN = "9dac7ecf-44c0-445d-a2de-3b5b841f9d50"
 USER = "7322829c-de28-4d3a-9332-3d704895cf9e"
 OLD = "0652212b-2e6b-419c-bbfa-07488a986b73"
@@ -390,6 +394,7 @@ def isolated_database():
     """)
     sql(MIGRATION.read_text())
     sql(ADMIN_READY_FALLBACK.read_text())
+    sql(FONT_PROOF.read_text())
 
 
 @pytest.fixture(autouse=True)
@@ -400,7 +405,7 @@ def reset_data(isolated_database):
         shorts_mvp.editor_release_probe_runs,shorts_mvp.editor_release_checks,
         shorts_mvp.editor_release_project_targets,shorts_mvp.editor_release_testers,
         shorts_mvp.video_jobs,shorts_mvp.project_job_outbox,shorts_mvp.batch_submission_claims,
-        shorts_mvp.test_usage_reservations;
+        shorts_mvp.test_usage_reservations,shorts_mvp.project_font_successor_proofs;
       insert into shorts_mvp.app_users(id,is_admin) values ('{ADMIN}',true),('{USER}',false);
       insert into shorts_mvp.runtime_feature_flags values
         ('editor_rendering_v2',true),('file_upload',true),('file_upload_public',true),
@@ -1012,3 +1017,65 @@ def test_job_waiting_for_committed_fence_is_rejected_before_usage():
         assert sql("select count(*) from shorts_mvp.test_usage_reservations;") == "0"
     finally:
         stop_children(fencing, admitted)
+
+
+def additive_font_artifacts(changed=False):
+    face = {"fontId": "existing", "sha256": "a" * 64, "cssToAssScale": 0.9}
+    old_doc = {"gitSha": OLD_SHA, "workerImageDigest": OLD_IMAGE,
+               "fontManifestSha256": FONT,
+               "fontManifest": {"sha256": FONT, "fallbackDetected": False, "entries": [face]}}
+    new_font = "f" * 64
+    new_doc = {"gitSha": NEW_SHA, "workerImageDigest": NEW_IMAGE,
+               "fontManifestSha256": new_font,
+               "fontManifest": {"sha256": new_font, "fallbackDetected": False,
+                 "entries": [{**face, "cssToAssScale": 1 if changed else 0.9},
+                             {**face, "fontId": "noto-sans-jp", "sha256": "b" * 64}]}}
+    old_text, new_text = json.dumps(old_doc), json.dumps(new_doc)
+    old_probe = str(uuid4())
+    sql(f"""insert into shorts_mvp.editor_release_probe_runs values(
+      '{old_probe}','{OLD}','finalized','{OLD_SHA}','{OLD_IMAGE}','{FONT}',
+      '{ARTIFACT}','{hashlib.sha256(old_text.encode()).hexdigest()}','old-version',repeat('e',64),'old-matrix');
+      update shorts_mvp.editor_release_probe_runs set font_manifest_sha256='{new_font}',
+        manifest_sha256='{hashlib.sha256(new_text.encode()).hexdigest()}' where id='{PROBE}';
+      update shorts_mvp.editor_releases set font_manifest_sha256='{new_font}' where id='{NEW}';
+      update shorts_mvp.editor_release_checks set details=jsonb_set(details,
+        '{{customTemplateDesign,fontManifestSha256}}','"{new_font}"');""")
+    # Restore the new contract after legacy tests intentionally replay old migrations.
+    migration = FONT_PROOF.read_text()
+    start = migration.index(
+        'create or replace function shorts_mvp._project_target_successor_contract('
+    )
+    sql(migration[start:migration.index('\n$$;', start) + 4])
+    return old_text, new_text
+
+
+def record_font_proof(old_text, new_text, actor=ADMIN):
+    return sql("select shorts_mvp.record_project_font_successor_proof("
+               f"'{OLD}','{NEW}',{encoded(old_text)}#>>'{{}}',{encoded(new_text)}#>>'{{}}','{actor}');")
+
+
+def test_project_additive_fonts_keep_full_successor_contract():
+    old_text, new_text = additive_font_artifacts()
+    contract = f"select shorts_mvp._project_target_successor_contract('{OLD}','{NEW}');"
+    assert_rejected(contract, 'baseline differs')
+    record_font_proof(old_text, new_text)
+    assert json.loads(sql(contract))['fontManifestSha256'] == 'f' * 64
+    sql("update shorts_mvp.editor_release_checks set status='failed' where check_name='ffprobe';")
+    assert_rejected(contract, 'fifteen passed checks')
+
+
+def test_project_font_proof_rejects_changed_existing_metrics():
+    old_text, new_text = additive_font_artifacts(changed=True)
+    with pytest.raises(subprocess.CalledProcessError, match='bytes or metrics changed'):
+        record_font_proof(old_text, new_text)
+
+
+def test_project_font_proof_rejects_fabricated_artifacts_and_wrong_admin():
+    old_text, new_text = additive_font_artifacts()
+    with pytest.raises(subprocess.CalledProcessError, match='finalized artifacts'):
+        record_font_proof(old_text, new_text + ' ')
+    with pytest.raises(subprocess.CalledProcessError, match='administrator required'):
+        record_font_proof(old_text, new_text, USER)
+    record_font_proof(old_text, new_text)
+    sql("update shorts_mvp.editor_release_probe_runs set manifest_sha256=repeat('0',64);")
+    assert sql(f"select shorts_mvp._project_successor_fonts_compatible('{OLD}','{NEW}');") == 'f'

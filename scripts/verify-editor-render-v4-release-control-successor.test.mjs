@@ -315,3 +315,24 @@ test("successor schema verifier follows the latest additive drain definition", (
   );
   assert.match(source, /FUNCTION_MIGRATIONS\[functionName\] \|\| SUCCESSOR_MIGRATION/);
 });
+
+
+test("additive fonts bind each registry and AWS definition to its own finalized font identity", () => {
+  const { context, proof, definitions } = fixture();
+  const newFont = "f".repeat(64);
+  proof.fontManifestSha256 = newFont;
+  for (const lane of Object.values(context.newRegistry.lanes)) lane.current.fontManifestSha256 = newFont;
+  for (const definition of definitions) {
+    if (definition.containerProperties.image.endsWith(proof.workerImageDigest)) {
+      definition.containerProperties.environment.find(e => e.name === "EDITOR_FONT_MANIFEST_SHA256").value = newFont;
+    }
+  }
+  assert.equal(validateSuccessorRegistryTransition(context.oldRegistry, context.newRegistry, proof), context.newRegistry);
+  assert.equal(typeof validateSuccessorDefinitions(definitions, context, proof), "string");
+  const stale = copy(context.newRegistry); stale.lanes.source_range.current.fontManifestSha256 = FONT;
+  assert.throws(() => validateSuccessorRegistryTransition(context.oldRegistry, stale, proof));
+  const staleDefinitions = copy(definitions);
+  const next = staleDefinitions.find(d => d.containerProperties.image.endsWith(proof.workerImageDigest));
+  next.containerProperties.environment.find(e => e.name === "EDITOR_FONT_MANIFEST_SHA256").value = FONT;
+  assert.throws(() => validateSuccessorDefinitions(staleDefinitions, context, proof));
+});

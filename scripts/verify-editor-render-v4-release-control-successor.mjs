@@ -67,9 +67,9 @@ export function validateSuccessorRegistryTransition(oldRegistry, newRegistry, pr
       || newLane.current.imageUri.split("@")[0] !== oldLane.current.imageUri.split("@")[0]) {
       throw new Error(`successor ${key}의 기존 target/queue/scheduling은 그대로 보존해야 합니다.`);
     }
-    for (const [target, expected] of [
-      [oldLane.current, proof.oldTargets?.[key]],
-      [newLane.current, proof.newTargets?.[key]],
+    for (const [target, expected, expectedFont] of [
+      [oldLane.current, proof.oldTargets?.[key], proof.compatibleSuccessor?.fontManifestSha256],
+      [newLane.current, proof.newTargets?.[key], proof.fontManifestSha256],
     ]) {
       if (!expected || target.releaseId !== expected.batchTargetReleaseId
         || target.workerSourceGitSha !== expected.workerSourceGitSha
@@ -77,7 +77,7 @@ export function validateSuccessorRegistryTransition(oldRegistry, newRegistry, pr
         || target.jobDefinitionArn !== expected.jobDefinitionArn
         || target.jobQueueArn !== expected.jobQueueArn
         || target.renderSpecVersion !== 4 || target.captionRenderSpecVersion !== 4
-        || target.fontManifestSha256 !== proof.fontManifestSha256) {
+        || target.fontManifestSha256 !== expectedFont) {
         throw new Error(`successor ${key}가 finalized DB target 증거와 다릅니다.`);
       }
     }
@@ -285,11 +285,11 @@ export function validateSuccessorDefinitions(definitions, context, proof) {
         !== exactJson(successorDefinitionContract(next, { removeReleaseIdentity: true }))) {
       throw new Error("successor 실제 AWS CPU/메모리/프록시/토큰/역할/재시도 계약이 predecessor와 다릅니다.");
     }
-    for (const [row, source, digest] of [[old, proof.compatibleSuccessor.sourceGitSha, proof.compatibleSuccessor.workerImageDigest],
-      [next, proof.sourceGitSha, proof.workerImageDigest]]) {
+    for (const [row, source, digest, font] of [[old, proof.compatibleSuccessor.sourceGitSha, proof.compatibleSuccessor.workerImageDigest, proof.compatibleSuccessor.fontManifestSha256],
+      [next, proof.sourceGitSha, proof.workerImageDigest, proof.fontManifestSha256]]) {
       const expected = { EDITOR_RELEASE_GIT_SHA: source, WORKER_IMAGE_DIGEST: digest,
         EDITOR_RENDER_SPEC_VERSION: "4", EDITOR_CAPTION_RENDER_SPEC_VERSION: "4",
-        EDITOR_FONT_MANIFEST_SHA256: proof.fontManifestSha256 };
+        EDITOR_FONT_MANIFEST_SHA256: font };
       const env = row.containerProperties?.environment || [];
       if (!String(row.containerProperties?.image || "").endsWith(`@${digest}`)
         || Object.entries(expected).some(([name, value]) => env.filter((item) => item.name === name && item.value === value).length !== 1
