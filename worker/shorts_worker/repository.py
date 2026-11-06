@@ -1995,8 +1995,20 @@ class WorkerRepository:
                   and coalesce(s.template_snapshot->>'snsTemplateVersion','') in ('','1')
                   and s.render_version=1 and s.editor_document is null
                   and s.initial_render_spec->>'version'='4'
-                  and j.template_snapshot->'shortsSilenceRemoval'=
+                  and (j.template_snapshot->'shortsSilenceRemoval'=
                     '{"version":1,"preset":"aggressive"}'::jsonb
+                    or (u.is_admin and j.template_snapshot->'shortsSilenceRemovalCandidate'=
+                      '{"version":1,"preset":"aggressive"}'::jsonb and (
+                        case when j.source_type='upload'
+                          and j.template_snapshot->>'shortsSilenceCandidateId'=
+                            j.initial_editor_release_id::text
+                        then shorts_mvp.upload_language_project_release(j) is not null
+                        else j.language_test_release_id is not null and exists (
+                          select 1 from shorts_mvp.silence_test_releases q
+                          where q.id::text=j.template_snapshot->>'shortsSilenceCandidateId'
+                            and q.administrator_id=u.id and q.verified_at is not null
+                            and j.created_at>=q.verified_at and j.created_at<q.expires_at)
+                        end)))
                   and not exists (select 1 from shorts_mvp.admin_short_silence_tasks t
                                   where t.short_id=s.id)""", (short_id, public_enabled),
             ).fetchone())

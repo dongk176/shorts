@@ -25,7 +25,11 @@ it("admits only opted-in administrators and atomically stores output with its ed
       create table shorts_mvp.app_users(id uuid primary key,is_admin boolean not null);
       create table shorts_mvp.runtime_feature_flags(flag_key text primary key,enabled boolean not null,description text);
       create table shorts_mvp.video_jobs(id uuid primary key,user_id uuid,is_example boolean,midform_request jsonb,template_snapshot jsonb,
+        source_type text default 'youtube',initial_editor_release_id uuid,language_test_release_id uuid,created_at timestamptz default now(),
         output_language text default 'ko',status text default 'rendering',deadline_at timestamptz default now()+interval '1 hour',pipeline_version int default 2);
+      create table shorts_mvp.silence_test_releases(id uuid,administrator_id uuid,verified_at timestamptz,expires_at timestamptz);
+      create function shorts_mvp.upload_language_project_release(j shorts_mvp.video_jobs) returns jsonb language sql as
+        $$ select case when j.template_snapshot->>'uploadProof'='verified' then '{}'::jsonb else null end $$;
       create table shorts_mvp.generated_shorts(id uuid primary key,job_id uuid,user_id uuid,
         custom_template_id uuid,template_snapshot jsonb default '{}', render_version int default 1,editor_document jsonb,
         initial_render_spec jsonb default '{"version":4}',editor_document_version int,duration_seconds numeric default 4,
@@ -58,6 +62,16 @@ it("admits only opted-in administrators and atomically stores output with its ed
     expect((await admit(true)).rows).toHaveLength(1);
     await db.exec("update shorts_mvp.video_jobs set output_language='ko'");
     await db.exec("update shorts_mvp.app_users set is_admin=true");
+    await db.exec(`update shorts_mvp.video_jobs set source_type='upload',initial_editor_release_id='${job}',
+      template_snapshot='{"shortsSilenceRemovalCandidate":{"version":1,"preset":"aggressive"},"shortsSilenceCandidateId":"${job}"}'`);
+    expect((await admit()).rows).toHaveLength(0);
+    await db.exec(`update shorts_mvp.video_jobs set template_snapshot=template_snapshot || '{"uploadProof":"verified"}'`);
+    expect((await admit()).rows).toHaveLength(1);
+    await db.exec("update shorts_mvp.app_users set is_admin=false");
+    expect((await admit(true)).rows).toHaveLength(0);
+    await db.exec(`update shorts_mvp.app_users set is_admin=true;
+      update shorts_mvp.video_jobs set source_type='youtube',initial_editor_release_id=null,
+      template_snapshot='{"shortsSilenceRemoval":{"version":1,"preset":"aggressive"}}'`);
     const save = async (invalidOwner: boolean) => db.transaction(async tx => {
       await tx.query(sql("update shorts_mvp.generated_shorts s"), ["new.mp4", "new.jpg", 100, short]);
       await tx.query(sql("set editor_document=%s"), [{ version: 3 }, 2.2, 2.2, short]);
