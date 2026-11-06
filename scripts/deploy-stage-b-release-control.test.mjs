@@ -439,7 +439,7 @@ test("renews a failed immutable candidate through an Editor-only exact phase", (
   assert.match(source, /\["renewal", "lockdown"\][\s\S]*executeStack === "compute"/);
   assert.match(
     source,
-    /options\.phase === "renewal" \? "lockdown" : options\.phase/,
+    /const leaseOperations = stageBLeaseOperations\(options\.phase\)/,
   );
   assert.match(source, /!\["renewal", "lockdown"\]\.includes\(phase\)/);
   assert.match(source, /renewal은 exact Editor preview\/해시만/);

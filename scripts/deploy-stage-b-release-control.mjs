@@ -42,6 +42,23 @@ import {
   withProjectSuccessorDatabase,
 } from "./verify-editor-render-v4-release-control-successor.mjs";
 
+import {
+  acquireEditorControlRenewalLease,
+  renewEditorControlRenewalLease,
+  releaseEditorControlRenewalLease,
+} from "./editor-control-renewal-lease.mjs";
+
+export function stageBLeaseOperations(phase) {
+  if (phase === "renewal") return {
+    acquire: acquireEditorControlRenewalLease,
+    renew: renewEditorControlRenewalLease,
+    release: releaseEditorControlRenewalLease,
+  };
+  return { acquire: acquireEditorRenderV4InfrastructureLease,
+    renew: renewEditorRenderV4InfrastructureLease,
+    release: releaseEditorRenderV4InfrastructureLease };
+}
+
 const root = path.resolve(import.meta.dirname, "..");
 const infra = path.join(root, "infra", "aws");
 const SHA = /^[0-9a-f]{40}$/;
@@ -1266,7 +1283,7 @@ export async function waitForStageBStackUpdate({
   const now = dependencies.now || Date.now;
   const sleep = dependencies.wait || wait;
   const renewLease = dependencies.renewLease
-    || renewEditorRenderV4InfrastructureLease;
+    || stageBLeaseOperations(options.phase).renew;
   const readStack = dependencies.readStack || (() => awsJson([
     "cloudformation",
     "describe-stacks",
@@ -1533,10 +1550,10 @@ async function executeChangeSet(options, initial, registry) {
     // Only already-submitted current-generation jobs may span the rotation.
     await ensureProjectSuccessorFence(options, stackKey);
 
-    // Renewal mutates only online-safe Editor IAM/registrar resources. Reuse
-    // the existing lockdown-shaped lease identity so the already-deployed DB
-    // constraint stays immutable; routing phases keep their stopped leases.
-    const leasePhase = options.phase === "renewal" ? "lockdown" : options.phase;
+    // Renewal uses a separate control lock, mutually exclusive with the
+    // infrastructure fence without blocking ordinary project admissions.
+    const leasePhase = options.phase;
+    const leaseOperations = stageBLeaseOperations(options.phase);
     const leaseOwner = `stage-b:${leasePhase}:${initial.head}`;
     const leaseId = crypto.randomUUID();
     let leaseAcquired = false;
@@ -1544,7 +1561,7 @@ async function executeChangeSet(options, initial, registry) {
     let executionTerminalKnown = true;
     let primaryError = null;
     try {
-      await acquireEditorRenderV4InfrastructureLease({
+      await leaseOperations.acquire({
         owner: leaseOwner,
         leaseId,
         ttlSeconds: LEASE_TTL_SECONDS,
@@ -1553,7 +1570,7 @@ async function executeChangeSet(options, initial, registry) {
       leaseAcquired = true;
       verifyRepositoryUnchanged(options, initial);
       verifyPromotedProductionBaseline(options.base);
-      await renewEditorRenderV4InfrastructureLease({
+      await leaseOperations.renew({
         owner: leaseOwner,
         leaseId,
         ttlSeconds: LEASE_TTL_SECONDS,
@@ -1565,7 +1582,7 @@ async function executeChangeSet(options, initial, registry) {
       ) {
         throw new Error(`${stackKey} live template이 lease 획득 후 변경되었습니다.`);
       }
-      await renewEditorRenderV4InfrastructureLease({
+      await leaseOperations.renew({
         owner: leaseOwner,
         leaseId,
         ttlSeconds: LEASE_TTL_SECONDS,
@@ -1592,7 +1609,7 @@ async function executeChangeSet(options, initial, registry) {
         ) {
           throw new Error("EditorCanary template이 lease 획득 후 변경되었습니다.");
         }
-        await renewEditorRenderV4InfrastructureLease({
+        await leaseOperations.renew({
           owner: leaseOwner,
           leaseId,
           ttlSeconds: LEASE_TTL_SECONDS,
@@ -1608,7 +1625,7 @@ async function executeChangeSet(options, initial, registry) {
       ) {
         throw new Error("change set template이 lease 획득 후 변경되었습니다.");
       }
-      await renewEditorRenderV4InfrastructureLease({
+      await leaseOperations.renew({
         owner: leaseOwner,
         leaseId,
         ttlSeconds: LEASE_TTL_SECONDS,
@@ -1624,7 +1641,7 @@ async function executeChangeSet(options, initial, registry) {
         provenance.changeSetName,
         options.changeSetId,
       );
-      await renewEditorRenderV4InfrastructureLease({
+      await leaseOperations.renew({
         owner: leaseOwner,
         leaseId,
         ttlSeconds: LEASE_TTL_SECONDS,
@@ -1675,7 +1692,7 @@ async function executeChangeSet(options, initial, registry) {
           `execute-change-set 명령은 오류를 반환했지만 AWS terminal 성공 상태가 직접 확인됐습니다: ${executeCommandError instanceof Error ? executeCommandError.message : String(executeCommandError)}\n`,
         );
       }
-      await renewEditorRenderV4InfrastructureLease({
+      await leaseOperations.renew({
         owner: leaseOwner,
         leaseId,
         ttlSeconds: LEASE_TTL_SECONDS,
@@ -1708,7 +1725,7 @@ async function executeChangeSet(options, initial, registry) {
         executionTerminalKnown,
       })) {
         try {
-          await releaseEditorRenderV4InfrastructureLease({
+          await leaseOperations.release({
             owner: leaseOwner,
             leaseId,
           });

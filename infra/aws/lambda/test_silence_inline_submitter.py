@@ -176,6 +176,12 @@ class ParallelSilence(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 m.editor_target(self.host, self.job, REQUEST)
 
+    def test_deployed_stable_queue_name_normalizes_to_exact_production_arn(self):
+        with patch.dict(
+            os.environ, {"EDITOR_STABLE_BATCH_QUEUE": "shorts-mvp-project-fargate-production"}
+        ):
+            self.assertEqual(m.editor_target(self.host, self.job, REQUEST)[0], QUEUE)
+
     def test_edit_never_falls_back_to_qa_or_legacy(self):
         with patch.dict(
             os.environ, {"EDITOR_STABLE_BATCH_QUEUE": m.PREFIX + "job-queue/shorts-mvp-editor-test"}

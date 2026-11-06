@@ -123,6 +123,9 @@ def editor_target(host, job, request_id):
     ):
         raise RuntimeError("Parallel silence editor definition invalid")
     queue = os.environ.get("EDITOR_STABLE_BATCH_QUEUE") or os.environ.get("PROJECT_BATCH_QUEUE", "")
+    # The deployed stable editor stores this exact production queue as a name.
+    if queue == "shorts-mvp-project-fargate-production":
+        queue = PREFIX + "job-queue/" + queue
     if not re.fullmatch(PREFIX + r"job-queue/shorts-mvp-[a-z0-9-]+", queue) or queue.endswith(
         "shorts-mvp-editor-test"
     ):

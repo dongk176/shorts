@@ -44,6 +44,7 @@ beforeAll(async () => {
     insert into shorts_mvp.runtime_feature_flags values ('public_shorts_silence',true);
     create function shorts_mvp._project_target_successor_contract(uuid,uuid,boolean) returns jsonb language sql as $$select '{}'::jsonb$$;`);
   await db.exec(await readFile(new URL('../../supabase/migrations/20261106181941_shorts_silence_parallel_admission.sql', import.meta.url), 'utf8'));
+  await db.exec(await readFile(new URL('../../supabase/migrations/20261106185344_editor_control_renewal_lease.sql', import.meta.url), 'utf8'));
 });
 
 afterAll(async () => { await db?.close(); });
@@ -51,7 +52,7 @@ beforeEach(async () => {
   await db.exec(`delete from shorts_mvp.editor_render_requests;delete from shorts_mvp.generated_shorts;delete from shorts_mvp.video_jobs;
     update shorts_mvp.shorts_silence_routing set enabled=true,percentage=100,release_id=null;
     delete from shorts_mvp.shorts_silence_routes;
-    update shorts_mvp.editor_release_state set render_v4_kill_switch=false;
+    update shorts_mvp.editor_release_state set render_v4_kill_switch=false,control_renewal_lease_id=null,control_renewal_lease_owner=null,control_renewal_lease_expires_at=null;
     update shorts_mvp.runtime_feature_flags set enabled=true;`);
   // Fixture evidence only; registration's real finalized checks are tested in
   // test_project_target_successor_postgres.py. No production writes here.
@@ -64,6 +65,14 @@ async function insert(owner=user, language='ko') {
     values($1,$2,$3,'auto','production-queue') returning id`,[owner,release,language]);
 }
 describe('parallel admission with private guards retained',()=>{
+  it('ordinary admission continues throughout control-only renewal',async()=>{
+    await db.exec(`update shorts_mvp.editor_release_state set control_renewal_lease_id='${release}',control_renewal_lease_owner='stage-b:renewal:${'a'.repeat(40)}',control_renewal_lease_expires_at=now()+interval '1 hour'`);
+    await db.exec(`insert into shorts_mvp.video_jobs(user_id,template_snapshot,batch_target_release_id,batch_job_definition,batch_job_queue)
+      values('${user}','{}','stable','stable-definition','stable-queue')`);
+    await insert(user);
+    expect((await db.query('select count(*)::int as n from shorts_mvp.video_jobs')).rows[0]).toEqual({n:2});
+  });
+
   it.each(['ko','en','ja'])('admits selected %s ordinary jobs through exact binding',async language=>{
     await insert(user,language);
     expect((await db.query('select admitted_jobs from shorts_mvp.silence_test_releases')).rows[0]).toEqual({admitted_jobs:0});

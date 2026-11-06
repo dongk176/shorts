@@ -79,7 +79,7 @@ beforeEach(() => {
       }];
       if (q.includes("with scoped_jobs")) return [{ active: jobs.filter((j) => j.user === owner).length, restrictedContentCooldownMinutes: 0 }];
       if (q.includes("insert into shorts_mvp.video_jobs")) {
-        const job = { id: v[0] as string, user: v[2] as string, request: v[3] as string, projectNumber: jobs.length + 1, output: v[19], release: v.at(-4), silenceRelease: v.at(-1), snapshot: v[15] };
+        const job = { id: v[0] as string, user: v[2] as string, request: v[3] as string, projectNumber: jobs.length + 1, output: v[19], release: v.at(-5), silenceRelease: v.at(-2), snapshot: v[15] };
         jobs.push(job); return [{ projectNumber: job.projectNumber }];
       }
       if (q.includes("insert into shorts_mvp.usage_reservations")) { reservations.push(v); return [{ id: releaseId }]; }
