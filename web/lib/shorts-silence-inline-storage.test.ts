@@ -46,16 +46,23 @@ it("admits only opted-in administrators and atomically stores output with its ed
       await db.exec(readFileSync(`../supabase/migrations/${migration}`, "utf8"));
     }
     await db.exec("update shorts_mvp.runtime_feature_flags set enabled=true where flag_key='admin_shorts_silence'");
-    const admit = () => db.query(sql("select 1 from shorts_mvp.generated_shorts s"), [short]);
+    const admit = (publicEnabled = false) => db.query(sql("select 1 from shorts_mvp.generated_shorts s"), [short, publicEnabled]);
     expect((await admit()).rows).toHaveLength(1);
     await db.exec("update shorts_mvp.app_users set is_admin=false");
     expect((await admit()).rows).toHaveLength(0);
+    expect((await admit(true)).rows).toHaveLength(0);
+    await db.exec("update shorts_mvp.runtime_feature_flags set enabled=true where flag_key='public_shorts_silence'");
+    expect((await admit(true)).rows).toHaveLength(1);
+    expect((await admit()).rows).toHaveLength(0);
+    await db.exec("update shorts_mvp.video_jobs set output_language='ja'");
+    expect((await admit(true)).rows).toHaveLength(1);
+    await db.exec("update shorts_mvp.video_jobs set output_language='ko'");
     await db.exec("update shorts_mvp.app_users set is_admin=true");
     const save = async (invalidOwner: boolean) => db.transaction(async tx => {
       await tx.query(sql("update shorts_mvp.generated_shorts s"), ["new.mp4", "new.jpg", 100, short]);
       await tx.query(sql("set editor_document=%s"), [{ version: 3 }, 2.2, 2.2, short]);
       if (invalidOwner) await tx.exec("update shorts_mvp.video_jobs set template_snapshot='{}'");
-      const task = await tx.query(sql("insert into shorts_mvp.admin_short_silence_tasks"), [1, 1.8, short]);
+      const task = await tx.query(sql("insert into shorts_mvp.admin_short_silence_tasks"), ["completed", 1, 1.8, null, short]);
       if (!task.rows.length) throw new Error("administrator revoked");
     });
     await expect(save(true)).rejects.toThrow("SILENCE_OWNERSHIP_REQUIRED");
@@ -67,5 +74,20 @@ it("admits only opted-in administrators and atomically stores output with its ed
     expect((await db.query("select state,cut_count from shorts_mvp.admin_short_silence_tasks")).rows)
       .toEqual([{ state: "completed", cut_count: 1 }]);
     expect((await admit()).rows).toHaveLength(0);
+    // A failed optional analysis commits the original output and a terminal
+    // failure together. The old postprocessor must not claim it again.
+    await db.exec(`delete from shorts_mvp.admin_short_silence_tasks;
+      update shorts_mvp.generated_shorts set status='rendering',editor_document=null;
+      update shorts_mvp.app_users set is_admin=false`);
+    await db.transaction(async tx => {
+      await tx.query(sql("update shorts_mvp.generated_shorts s"), ["fallback.mp4", "fallback.jpg", 100, short]);
+      await tx.query(sql("insert into shorts_mvp.admin_short_silence_tasks"),
+        ["failed", 0, 0, "SILENCE_INLINE_ANALYSIS_FAILED", short]);
+    });
+    expect((await db.query("select status,output_s3_key from shorts_mvp.generated_shorts")).rows)
+      .toEqual([{ status: "ready", output_s3_key: "fallback.mp4" }]);
+    expect((await db.query("select state,error_code from shorts_mvp.admin_short_silence_tasks")).rows)
+      .toEqual([{ state: "failed", error_code: "SILENCE_INLINE_ANALYSIS_FAILED" }]);
+    expect((await admit(true)).rows).toHaveLength(0);
   } finally { await db.close(); }
 }, 30_000);

@@ -75,11 +75,15 @@ def test_admin_inline_renders_once_and_commits_map(tmp_path, monkeypatch):
     worker = _initial_render_worker(tmp_path, True)
     worker.editor_renderer = MagicMock()
     worker.repository.inline_silence_admin_allowed.return_value = True
+    background = tmp_path / "owned-background.png"
+    worker._background_render_arguments = MagicMock(
+        return_value={"uploaded_background_path": background})
     monkeypatch.setenv("SHORTS_SILENCE_INLINE_ADMIN_ENABLED", "true")
     monkeypatch.setattr(shorts_silence, "analyze", lambda *_: [[1, 3]])
     assert worker._render_initial_short(item()) is not None
     worker.renderer.render_clean_clip.assert_not_called()
     worker.editor_renderer.render.assert_called_once()
+    assert worker.editor_renderer.render.call_args.kwargs["uploaded_background_path"] == background
     result = worker.repository.complete_initial_render.call_args.kwargs["silence_result"]
     assert result["cut_count"] == 1
     assert result["removed_seconds"] == pytest.approx(1.8)
@@ -265,3 +269,52 @@ def test_comment_timing_moves_with_cut_without_changing_source():
     assert document.comments[0].end_seconds == pytest.approx(2.1)
     assert document.render_spec.comments[0].start_frame == 39
     assert source["comment_overlays"][0]["startSeconds"] == 3.1
+
+
+@pytest.mark.parametrize("failure", [ValueError("invalid plan"), OSError("ffmpeg missing"),
+                                     subprocess.TimeoutExpired("ffmpeg", 90)])
+def test_analysis_failure_preserves_generation(tmp_path, monkeypatch, failure):
+    from test_retry_pipeline import _initial_render_worker
+
+    from shorts_worker import shorts_silence
+
+    worker = _initial_render_worker(tmp_path, True)
+    worker.editor_renderer = MagicMock()
+    worker.repository.inline_silence_admin_allowed.return_value = True
+    monkeypatch.setenv("SHORTS_SILENCE_INLINE_ADMIN_ENABLED", "true")
+
+    def fail(*_):
+        raise failure
+
+    monkeypatch.setattr(shorts_silence, "analyze", fail)
+    assert worker._render_initial_short(item()) is not None
+    worker.renderer.render_clean_clip.assert_called_once()
+    worker.editor_renderer.render.assert_not_called()
+    result = worker.repository.complete_initial_render.call_args.kwargs["silence_result"]
+    assert result["document"] is None
+    assert result["error_code"] == "SILENCE_INLINE_ANALYSIS_FAILED"
+    assert result["removed_seconds"] == 0
+
+
+def test_custom_text_and_comment_positions_survive_inline_cuts():
+    fixture = json.loads((Path(__file__).parents[2] /
+                          "test-fixtures/unified-social-editor-v4.json").read_text())
+    source = item()
+    source["custom_template_id"] = "22222222-2222-4222-8222-222222222222"
+    layer = copy.deepcopy(fixture["renderSpec"]["textOverlays"][0])
+    source["initial_render_spec"]["textOverlays"] = [
+        dict(layer, id="whole", startFrame=0, endFrame=120),
+        dict(layer, id="removed", startFrame=45, endFrame=60),
+    ]
+    source["initial_render_spec"]["layerOrder"] = [
+        "video", "title", "comment", "text:whole", "text:removed", "channel"]
+    source["template_snapshot"]["config"] = {"textOverlays": [
+        {"id": "whole", "text": "사용자가 작성한 글"}]}
+    before = copy.deepcopy(source)
+    doc = plan(source, [[1, 3]])
+    assert source == before
+    assert str(doc.template.custom_template_id) == source["custom_template_id"]
+    assert len(doc.overlays.text_overlays) == 1
+    assert doc.overlays.text_overlays[0].text == "사용자가 작성한 글"
+    assert doc.overlays.text_overlays[0].end_seconds == pytest.approx(2.2)
+    assert "text:removed" not in doc.render_spec.layer_order

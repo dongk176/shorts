@@ -1977,8 +1977,8 @@ class WorkerRepository:
                 (max(0, min(99, progress)), short_id),
             )
 
-    def inline_silence_admin_allowed(self, short_id: str) -> bool:
-        """Candidate-only admission; never trust browser-supplied admin claims."""
+    def inline_silence_admin_allowed(self, short_id: str, *, public_enabled: bool = False) -> bool:
+        """Default-private admission; public rollout also requires the DB access gate."""
         with self.connect() as connection:
             return bool(connection.execute(
                 """select 1 from shorts_mvp.generated_shorts s
@@ -1986,16 +1986,19 @@ class WorkerRepository:
                 join shorts_mvp.app_users u on u.id=j.user_id
                 join shorts_mvp.runtime_feature_flags f
                   on f.flag_key='admin_shorts_silence' and f.enabled
-                where s.id=%s and s.user_id=u.id and u.is_admin
+                where s.id=%s and s.user_id=u.id
+                  and (u.is_admin or (%s and exists (
+                    select 1 from shorts_mvp.runtime_feature_flags p
+                    where p.flag_key='public_shorts_silence' and p.enabled)))
                   and not j.is_example and j.midform_request is null
-                  and j.output_language='ko' and s.custom_template_id is null
+                  and j.output_language in ('ko','en','ja')
                   and coalesce(s.template_snapshot->>'snsTemplateVersion','')=''
                   and s.render_version=1 and s.editor_document is null
                   and s.initial_render_spec->>'version'='4'
                   and j.template_snapshot->'shortsSilenceRemoval'=
                     '{"version":1,"preset":"aggressive"}'::jsonb
                   and not exists (select 1 from shorts_mvp.admin_short_silence_tasks t
-                                  where t.short_id=s.id)""", (short_id,),
+                                  where t.short_id=s.id)""", (short_id, public_enabled),
             ).fetchone())
 
     def complete_initial_render(
@@ -2053,15 +2056,17 @@ class WorkerRepository:
                     task = connection.execute(
                         """insert into shorts_mvp.admin_short_silence_tasks
                         (short_id,job_id,user_id,request_id,lease_id,lease_until,
-                         state,cut_count,removed_seconds)
+                         state,cut_count,removed_seconds,error_code)
                         select s.id,s.job_id,s.user_id,gen_random_uuid(),gen_random_uuid(),
-                          now(),'completed',%s,%s from shorts_mvp.generated_shorts s
+                          now(),%s,%s,%s,%s from shorts_mvp.generated_shorts s
                         join shorts_mvp.app_users u on u.id=s.user_id
-                        where s.id=%s and u.is_admin returning short_id""",
-                        (silence_result["cut_count"], silence_result["removed_seconds"], short_id),
+                        where s.id=%s and s.user_id=u.id returning short_id""",
+                        ("failed" if silence_result.get("error_code") else "completed",
+                         silence_result["cut_count"], silence_result["removed_seconds"],
+                         silence_result.get("error_code"), short_id),
                     ).fetchone()
                     if not task:
-                        raise ValueError("Inline silence administrator access changed")
+                        raise ValueError("Inline silence ownership changed")
                 connection.execute(
                     """
                     update shorts_mvp.site_metrics set value=value+1, updated_at=now()

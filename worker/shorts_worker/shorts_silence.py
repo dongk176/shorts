@@ -80,7 +80,6 @@ def plan(item: dict, silences: list[list[float]]) -> EditorDocument | None:
     if (
         not isinstance(spec, dict)
         or spec.get("version") != 4
-        or item.get("custom_template_id")
         or snapshot.get("snsTemplateVersion")
         or item.get("editor_document")
     ):
@@ -91,7 +90,7 @@ def plan(item: dict, silences: list[list[float]]) -> EditorDocument | None:
         return None
 
     def output_at(t):
-        return round(sum(max(0, min(b, t) - a) for a, b in ranges), 3)
+        return math.floor((sum(max(0, min(b, t) - a) for a, b in ranges) + 1e-9) * 1000) / 1000
 
     comments = []
     for original in item.get("comment_overlays") or []:
@@ -103,7 +102,8 @@ def plan(item: dict, silences: list[list[float]]) -> EditorDocument | None:
     spec["comments"] = [
         dict(
             id=c["id"],
-            offsetY=0,
+            offsetY=next((original.get("offsetY", 0) for original in
+                          spec.get("comments", []) if original["id"] == c["id"]), 0),
             startFrame=math.floor(c["startSeconds"] * 30 + 0.5),
             endFrame=math.floor(c["endSeconds"] * 30 + 0.5),
         )
@@ -111,7 +111,7 @@ def plan(item: dict, silences: list[list[float]]) -> EditorDocument | None:
     ]
     overlays = dict(
         offsets={k: dict(x=0, y=0) for k in ("video", "title", "comment", "channel")},
-        commentOffsets={},
+        commentOffsets={c["id"]: dict(x=0, y=c["offsetY"]) for c in spec["comments"]},
         scales=dict(video=spec["video"]["scale"], title=1, channel=spec["channel"]["scale"]),
         fonts={k: spec[k]["font"]["fontId"] for k in ("title", "channel")},
         visible=dict(
@@ -125,6 +125,31 @@ def plan(item: dict, silences: list[list[float]]) -> EditorDocument | None:
         layerOrder=spec["layerOrder"],
         background=None,
     )
+    text_layers = []
+    authored = (snapshot.get("config") or {}).get("textOverlays") or []
+    custom_id = item.get("custom_template_id")
+    for original in spec.get("textOverlays", []):
+        layer = copy.deepcopy(original)
+        layer["startFrame"] = math.floor(output_at(layer["startFrame"] / 30) * 30 + 0.5)
+        layer["endFrame"] = math.floor(output_at(layer["endFrame"] / 30) * 30 + 0.5)
+        if layer["endFrame"] <= layer["startFrame"]:
+            continue
+        text_layers.append(layer)
+        text = next((t["text"] for t in authored if t["id"] == layer["id"]
+                     or f"tpl:{custom_id}:{t['id']}" == layer["id"]),
+                    "\n".join(layer["lines"]))
+        overlays["textOverlays"].append(dict(
+            id=layer["id"], text=text, fontId=layer["font"]["fontId"],
+            color=layer["color"], effect=layer["effect"],
+            offset=dict(x=layer["centerX"] - 540, y=layer["centerY"] - 960),
+            width=layer["width"], scale=layer["scale"],
+            startSeconds=layer["startFrame"] / 30, endSeconds=layer["endFrame"] / 30,
+        ))
+    spec["textOverlays"] = text_layers
+    text_ids = {f"text:{layer['id']}" for layer in text_layers}
+    spec["layerOrder"] = [key for key in spec["layerOrder"]
+                          if not key.startswith("text:") or key in text_ids]
+    overlays["layerOrder"] = spec["layerOrder"]
     for k in ("video", "channel"):
         overlays["offsets"][k] = dict(x=spec[k]["offsetX"], y=spec[k]["offsetY"])
     return EditorDocument.model_validate(
@@ -134,7 +159,7 @@ def plan(item: dict, silences: list[list[float]]) -> EditorDocument | None:
             baseRenderVersion=1,
             template=dict(
                 id=item["template_id"],
-                customTemplateId=None,
+                customTemplateId=item.get("custom_template_id"),
                 presetVersion=snapshot.get("presetVersion", 3),
                 snapshot=snapshot,
             ),

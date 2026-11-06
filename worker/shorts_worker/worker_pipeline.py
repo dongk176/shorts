@@ -6,6 +6,7 @@ import os
 import resource
 import shutil
 import stat
+import subprocess
 import sys
 import tempfile
 import threading
@@ -3526,12 +3527,23 @@ class BatchWorker:
             )
             silence_result = None
             silence_document = None
-            if (os.getenv("SHORTS_SILENCE_INLINE_ADMIN_ENABLED") == "true"
-                    and self.repository.inline_silence_admin_allowed(short_id)):
+            public_inline = os.getenv("SHORTS_SILENCE_INLINE_ENABLED") == "true"
+            if ((public_inline or os.getenv("SHORTS_SILENCE_INLINE_ADMIN_ENABLED") == "true")
+                    and self.repository.inline_silence_admin_allowed(
+                        short_id, public_enabled=public_inline)):
                 from .shorts_silence import analyze, editor_snapshot, plan
 
                 analysis_started = time.monotonic()
-                silence_document = plan(item, analyze(clean_path, clip_duration_seconds))
+                silence_error = None
+                try:
+                    silence_document = plan(item, analyze(clean_path, clip_duration_seconds))
+                except (ValueError, OSError, subprocess.SubprocessError):
+                    # Optional audio analysis must not fail an otherwise valid
+                    # generation. Persist the failed optional step atomically
+                    # with the ordinary output so post-processing cannot race it.
+                    silence_error = "SILENCE_INLINE_ANALYSIS_FAILED"
+                    _log_event("initial_silence_fallback", short_id=short_id,
+                               error_code=silence_error)
                 output_seconds = (silence_document.video.output_duration_seconds
                                   if silence_document else clip_duration_seconds)
                 silence_result = {
@@ -3540,6 +3552,7 @@ class BatchWorker:
                     "output_seconds": output_seconds,
                     "cut_count": len(silence_document.video.clips) - 1 if silence_document else 0,
                     "removed_seconds": round(clip_duration_seconds - output_seconds, 3),
+                    "error_code": silence_error,
                 }
                 render_metrics["silenceAnalysisSeconds"] = round(
                     time.monotonic() - analysis_started, 3
@@ -3566,6 +3579,7 @@ class BatchWorker:
                     ),
                     caption_composition_spec=caption_spec,
                     comment_output_language=str(item.get("comment_output_language") or "ko"),
+                    **self._background_render_arguments(item, work_dir),
                 )
                 render_metrics["silenceFinalRenderSeconds"] = round(
                     time.monotonic() - final_render_started, 3
