@@ -210,10 +210,10 @@ describe("authenticated per-user connections against embedded PostgreSQL", () =>
 });
 
 describe("per-user resumable publishing",()=>{
- function uploader(hook?: (url:string)=>Promise<void>, allowNonPrivateUploads=false, actualPrivacy="private"){
+ function uploader(hook?: (url:string)=>Promise<void | Response>, allowNonPrivateUploads=false, actualPrivacy="private"){
   const calls:string[]=[];const bodies:unknown[]=[];
   const uploads=new YoutubeAccountUploads(tag(pg),store,service,vault,{clientId:"test",clientSecret:"test",allowNonPrivateUploads},uploadRoot,async(url,init)=>{
-   const u=String(url);calls.push(u);await hook?.(u);
+   const u=String(url);calls.push(u);const overridden=await hook?.(u);if(overridden)return overridden;
    if(u.includes("/token"))return Response.json({access_token:"secret-access"});
    if(u.includes("/channels?"))return Response.json({items:[{id:CHANNEL_A,snippet:{title:"Test"}}]});
    if(u.includes("uploadType=resumable")){bodies.push(JSON.parse(String(init?.body)));return new Response(null,{status:200,headers:{location:"https://www.googleapis.com/upload/youtube/session-1"}});}
@@ -222,6 +222,19 @@ describe("per-user resumable publishing",()=>{
   });return {uploads,calls,bodies};
  }
  const input=(connectionId:string)=>({shortId:SA,connectionId,title:"My private video",description:"",madeForKids:false,synthetic:false});
+ it("persists safe provider errors and emits only allowlisted diagnostic fields",async()=>{
+  const log=vi.spyOn(console,"warn").mockImplementation(()=>{});
+  try {
+   const c=await connect();
+   const {uploads}=uploader(async url=>url.includes('uploadType=resumable')?Response.json({error:{message:'secret-token secret-session-url',errors:[{reason:'uploadLimitExceeded'}]}},{status:400}):undefined);
+   const result=await uploads.create(A,input(c.id));
+   expect(result).toMatchObject({status:'interrupted',error:'YouTube 채널의 업로드 한도에 도달했습니다. YouTube Studio에서 제한 안내를 확인해 주세요.'});
+   expect((await uploads.list(A,SA))[0].error).toBe(result.error);
+   expect(log).toHaveBeenCalledWith('youtube_upload_interrupted',{uploadId:result.id,code:'channel_limit',stage:'session',status:400,reason:'uploadLimitExceeded'});
+   expect(JSON.stringify(log.mock.calls)).not.toMatch(/secret-token|secret-session-url|refresh|Authorization/);
+  } finally {log.mockRestore();}
+ });
+
  it("pins recovery to the rendered version and rejects a stale compose before upload",async()=>{
   const c=await connect(),{uploads,calls}=uploader();
   expect(await uploads.renderVersion(A,SA)).toBe(1);

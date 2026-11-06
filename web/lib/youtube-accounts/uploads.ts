@@ -15,6 +15,8 @@ import type { YoutubeAccountStore } from "./store";
 import type { YoutubeAccounts } from "./service";
 import { Google, metadata, type UploadJob } from "./upload-engine.mjs";
 
+import { UploadFailure, uploadDiagnostic } from "./upload-errors.mjs";
+
 export const uploadInput = z.object({ shortId: uuid, connectionId: uuid, expectedRenderVersion: z.number().int().nonnegative().optional(), title: z.string().trim().min(1).max(100), description: z.string().refine(value=>Buffer.byteLength(value,"utf8")<=5000,"설명은 UTF-8 기준 5,000바이트 이하여야 합니다."), privacy: z.enum(privacyValues).default("private"), madeForKids: z.boolean(), synthetic: z.boolean() }).strict();
 type Config = { clientId: string; clientSecret: string; allowNonPrivateUploads?: boolean };
 export class YoutubeAccountUploads {
@@ -110,26 +112,32 @@ export class YoutubeAccountUploads {
     });
     if(row.status==='complete' && row.actualPrivacy){await this.accounts.list(actor,String(row.shortId));return this.view(row);}
     let job: UploadJob | undefined;
+    let stage = "source";
+    let google: Google | undefined;
     try {
       job=JSON.parse(this.vault.open(String(row.stateCiphertext),actor.userId,`upload:${id}`)) as UploadJob;
       const state=job;
       state.status='uploading';
       const verifyAccess=async()=>{
-        const live = await this.db`select id from shorts_mvp.youtube_account_uploads where id=${id} and user_id=${actor.userId} and lease_id=${lease} and status<>'expired' and created_at>now()-interval '29 days'`;
-        if(!live.length) throw new HttpError(404,"삭제되었거나 보관 기간이 지난 게시 기록입니다.");
-        await this.accounts.eligibility(actor,String(row.shortId),String(row.connectionId));
-        const current=await this.store.publicationContext(actor.userId,String(row.shortId),String(row.connectionId));
-        if(current.connection.version!==row.connectionVersion||current.source.renderVersion!==row.renderVersion||current.source.outputS3Key!==state.sourceKey)throw new HttpError(409,"연결 또는 영상이 변경돼 게시를 중단했습니다.");
-        return current;
+        stage = "access";
+        try {
+          const live = await this.db`select id from shorts_mvp.youtube_account_uploads where id=${id} and user_id=${actor.userId} and lease_id=${lease} and status<>'expired' and created_at>now()-interval '29 days'`;
+          if(!live.length) throw new HttpError(404,"삭제되었거나 보관 기간이 지난 게시 기록입니다.");
+          await this.accounts.eligibility(actor,String(row.shortId),String(row.connectionId));
+          const current=await this.store.publicationContext(actor.userId,String(row.shortId),String(row.connectionId));
+          if(current.connection.version!==row.connectionVersion||current.source.renderVersion!==row.renderVersion||current.source.outputS3Key!==state.sourceKey)throw new HttpError(409,"연결 또는 영상이 변경돼 게시를 중단했습니다.");
+          return current;
+        } catch { throw new UploadFailure("unknown", "access"); }
       };
       const current=await verifyAccess();
+      stage = "source";
       const source=await this.sourceFile(state.sourceKey);
       if(source.size!==state.size||await this.fingerprint(source.file)!==state.sourceHash)throw new HttpError(409,"영상 파일이 변경됐습니다.");
-      const google=new Google({client_id:this.config.clientId,client_secret:this.config.clientSecret},async(url,init)=>{
+      google=new Google({client_id:this.config.clientId,client_secret:this.config.clientSecret},async(url,init)=>{
         await verifyAccess();
         const controller = new AbortController();
         const remaining = this.requestDeadline - Date.now();
-        if (this.hostedSources && remaining <= 0) throw new Error("Review request deadline exceeded");
+        if (this.hostedSources && remaining <= 0) throw new UploadFailure("timeout", google?.stage || "unknown");
         let checking = false;
         const timer = setInterval(async () => {
           if (checking) return;
@@ -143,18 +151,25 @@ export class YoutubeAccountUploads {
           const response = await this.fetcher(url, { ...init, signal });
           await verifyAccess();
           return response;
+        } catch (error) {
+          if (controller.signal.aborted) throw new UploadFailure("unknown", "access");
+          throw error;
         } finally { clearInterval(timer); }
       });
       const save=async()=>{
         await verifyAccess();
+        stage = "save";
         const ciphertext=this.vault.seal(JSON.stringify(state),actor.userId,`upload:${id}`);
         const saved=await this.db`update shorts_mvp.youtube_account_uploads set state_ciphertext=${ciphertext},status=${state.status},progress=${state.progress||0},video_id=${state.videoId||null},actual_privacy=${state.actualPrivacy||null},privacy_checked_at=${state.privacyCheckedAt||null},updated_at=now() where id=${id} and user_id=${actor.userId} and lease_id=${lease} returning id`;
         if(!saved.length)throw new Error('Upload lease lost');
       };
+      stage = "access";
       await google.upload(state,{refreshToken:this.vault.open(String(current.connection.tokenCiphertext),actor.userId,`channel:${current.connection.channelId}`)},save,source.file);
-    } catch {
-      // Never log provider messages, access tokens, or resumable session URLs.
-      await this.db`update shorts_mvp.youtube_account_uploads set status='interrupted',error_message='게시가 중단됐습니다. 연결과 영상 상태를 확인한 뒤 이어서 확인해 주세요.',updated_at=now() where id=${id} and user_id=${actor.userId} and lease_id=${lease}`;
+    } catch (error) {
+      const diagnostic = uploadDiagnostic(error, stage === "save" ? stage : google?.stage || stage);
+      // Explicit allowlist only: no error object, stack, URL, title or token.
+      console.warn("youtube_upload_interrupted", { uploadId: id, code: diagnostic.code, stage: diagnostic.stage, status: diagnostic.status, reason: diagnostic.reason });
+      await this.db`update shorts_mvp.youtube_account_uploads set status='interrupted',error_message=${diagnostic.message},updated_at=now() where id=${id} and user_id=${actor.userId} and lease_id=${lease}`;
     } finally {
       await this.db`update shorts_mvp.youtube_account_uploads set lease_id=null,lease_until=null where id=${id} and user_id=${actor.userId} and lease_id=${lease}`;
     }
