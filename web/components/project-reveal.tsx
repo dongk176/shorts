@@ -213,8 +213,8 @@ function Timeline({
           <div
             key={item.id}
             className={`project-reveal-range project-reveal-range-final ${index === visibleCount - 1 ? "is-latest" : ""}`}
-            style={rangeStyle(item.startSeconds, item.endSeconds)}
-            aria-label={copy.shortRange(index + 1, formatTimestamp(item.startSeconds), formatTimestamp(item.endSeconds))}
+            style={rangeStyle(item.initialStartSeconds ?? item.startSeconds, item.initialEndSeconds ?? item.endSeconds)}
+            aria-label={copy.shortRange(index + 1, formatTimestamp(item.initialStartSeconds ?? item.startSeconds), formatTimestamp(item.initialEndSeconds ?? item.endSeconds))}
           />
         ))}
       </div>

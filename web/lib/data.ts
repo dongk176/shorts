@@ -168,6 +168,7 @@ export async function getShortsForJobs(
   if (!jobIds.length) return new Map<string, GeneratedShort[]>();
   const rows = await db`
     select id, job_id, clip_index, start_seconds, end_seconds, duration_seconds,
+      initial_start_seconds, initial_end_seconds,
       selection_raw_start_seconds, selection_raw_end_seconds,
       selection_raw_duration_seconds, selection_candidate_index,
       selection_length_adjustment, selection_repositioned,
@@ -215,6 +216,8 @@ export async function getShortsForJobs(
     const item: GeneratedShort = {
       id: row.id,
       clipIndex: row.clipIndex,
+      initialStartSeconds: row.initialStartSeconds == null ? null : Number(row.initialStartSeconds),
+      initialEndSeconds: row.initialEndSeconds == null ? null : Number(row.initialEndSeconds),
       startSeconds: Number(row.startSeconds),
       endSeconds: Number(row.endSeconds),
       durationSeconds: Number(row.durationSeconds),

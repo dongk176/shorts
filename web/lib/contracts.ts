@@ -199,6 +199,8 @@ export type Plan = {
 };
 
 export type GeneratedShort = {
+  initialStartSeconds?: number | null;
+  initialEndSeconds?: number | null;
   silenceRemoval?: import("./shorts-silence-contract").SilenceRemovalState;
   subtitleTranslation?: import("./subtitle-translation-outcome").SubtitleTranslationOutcome | null;
   id: string;

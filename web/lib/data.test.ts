@@ -184,6 +184,8 @@ describe("generated short details", () => {
         id: "short-a",
         jobId: "job-a",
         clipIndex: 1,
+        initialStartSeconds: "10",
+        initialEndSeconds: "65",
         startSeconds: "12",
         endSeconds: "54",
         durationSeconds: "42",
@@ -228,6 +230,8 @@ describe("generated short details", () => {
       { start: 0, end: 2, color: "#00FF00" },
     ]);
     expect(shorts.get("job-a")?.[0]).toMatchObject({
+      initialStartSeconds: 10,
+      initialEndSeconds: 65,
       selectionRawStartSeconds: 10,
       selectionRawEndSeconds: 58,
       selectionRawDurationSeconds: 48,
