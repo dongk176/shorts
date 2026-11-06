@@ -832,6 +832,11 @@ class WorkerRepository:
                 select s.*, j.channel_thumbnail_url,
                   to_jsonb(j)->>'language_test_release_id' as language_test_release_id,
                   case when to_jsonb(j)->>'language_test_release_id' is not null
+                    or (j.source_type='upload'
+                      and j.template_snapshot#>>'{uploadLanguage,version}'='1'
+                      and j.template_snapshot#>>'{uploadLanguage,releaseId}'=j.initial_editor_release_id::text
+                      and j.template_snapshot#>>'{uploadLanguage,outputLanguage}'=j.output_language
+                      and j.output_language in ('ko','en','ja'))
                   then j.output_language else 'ko' end as comment_output_language,
                   transcript.words as transcript_words,
                   transcript.source_offset_seconds as transcript_source_offset_seconds
@@ -1259,6 +1264,11 @@ class WorkerRepository:
                 select s.*,j.channel_thumbnail_url,a.slot_index,
                   to_jsonb(j)->>'language_test_release_id' as language_test_release_id,
                   case when to_jsonb(j)->>'language_test_release_id' is not null
+                    or (j.source_type='upload'
+                      and j.template_snapshot#>>'{uploadLanguage,version}'='1'
+                      and j.template_snapshot#>>'{uploadLanguage,releaseId}'=j.initial_editor_release_id::text
+                      and j.template_snapshot#>>'{uploadLanguage,outputLanguage}'=j.output_language
+                      and j.output_language in ('ko','en','ja'))
                   then j.output_language else 'ko' end as comment_output_language
                 from shorts_mvp.project_output_attempts a
                 join shorts_mvp.generated_shorts s on s.id=a.generated_short_id
@@ -1942,6 +1952,11 @@ class WorkerRepository:
                 select s.*, j.channel_thumbnail_url,
                   to_jsonb(j)->>'language_test_release_id' as language_test_release_id,
                   case when to_jsonb(j)->>'language_test_release_id' is not null
+                    or (j.source_type='upload'
+                      and j.template_snapshot#>>'{uploadLanguage,version}'='1'
+                      and j.template_snapshot#>>'{uploadLanguage,releaseId}'=j.initial_editor_release_id::text
+                      and j.template_snapshot#>>'{uploadLanguage,outputLanguage}'=j.output_language
+                      and j.output_language in ('ko','en','ja'))
                   then j.output_language else 'ko' end as comment_output_language
                 from shorts_mvp.generated_shorts s
                 join shorts_mvp.video_jobs j on j.id=s.job_id
