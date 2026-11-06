@@ -123,7 +123,15 @@ export class UploadCandidateStack extends cdk.Stack {
       conditions: { StringLike: { "s3:prefix": media } } }));
     taskRole.addToPolicy(new iam.PolicyStatement({ actions: ["s3:GetObject"], resources: [`${bucketArn}/custom-backgrounds/*`] }));
     coordinator.grantInvoke(taskRole);
-    coordinator.grantInvoke(iam.Role.fromRoleArn(this, "WebRole", props.controlPlaneRoleArn));
+    const webRole = iam.Role.fromRoleArn(this, "WebRole", props.controlPlaneRoleArn);
+    if (props.parallel) {
+      // Imported roles share the same IAM namespace across stacks. A default
+      // policy name collides with an older receiver attached to this role.
+      new iam.Policy(this, "ParallelWebCapacityPolicy", {
+        policyName: `${name}-web-invoke`, roles: [webRole],
+        statements: [new iam.PolicyStatement({ actions: ["lambda:InvokeFunction"], resources: [coordinator.functionArn] })],
+      });
+    } else coordinator.grantInvoke(webRole);
     const containers = props.taskTemplate.containerDefinitions;
     if (!Array.isArray(containers) || containers.length !== 2
       || !containers.some(c => c.name === "file-upload-receiver")) throw new Error("Exact receiver task template required");

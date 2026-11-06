@@ -69,6 +69,7 @@ it("parallel receiver pins its release and keeps private scope empty on a separa
   const task = Object.values(template.Resources).find((r: any) => r.Type === "AWS::ECS::TaskDefinition") as any;
   const receiver = task.Properties.ContainerDefinitions.find((c: any) => c.Name === "file-upload-receiver");
   const env = Object.fromEntries(receiver.Environment.map((e: any) => [e.Name, e.Value]));
+  Template.fromJSON(template).hasResourceProperties("AWS::IAM::Policy", {PolicyName: `shorts-upload-candidate-${props.releaseId.slice(0,8)}-web-invoke`});
   expect(env.FILE_UPLOAD_PARALLEL_RELEASE_ID).toBe(props.releaseId);
   expect(env.FILE_UPLOAD_CANDIDATE_RELEASE_ID).toBe("");
   expect(env.FILE_UPLOAD_CANDIDATE_ADMIN_ID).toBe("");
