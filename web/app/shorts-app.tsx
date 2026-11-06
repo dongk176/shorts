@@ -388,6 +388,7 @@ import { CENTER_SNAP_THRESHOLD_PX } from "@/lib/template-editor-snap";
 import { billingSupportsCustomTemplates } from "@/lib/template-entitlements";
 import { SubtitleTranslationNotice } from "@/components/subtitle-translation-notice";
 import { editorScriptForComments } from "@/lib/editor-script";
+import { projectScriptText } from "@/lib/project-script";
 import { currentClientLocale, localizeApiError, localizeAuthError } from "@/lib/i18n/errors";
 import { messagesByLocale } from "@/lib/i18n/messages";
 import { useI18n } from "@/lib/i18n/provider";
@@ -13139,7 +13140,7 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
                 )
               ),
             );
-            const script = item.subtitleSegments.map((segment) => segment.text).join(" ") || "추출된 스크립트가 없습니다.";
+            const script = projectScriptText(item.subtitleSegments, item.editorDocument) || "추출된 스크립트가 없습니다.";
             return (
               <article key={item.id} className="short-result-card">
                 <div className="short-result-heading">
