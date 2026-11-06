@@ -29,6 +29,10 @@ beforeAll(async () => {
   await db.exec(`create trigger admission before insert on shorts_mvp.video_jobs for each row execute function shorts_mvp.enforce_project_target_successor_admission()`);
   await db.exec(await readFile(new URL('../../supabase/migrations/20261105075326_admin_silence_isolated_admission.sql', import.meta.url), 'utf8'));
   await db.exec(await readFile(new URL('../../supabase/migrations/20261106103733_silence_admin_matrix_scope.sql', import.meta.url), 'utf8'));
+  const languageMigration = await readFile(new URL('../../supabase/migrations/202609120001_admin_language_test.sql', import.meta.url), 'utf8');
+  const languageConstraint = languageMigration.slice(languageMigration.indexOf('add constraint video_jobs_language_test_context'), languageMigration.indexOf('create index video_jobs_language_test_active')).trim();
+  await db.exec(`alter table shorts_mvp.video_jobs ${languageConstraint}`);
+  await db.exec(await readFile(new URL('../../supabase/migrations/20261106125630_silence_admin_language_context.sql', import.meta.url), 'utf8'));
   await db.exec(`insert into shorts_mvp.silence_test_releases(id,administrator_id,expires_at,enabled,verified_at,job_queue_arn) values('${release}','${admin}',now()+interval '3 hours',true,now(),'${queue}')`);
 });
 beforeEach(async () => {
@@ -61,6 +65,10 @@ describe('isolated silence admission against the actual production guard', () =>
     await db.exec(`insert into shorts_mvp.video_jobs(user_id,batch_target_release_id,batch_job_definition,batch_job_queue) values('${user}','stable','stable-definition','stable-queue')`);
     await expect(db.exec(`insert into shorts_mvp.video_jobs(user_id) values('${user}')`)).rejects.toThrow('INITIAL_RENDER_RELEASE_HANDOFF');
     expect((await db.query('select admitted_jobs from shorts_mvp.silence_test_releases')).rows).toEqual([{admitted_jobs:0}]);
+  });
+  it('keeps ordinary language hints bound to a language release', async () => {
+    await expect(db.exec(`insert into shorts_mvp.video_jobs(user_id,batch_target_release_id,batch_job_definition,batch_job_queue,source_language_hint)
+      values('${user}','stable','stable-definition','stable-queue','en')`)).rejects.toThrow('video_jobs_language_test_context');
   });
   it('rejects a member spoofing the private marker', async () => { await expect(insert(user)).rejects.toThrow('SILENCE_TEST_UNAVAILABLE'); });
   it.each([
