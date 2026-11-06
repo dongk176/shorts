@@ -827,7 +827,9 @@ async function applyEditorDocument({
       if (!renderSpecV4Requested) {
         throw new HttpError(409, "새 배경·템플릿 편집기를 다시 열어 주세요.", "CUSTOM_TEMPLATE_DESIGN_RENDER_UNAVAILABLE");
       }
-      if (lockedRelease.unifiedTemplateEditingCapable) {
+      if (lockedRelease.silenceTest) {
+        await assertCustomTemplateDesignRenderRelease(tx, lockedRelease.releaseId);
+      } else if (lockedRelease.unifiedTemplateEditingCapable) {
         await assertUnifiedSnsDesignRelease(tx, lockedRelease.releaseId);
       } else if (lockedRelease.languageTest) {
         await assertCustomTemplateDesignRenderRelease(tx, lockedRelease.releaseId, { languageTest: true });

@@ -57,6 +57,14 @@ describe("shared SNS/community editor", () => {
     expect(snapshot.snsContent).toMatchObject({ body: ["Edited body"], title: document.title.text });
     expect(templateConfigSchema.safeParse(snapshot.config).success).toBe(true);
   });
+  it("accepts only a server-authorized isolated silence assignment for a different release", () => {
+    const document = editorDocumentSnapshotSchema.parse(fixture);
+    const target = { ...release, releaseId: "11111111-1111-4111-8111-111111111111", silenceTest: true, renderV4Authorized: true };
+    expect(() => validateUnifiedSnsEdit(document, fixture.template.snapshot, "16:9", target)).not.toThrow();
+    for (const invalid of [{ ...target, silenceTest: false }, { ...target, renderV4Authorized: false }, { ...target, channel: "stable" as const }]) {
+      expect(() => validateUnifiedSnsEdit(document, fixture.template.snapshot, "16:9", invalid)).toThrow();
+    }
+  });
   it.each(["legacy-worker", "missing-capability", "language", "template", "ratio", "community"])("rejects incompatible %s", kind => {
     const document = editorDocumentSnapshotSchema.parse(fixture);
     const target = { ...release };

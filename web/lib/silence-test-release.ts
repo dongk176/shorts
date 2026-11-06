@@ -45,7 +45,10 @@ export async function silenceTestTarget(db: TransactionSql, userId: string | nul
 /** Existing QA output remains pinned after the bounded creation window expires. */
 export async function silenceTestEditorRelease(db: Sql | TransactionSql, userId: string | null, shortId: string): Promise<EditorReleaseAssignment> {
   const [r] = await db`select e.id,e.ui_version,e.document_version,e.font_manifest_sha256,
-      e.git_sha,e.worker_image_digest,q.verification::text as verification_json
+      e.git_sha,e.worker_image_digest,q.verification::text as verification_json,
+      case when j.template_snapshot->>'communityTemplateVersion'='1' then 'community'
+        when j.template_snapshot->>'snsTemplateVersion'='1' then 'sns'
+        when j.custom_template_id is not null then 'custom' else 'standard' end as template_kind
     from shorts_mvp.generated_shorts s join shorts_mvp.video_jobs j on j.id=s.job_id
     join shorts_mvp.app_users u on u.id=j.user_id and u.is_admin
     join shorts_mvp.silence_test_releases q on q.id=j.silence_test_release_id and q.administrator_id=u.id
@@ -61,9 +64,9 @@ export async function silenceTestEditorRelease(db: Sql | TransactionSql, userId:
   try { scope = JSON.parse(r.verificationJson ?? "{}").authorizedTestScope; } catch { scope = null; }
   const unified = scope?.version === 1 && scope.sourceGitSha === r.gitSha
     && scope.workerImageDigest === r.workerImageDigest
-    && Array.isArray(scope.templateKinds) && scope.templateKinds.some((kind: string) =>
-      ["custom", "sns", "community"].includes(kind));
-  return { unifiedTemplateEditingCapable: unified, languageTest: true, channel: "canary", releaseId: r.id, uiVersion: r.uiVersion,
+    && Array.isArray(scope.templateKinds) && scope.templateKinds.includes(r.templateKind)
+    && ["custom", "sns", "community"].includes(r.templateKind);
+  return { silenceTest: true, unifiedTemplateEditingCapable: unified, languageTest: true, channel: "canary", releaseId: r.id, uiVersion: r.uiVersion,
     documentVersion: r.documentVersion, subtitleEditingCapable: true,
     subtitleEditingPublicEnabled: true, renderSpecVersion: 4, captionRenderSpecVersion: 4,
     fontManifestSha256: r.fontManifestSha256, renderV4Authorized: true };
