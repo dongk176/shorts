@@ -33,6 +33,9 @@ beforeAll(async () => {
   const languageConstraint = languageMigration.slice(languageMigration.indexOf('add constraint video_jobs_language_test_context'), languageMigration.indexOf('create index video_jobs_language_test_active')).trim();
   await db.exec(`alter table shorts_mvp.video_jobs ${languageConstraint}`);
   await db.exec(await readFile(new URL('../../supabase/migrations/20261106125630_silence_admin_language_context.sql', import.meta.url), 'utf8'));
+  const publicLanguage = await readFile(new URL('../../supabase/migrations/202609150001_language_public_and_guide.sql', import.meta.url), 'utf8');
+  await db.exec(publicLanguage.slice(publicLanguage.indexOf('create function shorts_mvp.enforce_language_request_binding()')).replace(/commit;\s*$/, ''));
+  await db.exec(await readFile(new URL('../../supabase/migrations/20261106140117_silence_admin_language_request.sql', import.meta.url), 'utf8'));
   await db.exec(`insert into shorts_mvp.silence_test_releases(id,administrator_id,expires_at,enabled,verified_at,job_queue_arn) values('${release}','${admin}',now()+interval '3 hours',true,now(),'${queue}')`);
 });
 beforeEach(async () => {
@@ -57,6 +60,7 @@ describe('isolated silence admission against the actual production guard', () =>
       outputLanguages: ['ko','en','ja'], templateKinds: ['standard','custom','sns','community'] } };
     await db.query('update shorts_mvp.silence_test_releases set verification=$1', [scope]);
     await insert(admin, fields, values);
+    expect((await db.query('select admitted_jobs from shorts_mvp.silence_test_releases')).rows).toEqual([{admitted_jobs:1}]);
     scope.authorizedTestScope.workerImageDigest = 'other';
     await db.query('update shorts_mvp.silence_test_releases set verification=$1', [scope]);
     await expect(insert(admin, fields, values)).rejects.toThrow('SILENCE_TEST_SCOPE_INVALID');
@@ -65,6 +69,10 @@ describe('isolated silence admission against the actual production guard', () =>
     await db.exec(`insert into shorts_mvp.video_jobs(user_id,batch_target_release_id,batch_job_definition,batch_job_queue) values('${user}','stable','stable-definition','stable-queue')`);
     await expect(db.exec(`insert into shorts_mvp.video_jobs(user_id) values('${user}')`)).rejects.toThrow('INITIAL_RENDER_RELEASE_HANDOFF');
     expect((await db.query('select admitted_jobs from shorts_mvp.silence_test_releases')).rows).toEqual([{admitted_jobs:0}]);
+  });
+  it('still rejects an unbound translated ordinary request', async () => {
+    await expect(db.exec(`insert into shorts_mvp.video_jobs(user_id,batch_target_release_id,batch_job_definition,batch_job_queue,output_language)
+      values('${user}','stable','stable-definition','stable-queue','en')`)).rejects.toThrow('LANGUAGE_RELEASE_REQUIRED');
   });
   it('keeps ordinary language hints bound to a language release', async () => {
     await expect(db.exec(`insert into shorts_mvp.video_jobs(user_id,batch_target_release_id,batch_job_definition,batch_job_queue,source_language_hint)
