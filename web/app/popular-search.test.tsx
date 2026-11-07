@@ -275,17 +275,24 @@ describe("language dropdown and custom mobile sheets", () => {
     await page.select("popular-language", "일본어");
     expect(Object.fromEntries(page.requests[4].url.searchParams)).toMatchObject({english:"false",korean:"false",japanese:"true"});
   });
-  it.each(["영어", "전체 언어"])("remembers %s across visits and page languages", async selection => {
+  it.each(["영어", "전체 언어"])("remembers %s on the same page language without overriding another language's default", async selection => {
     const storage=new Map<string,string>();
     const page=await setup(true,"ko",{storage,accountKey:"account-a"});
     await page.select("popular-language",selection);
     await act(async()=>root!.unmount()); root=undefined;
-    const restored=await setup(true,"ja",{storage,accountKey:"account-a"});
+    const restored=await setup(true,"ko",{storage,accountKey:"account-a"});
     expect(restored.requests).toHaveLength(1);
     expect(Object.fromEntries(restored.requests[0].url.searchParams)).toMatchObject({english:String(selection==="영어"),korean:"false",japanese:"false"});
+    await act(async()=>root!.unmount()); root=undefined;
+    const japanese=await setup(true,"ja",{storage,accountKey:"account-a"});
+    expect(japanese.requests[0].url.searchParams.get("japanese")).toBe("true");
+    await japanese.select("popular-language","韓国語");
+    await act(async()=>root!.unmount()); root=undefined;
+    const korean=await setup(true,"ko",{storage,accountKey:"account-a"});
+    expect(Object.fromEntries(korean.requests[0].url.searchParams)).toMatchObject({english:String(selection==="영어"),korean:"false",japanese:"false"});
   });
   it("does not reuse another account's preference and works when browser storage is blocked",async()=>{
-    const storage=new Map([["easycut:popular-language:v1:account-a","en"]]);
+    const storage=new Map([["easycut:popular-language:v2:account-a:ja","en"]]);
     const page=await setup(true,"ja",{storage,accountKey:"account-b",storageUnavailable:true});
     expect(page.requests[0].url.searchParams.get("japanese")).toBe("true");
     await page.select("popular-language","韓国語");
@@ -306,11 +313,11 @@ describe("language dropdown and custom mobile sheets", () => {
     expect(document.body.style.overflow).toBe("hidden");
     await page.click(page.button("적용"));
     expect(page.requests[1].url.searchParams.get("english")).toBe("true");
-    expect(page.storage.get("easycut:popular-language:v1:anonymous")).toBe("en");
+    expect(page.storage.get("easycut:popular-language:v2:anonymous:ko")).toBe("en");
     await page.respond(1);
     await page.click(page.container.querySelector('[aria-label="영어만 · 조건 해제"]')!);
     expect(page.requests[2].url.searchParams.get("english")).toBe("false");
-    expect(page.storage.get("easycut:popular-language:v1:anonymous")).toBe("all");
+    expect(page.storage.get("easycut:popular-language:v2:anonymous:ko")).toBe("all");
   });
   it("discards an uncommitted language selection when the filter sheet is dismissed",async()=>{
     const page=await setup(); await page.click(page.button("필터"));
@@ -321,7 +328,7 @@ describe("language dropdown and custom mobile sheets", () => {
     expect(page.container.querySelector("#popular-draft-language-mobile")?.textContent).toContain("한국어");
   });
   it("keeps restricted visitors on the public list and shows the existing entitlement guide", async () => {
-    const page=await setup(false,"en",{storage:new Map([["easycut:popular-language:v1:anonymous","en"]])});
+    const page=await setup(false,"en",{storage:new Map([["easycut:popular-language:v2:anonymous:en","en"]])});
     expect(Object.fromEntries(page.requests[0].url.searchParams)).toMatchObject({english:"false",korean:"false",japanese:"false"});
     await page.select("popular-language","English");
     expect(page.requests).toHaveLength(1);

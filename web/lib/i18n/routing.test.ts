@@ -12,6 +12,14 @@ describe("site language routes", () => {
     expect(localizedHref("/jp?draft=1#workspace", "ko")).toBe("/?draft=1#workspace");
     expect(localizedHref("/jp", "en")).toBe("/en");
   });
+  it("localizes only the channel page while preserving publishing APIs and OAuth endpoints", () => {
+    expect(localizedHref("/publish/channels", "en")).toBe("/en/publish/channels");
+    expect(localizedHref("/publish/channels", "ja")).toBe("/jp/publish/channels");
+    expect(localizedHref("/auth/sign-in?next=%2Fpublish%2Fchannels", "en")).toBe("/auth/sign-in?next=%2Fen%2Fpublish%2Fchannels");
+    for (const path of ["/publish/youtube/callback", "/api/publish/youtube", "/publish/other"]) {
+      expect(localizedHref(path, "en")).toBe(path);
+    }
+  });
   it("keeps login on the shared endpoint and localizes its return page", () => {
     const login = new URL(localizedHref("/auth/sign-in?provider=google&next=%2Ftemplates%2Fnew%3Fbase%3Dpaper%23design", "ja"), "https://local.invalid");
     expect(login.pathname).toBe("/auth/sign-in");

@@ -7,7 +7,8 @@ export type PopularLanguage = "all" | "ko" | "ja" | "en";
 const isLanguage = (value: unknown): value is PopularLanguage => ["all", "ko", "ja", "en"].includes(value as string);
 
 export function usePopularLanguage(locale: SiteLocale, canUseFilters: boolean, accountKey?: string) {
-  const storageKey = `easycut:popular-language:v1:${accountKey || "anonymous"}`;
+  // A choice on the English page must not become the Japanese page's default.
+  const storageKey = `easycut:popular-language:v2:${accountKey || "anonymous"}:${locale}`;
   const context = `${storageKey}:${locale}:${canUseFilters}`;
   const [preference, setPreference] = useState<{ context: string; value: PopularLanguage } | null>(null);
   const ready = preference?.context === context;

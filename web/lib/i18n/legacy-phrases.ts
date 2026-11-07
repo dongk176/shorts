@@ -1817,6 +1817,32 @@ function translateDynamicText(value: string, locale: Exclude<SiteLocale, "ko">) 
     if (match) return withOriginalWhitespace(value, (locale === "en" ? en : ja)(match));
   }
   const translateKnown = (source: string) => phraseMaps[locale].get(source) || source;
+  const loginIdMatch = /^아이디 ([a-zA-Z0-9._-]+)$/.exec(trimmed);
+  if (loginIdMatch) return withOriginalWhitespace(value,
+    `${locale === "en" ? "Login ID" : "ログインID"}: ${loginIdMatch[1]}`);
+  const editorColorMatch = /^(글자색|텍스트 배경색|배경 색상|자막 일반 글자색|자막 강조 글자색) (.+)$/.exec(trimmed);
+  if (editorColorMatch) {
+    const labels: Record<string, [string, string]> = {
+      글자색: ["Text color", "文字色"],
+      "텍스트 배경색": ["Text background color", "テキスト背景色"],
+      "배경 색상": ["Background color", "背景色"],
+      "자막 일반 글자색": ["Caption text color", "字幕の文字色"],
+      "자막 강조 글자색": ["Caption highlight color", "字幕の強調色"],
+    };
+    return withOriginalWhitespace(value,
+      `${labels[editorColorMatch[1]][locale === "en" ? 0 : 1]}: ${translateKnown(editorColorMatch[2])}`);
+  }
+  const overlayControlMatch = /^(채널명|영상|자막|텍스트|제목|댓글) (크기 조절|현재 크기|크기|레이어 순서)$/.exec(trimmed);
+  if (overlayControlMatch) {
+    const name = translateKnown(overlayControlMatch[1]);
+    const controls: Record<string, [string, string]> = {
+      "크기 조절": [`Resize ${name}`, `${name}のサイズを変更`],
+      "현재 크기": [`Current ${name.toLowerCase()} size`, `${name}の現在のサイズ`],
+      크기: [`${name} size`, `${name}のサイズ`],
+      "레이어 순서": [`${name} layer order`, `${name}の重なり順`],
+    };
+    return withOriginalWhitespace(value, controls[overlayControlMatch[2]][locale === "en" ? 0 : 1]);
+  }
   const monthlyShortsMatch = /^쇼츠 매월 약 ([\d,]+)개$/.exec(trimmed);
   if (monthlyShortsMatch) return withOriginalWhitespace(value, locale === "en"
     ? `About ${monthlyShortsMatch[1]} Shorts per month`

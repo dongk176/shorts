@@ -1,4 +1,4 @@
-import { localizedRedirectPath } from "@/lib/i18n/server";
+import { getRequestLocale, localizedRedirectPath } from "@/lib/i18n/server";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { authProfile } from "@/lib/session";
@@ -7,7 +7,15 @@ import { getAuthenticatedUser } from "@/lib/supabase/server";
 import { SettingsPageContent } from "./settings-page-content";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = createNoIndexMetadata("설정", "Easy Cut 계정 및 약관 설정");
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await getRequestLocale();
+  const copy = {
+    ko: ["설정", "Easy Cut 계정 및 약관 설정"],
+    en: ["Settings", "Manage your EasyCut account and service policies"],
+    ja: ["設定", "EasyCutのアカウントとサービス規約を管理"],
+  }[locale];
+  return createNoIndexMetadata(copy[0], copy[1], locale);
+}
 
 export default async function SettingsPage() {
   const user = await getAuthenticatedUser();

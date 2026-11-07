@@ -10,7 +10,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/session", () => ({
   requireAuthenticatedMvpSession: mocks.session,
 }));
-vi.mock("@/lib/youtube", () => ({
+vi.mock("@/lib/youtube", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/youtube")>(),
   analyzeYoutubeUrl: mocks.analyzeYoutubeUrl,
 }));
 vi.mock("@/lib/youtube-analysis-rate-limit", () => ({
@@ -119,5 +120,16 @@ describe("YouTube analysis authentication", () => {
     });
     expect(mocks.analyzeYoutubeUrl).not.toHaveBeenCalled();
     expect(mocks.createYoutubeAnalysis).not.toHaveBeenCalled();
+  });
+
+  it.each(["https://example.com/qa", "https://youtube.com/watch?v=bad", "http://youtu.be/dQw4w9WgXcQ"])("rejects invalid video links before spending an analysis request: %s", async (youtubeUrl) => {
+    const response = await POST(new Request("http://localhost/api/youtube/analyze", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ youtubeUrl }),
+    }));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ code: "INVALID_YOUTUBE_URL" });
+    expect(mocks.assertYoutubeAnalysisRequestAllowed).not.toHaveBeenCalled();
+    expect(mocks.analyzeYoutubeUrl).not.toHaveBeenCalled();
   });
 });

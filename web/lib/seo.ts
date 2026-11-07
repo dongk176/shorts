@@ -72,9 +72,9 @@ export function createPageMetadata({
   };
 }
 
-export function createNoIndexMetadata(title: string, description: string): Metadata {
+export function createNoIndexMetadata(title: string, description: string, locale: SiteLocale = "ko"): Metadata {
   return {
-    title: { absolute: `${title} | 이지컷` },
+    title: { absolute: `${title} | ${seoBrand[locale]}` },
     description,
     robots: { index: false, follow: false, nocache: true, googleBot: { index: false, follow: false } },
   };

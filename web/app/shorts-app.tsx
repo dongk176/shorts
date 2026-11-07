@@ -11426,7 +11426,7 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
           data-editor-overlay-size-control={scalableOverlaySelection}
           onPointerDown={(event) => event.stopPropagation()}
         >
-          <strong>{scalableOverlayLabel}</strong>
+          <strong>{ui(scalableOverlayLabel)}</strong>
           <div className="editor-overlay-size-slider-track">
             <input
               type="range"
@@ -14325,7 +14325,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
       }
     }
     catch (cause) {
-      const message = userFacingErrorMessage(cause, "영상을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+      const message = userFacingErrorMessage(cause, ui("영상을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요."));
       if (cause instanceof HttpRequestError && cause.status === 400) {
         setAnalysis(null);
         setCreationRestrictionReason(message);

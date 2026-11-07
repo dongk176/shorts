@@ -57,6 +57,7 @@ const eventLabels: Record<string, LocalizedLabel> = {
   reservation_released: { ko: "작업 시간 복구", en: "Job time restored", ja: "処理時間を復元" },
 };
 const productLabels: Record<string, LocalizedLabel> = {
+  managed_account_comp_v1: { ko: "계정 크레딧", en: "Account credit", ja: "アカウントクレジット" },
   creator_support_100min_v2: { ko: "크리에이터 지원 100분", en: "Creator support 100 min", ja: "クリエイター支援100分" },
   creator_support_30min_v1: { ko: "크리에이터 지원 30분", en: "Creator support 30 min", ja: "クリエイター支援30分" },
   feedback_reward_30m: { ko: "원본 영상 처리시간 30분", en: "30 min of source-video processing", ja: "元動画処理時間30分" },

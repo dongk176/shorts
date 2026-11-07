@@ -10,9 +10,14 @@ import { canUseTikTokPublishing } from "@/lib/social-publishing/tiktok/access";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 import { authProfile } from "@/lib/session";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
-import { localizedRedirectPath } from "@/lib/i18n/server";
+import { getRequestLocale, localizedRedirectPath } from "@/lib/i18n/server";
+import { createNoIndexMetadata } from "@/lib/seo";
 export const dynamic = "force-dynamic";
-export const metadata = { robots: { index: false, follow: false } };
+export async function generateMetadata() {
+  const locale = await getRequestLocale();
+  const title = { ko: "채널 연동", en: "Channel connections", ja: "チャンネル連携" }[locale];
+  return createNoIndexMetadata(title, title, locale);
+}
 export default async function Channels() {
   const user = await getAuthenticatedUser();
   if (!user) redirect(await localizedRedirectPath("/auth/sign-in?next=/publish/channels"));

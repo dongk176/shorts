@@ -2,6 +2,14 @@ import { describe, expect, it } from "vitest";
 import { translateLegacyDocumentTitle, translateLegacyText } from "./legacy-phrases";
 
 describe("legacy UI translations", () => {
+  it("localizes managed login IDs and composed editor accessibility labels", () => {
+    expect(translateLegacyText("아이디 qa.en.20261108", "en")).toBe("Login ID: qa.en.20261108");
+    expect(translateLegacyText("글자색 화이트", "en")).toBe("Text color: White");
+    expect(translateLegacyText("텍스트 배경색 차콜", "en")).toBe("Text background color: Charcoal");
+    expect(translateLegacyText("배경 색상 딥 차콜", "ja")).toBe("背景色: ダークチャコール");
+    expect(translateLegacyText("채널명 크기 조절", "en")).toBe("Resize Channel name");
+    expect(translateLegacyText("영상 레이어 순서", "en")).toBe("Video layer order");
+  });
   it("localizes template text controls and keeps authored text in timing labels", () => {
     expect(translateLegacyText("템플릿 추가 텍스트 목록", "en")).toBe("Template text overlay list");
     expect(translateLegacyText("복구하기", "ja")).toBe("やり直す");

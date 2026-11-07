@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import { localizeApiError } from "./errors";
 
 describe("localizeApiError", () => {
+  it("gives actionable video-link instructions in each language", () => {
+    expect(localizeApiError({ code: "INVALID_YOUTUBE_URL" }, 400, "en")).toBe("Enter a valid HTTPS YouTube video link.");
+    expect(localizeApiError({ code: "INVALID_YOUTUBE_URL" }, 400, "ja")).toBe("有効なHTTPSのYouTube動画リンクを入力してください。");
+  });
   it("does not render serialized validation details", () => {
     const detail = '[{"origin":"string","code":"too_small","path":["youtubeUrl"],"message":"Invalid input"}]';
 

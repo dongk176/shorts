@@ -22,6 +22,7 @@ export function localePath(pathname: string) {
 
 export function isLocalizedPage(pathname: string) {
   if (pathname === "/") return true;
+  if (pathname === "/publish/channels") return true;
   if (/^\/[1-9]\d*(?:\/edit\/[^/]+)?\/?$/.test(pathname)) return true;
   return pageRoots.has(pathname.split("/")[1]);
 }
