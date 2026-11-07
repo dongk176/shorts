@@ -251,6 +251,8 @@ export async function queueRankingOperation(
         // Retry saved remote links after acquisition failure. The worker still
         // revalidates access/ranges; missing uploaded files remain unavailable.
         const retryableRemote = source?.status === "failed" && source.remoteUrl && rankingSourceRemote(source.remoteUrl);
+        if (source?.metadata?.durationKnown !== false && source?.metadata?.duration > RANKING_LIMITS.sourceSeconds)
+          throw new HttpError(400, `${clip.rank}위 원본 영상은 3분 이하여야 합니다.`);
         if (source?.metadata?.durationKnown !== false)
           clip.end = rankingSourceEnd(clip.start, clip.end, source?.metadata?.duration);
         if (!source || (source.status !== "ready" && !retryableRemote) || !source.metadata || source.metadata.kind === "audio" ||

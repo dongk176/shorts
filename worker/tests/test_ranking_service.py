@@ -425,7 +425,7 @@ def test_render_owns_pending_link_download_and_actual_range_validation(
         "id": source_id,
         "status": "ready",
         "remote_url": remote["url"],
-        "metadata": {"id": source_id, "duration": 1200, "durationKnown": False, "remote": remote},
+        "metadata": {"id": source_id, "duration": 180, "durationKnown": False, "remote": remote},
     }
     svc = RankingService.__new__(RankingService)
     svc.root, svc.bucket = tmp_path, "test-bucket"

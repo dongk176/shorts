@@ -1,7 +1,8 @@
 import { z } from "zod";
+import { RANKING_LIMITS } from "./ranking-shorts";
 const sourceSchema = z.object({
   id: z.uuid(),
-  duration: z.number().finite().min(0.5).max(1200),
+  duration: z.number().finite().min(0.5).max(RANKING_LIMITS.musicSeconds),
   width: z.number().int().min(1).max(7680),
   height: z.number().int().min(1).max(7680),
   hasAudio: z.boolean(),
@@ -15,7 +16,7 @@ const sourceSchema = z.object({
       videoId: z.string().max(100),
     })
     .optional(),
-});
+}).refine(source => source.kind === "audio" || source.duration <= RANKING_LIMITS.sourceSeconds, "원본 영상은 3분 이하여야 합니다.");
 export function rankingVercelResult(
   project: string,
   operation: string,

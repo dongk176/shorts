@@ -25,8 +25,11 @@ describe("deferred ranking source registration", () => {
     await expect(resolveRankingRender(spec, resolve)).rejects.toThrow("1위 선택 구간");
     expect(resolve).toHaveBeenCalledTimes(1);
   });
-  it.each([NaN, Infinity, 0, 1201])("rejects invalid/over-limit server length %s", async duration => {
+  it.each([NaN, Infinity, 0, 180.01, 181, 1201])("rejects invalid/over-limit server length %s", async duration => {
     await expect(resolveRankingRender(spec, async () => source("server", duration))).rejects.toThrow();
+  });
+  it("accepts a source exactly three minutes long", async () => {
+    await expect(resolveRankingRender(spec, async () => source("server", 180))).resolves.toBeDefined();
   });
   it("requires verified metadata and propagates registration failures", async () => {
     await expect(resolveRankingRender(spec, async () => ({...source("server"), durationKnown: false}))).rejects.toThrow("길이");

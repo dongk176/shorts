@@ -322,7 +322,7 @@ export function RankingStudio({
   const remoteSource = slot.source?.remote && !slot.source.previewReady;
   function updateSourceDuration(duration: number) {
     if (!Number.isFinite(duration) || duration <= 0) return;
-    if (duration > RANKING_LIMITS.sourceSeconds) { setError(ui("20분 이하의 영상을 선택해 주세요.")); return; }
+    if (duration > RANKING_LIMITS.sourceSeconds) { setError(ui("3분 이하의 영상을 선택해 주세요.")); return; }
     if (slot.source && (slot.source.durationKnown === false || slot.source.duration !== duration)) {
       const start = Math.min(slot.start, Math.max(0, duration - .5));
       patch(active, {source: {...slot.source, duration, durationKnown: true}, start, end: Math.min(duration, Math.max(start + .5, slot.end))});
@@ -434,7 +434,7 @@ export function RankingStudio({
   async function inspectLocalFile(file:File,kind:"video"|"audio"):Promise<Omit<RankingSource,"id">>{
     return new Promise((resolve,reject)=>{const media=document.createElement(kind);const url=URL.createObjectURL(file);const timer=window.setTimeout(()=>finish(new Error(ui("파일 정보를 읽지 못했습니다. 다른 파일을 선택해 주세요."))),15000);
       const finish=(error?:Error)=>{media.onloadedmetadata=null;media.onerror=null;window.clearTimeout(timer);const metadata={duration:media.duration,width:kind==="video"?(media as HTMLVideoElement).videoWidth:16,height:kind==="video"?(media as HTMLVideoElement).videoHeight:16,hasAudio:true};media.removeAttribute("src");media.load();URL.revokeObjectURL(url);if(error)reject(error);else resolve(metadata);};
-      media.preload="metadata";media.onloadedmetadata=()=>finish(!Number.isFinite(media.duration)||media.duration<=0||media.duration>RANKING_LIMITS.sourceSeconds?new Error(ui("20분 이하의 영상·음악을 선택해 주세요.")):undefined);media.onerror=()=>finish(new Error(ui("이 파일은 브라우저에서 미리 볼 수 없어요. MP4 영상 또는 MP3·WAV 음악으로 선택해 주세요.")));media.src=url;
+      media.preload="metadata";media.onloadedmetadata=()=>finish(!Number.isFinite(media.duration)||media.duration<=0||media.duration>(kind==="audio"?RANKING_LIMITS.musicSeconds:RANKING_LIMITS.sourceSeconds)?new Error(ui(kind==="audio"?"20분 이하의 음악을 선택해 주세요.":"3분 이하의 영상을 선택해 주세요.")):undefined);media.onerror=()=>finish(new Error(ui("이 파일은 브라우저에서 미리 볼 수 없어요. MP4 영상 또는 MP3·WAV 음악으로 선택해 주세요.")));media.src=url;
     });
   }
   async function uploadMusic(file:File){
@@ -1206,7 +1206,7 @@ export function RankingStudio({
                   <p>
                     {refreshedDesign ? ui("영상 파일을 여기로 끌어다 놓거나, 위에 링크를 붙여넣으세요.") : ui("링크나 파일을 넣으면 바로 재생하며 구간을 고를 수 있어요.")}
                   </p>
-                  <small>{ui("원본 최대 20분 · 250MB")}</small>
+                  <small>{ui("원본 최대 3분 · 250MB")}</small>
                 </div>
               )}
             </div>

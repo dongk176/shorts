@@ -24,7 +24,7 @@ from .errors import InvalidYouTubeUrl
 from .url_validation import validate_youtube_url
 
 MAX_BYTES = 250 * 1024 * 1024
-MAX_SOURCE_SECONDS = 1200
+MAX_SOURCE_SECONDS = 180
 DEADLINE_SECONDS = 540
 ASSETS = Path(__file__).parent / "assets"
 DESIGN = json.loads((ASSETS / "ranking_templates.json").read_text())
@@ -404,8 +404,16 @@ class RankingPipeline:
         )
         videos = [s for s in data.get("streams", []) if s.get("codec_type") == "video"]
         duration = float(data.get("format", {}).get("duration", 0))
-        if not videos or not math.isfinite(duration) or not 0.5 <= duration <= MAX_SOURCE_SECONDS:
-            raise RankingFailure("원본은 0.5초 이상, 20분 이하의 영상이어야 합니다.")
+        if not videos:
+            raise RankingFailure("영상 트랙을 읽지 못했습니다. 다른 영상이나 파일을 선택해 주세요.")
+        if not math.isfinite(duration) or duration < 0.5:
+            raise RankingFailure(
+                "영상 길이를 확인하지 못했습니다. 0.5초 이상의 영상 파일을 선택해 주세요."
+            )
+        if duration > MAX_SOURCE_SECONDS:
+            raise RankingFailure(
+                "원본 영상은 3분 이하여야 합니다. 3분 이하의 영상이나 파일을 선택해 주세요."
+            )
         video = videos[0]
         width, height = int(video.get("width", 0)), int(video.get("height", 0))
         if not 1 <= width <= 7680 or not 1 <= height <= 7680:
@@ -476,6 +484,14 @@ class RankingPipeline:
         info = json.loads(self.run([*base, *metadata_args, "--skip-download", normalized]))
         duration = info.get("duration")
         if (
+            isinstance(duration, int | float)
+            and math.isfinite(duration)
+            and duration > MAX_SOURCE_SECONDS
+        ):
+            raise RankingFailure(
+                "원본 영상은 3분 이하여야 합니다. 3분 이하의 영상이나 파일을 선택해 주세요."
+            )
+        if (
             (
                 duration is not None
                 and (
@@ -492,7 +508,7 @@ class RankingPipeline:
             or all(f.get("has_drm") for f in info["formats"])
         ):
             raise RankingFailure(
-                "로그인·연령·유료·지역 제한이 없는 20분 이하 공개 영상만 사용할 수 있습니다."
+                "로그인·연령·유료·지역 제한이 없는 3분 이하 공개 영상만 사용할 수 있습니다."
             )
         return normalized, platform, base, info
 
@@ -554,7 +570,7 @@ class RankingPipeline:
                     "--max-filesize",
                     str(MAX_BYTES),
                     "--match-filter",
-                    "duration <=? 1200 & !is_live",
+                    "duration <=? 180 & !is_live",
                     "--format",
                     "bv*[height<=1080]+ba/b[height<=1080]/"
                     "bv*[width<=1080][height<=1920]+ba/b[width<=1080][height<=1920]",

@@ -32,6 +32,9 @@ it("requires a playable source belonging to the admitted source", () => {
     durationKnown: true,
   };
   expect(rankingVercelResult(id, id, id, { source })).toEqual({ source });
+  expect(() => rankingVercelResult(id, id, id, { source: { ...source, duration: 180.01 } })).toThrow();
+  expect(rankingVercelResult(id, id, id, { source: { ...source, duration: 180 } })).toBeDefined();
+  expect(rankingVercelResult(id, id, id, { source: { ...source, kind: "audio", duration: 600 } })).toBeDefined();
   expect(() =>
     rankingVercelResult(id, id, id, {
       source: { ...source, id: "f32fe236-a402-4d7a-b1bf-9de9ea5bb5a1" },

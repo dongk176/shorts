@@ -132,7 +132,7 @@ def test_missing_duration_still_uses_bounded_download_before_file_probe(
     assert pipeline.acquire(ranking_project, "https://www.instagram.com/reel/ABCDE/").exists()
     assert len(calls) == 2
     assert "--max-filesize" in calls[1]
-    assert "duration <=? 1200 & !is_live" in calls[1]
+    assert "duration <=? 180 & !is_live" in calls[1]
 
 
 @pytest.mark.parametrize(
@@ -456,7 +456,7 @@ def test_unknown_link_duration_never_falls_back_to_download(ranking_project, mon
     monkeypatch.setattr(pipeline, "run", metadata)
     source = pipeline.register_link(str(uuid4()), "https://www.instagram.com/reel/ABCDEFG123/")
     assert source["durationKnown"] is False
-    assert source["duration"] == 1200
+    assert source["duration"] == 180
     assert len(calls) == 1
     assert "--skip-download" in calls[0]
 
@@ -603,3 +603,30 @@ def test_download_duration_tail_discrepancy_is_clamped(ranking_project, monkeypa
     for start, end in [(6.583, 18.3), (17.4, 17.915), (0, float("nan"))]:
         with pytest.raises(RankingFailure, match="1위"):
             pipeline.validate_render({**spec, "clips": [{**clip, "start": start, "end": end}]})
+
+
+@pytest.mark.parametrize("duration", [180, 180.01])
+def test_three_minute_video_limit_after_file_probe(ranking_project, monkeypatch, duration):
+    pipeline = RankingPipeline(ranking_project)
+    monkeypatch.setattr(pipeline, "run", lambda *args, **kwargs: json.dumps({
+        "format": {"duration": str(duration)},
+        "streams": [{"codec_type": "video", "width": 720, "height": 1280}],
+    }))
+    if duration <= 180:
+        assert pipeline.probe(ranking_project / "clip.mp4")["duration"] == duration
+    else:
+        with pytest.raises(RankingFailure, match="3분"):
+            pipeline.probe(ranking_project / "clip.mp4")
+
+
+def test_long_link_rejected_before_media_download(ranking_project, monkeypatch):
+    pipeline = RankingPipeline(ranking_project)
+    calls = []
+    def metadata(args, timeout=180):
+        calls.append(args)
+        assert "--skip-download" in args
+        return json.dumps({"duration": 181, "formats": [{"has_drm": False}]})
+    monkeypatch.setattr(pipeline, "run", metadata)
+    with pytest.raises(RankingFailure, match="3분"):
+        pipeline.register_link(str(uuid4()), "https://www.youtube.com/watch?v=abcdefghijk")
+    assert len(calls) == 1

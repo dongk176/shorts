@@ -5,7 +5,8 @@ import { defaultRankingStyle, rankingStyleSchema } from "./ranking-templates";
 
 export const RANKING_LIMITS = {
   ranks: 10,
-  sourceSeconds: 20 * 60,
+  sourceSeconds: 3 * 60,
+  musicSeconds: 20 * 60,
   sourceBytes: 250 * 1024 * 1024,
   clipSeconds: 60,
   outputSeconds: 180,
