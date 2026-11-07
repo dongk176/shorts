@@ -17,10 +17,15 @@ const PAGE_PATH = "/projects";
 
 export const dynamic = "force-dynamic";
 
-export const metadata = createNoIndexMetadata(
-  "내 프로젝트",
-  "이지컷에서 만든 쇼츠 프로젝트와 진행 상태를 한곳에서 확인하세요.",
-);
+export async function generateMetadata() {
+  const locale = await getRequestLocale();
+  const copy = {
+    ko: ["내 프로젝트", "이지컷에서 만든 쇼츠 프로젝트와 진행 상태를 한곳에서 확인하세요."],
+    en: ["My projects", "View your EasyCut Shorts projects and their progress in one place"],
+    ja: ["マイプロジェクト", "EasyCutで作成したショート動画プロジェクトと進行状況をまとめて確認"],
+  }[locale];
+  return createNoIndexMetadata(copy[0], copy[1], locale);
+}
 
 export default async function ProjectsPage() {
   const locale = await getRequestLocale();

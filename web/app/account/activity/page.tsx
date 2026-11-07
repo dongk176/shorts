@@ -12,7 +12,15 @@ import { createNoIndexMetadata } from "@/lib/seo";
 import { AccountActivity } from "./account-activity";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = createNoIndexMetadata("내 결제·사용 내역", "Easy Cut 계정 활동 내역");
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await getRequestLocale();
+  const copy = {
+    ko: ["내 결제·사용 내역", "Easy Cut 계정 활동 내역"],
+    en: ["Billing & usage history", "Review your EasyCut payments, credits, and usage"],
+    ja: ["お支払い・利用履歴", "EasyCutのお支払い、クレジット、利用履歴を確認"],
+  }[locale];
+  return createNoIndexMetadata(copy[0], copy[1], locale);
+}
 
 export default async function AccountActivityPage() {
   const ui = createUiText(await getRequestLocale());
