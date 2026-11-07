@@ -61,7 +61,8 @@ export function validateUnifiedSnsEdit(document: ValidatedEditorDocumentSnapshot
   if (original.snsTemplateVersion !== 1 || !isUnifiedSnsSnapshot(snapshot)
     || !release.unifiedTemplateEditingCapable
     || (release.releaseId !== (community ? UNIFIED_COMMUNITY_EDITOR_RELEASE_ID : UNIFIED_SNS_EDITOR_RELEASE_ID)
-      && !(release.silenceTest === true && release.channel === "canary" && release.renderV4Authorized === true))
+      && !((release.silenceTest === true || release.silenceInline === true)
+        && release.channel === "canary" && release.renderV4Authorized === true))
     || document.version !== 3 || document.renderSpec.version !== 4
     || document.template.id !== "white-yellow" || document.template.customTemplateId !== null
     || snapshot?.snsLanguage !== original.snsLanguage

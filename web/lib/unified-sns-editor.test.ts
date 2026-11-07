@@ -65,6 +65,18 @@ describe("shared SNS/community editor", () => {
       expect(() => validateUnifiedSnsEdit(document, fixture.template.snapshot, "16:9", invalid)).toThrow();
     }
   });
+  it.each([false, true])("accepts pinned parallel silence edits while preserving social identity (community=%s)", community => {
+    const document = editorDocumentSnapshotSchema.parse(fixture);
+    const original = { ...fixture.template.snapshot, ...(community ? { communityTemplateVersion: 1 } : {}) };
+    document.template.snapshot = { ...original };
+    const target = { ...release, releaseId: "11111111-1111-4111-8111-111111111111", silenceInline: true, renderV4Authorized: true };
+    expect(() => validateUnifiedSnsEdit(document, original, "16:9", target)).not.toThrow();
+    for (const invalid of [{ ...target, silenceInline: false }, { ...target, renderV4Authorized: false }, { ...target, channel: "stable" as const }, { ...target, unifiedTemplateEditingCapable: false }]) {
+      expect(() => validateUnifiedSnsEdit(document, original, "16:9", invalid)).toThrow();
+    }
+    document.template.snapshot!.snsLanguage = "ja";
+    expect(() => validateUnifiedSnsEdit(document, original, "16:9", target)).toThrow();
+  });
   it.each(["legacy-worker", "missing-capability", "language", "template", "ratio", "community"])("rejects incompatible %s", kind => {
     const document = editorDocumentSnapshotSchema.parse(fixture);
     const target = { ...release };
