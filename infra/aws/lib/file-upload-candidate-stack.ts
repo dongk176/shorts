@@ -91,7 +91,7 @@ export class UploadCandidateStack extends cdk.Stack {
       code: lambda.Code.fromAsset(path.join(__dirname, "../lambda/file_upload_capacity")),
       timeout: cdk.Duration.seconds(30), memorySize: 256, reservedConcurrentExecutions: 1,
       environment: { ECS_CLUSTER: clusterName, ECS_SERVICE: name, TARGET_GROUP_ARN: group.ref,
-        CAPACITY_TABLE: table.tableName, MAX_CAPACITY: "1", WARM_SECONDS: "0",
+        CAPACITY_TABLE: table.tableName, MAX_CAPACITY: props.parallel ? "20" : "1", WARM_SECONDS: "0",
         UPLOAD_WINDOW_SECONDS: "900", CLAIMED_LEASE_SECONDS: "3600" },
     });
     table.grantReadWriteData(coordinator);

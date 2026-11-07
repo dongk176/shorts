@@ -80,5 +80,8 @@ it("parallel receiver pins its release and keeps private scope empty on a separa
   expect(JSON.stringify(template)).toContain(`/silence-upload/${props.releaseId}/*`);
   expect(JSON.stringify(template)).not.toContain(`/admin-upload/${props.releaseId}`);
   Template.fromJSON(template).hasResourceProperties("AWS::ECS::Service", {DesiredCount:0});
+  Template.fromJSON(template).hasResourceProperties("AWS::Lambda::Function", {
+    Environment: {Variables: {MAX_CAPACITY: "20", WARM_SECONDS: "0"}},
+  });
   Template.fromJSON(template).hasResourceProperties("AWS::Events::Rule", {State:"ENABLED", ScheduleExpression:"rate(1 minute)"});
 });
