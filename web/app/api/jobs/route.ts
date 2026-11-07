@@ -525,7 +525,7 @@ export async function POST(request: Request) {
           ${initialEditorReleaseId},
           ${initialRenderSpecVersion}, ${initialCaptionRenderSpecVersion},
           ${selectedDurationSeconds},${usageSeconds},
-          ${languageTest ? input.sourceLanguage || "auto" : null},${silenceTest || silenceInline ? null : languageTest?.releaseId || null},${input.midform ? tx.json(input.midform) : null},${midform?.releaseId || null},${silenceTest?.releaseId || null},${silenceInline?.releaseId || null}
+          ${languageTest || silenceInline ? input.sourceLanguage || "auto" : null},${silenceTest || silenceInline ? null : languageTest?.releaseId || null},${input.midform ? tx.json(input.midform) : null},${midform?.releaseId || null},${silenceTest?.releaseId || null},${silenceInline?.releaseId || null}
         )
         returning project_number
       `;

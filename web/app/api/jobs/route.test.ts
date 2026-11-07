@@ -1,6 +1,6 @@
 vi.mock("server-only", () => ({}));
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ db: vi.fn(), session: vi.fn(), billing: vi.fn(), usage: vi.fn(), wake: vi.fn() }));
+const mocks = vi.hoisted(() => ({ db: vi.fn(), session: vi.fn(), billing: vi.fn(), usage: vi.fn(), wake: vi.fn(), parallel: vi.fn() }));
 vi.mock("@/lib/custom-template-design", () => ({ assertCustomTemplateDesignRenderRelease: async () => undefined }));
 vi.mock("@/lib/db", () => ({ getDb: mocks.db }));
 vi.mock("@/lib/session", () => ({ requireAuthenticatedMvpSession: mocks.session }));
@@ -16,6 +16,7 @@ vi.mock("@/lib/template-execution-snapshot", () => ({ resolveTemplateExecutionSn
 }) }));
 vi.mock("@/lib/initial-render-release", () => ({ resolveInitialRenderRelease: async () => null }));
 vi.mock("@/lib/job-dispatch", () => ({ projectDispatchTargetForFeatures: () => ({ targetKey: "legacy_project", releaseId: "ordinary", jobDefinitionArn: "ordinary", jobQueueArn: "ordinary" }) }));
+vi.mock("@/lib/shorts-silence-parallel", () => ({ parallelSilenceTarget: mocks.parallel }));
 import { POST } from "./route";
 
 const user = "6f856acc-5b6a-4f62-9971-d7feb1f2a624";
@@ -34,7 +35,7 @@ const registry = { version: 1, environment: "production", lanes: Object.fromEntr
 let publicPercent = 100;
 let admin = false;
 let publicSilence = false;
-const jobs: { id: string; user: string; request: string; projectNumber: number; output: unknown; release: unknown; silenceRelease: unknown; snapshot: unknown }[] = [];
+const jobs: { id: string; user: string; request: string; projectNumber: number; output: unknown; release: unknown; silenceRelease: unknown; sourceLanguage: unknown; inlineRelease: unknown; snapshot: unknown }[] = [];
 const reservations: unknown[][] = [];
 const locks = new Map<string, Promise<void>>();
 const request = (change: Record<string, unknown> = {}) => new Request("https://www.easycut.co.kr/api/jobs", {
@@ -46,7 +47,7 @@ const request = (change: Record<string, unknown> = {}) => new Request("https://w
 
 afterEach(() => vi.unstubAllEnvs());
 beforeEach(() => {
-  vi.clearAllMocks(); publicPercent = 100; admin = false; publicSilence = false; jobs.length = 0; reservations.length = 0; locks.clear();
+  vi.clearAllMocks(); mocks.parallel.mockResolvedValue(null); publicPercent = 100; admin = false; publicSilence = false; jobs.length = 0; reservations.length = 0; locks.clear();
   mocks.session.mockResolvedValue({ userId: user, id: user, isAdmin: false });
   mocks.billing.mockResolvedValue({ canCreateJobs: true, maxActiveJobs: 1, retentionDays: 30 });
   mocks.usage.mockResolvedValue({ enforcementEnabled: true, remainingSeconds: 3600 });
@@ -79,7 +80,7 @@ beforeEach(() => {
       }];
       if (q.includes("with scoped_jobs")) return [{ active: jobs.filter((j) => j.user === owner).length, restrictedContentCooldownMinutes: 0 }];
       if (q.includes("insert into shorts_mvp.video_jobs")) {
-        const job = { id: v[0] as string, user: v[2] as string, request: v[3] as string, projectNumber: jobs.length + 1, output: v[19], release: v.at(-5), silenceRelease: v.at(-2), snapshot: v[15] };
+        const job = { id: v[0] as string, user: v[2] as string, request: v[3] as string, projectNumber: jobs.length + 1, output: v[19], release: v.at(-5), silenceRelease: v.at(-2), sourceLanguage: v.at(-6), inlineRelease: v.at(-1), snapshot: v[15] };
         jobs.push(job); return [{ projectNumber: job.projectNumber }];
       }
       if (q.includes("insert into shorts_mvp.usage_reservations")) { reservations.push(v); return [{ id: releaseId }]; }
@@ -95,6 +96,19 @@ beforeEach(() => {
 });
 
 describe("language job admission through the actual POST handler", () => {
+  it.each([undefined, "auto", "ko", "en", "ja"])("pins public inline silence source language %s, including the default Korean request", async sourceLanguage => {
+    publicSilence = true;
+    vi.stubEnv("ADMIN_SHORTS_SILENCE_ENABLED", "true");
+    vi.stubEnv("RANKING_VERCEL_SNAPSHOT_ID", "snapshot");
+    mocks.parallel.mockResolvedValue({ releaseId, target: { targetKey: "legacy_project", releaseId: "inline", jobDefinitionArn: "inline", jobQueueArn: "ordinary" } });
+    const body = { requestId: crypto.randomUUID(), languageTest: false, sourceLanguage, outputLanguage: "ko", silenceRemoval: { version: 1, preset: "aggressive" } };
+    expect((await POST(request(body))).status).toBe(202);
+    expect((await POST(request(body))).status).toBe(200);
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({ sourceLanguage: sourceLanguage ?? "auto", inlineRelease: releaseId, release: null });
+    expect(reservations).toHaveLength(1);
+  });
+
   it.each(["en", "ja"].flatMap(outputLanguage => [true, false].map(isAdmin => ({ outputLanguage, isAdmin }))))("pins only administrator $outputLanguage silence jobs to the private candidate ($isAdmin)", async ({ outputLanguage, isAdmin }) => {
     admin = isAdmin; publicSilence = true;
     mocks.session.mockResolvedValue({ userId: user, id: user, isAdmin });
