@@ -43,6 +43,14 @@ export function PurchaseTermsV2Document({
         ? archived ? purchaseTermsV8Translations : currentPurchaseTermsTranslations
         : version === 7 ? purchaseTermsV7Translations : undefined}
     >
+      {!archived && version === 8 && (
+        <LegalSection title="결제사업자별 적용 범위 및 Paddle 결제 조건">
+          <p>결제 확인 화면에 표시된 사업자의 조건이 적용됩니다. 아래 제3조·제5조·제6조 및 제9조의 더페이원 결제·카드 조건은 ThePayOne 주문에만, 제11조의 토스 자동결제 조건은 Toss 주문에만 적용됩니다. 서로 다른 사업자의 주문과 결제수단은 혼합하거나 이전하지 않습니다.</p>
+          <p>Paddle의 EasyCut Pro는 매월, Starter·Expert 패키지는 선택한 3·6·12개월마다 자동갱신되는 구독입니다. 최초 구매와 갱신 시 선택 기간의 총액을 선결제하며 해지 전까지 같은 주기로 결제합니다. 월 환산가는 비교용이며 매월 분할 청구하는 금액이 아닙니다. 결제창에서 통화, 세금, 총 결제금액, 결제 주기와 다음 정기결제 조건을 확인해 주세요. 처리시간은 매월 갱신되고 이월되지 않으며 전 기간의 이용량을 한 번에 지급하지 않습니다.</p>
+          <p>Paddle의 다음 갱신을 중단하려면 갱신일 전에 설정의 결제 관리에서 해지를 확정해야 합니다. 정상 결제된 활성 구독은 현재 결제 기간이 끝날 때 종료되며 그때까지 이용권과 월별 이용량 제공을 유지합니다. 해지만으로 이미 결제된 금액이 자동 환불되지는 않으며, 환불 신청은 취소 및 환불 정책과 관계 법령에 따라 별도로 검토합니다. 연체 또는 일시중지 상태의 구독은 Paddle 고객 포털에서 해지 시 즉시 종료될 수 있습니다.</p>
+          <p>Paddle은 같은 계약 기간의 상위 등급으로 변경할 때 표시된 잔여 기간 비례 차액이 결제된 후 적용합니다. 계약 기간 변경과 하위·동일 등급 변경은 다음 갱신에 예약하며 예약 자체로 결제하지 않습니다. 변경 확인 화면의 금액, 적용일과 다음 결제금액을 확인해 주세요. 더페이원의 패키지 1회 구매 제한과 Pro 결제 취소 후 전환 조건은 Paddle에 적용되지 않습니다. Paddle 결제 및 정기결제 정보는 Paddle이 처리합니다.</p>
+        </LegalSection>
+      )}
       {archived && (
         <p className="rounded-2xl border border-white/10 bg-white/[.035] p-4 text-sm leading-7 text-neutral-300">
           이 페이지는 구매약관 v{version} 보관본입니다. 현재 약관은{" "}
