@@ -35,3 +35,19 @@ export const sourceRangeGuideSteps = [
     targetSelector: null,
   },
 ] as const;
+
+export const silenceRemovalGuideStep = {
+  id: "silence-removal",
+  eyebrow: "무음구간 삭제",
+  title: "무음구간 삭제",
+  description: "말 사이의 긴 쉼을 줄여, 영상의 흐름을 빠르게 만들어요.",
+  targetSelector: '[data-source-range-guide="silence-removal"]',
+  placement: "above" as const,
+  scrollBlock: "center" as const,
+};
+
+export function getSourceRangeGuideSteps(includeSilenceRemoval: boolean) {
+  return includeSilenceRemoval
+    ? [...sourceRangeGuideSteps.slice(0, -1), silenceRemovalGuideStep, sourceRangeGuideSteps[sourceRangeGuideSteps.length - 1]]
+    : sourceRangeGuideSteps;
+}

@@ -4,6 +4,7 @@ import { translateLegacyText } from "./i18n/legacy-phrases";
 import {
   SOURCE_RANGE_GUIDE_STORAGE_KEY,
   sourceRangeGuideSteps,
+  getSourceRangeGuideSteps,
 } from "./source-range-guide";
 
 const shortsAppSource = readFileSync(
@@ -16,6 +17,16 @@ const sourceRangeGuideSource = readFileSync(
 );
 
 describe("source range guide", () => {
+  it("includes the translated silence step only when the choice is available", () => {
+    expect(getSourceRangeGuideSteps(false)).toBe(sourceRangeGuideSteps);
+    const steps = getSourceRangeGuideSteps(true);
+    expect(steps.map(step => step.id)).toEqual(["start", "end", "usage", "silence-removal", "complete"]);
+    for (const locale of ["en", "ja"] as const) {
+      for (const text of [steps[3].eyebrow, steps[3].title, steps[3].description]) {
+        expect(translateLegacyText(text, locale)).not.toMatch(/[가-힣]/);
+      }
+    }
+  });
   it("uses the approved concise guide copy in all three languages", () => {
     expect(sourceRangeGuideSteps[2].description).toBe("원본 영상 전체가 아니라 선택한 구간의 길이만큼 크레딧이 차감됩니다. 예상 쇼츠 수도 선택한 길이를 기준으로 계산돼요.");
     expect(sourceRangeGuideSteps[3].eyebrow).toBe("구간 선택 완료");

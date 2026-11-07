@@ -655,6 +655,7 @@ const phrases: readonly Phrase[] = [
   ["편집 사이드바 닫기", "Close editing sidebar", "編集サイドバーを閉じる"],
   ["편집 사이드바 열기", "Open editing sidebar", "編集サイドバーを開く"],
   ["구간 선택 가이드 닫기", "Close range guide", "区間ガイドを閉じる"],
+  ["말 사이의 긴 쉼을 줄여, 영상의 흐름을 빠르게 만들어요.", "Trim long pauses to keep your video moving.", "会話の間の長い無音を減らし、テンポのよい動画に。"],
   ["구간 선택 · 시작", "Video range · Start", "区間選択 · 開始"],
   ["시작점을 정하세요", "Choose the start point", "開始位置を選びましょう"],
   ["왼쪽 손잡이를 움직여 분석을 시작할 지점을 정하세요. 아래 시작 시각에 직접 입력할 수도 있어요.", "Drag the left handle to choose where analysis starts. You can also enter the start time below.", "左のハンドルを動かして分析の開始位置を選びます。下の開始時刻に直接入力することもできます。"],

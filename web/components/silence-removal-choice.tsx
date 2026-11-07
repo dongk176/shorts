@@ -56,7 +56,7 @@ export function SilenceRemovalChoice({ enabled, onChange, disabled = false, unav
   }, [open, mounted]);
 
   return <>
-    <button type="button" className={`${styles.option} ${active ? styles.selected : ""}`} disabled={disabled}
+    <button data-source-range-guide="silence-removal" type="button" className={`${styles.option} ${active ? styles.selected : ""}`} disabled={disabled}
       aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}>
       <span className={styles.optionIcon} aria-hidden="true">{[12, 23, 15, 5, 5, 18, 26, 12].map((height, i) => <i key={i} style={{ height }} />)}</span>
       <span className={styles.optionCopy}><strong>{ui("무음구간 삭제")}</strong><span>{unavailableReason ?? ui("긴 쉼을 줄여, 더 빠르게 이어지는 쇼츠")}</span></span>

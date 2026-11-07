@@ -14945,6 +14945,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
         onClose={closeLongSourceNotice}
       />
       <SourceRangeGuide key={selectedSource?.key ?? "no-source"}
+        includeSilenceRemoval={Boolean(state?.capabilities.shortsSilenceRemoval)}
         enabled={Boolean(
           sourceRangeSelectionEnabled
           && selectedSource?.creationAllowed === true

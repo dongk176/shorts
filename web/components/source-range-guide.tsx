@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FeatureGuideOverlay } from "@/components/feature-guide-overlay";
 import {
   SOURCE_RANGE_GUIDE_STORAGE_KEY,
   sourceRangeGuideSteps,
+  getSourceRangeGuideSteps,
 } from "@/lib/source-range-guide";
 
 const SCROLL_SETTLE_MS = 160;
@@ -15,10 +16,13 @@ const INITIAL_SCROLL_GRACE_MS = 220;
 export function SourceRangeGuide({
   enabled,
   onComplete,
+  includeSilenceRemoval = false,
 }: {
   enabled: boolean;
+  includeSilenceRemoval?: boolean;
   onComplete?: () => void;
 }) {
+  const steps = useMemo(() => getSourceRangeGuideSteps(includeSilenceRemoval), [includeSilenceRemoval]);
   const [guideReady, setGuideReady] = useState(false);
   const completionReportedRef = useRef(false);
   const reportComplete = useCallback(() => {
@@ -126,7 +130,7 @@ export function SourceRangeGuide({
   return (
     <FeatureGuideOverlay
       enabled={enabled && guideReady}
-      steps={sourceRangeGuideSteps}
+      steps={steps}
       storageKey={SOURCE_RANGE_GUIDE_STORAGE_KEY}
       closeAriaLabel="구간 선택 가이드 닫기"
       smoothTransitions
