@@ -2,6 +2,8 @@ import Link from "@/lib/i18n/navigation";
 import { LegalDocument, LegalSection } from "@/components/legal-document";
 import { purchaseTermsV7Translations, purchaseTermsV8Translations } from "@/lib/i18n/legal-translations";
 
+import { currentPurchaseTermsTranslations } from "@/lib/i18n/current-purchase-terms";
+
 const accentLink = "font-bold text-[#ff8c7c] underline underline-offset-4";
 
 export function PurchaseTermsV2Document({
@@ -38,7 +40,7 @@ export function PurchaseTermsV2Document({
           ? "2026년 7월 28일 개정 · 구매약관 v3"
           : "2026년 7월 26일 개정 · 구매약관 v2"}
       translations={version === 8
-        ? purchaseTermsV8Translations
+        ? archived ? purchaseTermsV8Translations : currentPurchaseTermsTranslations
         : version === 7 ? purchaseTermsV7Translations : undefined}
     >
       {archived && (

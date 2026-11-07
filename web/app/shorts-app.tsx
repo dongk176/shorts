@@ -324,6 +324,7 @@ import {
   editorInitialRenderSpecLayerFingerprints,
   preserveUnchangedInitialRenderSpecLayers,
   seedEditorDocumentInitialRenderSpec,
+  initialEditorRenderSpecMatchesDocument,
   seedEditorOverlayLayoutFromInitialRenderSpec,
   shouldPreserveInitialEditorRenderSpec,
   type EditorInitialRenderSpecLayerFingerprints,
@@ -5286,6 +5287,7 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
     if (
       initialRenderSpec?.version === EDITOR_RENDER_SPEC_V4_VERSION
       && initialRenderPreviewBaselineRef.current === semanticFingerprint
+      && initialEditorRenderSpecMatchesDocument(editorSemanticDocumentSnapshot, initialRenderSpec)
       && !editorDraftHasSavedRef.current
     ) {
       setLiveRenderSpecV4((current) => (

@@ -58,7 +58,7 @@ function v4Spec(
     comments: document.renderSpec.comments,
     video: document.renderSpec.video,
     title: {
-      visible: false,
+      visible: document.overlays.visible.title,
       lines: [document.title.text],
       centerX: 540,
       centerY: 180,
@@ -74,7 +74,7 @@ function v4Spec(
     },
     channel: {
       ...document.renderSpec.channel,
-      visible: false,
+      visible: document.overlays.visible.channel,
       font,
     },
     textOverlays: [],
@@ -119,10 +119,7 @@ describe("initial editor render specification", () => {
 
   it("preserves only an exact v4 spec with an unchanged finalized document", () => {
     const legacy = createEditorDocumentSnapshotV3(input());
-    const v4 = {
-      ...legacy.renderSpec,
-      version: 4 as const,
-    } as never;
+    const v4 = v4Spec(legacy);
     const document = seedEditorDocumentInitialRenderSpec(legacy, v4);
     const baseline = editorDocumentSemanticFingerprint(document);
     expect(shouldPreserveInitialEditorRenderSpec(
@@ -320,6 +317,8 @@ describe("initial editor render specification", () => {
   it("seeds hidden initial layers and their exact font identities", () => {
     const document = createEditorDocumentSnapshotV3(input());
     const initial = v4Spec(document);
+    initial.title.visible = false;
+    initial.channel.visible = false;
     initial.video = { offsetX: 12, offsetY: -18, scale: 1.15 };
     initial.channel.offsetX = -28;
     initial.channel.offsetY = 31;

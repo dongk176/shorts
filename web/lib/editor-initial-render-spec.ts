@@ -14,6 +14,8 @@ import {
   type EditorSubtitleLayout,
 } from "@/lib/editor-render-spec";
 
+import { wrapPreviewTitle } from "@/lib/title-preview";
+
 export type EditorInitialRenderSpecLayerFingerprints = {
   title: string;
   titleGeometry: string;
@@ -62,11 +64,35 @@ export function seedEditorOverlayLayoutFromInitialRenderSpec(
   };
 }
 
+/** Initial worker output can predate the editor's content-font normalization.
+ * Never attach that stale font selection to the normalized semantic document.
+ * Its canonical v3 spec remains usable while the exact v4 spec is compiling. */
+export function initialEditorRenderSpecMatchesDocument(
+  document: EditorDocumentSnapshot,
+  spec: EditorRenderSpec | null | undefined,
+): boolean {
+  if (spec?.version !== EDITOR_RENDER_SPEC_V4_VERSION) return true;
+  const lines = wrapPreviewTitle(document.title.text);
+  return spec.title.lines.length === lines.length
+    && spec.title.lines.every((line, index) => line === lines[index])
+    && spec.title.visible === document.overlays.visible.title
+    && spec.channel.visible === document.overlays.visible.channel
+    && (!document.subtitles.enabled || Boolean(spec.subtitles))
+    && spec.title.font.fontId === document.overlays.fonts.title
+    && spec.channel.font.fontId === document.overlays.fonts.channel
+    && spec.textOverlays.length === document.overlays.textOverlays.length
+    && spec.textOverlays.every((overlay, index) => (
+      overlay.id === document.overlays.textOverlays[index]?.id
+      && overlay.font.fontId === document.overlays.textOverlays[index]?.fontId
+    ));
+}
+
 export function seedEditorDocumentInitialRenderSpec(
   document: EditorDocumentSnapshot,
   initialRenderSpec: EditorRenderSpec | null | undefined,
 ): EditorDocumentSnapshot {
-  if (document.version !== 3 || !initialRenderSpec) return document;
+  if (document.version !== 3 || !initialRenderSpec
+    || !initialEditorRenderSpecMatchesDocument(document, initialRenderSpec)) return document;
   return {
     ...document,
     renderSpec: structuredClone(initialRenderSpec),
@@ -245,6 +271,7 @@ export function preserveUnchangedInitialRenderSpecLayers(
       ? structuredClone(initialRenderSpec.title)
       : preservedTitle || compiled.title,
     channel: current.channel === baseline.channel
+      && initialRenderSpec.channel.font.fontId === document.overlays.fonts.channel
       ? structuredClone(initialRenderSpec.channel)
       : compiled.channel,
   };
@@ -264,6 +291,7 @@ export function shouldPreserveInitialEditorRenderSpec(
       || JSON.stringify(normalizeEditorSubtitleLayout(subtitleLayout))
         === JSON.stringify(editorSubtitleLayoutFromRenderSpec(document.renderSpec)))
     && initialRenderTitleMatchesDocument(document, initialRenderSpec)
+    && initialEditorRenderSpecMatchesDocument(document, initialRenderSpec)
     && JSON.stringify(document.renderSpec) === JSON.stringify(initialRenderSpec)
     && baselineFingerprint !== null
     && baselineFingerprint === editorDocumentSemanticFingerprint(document),
