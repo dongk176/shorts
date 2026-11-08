@@ -70,7 +70,11 @@ describe("project content language", () => {
       expect(contentTitleFont(title, "noto-sans-kr", editorSupportsJapaneseFont(old))).toBe("noto-sans-kr");
     }
     expect(contentTitleFont(title, "noto-sans-kr", true)).toBe("noto-sans-jp");
-    expect(contentTitleFont("한국어 제목", "pretendard", true)).toBe("noto-sans-jp");
+    expect(contentTitleFont(title, "noto-serif-kr", true)).toBe("noto-sans-jp");
+    expect(contentTitleFont(title, "pretendard", true)).toBe("noto-sans-jp");
+    expect(contentTitleFont(title, "noto-sans-jp", true)).toBe("noto-sans-jp");
+    expect(contentTitleFont(title, "noto-serif-kr", true, true)).toBe("noto-sans-jp");
+    expect(contentTitleFont("한국어 제목", "pretendard", true)).toBe("pretendard");
     expect(commentFontFamily("意外と奥が深いね", true)).toContain("Editor Noto Sans JP");
     expect(commentFontFamily("意外と奥が深いね", false)).toBeUndefined();
     expect(commentFontFamily("한국어 댓글", true)).toBeUndefined();

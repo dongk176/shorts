@@ -1,7 +1,7 @@
 import { manualRenderVersion } from "@/lib/shorts-silence-allowance";
 import { assertUnifiedSnsDesignRelease, validateUnifiedSnsEdit } from "@/lib/unified-sns-editor-validation";
 import { isUnifiedSnsSnapshot } from "@/lib/unified-sns-editor";
-import { contentTextFont, hasUnsupportedCjkFont } from "@/lib/content-language";
+import { supportsCjkText, hasUnsupportedCjkFont } from "@/lib/content-language";
 import { COMMUNITY_EDITOR_RELEASE_ID } from "@/lib/community-template-contract";
 import { SNS_EDITOR_RELEASE_ID, snsEditedSnapshotSchema, type SnsLanguage } from "@/lib/sns-editor-contract";
 import type { VideoAspectRatio } from "@/lib/contracts";
@@ -234,7 +234,7 @@ async function applyEditorDocument({
     );
   }
   if (hasUnsupportedCjkFont(requestedDocument)) {
-    throw new HttpError(400, "일본어·한자에는 Noto 글꼴을 선택해 주세요.", "EDITOR_FONT_GLYPHS_UNSUPPORTED");
+    throw new HttpError(400, "선택한 글꼴이 일부 일본어·한자를 지원하지 않습니다.", "EDITOR_FONT_GLYPHS_UNSUPPORTED");
   }
   const fontIds = editorDocumentFontIds(requestedDocument);
   const candidateOnlyFontRequested = fontIds.some((fontId) => fontId != null && !isStableEditorFontId(fontId));
@@ -427,8 +427,8 @@ async function applyEditorDocument({
     JSON.stringify(cueEdits),
   ].join(" ");
   if (requestedDocument.subtitles.enabled && subtitleFont
-    && contentTextFont(subtitleCopy, subtitleFont, true) !== subtitleFont) {
-    throw new HttpError(400, "일본어·한자 자막에는 Noto 글꼴을 선택해 주세요.", "EDITOR_FONT_GLYPHS_UNSUPPORTED");
+    && !supportsCjkText(subtitleCopy, subtitleFont, true)) {
+    throw new HttpError(400, "선택한 자막 글꼴이 일부 일본어·한자를 지원하지 않습니다.", "EDITOR_FONT_GLYPHS_UNSUPPORTED");
   }
   if (existing.subtitleTemplateId && !captionRenderSpec && requestedDocument.subtitles.enabled) {
     throw new HttpError(

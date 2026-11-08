@@ -215,7 +215,7 @@ import {
   COMMENT_LIKE_COUNT_MIN,
   randomCommentLikeCount,
 } from "@/lib/comment-overlay";
-import { commentActionLabels, commentAgeLabel, commentFontFamily, contentLanguages, contentTextFont, contentTitleFont } from "@/lib/content-language";
+import { commentActionLabels, commentAgeLabel, commentFontFamily, contentLanguages, contentTextFont, contentTitleFont, supportsCjkText } from "@/lib/content-language";
 import { outputLanguageName } from "@/lib/i18n/product";
 import { selectRandomFallbackCommentTexts } from "@/lib/fallback-comments";
 import {
@@ -5150,7 +5150,8 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
       })),
       fonts: {
         ...overlayLayout.fonts,
-        title: contentTitleFont(title, overlayLayout.fonts?.title || DEFAULT_EDITOR_FONT_ID, japaneseFontEnabled),
+        title: contentTitleFont(title, overlayLayout.fonts?.title || DEFAULT_EDITOR_FONT_ID, japaneseFontEnabled,
+          templateId === "comment-capture" && !captionCompositionRect(captionTemplateEditorSpec, "comment")),
         channel: contentTextFont(channel, overlayLayout.fonts?.channel || DEFAULT_EDITOR_FONT_ID, japaneseFontEnabled),
       },
     },
@@ -5210,6 +5211,7 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
     editTimeline?.timelineEndSeconds,
     editTimeline?.timelineStartSeconds,
     japaneseFontEnabled,
+    captionTemplateEditorSpec,
     editorRelease.documentVersion,
     adminSubtitleLayoutEnabled,
     adminSubtitleEditingEnabled,
@@ -10505,7 +10507,7 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
     onInteractionStart={beginEditorOverlayHistoryInteraction}
     onInteractionEnd={finishEditorOverlayHistoryInteraction}
     onDelete={deleteSelectedEditorOverlay}
-    fontOptions={availableEditorFontOptions.filter((font) => contentTextFont(selectedTextOverlay?.text || "", font.id, japaneseFontEnabled) === font.id)}
+    fontOptions={availableEditorFontOptions.filter((font) => supportsCjkText(selectedTextOverlay?.text || "", font.id, japaneseFontEnabled))}
   /> : null;
   const editorTimelineZoomStyle: CSSProperties | undefined = overlayPreviewEnabled
     ? { width: `${editorTimelineZoom * 100}%` }
@@ -11817,6 +11819,9 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
                   {ui(subtitlesEnabled ? "켜짐" : "꺼짐")}
                 </button>
               </header>
+              <p className="mb-5 text-xs leading-5 text-white/60">
+                {t("editor.generatedCaptionsOnly")}
+              </p>
               {!editableCaptionSourceSpec && subtitlesEnabled && captionTextEditingEnabled && <div className="editor-caption-text-entry">
                 {activeCaptionTextTarget || (!editableCaptionSourceSpec && activeSubtitle)
                   ? <label>
@@ -11903,7 +11908,7 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
               <div className="mb-6">
                 <EditorFontPicker
                   value={activeCaptionFontId}
-                  options={availableEditorFontOptions.filter((font) => contentTextFont(captionFontText, font.id, japaneseFontEnabled) === font.id)}
+                  options={availableEditorFontOptions.filter((font) => supportsCjkText(captionFontText, font.id, japaneseFontEnabled))}
                   onChange={(fontId) => {
                     beginEditorCopyInteraction();
                     updateCaptionTemplateSubtitleLayout({
@@ -12281,7 +12286,7 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
               <EditorFontPicker
                 value={channelFontId}
                 onChange={(fontId) => updateEditorFont("channel", fontId)}
-                options={availableEditorFontOptions.filter((font) => contentTextFont(channel, font.id, japaneseFontEnabled) === font.id)}
+                options={availableEditorFontOptions.filter((font) => supportsCjkText(channel, font.id, japaneseFontEnabled))}
               />
             </div>
           </section>}
@@ -12388,7 +12393,8 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
             {overlayPreviewEnabled && <EditorFontPicker
               value={titleFontId}
               onChange={(fontId) => updateEditorFont("title", fontId)}
-              options={availableEditorFontOptions.filter((font) => contentTitleFont(title, font.id, japaneseFontEnabled) === font.id)}
+              options={availableEditorFontOptions.filter((font) => supportsCjkText(title, font.id, japaneseFontEnabled) && contentTitleFont(title, font.id, japaneseFontEnabled,
+                templateId === "comment-capture" && !captionCompositionRect(captionTemplateEditorSpec, "comment")) === font.id)}
             />}
             <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3">
             <p className="text-xs leading-5 text-white/70">{ui("글자를 선택하면 선택한 부분만, 선택하지 않으면 제목 전체의 색상이 바뀝니다.")}</p>

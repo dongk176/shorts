@@ -25,6 +25,20 @@ describe("editor reliability across pinned workers", () => {
     doc.overlays.fonts.channel = "noto-sans-kr";
     expect(hasUnsupportedCjkFont(doc)).toBe(false);
   });
+  it("rejects unsupported Japanese title fonts while accepting bundled CJK choices", () => {
+    const doc = fixture();
+    doc.title.text = "日本語のタイトル";
+    doc.overlays.visible.title = true;
+    doc.overlays.fonts.title = "pretendard";
+    expect(hasUnsupportedCjkFont(doc)).toBe(true);
+    for (const font of ["noto-sans-jp", "noto-sans-kr", "noto-serif-kr"]) {
+      doc.overlays.fonts.title = font;
+      expect(hasUnsupportedCjkFont(doc)).toBe(false);
+    }
+    doc.overlays.fonts.title = "pretendard";
+    doc.overlays.visible.title = false;
+    expect(hasUnsupportedCjkFont(doc)).toBe(false);
+  });
   it("uses a rounding boundary accepted by both JS and Python workers", () => {
     const doc = fixture();
     doc.video.clips = [{ id: "clip-1", sourceStartSeconds: 0, sourceEndSeconds: 1.0625 }];

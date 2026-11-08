@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import { localizeApiError } from "./errors";
 
 describe("localizeApiError", () => {
+  it("explains unsupported Japanese glyphs with a recovery action", () => {
+    expect(localizeApiError({ code: "EDITOR_FONT_GLYPHS_UNSUPPORTED" }, 400, "ja")).toContain("対応するフォントを選んでください");
+  });
   it("gives actionable video-link instructions in each language", () => {
     expect(localizeApiError({ code: "INVALID_YOUTUBE_URL" }, 400, "en")).toBe("Enter a valid HTTPS YouTube video link.");
     expect(localizeApiError({ code: "INVALID_YOUTUBE_URL" }, 400, "ja")).toBe("有効なHTTPSのYouTube動画リンクを入力してください。");

@@ -1,4 +1,5 @@
 import catalog from "./content-languages.json";
+import cjkFontCoverage from "./editor-cjk-font-coverage.json";
 import { outputLanguages, type OutputLanguage } from "./contracts";
 
 export const contentLanguages = catalog;
@@ -29,13 +30,13 @@ export function commentAgeLabel(months: number, language: OutputLanguage = "ko")
   return catalog[language].age[months === 1 ? 0 : 1].replace("{count}", String(months));
 }
 
-// Keep title selection consistent with the initial worker's CJK font policy.
-export function contentTitleFont<T extends string>(text: string, fontId: T, japaneseEnabled = false): T | "noto-sans-kr" | "noto-sans-jp" {
-  if (japaneseEnabled) return "noto-sans-jp";
-  if (/[\u3040-\u30ff\u3400-\u9fff\uff66-\uff9f]/u.test(text)) {
-    return fontId === "noto-sans-kr" || fontId === "noto-serif-kr" ? fontId : "noto-sans-kr";
-  }
-  return fontId;
+// Initial generation chooses a default face. Later edits must retain the user's
+// compatible choice instead of resetting every Japanese title to that default.
+export function contentTitleFont<T extends string>(text: string, fontId: T, japaneseEnabled = false, preserveLegacyJapaneseComments = false): T | "noto-sans-kr" | "noto-sans-jp" {
+  // Older comment-card workers use the title face as their Japanese-comment
+  // switch. Keep that contract until those projects have a compatible worker.
+  if (japaneseEnabled && preserveLegacyJapaneseComments) return "noto-sans-jp";
+  return contentTextFont(text, fontId, japaneseEnabled);
 }
 
 export function commentFontFamily(text: string, japaneseEnabled: boolean) {
@@ -53,21 +54,46 @@ export function commentActionLabels(likeCount: number, language: OutputLanguage 
   return { likes, reply: catalog[language].reply };
 }
 
-/** Only full CJK faces are selectable for CJK copy: browser fallback glyphs
- * are not reproduced by the pinned Pillow workers. */
+const cjkFontBitmaps = Object.fromEntries(Object.entries(cjkFontCoverage).map(([id, data]) => [id, atob(data.bmp)]));
+const cjkCharacter = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\uff66-\uff9f]/u;
+
+/** Browser fallback can display glyphs absent from the worker font. Check the
+ * exact bundled cmap, including Japanese variants missing from Korean Noto. */
+export function supportsCjkText(text: string, fontId: string, japaneseEnabled = false) {
+  const characters = Array.from(text).filter((character) => cjkCharacter.test(character));
+  if (characters.length === 0) return true;
+  if (!(fontId in cjkFontCoverage) || (fontId === "noto-sans-jp" && !japaneseEnabled)) return false;
+  const ranges = cjkFontCoverage[fontId as keyof typeof cjkFontCoverage].ranges;
+  return characters.every((character) => {
+    const point = character.codePointAt(0)!;
+    if (point < 65536) return (cjkFontBitmaps[fontId].charCodeAt(point >>> 3) & (1 << (point & 7))) !== 0;
+    let low = 0;
+    let high = ranges.length - 1;
+    while (low <= high) {
+      const middle = (low + high) >>> 1;
+      const [start, end] = ranges[middle];
+      if (point < start) high = middle - 1;
+      else if (point > end) low = middle + 1;
+      else return true;
+    }
+    return false;
+  });
+}
+
 export function contentTextFont<T extends string>(text: string, fontId: T, japaneseEnabled = false): T | "noto-sans-kr" | "noto-sans-jp" {
-  if (!/[\u3040-\u30ff\u3400-\u9fff\uff66-\uff9f]/u.test(text)) return fontId;
-  if (fontId === "noto-sans-kr" || fontId === "noto-serif-kr"
-    || (fontId === "noto-sans-jp" && japaneseEnabled)) return fontId;
+  if (supportsCjkText(text, fontId, japaneseEnabled)) return fontId;
   return japaneseEnabled ? "noto-sans-jp" : "noto-sans-kr";
 }
 
 export function hasUnsupportedCjkFont(document: {
+  title: { text: string };
   channel: { displayName: string };
-  overlays: { fonts: { channel: string }; visible: { channel: boolean };
+  overlays: { fonts: { title: string; channel: string }; visible: { title: boolean; channel: boolean };
     textOverlays: Array<{ text: string; fontId: string }> };
 }) {
-  return (document.overlays.visible.channel
-    && contentTextFont(document.channel.displayName, document.overlays.fonts.channel, true) !== document.overlays.fonts.channel)
-    || document.overlays.textOverlays.some((overlay) => contentTextFont(overlay.text, overlay.fontId, true) !== overlay.fontId);
+  return (document.overlays.visible.title
+    && !supportsCjkText(document.title.text, document.overlays.fonts.title, true))
+    || (document.overlays.visible.channel
+    && !supportsCjkText(document.channel.displayName, document.overlays.fonts.channel, true))
+    || document.overlays.textOverlays.some((overlay) => !supportsCjkText(overlay.text, overlay.fontId, true));
 }
