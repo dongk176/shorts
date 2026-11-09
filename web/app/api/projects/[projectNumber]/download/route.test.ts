@@ -1,3 +1,5 @@
+import { recordDownloadRequest } from "@/lib/conversion-events-server";
+vi.mock("@/lib/conversion-events-server", () => ({ recordDownloadRequest: vi.fn().mockResolvedValue(undefined) }));
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ session: vi.fn(), db: vi.fn(), getDb: vi.fn(), billing: vi.fn(), enterprise: vi.fn(), archive: vi.fn() }));
 vi.mock("@/lib/session", () => ({ requireAuthenticatedMvpSession: mocks.session }));
@@ -28,6 +30,7 @@ describe("project download route", () => {
   it("passes all eligible outputs to one archive, with ownership and retention filters", async () => {
     const response = await GET(request(), context());
     expect(response.status).toBe(200);
+    expect(recordDownloadRequest).toHaveBeenCalledWith("user-a", "project_download", expect.any(Request));
     expect(response.headers.get("Content-Type")).toBe("application/zip");
     expect(response.headers.get("Content-Disposition")).toContain("easycut-project-123.zip");
     expect(response.headers.get("X-Shorts-Count")).toBe("3");
@@ -47,6 +50,7 @@ describe("project download route", () => {
     expect(response.headers.get("X-Shorts-Count")).toBe("3");
     expect(await response.text()).toBe("");
     expect(mocks.archive).not.toHaveBeenCalled();
+    expect(recordDownloadRequest).not.toHaveBeenCalled();
   });
 
   it.each([GET, HEAD])("allows free members to download owned projects", async (handler) => {
@@ -59,6 +63,7 @@ describe("project download route", () => {
     mocks.db.mockResolvedValue([]);
     expect((await handler(request(), context())).status).toBe(404);
     expect(mocks.archive).not.toHaveBeenCalled();
+    expect(recordDownloadRequest).not.toHaveBeenCalled();
   });
 
   it("rechecks authorization on GET even if HEAD succeeded", async () => {
@@ -66,6 +71,7 @@ describe("project download route", () => {
     mocks.session.mockRejectedValue(new HttpError(401, "로그인이 필요합니다."));
     expect((await GET(request(), context())).status).toBe(401);
     expect(mocks.archive).not.toHaveBeenCalled();
+    expect(recordDownloadRequest).not.toHaveBeenCalled();
   });
 
   it("honors enterprise access blocks", async () => {
@@ -73,6 +79,7 @@ describe("project download route", () => {
     expect((await GET(request(), context())).status).toBe(403);
     expect(mocks.db).not.toHaveBeenCalled();
     expect(mocks.archive).not.toHaveBeenCalled();
+    expect(recordDownloadRequest).not.toHaveBeenCalled();
   });
 
   it("returns a private error when upstream preparation fails", async () => {
@@ -87,5 +94,6 @@ describe("project download route", () => {
     expect((await GET(request(), context(number))).status).toBe(400);
     expect(mocks.session).not.toHaveBeenCalled();
     expect(mocks.archive).not.toHaveBeenCalled();
+    expect(recordDownloadRequest).not.toHaveBeenCalled();
   });
 });

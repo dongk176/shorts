@@ -1,3 +1,5 @@
+import { recordDownloadRequest } from "@/lib/conversion-events-server";
+vi.mock("@/lib/conversion-events-server", () => ({ recordDownloadRequest: vi.fn().mockResolvedValue(undefined) }));
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -43,6 +45,7 @@ describe("short download route", () => {
     );
 
     expect(response.status).toBe(307);
+    expect(recordDownloadRequest).toHaveBeenCalledWith("user-a", "short_download", expect.any(Request));
     expect(response.headers.get("location")).toContain("cdn.example.com");
     expect(response.headers.get("cache-control")).toContain("no-store");
     expect(response.headers.get("referrer-policy")).toBe("no-referrer");
@@ -65,5 +68,6 @@ describe("short download route", () => {
 
     expect(response.status).toBe(404);
     expect(mocks.downloadUrl).not.toHaveBeenCalled();
+    expect(recordDownloadRequest).not.toHaveBeenCalled();
   });
 });

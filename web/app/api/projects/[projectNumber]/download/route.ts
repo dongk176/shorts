@@ -1,3 +1,4 @@
+import { recordDownloadRequest } from "@/lib/conversion-events-server";
 import { getDb } from "@/lib/db";
 import { assertEnterpriseSessionServiceAccess } from "@/lib/enterprise-access";
 import { apiError, HttpError } from "@/lib/http";
@@ -54,7 +55,7 @@ async function downloadItems(context: Context) {
     hookTitle: String(row.hookTitle || ""),
     expiresAt: row.expiresAt as Date | string | null,
   }));
-  return { projectNumber, items };
+  return { projectNumber, items, userId: session.userId };
 }
 
 function downloadError(error: unknown) {
@@ -82,8 +83,9 @@ export async function HEAD(_: Request, context: Context) {
 export async function GET(request: Request, context: Context) {
   try {
     // Recheck access on the actual download, even after a successful HEAD.
-    const { projectNumber, items } = await downloadItems(context);
+    const { projectNumber, items, userId } = await downloadItems(context);
     const archive = await projectDownloadArchive(items, request.signal);
+    await recordDownloadRequest(userId, "project_download", request);
     return new Response(archive, {
       headers: {
         ...privateHeaders,

@@ -1,4 +1,5 @@
 "use client";
+import { trackConversion } from "@/lib/conversion-events-client";
 
 import { paypalCheckoutErrorMessage } from "@/lib/paypal/checkout-error-message";
 import { paypalPlan } from "@/lib/paypal/catalog";
@@ -170,6 +171,7 @@ export function TossPricingClient({
   const loading = !state && !guestCatalog;
 
   function choose(plan: TossCatalogPlan) {
+    trackConversion({ name: "checkout_clicked", locale, surface: "pricing", provider: paypalCheckout ? "paypal" : "toss" });
     if (paypalCheckout && paypalAuthenticated) {
       setError(null);
       setConsent(false);

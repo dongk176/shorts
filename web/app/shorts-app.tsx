@@ -1,5 +1,9 @@
 "use client";
 
+import { ProcessingTimeNotice } from "@/components/processing-time-notice";
+import { creationActionDisabled, creationNeedsUpgrade, initialSourceRangeEnd } from "@/lib/creation-upgrade";
+import { trackConversion } from "@/lib/conversion-events-client";
+
 import { ShortsSilenceStatus } from "@/components/shorts-silence-status";
 import { SilenceRemovalChoice } from "@/components/silence-removal-choice";
 import { canSelectShortsSilence, SHORTS_SILENCE_REQUEST } from "@/lib/shorts-silence-contract";
@@ -13762,6 +13766,17 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
     && selectedSourceDurationSeconds <= MAX_SELECTED_SOURCE_SECONDS
     && !selectedSourceExceedsUsage,
   );
+  const needsUpgrade = creationNeedsUpgrade({
+    authenticated: Boolean(state?.user),
+    enforcementEnabled: state?.usage.enforcementEnabled ?? false,
+    canCreateJobs: state?.billing.canCreateJobs ?? false,
+    rewardAvailable: shortsEventRewardAvailable,
+    selectionExceedsUsage: selectedSourceExceedsUsage,
+  });
+  const openUpgradePlans = () => {
+    trackConversion({ name: "upgrade_clicked", locale, surface: "creation" });
+    window.location.href = browserLocalizedHref("/pricing");
+  };
   const selectedPlannedShortCount = sourceRangeSelectionEnabled
     ? expectedShortCount(selectedSourceDurationSeconds)
     : selectedSource ? expectedShortCount(selectedSource.durationSeconds) : 0;
@@ -13964,11 +13979,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
       ? state.usage.remainingSeconds
       : MAX_SELECTED_SOURCE_SECONDS;
     setSourceRangeStartSeconds(0);
-    setSourceRangeEndSeconds(Math.min(
-      selectedSource.durationSeconds,
-      availableSeconds,
-      MAX_SELECTED_SOURCE_SECONDS,
-    ));
+    setSourceRangeEndSeconds(initialSourceRangeEnd(selectedSource.durationSeconds, availableSeconds));
   }, [
     selectedSource,
     sourceRangeSelectionEnabled,
@@ -14345,6 +14356,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
 
   const createUploadJob = async (betaNoticeConfirmed = false) => {
     if (!uploadSourceActive || !uploadVideo || !selectedSource) return;
+    if (needsUpgrade) { openUpgradePlans(); return; }
     if (!rightsConfirmed) {
       setError(null);
       setRightsConfirmationAttention(true);
@@ -14360,14 +14372,6 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
     }
     if (!state?.user || !uploadModeEnabled) {
       setError("파일 업로드 권한을 다시 확인해 주세요.");
-      return;
-    }
-    if (
-      state.usage.enforcementEnabled
-      && !state.billing.canCreateJobs
-      && !shortsEventRewardAvailable
-    ) {
-      window.location.href = browserLocalizedHref("/pricing");
       return;
     }
     if (activeJobBlocksCreation) {
@@ -14673,6 +14677,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
       setCreationRestrictionOpen(true);
       return;
     }
+    if (needsUpgrade) { openUpgradePlans(); return; }
     if (!rightsConfirmed) {
       setError(null);
       setRightsConfirmationAttention(true);
@@ -14689,14 +14694,6 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
     const next = `/?analysisId=${encodeURIComponent(analysis.analysisId)}`;
     if (!state?.user) {
       openLoginAfterDelay(next);
-      return;
-    }
-    if (
-      state.usage.enforcementEnabled
-      && !state.billing.canCreateJobs
-      && !shortsEventRewardAvailable
-    ) {
-      window.location.href = browserLocalizedHref("/pricing");
       return;
     }
     if (activeJobBlocksCreation) {
@@ -14980,6 +14977,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
         onTry={trySubtitleTemplate}
       />
       <main id="top" className={`relative mx-auto w-full max-w-6xl flex-1 px-5 pb-20 pt-7 sm:px-8 sm:pt-10 ${adminTemplateLayoutEnabled ? "flex flex-col gap-10" : "space-y-10"}`}>
+      <ProcessingTimeNotice />
       <ReusableViewCounter
         counter={state?.reusableViewCounter ?? null}
         generatedShortCount={state?.generatedShortCount ?? null}
@@ -15214,11 +15212,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
                     ? state.usage.remainingSeconds
                     : MAX_SELECTED_SOURCE_SECONDS;
                   setSourceRangeStartSeconds(0);
-                  setSourceRangeEndSeconds(Math.min(
-                    selectedSource.durationSeconds,
-                    availableSeconds,
-                    MAX_SELECTED_SOURCE_SECONDS,
-                  ));
+                  setSourceRangeEndSeconds(initialSourceRangeEnd(selectedSource.durationSeconds, availableSeconds));
                 }}
               />
               {!sourceRangeIsValid && (
@@ -15226,8 +15220,8 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
                   {selectedSourceExceedsUsage
                     ? t("home.insufficientTime", { duration: formatDuration(selectedSourceUsageSeconds, locale), remaining: formatDuration(state?.usage.remainingSeconds || 0, locale) })
                     : selectedSourceDurationSeconds < MIN_SELECTED_SOURCE_SECONDS
-                      ? "최소 4분 이상 선택해야 쇼츠를 만들 수 있습니다."
-                      : "한 작업에서 최대 60분까지 선택할 수 있습니다."}
+                      ? localizedValue(locale, { ko: "최소 4분 이상 선택해야 쇼츠를 만들 수 있습니다.", en: "Select at least 4 minutes to create shorts.", ja: "ショート動画を作成するには、4分以上の区間を選択してください。" })
+                      : localizedValue(locale, { ko: "한 작업에서 최대 60분까지 선택할 수 있습니다.", en: "Select up to 60 minutes per job.", ja: "1回の処理で選択できる区間は最大60分です。" })}
                 </div>
               )}
             </>
@@ -15359,12 +15353,12 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
               {ui(error)}
             </div>
           )}
-          <button disabled={analysisCreationBlocked || !sourceRangeIsValid || busy || stateLoadStatus !== "ready"} onClick={() => { if (state?.capabilities.midform && !shortsChosen) { setConversionChoiceStage("create"); setConversionChoiceOpen(true); } else void (uploadSourceActive ? createUploadJob() : createJob()); }} aria-busy={busy || loginPromptPending} className={`h-[52px] w-full rounded-xl py-4 font-bold text-black transition duration-150 disabled:bg-neutral-800 disabled:text-neutral-500 ${loginPromptPending ? "scale-[.985] bg-neutral-200 shadow-[inset_0_2px_6px_rgba(0,0,0,.22)] motion-reduce:transform-none" : "bg-white hover:bg-neutral-100 active:scale-[.985]"}`}>
+          <button disabled={creationActionDisabled({ creationBlocked: analysisCreationBlocked, rangeValid: sourceRangeIsValid, needsUpgrade, busy, stateReady: stateLoadStatus === "ready" })} onClick={() => { if (needsUpgrade) { openUpgradePlans(); return; } if (state?.capabilities.midform && !shortsChosen) { setConversionChoiceStage("create"); setConversionChoiceOpen(true); } else void (uploadSourceActive ? createUploadJob() : createJob()); }} aria-busy={busy || loginPromptPending} className={`h-[52px] w-full rounded-xl py-4 font-bold text-black transition duration-150 disabled:bg-neutral-800 disabled:text-neutral-500 ${loginPromptPending ? "scale-[.985] bg-neutral-200 shadow-[inset_0_2px_6px_rgba(0,0,0,.22)] motion-reduce:transform-none" : "bg-white hover:bg-neutral-100 active:scale-[.985]"}`}>
             <span className="inline-flex items-center justify-center gap-2">
               {(busy || loginPromptPending) && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-black/25 border-t-black motion-reduce:animate-none" />}
               {ui(busy
                 ? localizedValue(locale, { ko: "작업을 시작하고 있어요", en: "Starting your job", ja: "処理を開始しています" })
-                : analysisCreationBlocked ? t("home.createUnavailable") : stateLoadStatus !== "ready" ? t("home.loginChecking") : !state?.user ? t("home.create") : !planEnforcementEnabled || state.billing.canCreateJobs || shortsEventRewardAvailable ? t("home.create") : t("home.choosePlan"))}
+                : analysisCreationBlocked ? t("home.createUnavailable") : stateLoadStatus !== "ready" ? t("home.loginChecking") : needsUpgrade ? t("home.choosePlan") : t("home.create"))}
             </span>
           </button>
         </section>

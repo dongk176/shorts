@@ -1,5 +1,8 @@
 "use client";
 
+import { conversionCopy } from "@/lib/conversion-copy";
+import { MIN_SELECTED_SOURCE_SECONDS } from "@/lib/source-range";
+import { trackConversion } from "@/lib/conversion-events-client";
 import { useUiText } from "@/lib/i18n/use-ui-text";
 
 import Link from "@/lib/i18n/navigation";
@@ -53,6 +56,9 @@ export function HeaderUsageIndicator({ mobile = false }: { mobile?: boolean } = 
   }, [targetMinutes]);
 
   if (!usageState.authenticated || !usageState.usage) return null;
+  const lowCredit = !usageState.isEnterprise && usageState.usage.enforcementEnabled
+    && usageState.usage.remainingSeconds < MIN_SELECTED_SOURCE_SECONDS;
+  const planLabel = conversionCopy[locale].plans;
   const label = t("common.remainingMinutes", { minutes: displayedMinutes });
   const compactLabel = locale === "ko"
     ? `크레딧 ${displayedMinutes}`
@@ -63,8 +69,9 @@ export function HeaderUsageIndicator({ mobile = false }: { mobile?: boolean } = 
   return (
     <Link
       href={usageState.isEnterprise ? "/account/activity" : "/pricing"}
-      aria-label={ui(label)}
+      aria-label={lowCredit ? `${label} · ${planLabel}` : ui(label)}
       title={ui(label)}
+      onClick={() => { if (!usageState.isEnterprise) trackConversion({ name: "upgrade_clicked", locale, surface: "header" }); }}
       className={`header-usage-indicator inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/[.035] px-2.5 text-xs font-extrabold tabular-nums text-neutral-200 transition hover:border-[#ff8c7c]/45 hover:bg-[#ff8c7c]/10 hover:text-white${mobile ? " site-header-mobile-usage md:hidden" : ""}`}
     >
       <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4 text-[#ff9b8d]" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -74,6 +81,7 @@ export function HeaderUsageIndicator({ mobile = false }: { mobile?: boolean } = 
       <span className={mobile ? "whitespace-nowrap" : "hidden whitespace-nowrap lg:inline"}>
         {mobile ? compactLabel : label}
       </span>
+      {lowCredit && <span className="whitespace-nowrap text-[#ffad9f]">{planLabel}</span>}
     </Link>
   );
 }

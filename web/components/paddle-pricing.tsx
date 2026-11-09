@@ -1,4 +1,5 @@
 "use client";
+import { trackConversion } from "@/lib/conversion-events-client";
 import Script from "next/script";
 import { CreditAllowance } from "@/components/credit-info";
 import { formatChangeAmount } from "@/lib/paddle/change-policy";
@@ -231,6 +232,8 @@ export function PaddlePricing({
   const [paid, setPaid] = useState(false);
   const initialized = useRef(false);
   const resumed = useRef(false);
+  const checkoutLocale = useRef(locale);
+  checkoutLocale.current = locale;
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mounted = useRef(true);
   useEffect(() => {
@@ -267,6 +270,7 @@ export function PaddlePricing({
     else setMessage(t.waiting);
   }
   async function checkout(planCode?: string, transactionId?: string) {
+    trackConversion({ name: "checkout_clicked", locale, surface: "pricing", provider: "paddle" });
     if (!loggedIn) {
       onRequireLogin();
       return;
@@ -285,6 +289,7 @@ export function PaddlePricing({
       });
       const body = await response.json();
       if (!response.ok) {
+        trackConversion({ name: "checkout_error", locale, surface: "pricing", provider: "paddle", stage: "api" });
         setPending(body.code === "CHECKOUT_PENDING");
         setMessage(
           body.code === "EXISTING_SUBSCRIPTION"
@@ -304,6 +309,10 @@ export function PaddlePricing({
         window.Paddle.Initialize({
           token: body.token,
           eventCallback: (event) => {
+            const name = event.name === "checkout.loaded" ? "checkout_opened"
+              : event.name === "checkout.closed" ? "checkout_closed"
+              : event.name === "checkout.error" || event.name === "checkout.payment.error" || event.name === "checkout.payment.failed" ? "checkout_error" : null;
+            if (name) trackConversion({ name, locale: checkoutLocale.current, surface: "pricing", provider: "paddle", ...(name === "checkout_error" ? { stage: "provider" as const } : {}) });
             if (event.name === "checkout.completed") {
               setMessage(t.confirm);
               setBusy(false);
@@ -324,6 +333,7 @@ export function PaddlePricing({
         },
       });
     } catch {
+      trackConversion({ name: "checkout_error", locale, surface: "pricing", provider: "paddle", stage: "sdk" });
       setMessage(t.error);
     } finally {
       setBusy(false);
@@ -425,7 +435,7 @@ export function PaddlePricing({
         src="https://cdn.paddle.com/paddle/v2/paddle.js"
         strategy="afterInteractive"
         onReady={() => setScriptReady(true)}
-        onError={() => setMessage(t.error)}
+        onError={() => { setMessage(t.error); trackConversion({ name: "checkout_error", locale, surface: "pricing", provider: "paddle", stage: "script" }); }}
       />
       <section className={`hero pricing-hero ${styles.hero}`}>
         <h1><span>{managementOnly ? t.manage : t.title}</span></h1>

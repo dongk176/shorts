@@ -1,4 +1,5 @@
 "use client";
+import { PricingViewEvent } from "@/components/pricing-view-event";
 
 import { useI18n } from "@/lib/i18n/provider";
 import { useState } from "react";
@@ -44,6 +45,7 @@ export function PricingPageShell({
         />
       </SiteHeader>
       <main className="pricing-main">
+        <PricingViewEvent locale={locale} loggedIn={Boolean(user)} />
         {tossExperience || paypalCheckout ? (
           <>
             <TossPricingClient

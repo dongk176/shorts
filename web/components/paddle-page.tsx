@@ -1,4 +1,5 @@
 "use client";
+import { PricingViewEvent } from "@/components/pricing-view-event";
 import { useState } from "react";
 import { StrategyGuideBenefit } from "@/components/strategy-guide-benefit";
 import { AuthControls } from "@/components/auth-controls";
@@ -35,6 +36,7 @@ export function PaddlePage({
         />
       </SiteHeader>
       <main className="pricing-main">
+        {!props.managementOnly && !props.resumeId && <PricingViewEvent locale={locale} loggedIn={Boolean(user)} />}
         <PaddlePricing
           {...props}
           locale={locale}

@@ -1,3 +1,4 @@
+import { recordDownloadRequest } from "@/lib/conversion-events-server";
 import { NextResponse } from "next/server";
 import { getShortDownloadUrl } from "@/lib/aws";
 import { getDb } from "@/lib/db";
@@ -12,7 +13,7 @@ import {
 export const dynamic = "force-dynamic";
 
 export async function GET(
-  _: Request,
+  request: Request,
   context: { params: Promise<{ shortId: string }> },
 ) {
   let requestedShortId = "unknown";
@@ -58,6 +59,7 @@ export async function GET(
     const response = NextResponse.redirect(url, 307);
     response.headers.set("Cache-Control", "private, no-store, max-age=0");
     response.headers.set("Referrer-Policy", "no-referrer");
+    await recordDownloadRequest(session.userId, "short_download", request);
     return response;
   } catch (error) {
     console.error("short_download_failed", {

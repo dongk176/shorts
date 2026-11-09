@@ -1,4 +1,5 @@
 "use client";
+import { trackConversion } from "@/lib/conversion-events-client";
 
 import { CreditAllowance } from "@/components/credit-info";
 import { useUiText } from "@/lib/i18n/use-ui-text";
@@ -465,6 +466,7 @@ export function PricingClient({
   }
 
   async function choosePlan(planCode: PricingV2PlanCode) {
+    trackConversion({ name: "checkout_clicked", locale, surface: "pricing", provider: "domestic" });
     if (requireLogin()) return;
     const product = getPricingV2Plan(planCode);
     if (!product) {
