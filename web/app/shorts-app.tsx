@@ -1,5 +1,6 @@
 "use client";
 
+import { conversionCopy } from "@/lib/conversion-copy";
 import { ProcessingTimeNotice } from "@/components/processing-time-notice";
 import { creationActionDisabled, creationNeedsUpgrade, initialSourceRangeEnd } from "@/lib/creation-upgrade";
 import { trackConversion } from "@/lib/conversion-events-client";
@@ -15218,7 +15219,9 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
               {!sourceRangeIsValid && (
                 <div role="alert" className="rounded-xl border border-amber-400/25 bg-amber-400/[.07] px-4 py-3 text-sm font-medium text-amber-100">
                   {selectedSourceExceedsUsage
-                    ? t("home.insufficientTime", { duration: formatDuration(selectedSourceUsageSeconds, locale), remaining: formatDuration(state?.usage.remainingSeconds || 0, locale) })
+                    ? (state?.usage.remainingSeconds ?? 0) < MIN_SELECTED_SOURCE_SECONDS
+                      ? conversionCopy[locale].rangeNeedsPlan
+                      : t("home.insufficientTime", { duration: formatDuration(selectedSourceUsageSeconds, locale), remaining: formatDuration(state?.usage.remainingSeconds || 0, locale) })
                     : selectedSourceDurationSeconds < MIN_SELECTED_SOURCE_SECONDS
                       ? localizedValue(locale, { ko: "최소 4분 이상 선택해야 쇼츠를 만들 수 있습니다.", en: "Select at least 4 minutes to create shorts.", ja: "ショート動画を作成するには、4分以上の区間を選択してください。" })
                       : localizedValue(locale, { ko: "한 작업에서 최대 60분까지 선택할 수 있습니다.", en: "Select up to 60 minutes per job.", ja: "1回の処理で選択できる区間は最大60分です。" })}
