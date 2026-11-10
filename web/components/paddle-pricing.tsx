@@ -519,7 +519,9 @@ export function PaddlePricing({
                     {discountPercent}%{language === "ja" ? "OFF" : " off"}
                   </span>
                 )}
-                <div className="pricing-plan-name"><h2>{t.names[i]}</h2></div>
+                <div className="pricing-plan-name"><h2>{language === "ja" && i > 0
+                  ? <><span className="inline-block">{t.names[i].replace("パッケージ", "")}</span><wbr /><span className="inline-block">パッケージ</span></>
+                  : t.names[i]}</h2></div>
                 <p className={styles.localPlanDescription}>{t.descriptions[i]}</p>
                 {months !== 3 && <div className={styles.paddleDiscount}>
                   {discount && <><span>{t.discount(discountPercent)}</span><del>{formatPaddlePrice(discount.baseline,currency,true)} {t.month}</del></>}
