@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { parseHTML } from "linkedom";
-import { HomeHero, japaneseHeroPhrases } from "./home-hero";
+import { HomeHero } from "./home-hero";
 import { messagesByLocale } from "@/lib/i18n/messages";
 import { USER_ONBOARDING_UPDATED_EVENT } from "@/lib/user-onboarding";
 
@@ -57,11 +57,4 @@ describe("fixed home headline", () => {
     expect(document.querySelector("button")).toBeNull();
   });
 
-  it("preserves Japanese text and keeps ショート動画 together", () => {
-    for (const text of [...headlines.ja, messagesByLocale.ja["home.heroDescription"]]) {
-      const phrases = japaneseHeroPhrases(text);
-      expect(phrases.join("")).toBe(text);
-      if (text.includes("ショート動画")) expect(phrases.some(part => part.includes("ショート動画"))).toBe(true);
-    }
-  });
 });

@@ -3,7 +3,7 @@
   min-width: 0;
   text-align: center;
   word-break: normal;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
   hyphens: none;
 }
 .root:lang(ko) { word-break: keep-all; }
@@ -14,24 +14,28 @@
   line-height: 1.2;
   font-weight: 900;
   letter-spacing: -.05em;
-  text-wrap: balance;
+  /* Keep the two explicit lines independent on mobile Safari. */
+  text-wrap: wrap;
 }
-.line { display: block; }
+.line { display: block; overflow-wrap: break-word; }
 .accent {
   color: transparent;
   background: linear-gradient(95deg,#ff715e 8%,#ff8b7b 30%,#ffb4a8 48%,#cf9cda 68%,#a078ff 92%);
   background-clip: text;
   -webkit-background-clip: text;
 }
-.phrase { display: inline-block; max-width: 100%; }
 .description {
-  max-width: 42rem;
-  margin: 1.25rem auto 0;
+  max-width: 38rem;
+  margin: 1rem auto 0;
   font-size: .875rem;
   font-weight: 500;
-  line-height: 1.75rem;
+  line-height: 1.6;
   color: #d4d4d4;
-  text-wrap: pretty;
+  text-wrap: wrap;
 }
 @media (min-width: 640px) { .description { font-size: 1rem; } }
-@media (max-width: 640px) { .title { letter-spacing: -.045em; } }
+@media (max-width: 640px) {
+  .title { letter-spacing: -.045em; }
+  .root:lang(en) .title,
+  .root:lang(ja) .title { font-size: clamp(1.25rem, 6.5vw, 1.75rem); }
+}

@@ -14,13 +14,13 @@ export function ProcessingTimeNotice() {
     || usage.remainingSeconds >= MIN_SELECTED_SOURCE_SECONDS) return null;
   const copy = conversionCopy[locale];
   return (
-    <aside className="mx-auto flex w-full max-w-4xl flex-col gap-4 rounded-2xl border border-[#ff8c7c]/30 bg-[#ff8c7c]/[.07] p-5 sm:flex-row sm:items-center sm:justify-between">
+    <aside className="mx-auto flex w-full max-w-4xl flex-col gap-3 rounded-2xl border border-[#ff8c7c]/30 bg-[#ff8c7c]/[.07] p-4 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0">
-        <p className="font-bold text-white">{usage.remainingSeconds <= 0 ? copy.exhausted : copy.low}</p>
-        <p className="mt-2 text-sm leading-6 text-neutral-300">{copy.detail}</p>
+        <p className="text-sm font-bold leading-snug text-white sm:text-base">{usage.remainingSeconds <= 0 ? copy.exhausted : copy.low}</p>
+        <p className="mt-1 text-sm leading-snug text-neutral-300">{copy.detail}</p>
       </div>
       <Link href="/pricing" onClick={() => trackConversion({ name: "upgrade_clicked", locale, surface: "credit_notice" })}
-        className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-xl bg-[#ff8c7c] px-5 py-3 text-sm font-bold text-black transition hover:bg-[#ffa596]">
+        className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-xl bg-[#ff8c7c] px-4 py-2 text-sm font-bold text-black transition hover:bg-[#ffa596]">
         {copy.plans}
       </Link>
     </aside>
