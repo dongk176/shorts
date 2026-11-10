@@ -2,7 +2,7 @@
 
 import Link from "@/lib/i18n/navigation";
 import { useI18n } from "@/lib/i18n/provider";
-import { textFor } from "@/lib/shorts-guides/catalog";
+import { libraryGuideSlugs, textFor } from "@/lib/shorts-guides/catalog";
 
 export function StrategyGuideBenefit() {
   const { locale } = useI18n();
@@ -24,9 +24,9 @@ export function StrategyGuideBenefit() {
       <h2 className="mt-2 text-xl font-semibold text-white">
         {textFor(
           [
-            "내 쇼츠에 바로 써먹는 실행북 5권",
-            "5 workbooks to put your Shorts plan into practice",
-            "ショート制作にすぐ使える実践ブック5冊",
+            `내 쇼츠에 바로 써먹는 실행북 ${libraryGuideSlugs.length}권`,
+            `${libraryGuideSlugs.length} workbooks to put your Shorts plan into practice`,
+            `ショート制作にすぐ使える実践ブック${libraryGuideSlugs.length}冊`,
           ],
           locale,
         )}
@@ -41,6 +41,13 @@ export function StrategyGuideBenefit() {
           locale,
         )}
       </p>
+      <p className="mt-2 text-sm leading-6 text-neutral-400">
+        {textFor([
+          "기존 5권은 한국어·영어·일본어, 신규 3권은 한국어 PDF로 제공됩니다.",
+          "The original 5 books are available in English, Japanese and Korean. The 3 new books are Korean-only PDFs.",
+          "従来の5冊は日本語・英語・韓国語に対応しています。新刊3冊のPDFは韓国語のみです。",
+        ], locale)}
+      </p>
       <Link
         href="/shorts-monetization#guide-library"
         prefetch={false}
@@ -48,9 +55,9 @@ export function StrategyGuideBenefit() {
       >
         {textFor(
           [
-            "목차와 본문 미리 보기",
-            "Browse the contents and sample pages",
-            "目次と本文サンプルを見る",
+            "목차와 표지 미리 보기",
+            "Preview the contents and covers",
+            "目次と表紙を見る",
           ],
           locale,
         )}

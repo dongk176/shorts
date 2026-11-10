@@ -78,7 +78,7 @@ export default async function ProjectsPage() {
 
         {rankingProjects?.length ? <RankingProjectList projects={rankingProjects} /> : null}
         {rankingProjects === null ? (
-          <p role="status" className="mt-6 text-sm text-neutral-400">일부 작업을 불러오지 못했습니다. 잠시 후 새로고침해 주세요.</p>
+          <p role="status" className="mt-6 text-sm text-neutral-400">{ui("일부 작업을 불러오지 못했습니다. 잠시 후 새로고침해 주세요.")}</p>
         ) : null}
 
         {rankingProjects?.length && projectPage.projects.length ? (

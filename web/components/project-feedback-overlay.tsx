@@ -233,7 +233,7 @@ function AccountProjectFeedbackOverlay({ accountId }: { accountId: string }) {
             <h2 id="project-feedback-title" className="mt-5 text-2xl font-black tracking-[-0.03em] text-white">
               {ui("처리시간 30분을 드렸어요")}</h2>
             <p className="mt-3 text-sm leading-6 text-neutral-400">
-              {ui("솔직한 의견 감사합니다. 지급된 원본 영상 처리시간은 ")}{success.rewardValidityDays}{ui("일 동안 사용할 수 있어요.")}</p>
+              {ui(`솔직한 의견 감사합니다. 지급된 원본 영상 처리시간은 ${success.rewardValidityDays}일 동안 사용할 수 있어요.`)}</p>
             <button
               type="button"
               onClick={closeFeedback}

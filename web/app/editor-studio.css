@@ -476,3 +476,19 @@ body:has(.editor-v2-root.editor-studio) [aria-labelledby="apply-edit-confirm-tit
 .editor-v2-root.editor-studio .editor-studio-cue-text { overflow-wrap: anywhere; }
 .editor-v2-root.editor-studio .editor-studio-cue-text mark { background: var(--studio-accent-soft); color: var(--studio-accent-text); border-radius: 2px; }
 .editor-v2-root.editor-studio .editor-studio-cue-meta button { min-height: 28px; padding: 0 4px; font: inherit; color: inherit; }
+
+/* Keep localized tool names intact while retaining the four-column desktop rail. */
+@media (min-width: 641px) {
+  .editor-v2-root.editor-studio:is(:lang(en), :lang(ja)) .editor-tool-rail-buttons button {
+    flex-direction: column;
+    min-height: 54px;
+    gap: 3px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+}
+@media (min-width: 641px) and (max-width: 1000px) {
+  .editor-v2-root.editor-studio:is(:lang(en), :lang(ja)) .editor-tool-rail-buttons {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}

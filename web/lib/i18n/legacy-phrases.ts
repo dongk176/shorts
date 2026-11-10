@@ -7,6 +7,16 @@ type Phrase = readonly [ko: string, en: string, ja: string];
 // Legacy page copy is kept here while the product moves to semantic message keys.
 // User-provided and generated content is intentionally excluded from this table.
 const phrases: readonly Phrase[] = [
+  ["기본형 자막 위치·크기·텍스트 편집", "Edit basic-caption position, size, and text", "基本字幕の位置・サイズ・テキストを編集"],
+  ["기본형 자막 위치·크기 설정", "Adjust basic-caption position and size", "基本字幕の位置とサイズを調整"],
+  ["강조형 자막 위치·크기 설정", "Adjust emphasis-caption position and size", "強調字幕の位置とサイズを調整"],
+  ["브랜드 색상", "Brand colors", "ブランドカラー"],
+  ["영상 구간 선택", "Select a video range", "動画区間を選択"],
+  ["레이어", "Layers", "レイヤー"],
+  ["영상 구간", "Video range", "動画区間"],
+  ["롱폼 → 숏폼", "Long videos → Shorts", "長尺動画 → ショート"],
+  ["일부 작업을 불러오지 못했습니다. 잠시 후 새로고침해 주세요.", "Some projects could not be loaded. Please refresh in a moment.", "一部のプロジェクトを読み込めませんでした。しばらくしてから再読み込みしてください。"],
+  ["랭킹 쇼츠 (영어)", "Ranking Shorts (English)", "ランキングショート（英語）"],
   ["3분 이하의 영상을 선택해 주세요.", "Choose a video no longer than 3 minutes.", "3分以内の動画を選択してください。"],
   ["20분 이하의 음악을 선택해 주세요.", "Choose music no longer than 20 minutes.", "20分以内の音楽を選択してください。"],
   ["원본 최대 3분 · 250MB", "Source up to 3 minutes · 250 MB", "元動画は最大3分・250MB"],
@@ -44,7 +54,7 @@ const phrases: readonly Phrase[] = [
   ["이전 랭킹", "Previous ranking", "前のランキング"],
   ["다음 랭킹", "Next ranking", "次のランキング"],
   ["랭킹 쇼츠 종류", "Ranking Shorts examples", "ランキングショートの例"],
-  ["랭킹 쇼츠 만들기", "Create Ranking Shorts", "ランキングショートを作成"],
+  ["랭킹 쇼츠 만들기", "Create Ranking Shorts", "英語でランキングショートを作成"],
   ["영상을 불러오지 못했어요.", "Unable to load the video.", "動画を読み込めませんでした。"],
   ["다시 재생", "Retry playback", "再生を再試行"],
   ["랭킹 영상 일시정지", "Pause ranking video", "ランキング動画を一時停止"],
@@ -62,7 +72,7 @@ const phrases: readonly Phrase[] = [
   ["효과음", "Sound effects", "効果音"],
   ["베타 버전으로 먼저 만나보세요.", "Try the beta release.", "ベータ版をお試しください。"],
   ["나중에 볼게요", "Maybe later", "あとで見る"],
-  ["랭킹 쇼츠 시작하기", "Start Ranking Shorts", "ランキングショートを始める"],
+  ["랭킹 쇼츠 시작하기", "Start Ranking Shorts", "英語でランキングショートを始める"],
   ["랭킹 쇼츠 예시", "Ranking Shorts example", "ランキングショートの例"],
   ["안내 닫기", "Close guide", "案内を閉じる"],
   ["랭킹 쇼츠 베타", "Ranking Shorts beta", "ランキングショート ベータ版"],
@@ -1799,6 +1809,10 @@ function translateDynamicText(value: string, locale: Exclude<SiteLocale, "ko">) 
     : `無音${silence[1]}か所を削除 · ${silence[2]}秒短縮`);
 
   const trimmed = value.trim();
+  const feedbackReward = /^솔직한 의견 감사합니다\. 지급된 원본 영상 처리시간은 (\d+)일 동안 사용할 수 있어요\.$/.exec(trimmed);
+  if (feedbackReward) return withOriginalWhitespace(value, locale === "en"
+    ? `Thank you for your honest feedback. Your bonus processing time is valid for ${feedbackReward[1]} days.`
+    : `率直なご意見ありがとうございます。付与された動画処理時間は${feedbackReward[1]}日間ご利用いただけます。`);
   const editorPatterns: readonly [RegExp, (m: RegExpExecArray) => string, (m: RegExpExecArray) => string][] = [
     [/^게시판 이름 · (\d+)~(\d+)자$/, m => `Board name · ${m[1]}–${m[2]} characters`, m => `掲示板名・${m[1]}〜${m[2]}文字`],
     [/^제목 · 한 줄, (\d+)자 이내$/, m => `Title · one line, up to ${m[1]} characters`, m => `タイトル・1行、${m[1]}文字以内`],
@@ -1820,10 +1834,11 @@ function translateDynamicText(value: string, locale: Exclude<SiteLocale, "ko">) 
   const loginIdMatch = /^아이디 ([a-zA-Z0-9._-]+)$/.exec(trimmed);
   if (loginIdMatch) return withOriginalWhitespace(value,
     `${locale === "en" ? "Login ID" : "ログインID"}: ${loginIdMatch[1]}`);
-  const editorColorMatch = /^(글자색|텍스트 배경색|배경 색상|자막 일반 글자색|자막 강조 글자색) (.+)$/.exec(trimmed);
+  const editorColorMatch = /^(글자색|텍스트 배경색|배경 색상|자막 일반 글자색|자막 강조 글자색|이미지 배경) (.+)$/.exec(trimmed);
   if (editorColorMatch) {
     const labels: Record<string, [string, string]> = {
       글자색: ["Text color", "文字色"],
+      "이미지 배경": ["Image background", "画像背景"],
       "텍스트 배경색": ["Text background color", "テキスト背景色"],
       "배경 색상": ["Background color", "背景色"],
       "자막 일반 글자색": ["Caption text color", "字幕の文字色"],

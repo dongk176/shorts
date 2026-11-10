@@ -6,6 +6,19 @@ import { stockBackgrounds, templateConfigColorOptions } from "@/lib/template-con
 import { userOccupationOptions, userUsagePurposeOptions, userDiscoverySourceOptions } from "@/lib/user-onboarding";
 
 describe("language audit regressions", () => {
+  it.each(["en", "ja"] as const)("localizes complete editor labels and reward messages in %s", locale => {
+    const labels = [
+      "기본형 자막 위치·크기·텍스트 편집", "기본형 자막 위치·크기 설정", "강조형 자막 위치·크기 설정",
+      "영상 구간 선택", "레이어", "영상 구간", "브랜드 색상", "롱폼 → 숏폼",
+      "일부 작업을 불러오지 못했습니다. 잠시 후 새로고침해 주세요.",
+      ...stockBackgrounds.map(asset => `이미지 배경 ${asset.label}`),
+      "솔직한 의견 감사합니다. 지급된 원본 영상 처리시간은 30일 동안 사용할 수 있어요.",
+    ];
+    for (const label of labels) expect(translateLegacyText(label, locale), label).not.toMatch(/[가-힣]/);
+    expect(translateLegacyText(labels.at(-1)!, locale)).toContain("30");
+    expect(translateLegacyText("이미지 배경 뉴스 블루", locale)).toContain(locale === "en" ? "News blue" : "ニュース・ブルー");
+  });
+
   it("uses singular English counters", () => {
     expect(translateLegacyText("쇼츠 1개", "en")).toBe("1 Short");
     expect(translateLegacyText("1개월", "en")).toBe("1 month");
