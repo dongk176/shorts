@@ -7,6 +7,7 @@ vi.mock("@/lib/admin-overseas-auth",()=>({requireOverseasAdminUser:auth}));
 vi.mock("@/lib/db",()=>({getDb:()=>sql}));
 import { kstDate, shiftTrendDate } from "./admin-trends";
 import { loadAdminOverseas, loadAdminOverseasTrend } from "./admin-overseas";
+import { loadOverseasBilling } from "./admin-overseas-billing";
 import { overseasFilters } from "./admin-overseas-contract";
 
 type Fragment = {strings:TemplateStringsArray; values:unknown[]};
@@ -137,5 +138,33 @@ describe("overseas administrator isolation",()=>{
     expect((await loadAdminOverseas({q:"%"})).total).toBe(0);
     expect((await loadAdminOverseas({q:"' or true --"})).total).toBe(0);
     expect(overseasFilters({tab:"settings",page:"-1",scope:"all"})).toMatchObject({tab:"overview",page:1});
+  });
+});
+
+
+describe("overseas monthly billing isolation",()=>{
+  const filters={month:"2026-11",currency:"USD" as const,provider:"all" as const,query:"",page:1};
+  it("rejects access before any calendar or detail query",async()=>{
+    auth.mockRejectedValue(new Error("forbidden"));
+    await expect(loadOverseasBilling(filters)).rejects.toThrow("forbidden");expect(reads).toBe(0);
+  });
+  it("reconciles daily totals and paginated details without domestic or sandbox transactions",async()=>{
+    await member(1,"ko","한글 이름");
+    await pg.exec(`insert into shorts_mvp.billing_orders values('${uid(1)}','toss');
+      insert into shorts_mvp.paddle_subscriptions values('live','${uid(1)}','live','active'),('test','${uid(1)}','sandbox','active');
+      insert into shorts_mvp.paddle_payments select 'payment-'||n,'live','${uid(1)}','USD',399,'2026-10-31T15:00:00Z'::timestamptz,'paddle_lite' from generate_series(1,34) n;
+      insert into shorts_mvp.paddle_payments values('yen','live','${uid(1)}','JPY',590,'2026-11-01','paddle_lite'),('sandbox','test','${uid(1)}','USD',99999,'2026-11-01','paddle_lite');
+      insert into shorts_mvp.paddle_adjustments values('payment-1',100,'refund','approved'),('payment-1',50,'chargeback','approved'),('payment-1',200,'refund','pending_approval');`);
+    const result=await loadOverseasBilling(filters);
+    expect(result.days).toEqual([{day:"2026-11-01",gross:13566,refunded:150,count:34}]);
+    expect(result.total).toBe(34);expect(result.rows).toHaveLength(30);
+    const second=await loadOverseasBilling({...filters,day:"2026-11-01",page:2});
+    expect(second.rows).toHaveLength(4);expect(new Set([...result.rows,...second.rows].map(r=>r.id)).size).toBe(34);
+    expect((await loadOverseasBilling({...filters,day:"2026-11-02"})).total).toBe(0);
+    expect((await loadOverseasBilling({...filters,currency:"JPY"})).days[0].gross).toBe(590);
+    expect((await loadOverseasBilling({...filters,query:"%"})).total).toBe(0);
+    expect((await loadOverseasBilling({...filters,query:"한글"})).total).toBe(34);
+    expect((await loadOverseasBilling({...filters,provider:"paypal"})).total).toBe(0);
+    expect(JSON.stringify(result)).not.toContain("toss");expect(JSON.stringify(result)).not.toContain("sandbox");
   });
 });

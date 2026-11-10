@@ -5,6 +5,7 @@ vi.mock("server-only", () => ({}));
 vi.mock("@/lib/db", () => ({ getDb: () => sql }));
 import { loadAdminBillingOrders, decodeBillingOrderCursor } from "./admin-billing-orders";
 import { loadAdminPaddleOrders, loadAdminPaddleSales } from "./admin-paddle";
+import { loadBillingCalendar } from "./admin-billing-calendar-server";
 import { formatAdminCurrency } from "./admin-paddle-contract";
 let pg: PGlite;
 const sql = pgliteTestSql(()=>pg);
@@ -120,4 +121,54 @@ it("includes confirmed Live PayPal sales in USD without mixing KRW or Sandbox",a
   expect((await loadAdminBillingOrders({filters:{...filters,provider:'paypal'}})).orders).toHaveLength(1);
   expect((await loadAdminPaddleSales()).find(s=>s.currency==='USD')).toMatchObject({grossMinor:1599,refundedMinor:200,netMinor:1399,paidOrders:2});
  }finally{vi.unstubAllEnvs();}
+});
+
+
+describe("monthly billing calendar and day drilldown", () => {
+  const calendarFilters = { month: "2026-09", currency: "KRW" as const, provider: "all", query: "" };
+  it("uses approval date in KST, retains refunded approvals, and excludes unapproved orders", async () => {
+    await domestic("2026-08-31T15:00:00Z");
+    await pg.exec(`update shorts_mvp.billing_orders set created_at='2026-08-30',status='canceled',refunded_amount_krw=9900;
+      insert into shorts_mvp.billing_orders(id,user_id,order_id,created_at,status,provider,amount_krw)
+      values('22222222-2222-4222-8222-222222222222','${uid}','unapproved','2026-09-01','failed','toss',50000);`);
+    expect((await loadBillingCalendar(calendarFilters)).days).toEqual([{ day:"2026-09-01",gross:9900,refunded:9900,count:1 }]);
+    const page = await loadAdminBillingOrders({ filters:{...filters,month:"2026-09",day:"2026-09-01",currency:"KRW",settledOnly:true} });
+    expect(page.orders).toHaveLength(1);
+    expect(page.orders[0].status).toBe("canceled");
+    expect((await loadBillingCalendar({...calendarFilters,month:"2026-08"})).days).toEqual([]);
+    await pg.exec("update shorts_mvp.billing_orders set approved_at='2026-09-30T15:00:00Z' where order_id='domestic-order'");
+    expect((await loadBillingCalendar(calendarFilters)).days).toEqual([]);
+  });
+  it("aggregates the entire month, separates currencies and paginates a selected date", async () => {
+    for (let n=1;n<=24;n++) await payment(n,"USD",399);
+    await payment(25,"JPY",1000); await payment(26,"USD",99999,"sub_sandbox");
+    const result = await loadBillingCalendar({...calendarFilters,currency:"USD"});
+    expect(result.days).toEqual([{day:"2026-09-27",gross:9576,refunded:0,count:24}]);
+    const f = {...filters,month:"2026-09",day:"2026-09-27",currency:"USD",settledOnly:true};
+    const first = await loadAdminBillingOrders({filters:f});
+    const second = await loadAdminBillingOrders({filters:f,cursor:first.nextCursor});
+    expect(first.orders.length+second.orders.length).toBe(24);
+    expect(() => decodeBillingOrderCursor(first.nextCursor,{...f,day:"2026-09-28"})).toThrow();
+    expect(() => decodeBillingOrderCursor(first.nextCursor,{...f,currency:"JPY"})).toThrow();
+    expect((await loadBillingCalendar({...calendarFilters,currency:"USD",provider:"toss"})).days).toEqual([]);
+    expect((await loadBillingCalendar({...calendarFilters,currency:"USD",query:id(1)})).days[0].count).toBe(1);
+  });
+  it("deducts approved refunds and chargebacks once and ignores pending refunds", async () => {
+    await payment(1,"USD",399);
+    await adjustment("r",1,300,"refund","approved");
+    await adjustment("c",1,200,"chargeback","approved");
+    await adjustment("p",1,200,"refund","pending_approval");
+    expect((await loadBillingCalendar({...calendarFilters,currency:"USD"})).days[0]).toMatchObject({gross:399,refunded:399,count:1});
+  });
+  it("uses PayPal capture date and keeps the existing live feature gate", async () => {
+    vi.stubEnv("PAYPAL_ENABLED","true"); vi.stubEnv("PAYPAL_ONE_TIME_ENABLED","true");
+    try {
+      await pg.exec(`insert into shorts_mvp.paypal_one_time_orders(id,user_id,plan_code,status,capture_id,amount_minor,currency,refunded_minor,reversed,environment,paid_at,created_at)
+        values('33333333-3333-4333-8333-333333333333','${uid}','paddle_lite','completed','CAPTURE',1000,'USD',200,true,'live','2026-08-31T15:00:00Z','2026-08-30');`);
+      expect((await loadBillingCalendar({...calendarFilters,currency:"USD"})).days).toEqual([{day:"2026-09-01",gross:1000,refunded:1000,count:1}]);
+      expect((await loadAdminBillingOrders({filters:{...filters,month:"2026-09",day:"2026-09-01",currency:"USD",settledOnly:true}})).orders).toHaveLength(1);
+      vi.stubEnv("PAYPAL_ONE_TIME_ENABLED","false");
+      expect((await loadBillingCalendar({...calendarFilters,currency:"USD"})).days).toEqual([]);
+    } finally { vi.unstubAllEnvs(); }
+  });
 });

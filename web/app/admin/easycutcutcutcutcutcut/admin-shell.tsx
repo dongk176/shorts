@@ -283,7 +283,7 @@ export function AdminShell({
   const [overviewError, setOverviewError] = useState<string | null>(null);
   const [overviewAttempt, setOverviewAttempt] = useState(0);
   useEffect(() => {
-    if (activeTab === "expenses" || activeTab === "updates") return;
+    if (activeTab === "expenses" || activeTab === "updates" || activeTab === "billing") return;
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 8_000);
     setOverviewError(null);
@@ -341,7 +341,7 @@ export function AdminShell({
   ];
 
   return (
-    <main className={styles.shell}>
+    <main className={`${styles.shell} ${activeTab === "billing" ? styles.billingShell : ""}`}>
       <aside className={styles.sidebar}>
         <div className={styles.brand}>
           <span className={styles.brandMark} aria-hidden="true" />
@@ -381,7 +381,7 @@ export function AdminShell({
         </header>
 
         <div className={styles.workspace}>
-          {activeTab !== "expenses" && activeTab !== "updates" ? <section aria-labelledby="admin-overview-title" aria-busy={!overview && !overviewError}>
+          {activeTab !== "expenses" && activeTab !== "updates" && activeTab !== "billing" ? <section aria-labelledby="admin-overview-title" aria-busy={!overview && !overviewError}>
             <div className={styles.overviewHeading}>
               <div>
                 <p className={styles.overviewKicker}>Operations overview</p>
@@ -466,7 +466,7 @@ export function AdminShell({
             </div>
           </section> : null}
 
-          <div className={styles.content}>{children}</div>
+          <div className={activeTab === "billing" ? styles.billingContent : styles.content}>{children}</div>
         </div>
       </div>
     </main>

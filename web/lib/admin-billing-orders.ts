@@ -1,6 +1,7 @@
 import "server-only";
 
 import { z } from "zod";
+import { billingRange } from "./admin-billing-calendar";
 import { addKstMonths } from "@/lib/billing";
 import { getDb } from "@/lib/db";
 import { loadAdminPaddleOrders } from "@/lib/admin-paddle";
@@ -16,6 +17,10 @@ export type AdminBillingOrderFilters = {
   status: string;
   provider: string;
   query: string;
+  month?: string;
+  day?: string;
+  currency?: string;
+  settledOnly?: boolean;
 };
 
 const billingOrderCursorSchema = z.object({
@@ -26,6 +31,10 @@ const billingOrderCursorSchema = z.object({
     status: z.string(),
     provider: z.string(),
     query: z.string(),
+    month: z.string().optional(),
+    day: z.string().optional(),
+    currency: z.string().optional(),
+    settledOnly: z.boolean().optional(),
   }),
 });
 
@@ -48,6 +57,10 @@ export function decodeBillingOrderCursor(
       cursor.filters.status !== filters.status
       || cursor.filters.provider !== filters.provider
       || cursor.filters.query !== filters.query
+      || cursor.filters.month !== filters.month
+      || cursor.filters.day !== filters.day
+      || cursor.filters.currency !== filters.currency
+      || Boolean(cursor.filters.settledOnly) !== Boolean(filters.settledOnly)
     ) {
       throw new Error("filters changed");
     }
@@ -143,21 +156,23 @@ export async function loadAdminBillingOrders({
   const db = getDb();
   const cursor = decodeBillingOrderCursor(encodedCursor, filters);
   const legacyOffset = cursor ? 0 : offset;
+  const range = filters.month ? billingRange(filters.month, filters.day) : null;
   // Select one global page before enriching either ledger. Foreign amounts never
   // enter billing_orders or its KRW totals; only confirmed live payments join here.
   const selected = await db`
     with candidates as (
       select o.id::text as id,o.created_at,o.status,o.provider,u.email,
-        o.order_id,o.provider_transaction_id
+        o.order_id,o.provider_transaction_id,coalesce(o.approved_at,o.created_at) as occurred_at,
+        'KRW' as currency,(o.approved_at is not null and o.amount_krw>0) as settled
       from shorts_mvp.billing_orders o join shorts_mvp.app_users u on u.id=o.user_id
       union all
       select p.transaction_id,p.created_at,'succeeded','paddle',u.email,
-        p.transaction_id,p.transaction_id
+        p.transaction_id,p.transaction_id,p.created_at,p.currency,true
       from shorts_mvp.paddle_payments p
       join shorts_mvp.paddle_subscriptions ps on ps.paddle_id=p.paddle_subscription_id and ps.user_id=p.user_id
       join shorts_mvp.app_users u on u.id=p.user_id
       where ps.environment='live'
-      ${oneTimeEnabled()?db`union all select o.id::text,o.created_at,'succeeded','paypal',u.email,o.capture_id,o.capture_id
+      ${oneTimeEnabled()?db`union all select o.id::text,o.created_at,'succeeded','paypal',u.email,o.capture_id,o.capture_id,o.paid_at,o.currency,true
         from shorts_mvp.paypal_one_time_orders o join shorts_mvp.app_users u on u.id=o.user_id
         where o.environment='live' and o.status='completed'`:db``}
     )
@@ -165,6 +180,9 @@ export async function loadAdminBillingOrders({
       to_char(created_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as cursor_created_at
     from candidates o
     where (${filters.status}='all' or o.status=${filters.status})
+      and (${!range} or (o.occurred_at >= ${range?.start ?? null}::timestamptz and o.occurred_at < ${range?.end ?? null}::timestamptz))
+      and (${!filters.currency} or o.currency=${filters.currency ?? null})
+      and (${!filters.settledOnly} or o.settled)
       and (${filters.provider}='all' or o.provider=${filters.provider})
       and (${filters.query}='' or lower(coalesce(o.email,'')) like ${`%${filters.query.toLowerCase()}%`}
         or lower(o.order_id) like ${`%${filters.query.toLowerCase()}%`}

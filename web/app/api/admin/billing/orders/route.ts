@@ -23,8 +23,12 @@ const querySchema = z.object({
     "expired",
   ]).default("all"),
   provider: z.enum(["all", "nicepay", "thepayone", "toss", "paddle", "paypal"]).default("all"),
+  month: z.string().regex(/^20\d{2}-(0[1-9]|1[0-2])$/).optional(),
+  day: z.string().date().optional(),
+  currency: z.enum(["KRW", "USD", "JPY"]).optional(),
+  settledOnly: z.enum(["true", "false"]).optional(),
   q: z.string().trim().max(100).default(""),
-});
+}).refine(value => !value.day || Boolean(value.month && value.day.startsWith(`${value.month}-`)), "날짜와 조회 월이 일치해야 합니다.");
 
 export async function GET(request: Request) {
   try {
@@ -36,6 +40,10 @@ export async function GET(request: Request) {
       cursor: url.searchParams.get("cursor") ?? undefined,
       status: url.searchParams.get("status") ?? undefined,
       provider: url.searchParams.get("provider") ?? undefined,
+      month: url.searchParams.get("month") ?? undefined,
+      day: url.searchParams.get("day") ?? undefined,
+      currency: url.searchParams.get("currency") ?? undefined,
+      settledOnly: url.searchParams.get("settledOnly") ?? undefined,
       q: url.searchParams.get("q") ?? undefined,
     });
     const page = await loadAdminBillingOrders({
@@ -43,6 +51,10 @@ export async function GET(request: Request) {
         status: query.status,
         provider: query.provider,
         query: query.q,
+        month: query.month,
+        day: query.day,
+        currency: query.currency,
+        settledOnly: query.settledOnly === "true",
       },
       cursor: query.cursor,
       offset: query.offset,

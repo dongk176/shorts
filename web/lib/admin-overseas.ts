@@ -8,7 +8,7 @@ import { oneTimeEnabled } from "@/lib/paypal/one-time-config";
 
 const korean = "[가-힣ᄀ-ᇿㄱ-ㆎ]";
 
-function overseasScope(db: Sql) {
+export function overseasScope(db: Sql, paymentRange?: { start: string; end: string }) {
   return db`
     eligible as materialized (
       select u.id,u.email,u.display_name,u.created_at,
@@ -54,7 +54,7 @@ function overseasScope(db: Sql) {
       -- never query or serialize their domestic billing history.
       select p.transaction_id,p.user_id,p.plan_code,p.created_at,p.currency,p.amount_minor,least(p.amount_minor,coalesce(a.refunded,0)) as refunded,
         least(greatest(0,p.amount_minor-coalesce(a.refunded,0)),coalesce(a.chargeback,0)) as chargeback,
-        coalesce(a.pending,0) as pending
+        coalesce(a.pending,0) as pending,'paddle'::text as provider
       from shorts_mvp.paddle_payments p
       join shorts_mvp.paddle_subscriptions ps on ps.paddle_id=p.paddle_subscription_id and ps.user_id=p.user_id and ps.environment='live'
       left join lateral (
@@ -64,9 +64,11 @@ function overseasScope(db: Sql) {
         from shorts_mvp.paddle_adjustments where transaction_id=p.transaction_id
       ) a on true
       where p.currency in ('USD','JPY')
+        ${paymentRange ? db`and p.created_at >= ${paymentRange.start}::timestamptz and p.created_at < ${paymentRange.end}::timestamptz` : db``}
       ${oneTimeEnabled()?db`union all select capture_id,user_id,plan_code,paid_at,'USD',amount_minor,refunded_minor,
-        case when reversed then greatest(0,amount_minor-refunded_minor) else 0 end,0
-        from shorts_mvp.paypal_one_time_orders where environment='live' and status='completed'`:db``}
+        case when reversed then greatest(0,amount_minor-refunded_minor) else 0 end,0,'paypal'
+        from shorts_mvp.paypal_one_time_orders where environment='live' and status='completed'
+          ${paymentRange ? db`and paid_at >= ${paymentRange.start}::timestamptz and paid_at < ${paymentRange.end}::timestamptz` : db``}`:db``}
     ), projects as materialized (
       select j.* from shorts_mvp.video_jobs j join eligible u on u.id=j.user_id
       where j.output_language in ('en','ja') and coalesce(j.video_title,'') !~ ${korean}

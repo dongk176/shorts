@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { requireOverseasAdminUser } from "@/lib/admin-overseas-auth";
 import { loadAdminOverseas } from "@/lib/admin-overseas";
-import { overseasPath } from "@/lib/admin-overseas-contract";
+import { overseasPath, overseasFilters } from "@/lib/admin-overseas-contract";
 import { ensureAdminDbReady } from "@/lib/db";
 import { HttpError } from "@/lib/http";
 import { createNoIndexMetadata } from "@/lib/seo";
@@ -18,6 +18,9 @@ export default async function OverseasAdminPage({searchParams}: {searchParams: P
     if (error instanceof HttpError && error.status===401) redirect(`${overseasPath}/login`);
     notFound();
   }
-  const data = await loadAdminOverseas(await searchParams);
+  const params = await searchParams;
+  const filters = overseasFilters(params);
+  if (filters.tab === "billing") return <OverseasDashboard billingQuery={filters.query} />;
+  const data = await loadAdminOverseas(params);
   return <OverseasDashboard data={data} />;
 }

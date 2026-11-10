@@ -15,6 +15,14 @@ const data:OverseasData = {
   salesTrends:{USD:buildAdminTrend("sales","7d","2026-10-27",[]),JPY:buildAdminTrend("sales","7d","2026-10-27",[])},
 };
 describe("overseas administrator interface",()=>{
+  it("renders the billing calendar without loading unrelated overview data or exposing KRW",()=>{
+    const html=renderToStaticMarkup(<OverseasDashboard billingQuery="alex"/>);
+    expect(html).toContain("월별 매출 달력");
+    expect(html).toContain("해외 결제 내역");
+    expect(html).toContain("value=\"alex\"");
+    expect(html).not.toContain("국내 · KRW");
+    expect(html).not.toContain("해외 회원 수 추이");
+  });
   it("keeps navigation and searches within the overseas page",()=>{
     const html=renderToStaticMarkup(<OverseasDashboard data={data}/>);
     const links=[...html.matchAll(/href="([^"]+)"/g)].map(match=>match[1]);

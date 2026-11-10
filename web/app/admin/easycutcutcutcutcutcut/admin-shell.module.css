@@ -1028,3 +1028,10 @@
     transition: none;
   }
 }
+
+/* Keep the payment workspace calm while preserving the admin dark theme. */
+.billingShell { background:#101216; }
+.billingShell .sidebar { background:#121418; box-shadow:none; }
+.billingShell .topbar { background:#101216ed; }
+
+.billingContent { margin-top:0; }
