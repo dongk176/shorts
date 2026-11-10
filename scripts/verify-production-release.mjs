@@ -42,6 +42,9 @@ export const PROTECTED_APP_ROUTES = [
 // These routes are the only intentional additions relative to the currently
 // promoted production manifest. Everything else must still fail closed.
 export const ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE = [
+  // Approved domestic and overseas read-only payment calendars (2026-11-10).
+  "/api/admin/billing/calendar/route",
+  "/api/admin/overseas/billing/route",
   // User-requested conversion diagnosis and fixes (2026-11-09).
   "/api/conversion-events/route",
   // Administrator-only Shorts silence removal through the existing editor.
