@@ -85,3 +85,36 @@
 .compactAmount { display:none; }
 @media(max-width:640px) { .fullAmount { display:none!important; } .compactAmount { display:inline!important; } }
 .dayAmount strong span { font:inherit; color:inherit; }
+
+/* Show foreign currencies together without combining unlike monetary units. */
+.currencyNote { color:#9ca5b3; font-size:12px; white-space:nowrap; }
+.dualSummary { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:24px; padding:28px 0; border-bottom:1px solid #2a2e36; }
+.currencySummary { padding:20px 24px; border-radius:14px; background:#202630; color:#75aaff; min-width:0; }
+.currencySummary.yen { background:#1d2b29; color:#68d4b1; }
+.currencySummary p { display:flex; align-items:center; justify-content:space-between; gap:12px; font-size:12px; color:#9ca5b3; }
+.currencyLabel { color:#dce3ed; font-weight:600; }
+.currencySummary > strong { display:block; margin:12px 0 16px; font-size:28px; font-weight:700; font-variant-numeric:tabular-nums; }
+.currencySummary > div { display:flex; flex-wrap:wrap; gap:12px 24px; color:#9ca5b3; font-size:12px; }
+.currencySummary b { color:#dce3ed; font-weight:500; margin-left:6px; }
+.yenDot { background:#68d4b1; margin-left:16px; }
+.dualAmount { position:relative; gap:4px; padding:5px 6px; margin-top:6px; }
+.dualAmount.yen { color:#68d4b1; }
+.dualAmount.yen:hover:not(:disabled) { background:#243d35; }
+.dualAmount .dayCurrency { color:inherit; font-size:9px; font-weight:600; letter-spacing:.04em; }
+.dualAmount .dayCount { position:absolute; right:6px; top:5px; font-size:9px; }
+.dualAmount.zero > .dayCurrency { visibility:visible; }
+.dualAmount[aria-pressed="true"] { box-shadow:inset 0 0 0 1px currentColor; }
+@media(max-width:1100px) { .currencySummary { padding:18px; } .dualSummary { gap:14px; } }
+@media(max-width:640px) {
+  .dualSummary { gap:10px; padding:20px 0; }
+  .currencySummary { padding:14px 10px; border-radius:10px; }
+  .currencySummary p { display:block; font-size:10px; }
+  .currencyLabel { display:block; margin-bottom:6px; }
+  .currencySummary > strong { font-size:20px; margin:10px 0; overflow-wrap:anywhere; }
+  .currencySummary > div { display:grid; gap:6px; font-size:10px; }
+  .currencySummary b { display:block; margin:3px 0 0; }
+  .dualAmount { padding:5px 2px; margin-top:4px; }
+  .dualAmount .dayCurrency { font-size:8px; }
+  .dualAmount .dayCount { display:none; }
+  .currencyNote { font-size:10px; }
+}

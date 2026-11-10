@@ -18,6 +18,10 @@ describe("overseas administrator interface",()=>{
   it("renders the billing calendar without loading unrelated overview data or exposing KRW",()=>{
     const html=renderToStaticMarkup(<OverseasDashboard billingQuery="alex"/>);
     expect(html).toContain("월별 매출 달력");
+    expect(html).toContain("미국 달러 · USD");
+    expect(html).toContain("일본 엔 · JPY");
+    expect(html).toContain("USD + JPY");
+    expect(html).not.toContain('aria-label="매출 통화"');
     expect(html).toContain("해외 결제 내역");
     expect(html).toContain("value=\"alex\"");
     expect(html).not.toContain("국내 · KRW");

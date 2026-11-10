@@ -17,7 +17,7 @@ export function overseasFilters(params: Record<string, string | string[] | undef
 export type OverseasFilters = ReturnType<typeof overseasFilters>;
 export type OverseasRow = {
   id: string; email: string; name: string | null; label: string; status: string;
-  createdAt: string; currency: string | null; amount: number | null; refunded?: number; chargeback?: number; pending?: number;
+  provider?: "paddle" | "paypal"; createdAt: string; currency: string | null; amount: number | null; refunded?: number; chargeback?: number; pending?: number;
 };
 export type OverseasData = {
   filters: OverseasFilters; total: number; pages: number; rows: OverseasRow[];

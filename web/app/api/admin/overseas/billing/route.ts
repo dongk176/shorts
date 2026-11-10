@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 const schema = z.object({
   month: z.string().regex(/^20\d{2}-(0[1-9]|1[0-2])$/),
   day: z.string().date().optional(),
-  currency: z.enum(["USD", "JPY"]).default("USD"),
+  currency: z.enum(["USD", "JPY", "all"]).default("all"),
   provider: z.enum(["all", "paddle", "paypal"]).default("all"),
   q: z.string().trim().max(100).default(""),
   page: z.coerce.number().int().min(1).max(10000).default(1),

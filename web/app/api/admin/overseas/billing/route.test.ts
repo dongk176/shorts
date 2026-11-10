@@ -18,6 +18,12 @@ describe("overseas billing calendar API",()=>{
     expect((await GET(new Request(`http://localhost/api/admin/overseas/billing?${params}`))).status).toBe(400);
     expect(mocks.load).not.toHaveBeenCalled();
   });
+  it("shows both foreign currencies by default",async()=>{
+    mocks.load.mockResolvedValue({days:[],rows:[],total:0});
+    const r=await GET(new Request("http://localhost/api/admin/overseas/billing?month=2026-11"));
+    expect(r.status).toBe(200);
+    expect(mocks.load).toHaveBeenCalledWith(expect.objectContaining({currency:"all",provider:"all"}));
+  });
   it("passes validated native currency/day filters and disables caching",async()=>{
     mocks.load.mockResolvedValue({days:[],rows:[],total:0});
     const r=await GET(new Request("http://localhost/api/admin/overseas/billing?month=2026-11&day=2026-11-10&currency=JPY&provider=paddle&page=2"));

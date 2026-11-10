@@ -156,8 +156,22 @@ describe("overseas monthly billing isolation",()=>{
       insert into shorts_mvp.paddle_payments values('yen','live','${uid(1)}','JPY',590,'2026-11-01','paddle_lite'),('sandbox','test','${uid(1)}','USD',99999,'2026-11-01','paddle_lite');
       insert into shorts_mvp.paddle_adjustments values('payment-1',100,'refund','approved'),('payment-1',50,'chargeback','approved'),('payment-1',200,'refund','pending_approval');`);
     const result=await loadOverseasBilling(filters);
-    expect(result.days).toEqual([{day:"2026-11-01",gross:13566,refunded:150,count:34}]);
+    expect(result.days).toEqual([{day:"2026-11-01",currency:"USD",gross:13566,refunded:150,count:34}]);
     expect(result.total).toBe(34);expect(result.rows).toHaveLength(30);
+    const both=await loadOverseasBilling({...filters,currency:"all"});
+    expect(both.total).toBe(35);
+    expect(both.days).toEqual([
+      {day:"2026-11-01",currency:"JPY",gross:590,refunded:0,count:1},
+      {day:"2026-11-01",currency:"USD",gross:13566,refunded:150,count:34},
+    ]);
+    const bothPage2=await loadOverseasBilling({...filters,currency:"all",page:2});
+    const bothRows=[...both.rows,...bothPage2.rows];
+    expect(new Set(bothRows.map(r=>r.id)).size).toBe(35);
+    expect(bothRows.find(r=>r.id==="yen")).toMatchObject({currency:"JPY",amount:590,provider:"paddle"});
+    expect(bothRows.every(r=>r.provider==="paddle")).toBe(true);
+    const yenDay=await loadOverseasBilling({...filters,currency:"JPY",day:"2026-11-01"});
+    expect(yenDay.total).toBe(1);expect(yenDay.rows[0].id).toBe("yen");
+
     const second=await loadOverseasBilling({...filters,day:"2026-11-01",page:2});
     expect(second.rows).toHaveLength(4);expect(new Set([...result.rows,...second.rows].map(r=>r.id)).size).toBe(34);
     expect((await loadOverseasBilling({...filters,day:"2026-11-02"})).total).toBe(0);
