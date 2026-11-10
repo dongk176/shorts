@@ -168,6 +168,10 @@ html[lang="ja"] body { font-family: -apple-system, BlinkMacSystemFont, "Hiragino
 .source-input-mode-tab:focus-visible { outline: 2px solid rgba(255,143,128,.9); outline-offset: 3px; }
 .source-input-mode-tab[aria-selected="true"] { border-color: transparent; color: #fff; background: linear-gradient(105deg,#f04435 0%,#ff6354 28%,#e9698b 58%,#bd6fd1 79%,#9566ef 100%); background-clip: padding-box; box-shadow: none; }
 .source-input-mode-tab[aria-selected="true"]:hover { transform: translateY(-1px); }
+@media (max-width: 375px) {
+  .source-input-mode .source-input-mode-tab { gap: 5px; padding: 0 7px; font-size: 12px; white-space: nowrap; }
+  .source-input-mode-tab svg { flex: none; width: 16px; height: 16px; }
+}
 .source-upload-dropzone { position: relative; isolation: isolate; display: flex; min-height: 290px; width: 100%; cursor: pointer; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; border: 2px dashed rgba(255,255,255,.2); border-radius: 24px; padding: 34px 24px; color: #97979c; background: rgba(13,14,15,.68); box-shadow: inset 0 0 45px rgba(255,255,255,.012); outline: none; text-align: center; transition: border-color .22s ease,background .22s ease,box-shadow .22s ease,transform .22s ease; }
 .source-upload-dropzone:hover,.source-upload-dropzone:focus-visible { border-color: rgba(255,113,94,.82); background: rgba(255,113,94,.075); box-shadow: inset 0 0 0 1px rgba(255,180,168,.12),0 18px 55px rgba(240,68,53,.14); transform: translateY(-1px); }
 .source-upload-dropzone.is-dragging { border-style: solid; border-color: rgba(255,143,127,.98); background: rgba(255,113,94,.12); box-shadow: inset 0 0 0 1px rgba(255,180,168,.24),0 22px 60px rgba(240,68,53,.22); transform: translateY(-5px) scale(1.01); }

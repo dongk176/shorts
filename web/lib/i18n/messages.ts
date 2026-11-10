@@ -740,7 +740,7 @@ const jaMessages: Messages = {
   "consent.suffix": "を確認し、同意します。",
   "home.sourceMode": "動画の追加方法",
   "home.youtubeTab": "YouTubeリンク",
-  "home.uploadTab": "動画をアップロード",
+  "home.uploadTab": "動画を選ぶ",
   "home.uploadNoticeTitle": "動画アップロードについて",
   "home.uploadNoticeIntro": "動画アップロードは現在ベータ版です。",
   "home.uploadNoticeTiming": "動画のサイズや通信環境によって、アップロードに時間がかかることがあります。",
