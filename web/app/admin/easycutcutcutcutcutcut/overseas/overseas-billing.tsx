@@ -42,17 +42,19 @@ export function OverseasBilling({ initialQuery = "" }: { initialQuery?: string }
     return () => { active=false; window.clearTimeout(timeout); controller.abort(); };
   },[month,currency,filters,selectedDay,page,attempt]);
   return <div className={styles.dashboard}>
-    <div className={styles.intro}><div><h2>해외 매출 흐름을 한눈에</h2><p>통화별 매출을 확인하고, 날짜를 눌러 결제 내역을 살펴보세요.</p></div><span>해외 결제 전용 · KST</span></div>
+    <div className={styles.headerRow}>
+      <div className={styles.intro}><h2>해외 매출 흐름을 한눈에</h2><p>날짜를 눌러 결제 내역을 확인하세요.</p></div>
     <form className={styles.filters} onSubmit={event => {
       event.preventDefault(); const values=new FormData(event.currentTarget);
       setFilters({provider:String(values.get("provider") || "all"),query:String(values.get("q") || "").trim()});
       setSelectedDay(null); setPage(1);
     }}>
-      <span className={styles.filterLabel}>조회 조건</span>
+
       <input aria-label="해외 결제 검색" name="q" type="search" maxLength={100} defaultValue={initialQuery} placeholder="이메일·이름·상품·거래번호" className="h-10 rounded-xl border border-white/10 px-3 text-sm" />
       <select aria-label="해외 결제사" name="provider" className="h-10 rounded-xl border border-white/10 bg-[#1b1e24] px-3 text-sm"><option value="all">모든 결제사</option><option value="paddle">Paddle</option><option value="paypal">PayPal</option></select>
       <button className="h-10 rounded-xl bg-[#3182f6] px-4 text-sm font-bold text-white">조회</button>
     </form>
+    </div>
     <AdminBillingCalendar overseas month={month} currency={currency} selectedDay={selectedDay} provider={filters.provider} query={filters.query}
       onMonthChange={value => {setMonth(value);setSelectedDay(null);setPage(1);}}
       onCurrencyChange={value => {setCurrency(value);setSelectedDay(null);setPage(1);}} onSelectDay={selectDay}/>

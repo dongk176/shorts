@@ -280,7 +280,8 @@ export function AdminBillingDashboard({
 
   return (
     <div className={styles.dashboard}>
-      <div className={styles.intro}><div><h2>매출 흐름을 한눈에</h2><p>월별 매출을 확인하고, 날짜를 눌러 결제 내역을 살펴보세요.</p></div><span>한국 시간 기준</span></div>
+      <div className={styles.headerRow}>
+      <div className={styles.intro}><h2>매출 흐름을 한눈에</h2><p>날짜를 눌러 결제 내역을 확인하세요.</p></div>
             <form className={styles.filters} onSubmit={event => {
         event.preventDefault();
         const values = new FormData(event.currentTarget);
@@ -290,7 +291,7 @@ export function AdminBillingDashboard({
         if (["paddle", "paypal"].includes(provider) && currency === "KRW") setCurrency("USD");
         if (!["all", "paddle", "paypal"].includes(provider)) setCurrency("KRW");
       }}>
-              <span className={styles.filterLabel}>조회 조건</span>
+
               <input aria-label="결제 내역 검색" name="q" maxLength={100} defaultValue={filters.query} placeholder="이메일·주문·거래번호" className="h-10 w-56 rounded-xl border border-white/10 bg-[#17191f] px-3 text-sm outline-none placeholder:text-slate-500 focus:border-[#ff8c7c]" />
               <select aria-label="결제사" name="provider" defaultValue={filters.provider} className="h-10 rounded-xl border border-white/10 bg-[#1b1e24] px-3 text-sm">
                 <option value="all">모든 결제사</option><option value="thepayone">더페이원</option><option value="nicepay">나이스페이</option><option value="toss">토스페이먼츠</option><option value="paddle">Paddle</option><option value="paypal">PayPal</option>
@@ -298,6 +299,7 @@ export function AdminBillingDashboard({
 
               <button className="h-10 rounded-xl bg-[#3182f6] px-4 text-sm font-bold text-white transition hover:bg-blue-600">조회</button>
             </form>
+    </div>
       <AdminBillingCalendar month={month} currency={currency} selectedDay={selectedDay} provider={filters.provider} query={filters.query}
         onMonthChange={value => { setMonth(value); setSelectedDay(null); }}
         onCurrencyChange={value => { setCurrency(value); setSelectedDay(null); }} onSelectDay={selectDay} />

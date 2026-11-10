@@ -1,13 +1,14 @@
 .dashboard { display:grid; gap:24px; color:#e6e9ef; color-scheme:dark; padding-bottom:32px; }
-.intro { display:flex; justify-content:space-between; align-items:center; gap:16px; }
-.intro h2 { font-size:24px; font-weight:700; letter-spacing:-.7px; }
-.intro p { margin-top:8px; color:#9ca5b3; font-size:14px; }
-.intro > span { color:#818b9b; font-size:12px; white-space:nowrap; }
+.headerRow { display:flex; align-items:center; justify-content:space-between; gap:24px; min-width:0; }
+.intro { display:flex; align-items:center; gap:16px; min-width:0; }
+.intro h2 { margin:0; font-size:18px; line-height:1.5; font-weight:700; letter-spacing:-.5px; white-space:nowrap; }
+.intro p { margin:0; color:#9ca5b3; font-size:12px; white-space:nowrap; }
 .calendarCard { border:1px solid #2a2e36; border-radius:24px; background:#1b1e24; padding:32px; min-width:0; box-shadow:0 4px 20px #0000000a; }
 .calendarHeading { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:20px; }
 .monthNavigation { display:flex; align-items:center; gap:8px; }
 .monthNavigation h2 { font-size:25px; font-weight:700; letter-spacing:-.7px; margin-right:16px; }
-.monthNavigation button { display:grid; place-items:center; width:32px; height:32px; border-radius:9px; background:#242831; color:#b8c0ce; font-size:24px; }
+.monthNavigation button { display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto; width:32px; height:32px; padding:0; line-height:1; border-radius:9px; background:#242831; color:#b8c0ce; font-size:24px; }
+.monthNavigation button svg { display:block; width:18px; height:18px; flex:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
 .monthNavigation button:hover:not(:disabled) { background:#333945; }
 .monthNavigation button:disabled { opacity:.35; cursor:not-allowed; }
 .monthNavigation .thisMonth { font-size:12px; width:auto; padding:0 12px; margin-left:4px; font-weight:600; }
@@ -60,7 +61,7 @@
 
 @media(max-width:1100px) { .calendarCard { padding:24px; } .toolbarHint { display:none; } .summary { padding:0 14px; } .day { min-height:105px; padding:10px 3px; } }
 @media(max-width:640px) {
-  .dashboard { gap:16px; } .intro h2 { font-size:21px; } .intro p { font-size:12px; } .intro > span { display:none; }
+  .dashboard { gap:16px; } .intro h2 { font-size:17px; }
   .calendarCard { padding:18px 12px; border-radius:18px; } .calendarHeading { gap:16px; padding:0 4px; }
   .monthNavigation h2 { font-size:21px; margin-right:8px; } .calendarControls { width:100%; justify-content:space-between; } .monthPicker { font-size:11px; }
   .summaryGrid { grid-template-columns:1fr 1fr; gap:22px 0; padding:24px 4px; } .summary:nth-child(3) { padding-left:0; border:0; }
@@ -72,11 +73,14 @@
   .calendarFootnote { padding:14px 4px 0; font-size:10px; } .operations summary span { display:block; margin:8px 0 0 16px; }
 }
 
-.filters { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
-.filterLabel { color:#9ca5b3; font-size:13px; font-weight:600; margin-right:6px; }
-.filters input { background:#1b1e24; flex:1; max-width:360px; min-width:160px; }
-.filters button { margin-left:2px; }
-@media(max-width:640px) { .filterLabel { display:none; } .filters input { max-width:none; width:100%; flex-basis:100%; } }
+.filters { display:flex; flex:0 0 auto; align-items:center; gap:10px; margin:0; }
+.filters input { background:#1b1e24; width:240px; min-width:0; }
+.filters select { max-width:160px; }
+.filters button { display:inline-flex; align-items:center; justify-content:center; flex:none; white-space:nowrap; line-height:1; }
+@media(max-width:1500px) { .intro p { display:none; } }
+@media(max-width:1100px) { .headerRow { gap:16px; } .intro h2 { font-size:16px; } .filters input { width:180px; } }
+@media(max-width:800px) { .headerRow { flex-wrap:wrap; gap:12px; } .filters { flex:1 1 100%; } .filters input { flex:1; width:0; } }
+@media(max-width:400px) { .filters { gap:6px; } .filters input,.filters select { font-size:12px; padding-left:8px; padding-right:8px; } .filters select { max-width:108px; } .filters button { padding:0 12px; } }
 
 .compactAmount { display:none; }
 @media(max-width:640px) { .fullAmount { display:none!important; } .compactAmount { display:inline!important; } }

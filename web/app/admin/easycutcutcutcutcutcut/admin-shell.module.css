@@ -258,6 +258,7 @@
 
 .topbarActions {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 10px;
 }
@@ -278,11 +279,21 @@
 }
 
 .serviceLink {
+  flex: none;
+  white-space: nowrap;
+  line-height: 1;
   color: #d7d9e1;
   transition:
     border-color 160ms ease,
     background 160ms ease,
     color 160ms ease;
+}
+
+.serviceLink svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+  flex: none;
 }
 
 .serviceLink:hover {

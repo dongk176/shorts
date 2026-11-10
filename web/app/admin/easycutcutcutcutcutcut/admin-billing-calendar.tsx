@@ -65,8 +65,8 @@ export function AdminBillingCalendar({ month, currency, selectedDay, provider, q
     <div className={styles.calendarHeading}>
       <div className={styles.monthNavigation}>
         <h2>{monthLabel}</h2>
-        <button type="button" aria-label="이전 달" disabled={month <= "2000-01"} onClick={() => onMonthChange(shiftBillingMonth(month, -1))}>‹</button>
-        <button type="button" aria-label="다음 달" disabled={month >= currentMonth} onClick={() => onMonthChange(shiftBillingMonth(month, 1))}>›</button>
+        <button type="button" aria-label="이전 달" disabled={month <= "2000-01"} onClick={() => onMonthChange(shiftBillingMonth(month, -1))}><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m12 5-5 5 5 5" /></svg></button>
+        <button type="button" aria-label="다음 달" disabled={month >= currentMonth} onClick={() => onMonthChange(shiftBillingMonth(month, 1))}><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m8 5 5 5-5 5" /></svg></button>
         <button type="button" className={styles.thisMonth} onClick={() => onMonthChange(currentMonth)}>이번 달</button>
       </div>
       <div className={styles.calendarControls}>
