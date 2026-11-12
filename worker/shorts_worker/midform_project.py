@@ -220,8 +220,18 @@ def prepare_midform_source(source: Path, job: dict, work_dir: Path) -> tuple[Pat
             end = float(job["range_end_seconds"])
         except (KeyError, TypeError, ValueError) as error:
             raise ValueError("미들폼에 사용할 원본 구간을 확인해 주세요.") from error
+        # Admission stores a whole-second metadata duration. A full-range end
+        # may therefore be slightly later than ffprobe's actual final frame.
+        # Clamp only that admitted endpoint, never an arbitrary out-of-range cut.
+        declared = job.get("source_duration_seconds")
+        metadata_endpoint = (
+            isinstance(declared, (int, float)) and math.isfinite(declared)
+            and abs(end - declared) <= 0.001
+            and 0 <= declared - duration < 1.0
+        )
         if (not all(math.isfinite(value) for value in (start, end))
-                or start < 0 or end <= start or end > duration + 0.1):
+                or start < 0 or start >= duration or end <= start
+                or (end > duration + 0.1 and not metadata_endpoint)):
             raise ValueError("미들폼에 사용할 원본 구간을 확인해 주세요.")
         end = min(end, duration)
     source_range = {"start": start, "end": end, "sourceDuration": duration}

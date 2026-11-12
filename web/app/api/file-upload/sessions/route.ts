@@ -621,7 +621,9 @@ export async function POST(request: Request) {
         );
       }
       let uploadLanguage: { version: number; sourceLanguage: string; outputLanguage: string; releaseId: string } | undefined;
-      if (silenceInline || uploadCandidateConfig() || input.outputLanguage !== "ko" || input.sourceLanguage !== undefined) {
+      // Midform has its own immutable admin/release binding. The shorts-only
+      // multilingual marker is explicitly rejected by the database for midform.
+      if (!input.midform && (silenceInline || uploadCandidateConfig() || input.outputLanguage !== "ko" || input.sourceLanguage !== undefined)) {
         if (!silenceInline) await requireFileUploadLanguage(tx, initialRenderRelease.releaseId, session.userId);
         uploadLanguage = {
           version: 1, sourceLanguage: input.sourceLanguage ?? "auto",
@@ -802,6 +804,12 @@ export async function POST(request: Request) {
       usage,
     }, { status: result.created ? 201 : 200 }));
   } catch (error) {
+    // Identifiers only: never log SQL values, filenames, tokens or user input.
+    const diagnostic = error as { name?: unknown; code?: unknown; constraint_name?: unknown } | null;
+    const identifier = (value: unknown) => typeof value === "string" && /^[a-zA-Z0-9_]{1,120}$/.test(value) ? value : undefined;
+    console.error(JSON.stringify({ event: "file_upload_admission_failed",
+      kind: identifier(diagnostic?.name), code: identifier(diagnostic?.code),
+      constraint: identifier(diagnostic?.constraint_name) }));
     return noStore(apiError(error));
   }
 }

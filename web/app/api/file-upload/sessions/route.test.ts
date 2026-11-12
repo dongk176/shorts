@@ -228,6 +228,7 @@ function query(
 }
 
 beforeEach(() => {
+  vi.unstubAllEnvs();
   vi.clearAllMocks();
   mocks.parallelTarget.mockResolvedValue(null);
   mocks.midformAdmin.mockResolvedValue(undefined);
@@ -348,6 +349,32 @@ describe("file upload job control plane", () => {
     expect(mocks.midformAdmin).toHaveBeenCalled();
     expect(query(queries, "insert into shorts_mvp.usage_reservations")?.values).toContain(780);
     expect(query(queries, "insert into shorts_mvp.video_jobs")?.values).toEqual(expect.arrayContaining([120, 900]));
+  });
+
+  it("keeps private midform uploads out of shorts-only multilingual admission", async () => {
+    const releaseId = "f223e9e5-6aad-449f-8d2d-99202bfed190";
+    vi.stubEnv("FILE_UPLOAD_CANDIDATE_RELEASE_ID", releaseId);
+    vi.stubEnv("FILE_UPLOAD_CANDIDATE_ADMIN_ID", USER_ID);
+    vi.stubEnv("FILE_UPLOAD_CANDIDATE_EXPIRES_AT", new Date(Date.now() + 60_000).toISOString());
+    vi.stubEnv("FILE_UPLOAD_RECEIVER_URL", `https://receiver.example.com/admin-upload/${releaseId}`);
+    vi.stubEnv("FILE_UPLOAD_CAPACITY_FUNCTION_ARN", "arn:aws:lambda:ap-northeast-2:181651591905:function:shorts-upload-candidate-test");
+    try {
+      const { db, queries } = transactionDb();
+      mocks.getDb.mockReturnValue(db);
+      const response = await POST(jsonRequest({ ...validBody,
+        file: { ...validBody.file, durationSeconds: 1957.64 }, videoAspectRatio: "16:9",
+        rangeStartSeconds: 0, rangeEndSeconds: 1957.64, midform: { version: 1, targetSeconds: 0 },
+      }));
+      expect(response.status, JSON.stringify(await response.clone().json())).toBe(201);
+      const values = query(queries, "insert into shorts_mvp.video_jobs")?.values;
+      expect(JSON.stringify(values)).not.toContain("uploadLanguage");
+      expect(values).toContainEqual({ version: 1, targetSeconds: 0 });
+      expect(values).toContain(releaseId);
+      expect(mocks.midformAdmin).toHaveBeenCalledWith(expect.anything(), USER_ID);
+      expect(mocks.midformRelease).toHaveBeenCalledWith(expect.anything(), USER_ID);
+    } finally {
+      vi.stubEnv("FILE_UPLOAD_CANDIDATE_RELEASE_ID", "");
+    }
   });
 
   it("keeps non-admin midform upload admission hidden", async () => {
@@ -1050,6 +1077,8 @@ describe("file upload job control plane", () => {
 });
 
 it.each(['ko','en','ja'])('pins parallel %s upload to its own receiver, worker and capacity service',async language=>{
+  vi.stubEnv("ADMIN_SHORTS_SILENCE_ENABLED", "true");
+  vi.stubEnv("RANKING_VERCEL_SNAPSHOT_ID", "snapshot");
   const releaseId='11111111-1111-4111-8111-111111111111';
   const receiverUrl=`https://dexample.cloudfront.net/silence-upload/${releaseId}`;
   const capacityFunctionArn='arn:aws:lambda:ap-northeast-2:181651591905:function:shorts-upload-candidate-test';

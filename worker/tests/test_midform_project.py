@@ -50,6 +50,32 @@ def test_selected_source_rejects_invalid_clock_before_encoding(monkeypatch, tmp_
     encode.assert_not_called()
 
 
+@pytest.mark.parametrize("declared,end,accepted", [
+    (835, 835, True), (835, 835.2, False), (836, 836, False),
+    (None, 835, False), (float("inf"), 835, False),
+])
+def test_full_range_metadata_rounding_is_clamped_only_at_admitted_endpoint(
+    monkeypatch, tmp_path, declared, end, accepted,
+):
+    from unittest.mock import Mock
+    from shorts_worker import midform_project as project
+
+    monkeypatch.setattr(project, "inspect_source", lambda _: (834.36263, True))
+    encode = Mock()
+    monkeypatch.setattr(project, "checked_run", encode)
+    source = tmp_path / "source.mp4"
+    job = {"source_range_selection_enabled": True, "range_start_seconds": 0,
+           "range_end_seconds": end, "source_duration_seconds": declared}
+    if accepted:
+        selected, duration, source_range = prepare_midform_source(source, job, tmp_path)
+        assert selected == source
+        assert duration == source_range["end"] == 834.36263
+    else:
+        with pytest.raises(ValueError, match="원본 구간"):
+            prepare_midform_source(source, job, tmp_path)
+    encode.assert_not_called()
+
+
 def test_reel_preserves_speakers_context_and_exact_frame_clock():
     rows = [
         {"start": 10, "end": 12.014, "text": "질문", "speaker": "a"},
