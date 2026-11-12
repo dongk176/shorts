@@ -16,6 +16,8 @@ export interface UploadCandidateProps extends cdk.StackProps {
   parallel?: boolean;
   /** Midform is permitted only on the expiring administrator route. */
   midform?: boolean;
+  /** Keep an existing idle private ECS service identity during a new test release. */
+  privateResourceSuffix?: string;
   releaseId: string;
   administratorId: string;
   expiresAt: string;
@@ -51,7 +53,9 @@ export class UploadCandidateStack extends cdk.Stack {
     const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
     const prefix = "arn:aws:";
     const routePrefix = props.parallel ? "silence-upload" : "admin-upload";
-    if ((props.midform && props.parallel) || props.env?.account !== "181651591905" || props.env.region !== "ap-northeast-2"
+    if ((props.midform && props.parallel)
+      || (props.privateResourceSuffix !== undefined && (props.parallel || !/^[a-f0-9]{8}$/.test(props.privateResourceSuffix)))
+      || props.env?.account !== "181651591905" || props.env.region !== "ap-northeast-2"
       || !uuid.test(props.releaseId) || !uuid.test(props.administratorId)
       || !/^[a-f0-9]{40}$/.test(props.sourceSha) || !/^[a-f0-9]{64}$/.test(props.fontManifest)
       || !/^181651591905\.dkr\.ecr\.ap-northeast-2\.amazonaws\.com\/shorts-mvp-editor-releases-production@sha256:[a-f0-9]{64}$/.test(props.image)
@@ -66,7 +70,7 @@ export class UploadCandidateStack extends cdk.Stack {
       || !Number.isInteger(props.listenerPriority) || props.listenerPriority <= 40) {
       throw new Error("Verified production candidate inventory is required");
     }
-    const name = `shorts-upload-candidate-${props.releaseId.slice(0, 8)}`;
+    const name = `shorts-upload-candidate-${props.privateResourceSuffix ?? props.releaseId.slice(0, 8)}`;
     const clusterName = props.clusterArn.split("/").at(-1)!;
     const serviceArn = `${prefix}ecs:ap-northeast-2:181651591905:service/${clusterName}/${name}`;
     const originSecret = new cdk.CfnParameter(this, "OriginSecret", {

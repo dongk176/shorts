@@ -98,3 +98,16 @@ it("allows midform only for the expiring administrator receiver", () => {
   expect(env.FILE_UPLOAD_PARALLEL_RELEASE_ID).toBe("");
   expect(() => new UploadCandidateStack(new cdk.App(), "PublicMidform", { ...props, midform: true, parallel: true })).toThrow();
 });
+
+it("reuses a private receiver identity without changing the new release binding", () => {
+  const template = Template.fromStack(new UploadCandidateStack(new cdk.App(), "Reuse", {
+    ...props, midform: true, privateResourceSuffix: "05175740",
+  }));
+  template.hasResourceProperties("AWS::ECS::Service", { ServiceName: "shorts-upload-candidate-05175740", DesiredCount: 0 });
+  template.hasResourceProperties("AWS::Lambda::Function", { FunctionName: "shorts-upload-candidate-05175740" });
+  const data = JSON.stringify(template.toJSON());
+  expect(data).toContain(`/admin-upload/${props.releaseId}/*`);
+  expect(data).toContain(props.administratorId);
+  expect(() => new UploadCandidateStack(new cdk.App(), "PublicReuse", { ...props, parallel: true, privateResourceSuffix: "05175740" })).toThrow();
+  expect(() => new UploadCandidateStack(new cdk.App(), "InvalidReuse", { ...props, privateResourceSuffix: "public" })).toThrow();
+});
