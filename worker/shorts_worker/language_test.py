@@ -17,7 +17,7 @@ def verify_language_test_job(job: dict[str, Any]) -> None:
                 or job.get("pipeline_version") != 2
                 or job.get("initial_render_spec_version") != 4
                 or job.get("initial_caption_render_spec_version") != 4):
-            raise RenderError("중폼 프로젝트와 워커 연결이 일치하지 않습니다.")
+            raise RenderError("미들폼 프로젝트와 워커 연결이 일치하지 않습니다.")
         return
     inline = job.get("silence_inline_release_id")
     if inline:

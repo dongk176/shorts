@@ -35,7 +35,7 @@ describe("authorized subtitle source range layout", () => {
 
   it("removes the expected-shorts copy only from the admin range summary", () => {
     expect(shortsAppSource).toContain(
-      "showPlannedShortCount={!adminCompactSourceRangeEnabled}",
+      "showPlannedShortCount={!isMidform && !adminCompactSourceRangeEnabled}",
     );
     expect(shortsAppSource).toContain(
       "{showPlannedShortCount ? ` · ${t(\"range.estimate\", { count: plannedShortCount })}` : \"\"}",

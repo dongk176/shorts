@@ -14,6 +14,9 @@ import { requireMvpSession } from "@/lib/session";
 import { resolveUnifiedTemplateSubtitleEditorContext } from "@/lib/subtitle-template-release";
 import { isUnifiedTemplateSubtitleSnapshot } from "@/lib/template-execution-snapshot";
 import { ShortEditorPage } from "../../../../shorts-app";
+import { MidformEditorPage } from "@/components/midform-editor-page";
+import { midformCloudEnabled } from "@/lib/midform-cloud";
+import { requireMidformAdmin } from "@/lib/midform-release";
 
 export const dynamic = "force-dynamic";
 
@@ -24,12 +27,26 @@ export const metadata: Metadata = {
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export default async function EditShortPage({ params }: { params: Promise<{ projectNumber: string; shortId: string }> }) {
+export default async function EditShortPage({ params, searchParams }: { params: Promise<{ projectNumber: string; shortId: string }>; searchParams: Promise<{ format?: string }> }) {
   const { projectNumber: rawProjectNumber, shortId } = await params;
   if (!/^[1-9]\d*$/.test(rawProjectNumber) || !uuidPattern.test(shortId)) notFound();
   const projectNumber = Number(rawProjectNumber);
   if (!Number.isSafeInteger(projectNumber)) notFound();
   const db = getDb();
+  if ((await searchParams).format === "midform") {
+    if (!midformCloudEnabled()) notFound();
+    const session = await requireMvpSession(undefined, { createIfMissing: false, readOnly: true });
+    if (session.isAdmin !== true) notFound();
+    await requireMidformAdmin(db, session.userId);
+    const [owned] = await db`select s.id from shorts_mvp.generated_shorts s
+      join shorts_mvp.video_jobs j on j.id=s.job_id
+      where s.id=${shortId} and s.user_id=${session.userId} and j.user_id=${session.userId}
+        and j.project_number=${projectNumber} and j.midform_request is not null
+        and s.midform_document is not null and s.status in ('ready','rerendering')
+        and s.deleted_at is null and j.user_deleted_at is null and s.expires_at > now()`;
+    if (!owned) notFound();
+    return <MidformEditorPage projectNumber={projectNumber} shortId={shortId} />;
+  }
   const localOverlayPreviewEnabled = editorOverlayPreviewEnabled();
   let editorRelease: EditorReleaseAssignment = {
     channel: "legacy",

@@ -2,6 +2,7 @@ import { parallelSilenceTarget } from "@/lib/shorts-silence-parallel";
 import { silenceTestTarget } from "@/lib/silence-test-release";
 import { shortsSilenceRequestSchema } from "@/lib/shorts-silence-contract";
 import { requireShortsSilenceAccess, assertSilenceTemplate } from "@/lib/shorts-silence-access";
+import { midformSourceRangeError } from "@/lib/creation-format";
 import { midformRelease, midformTarget, requireMidformAdmin } from "@/lib/midform-release";
 import { midformRequestSchema } from "@/lib/midform-cloud";
 import { lockSnsTemplateAdmission } from "@/lib/sns-template-release";
@@ -129,7 +130,7 @@ export async function POST(request: Request) {
     if (input.midform) {
       await requireMidformAdmin(db, session.userId);
       if (request.headers.get("origin") !== new URL(request.url).origin || request.headers.get("sec-fetch-site") === "cross-site") throw new HttpError(403, "이지컷 화면에서 다시 시도해 주세요.");
-      if (input.snsTemplate || input.languageTest || input.communityTemplate || input.customTemplateId || input.subtitleTemplateId || input.outputLanguage !== "ko" || input.videoAspectRatio !== "16:9" || input.templateId !== "dark-minimal" || !rightsConfirmed) throw new HttpError(400, "중폼 제작 설정을 확인해 주세요.");
+      if (input.snsTemplate || input.languageTest || input.communityTemplate || input.customTemplateId || input.subtitleTemplateId || input.outputLanguage !== "ko" || input.videoAspectRatio !== "16:9" || input.templateId !== "dark-minimal" || !rightsConfirmed) throw new HttpError(400, "미들폼 제작 설정을 확인해 주세요.");
     }
     const enterpriseAccess = await assertEnterpriseSessionServiceAccess(db, session);
     const enterpriseUsage = enterpriseAccess.accountType === "enterprise";
@@ -215,7 +216,10 @@ export async function POST(request: Request) {
       throw new HttpError(409, "현재 계정에서는 영상 구간 선택 기능을 사용할 수 없습니다.");
     }
     const usageSeconds = billableSourceSeconds(selectedDurationSeconds);
-    if (input.midform && (selectedDurationSeconds < 600 || selectedDurationSeconds > 3600 || sourceDurationSeconds > 3600)) throw new HttpError(400, "중폼은 10~60분 영상을 선택해 주세요.");
+    if (input.midform) {
+      const rangeError = midformSourceRangeError(sourceDurationSeconds, rangeStartSeconds, rangeEndSeconds);
+      if (rangeError) throw new HttpError(400, rangeError);
+    }
     const plannedShortCount = input.midform ? 1 : expectedShortCount(selectedDurationSeconds);
     const deadlineMinutes = sourceRangeSelectionEnabled
       ? sourceRangeJobDeadlineMinutes(sourceDurationSeconds)
@@ -322,7 +326,7 @@ export async function POST(request: Request) {
       }
       if (input.silenceRemoval) await requireShortsSilenceAccess(tx, session.userId);
       const midform = input.midform ? await midformRelease(tx, session.userId) : null;
-      if (midform && executionBackend !== "aws_batch") throw new HttpError(503, "중폼 제작 서버를 준비하고 있습니다.");
+      if (midform && executionBackend !== "aws_batch") throw new HttpError(503, "미들폼 제작 서버를 준비하고 있습니다.");
       const languageTest = input.snsTemplate
         ? await lockSnsTemplateAdmission(tx, session.userId, input.communityTemplate)
         : usesLanguageFeature ? await lockLanguageTestAdmission(tx, session.userId) : null;
@@ -405,7 +409,7 @@ export async function POST(request: Request) {
         dispatchTarget = languageTestTarget(languageTest, dispatchTarget.targetKey);
       }
       if (midform) {
-        if (!dispatchTarget) throw new HttpError(503, "중폼 제작 서버를 준비하고 있습니다.");
+        if (!dispatchTarget) throw new HttpError(503, "미들폼 제작 서버를 준비하고 있습니다.");
         dispatchTarget = midformTarget(midform, dispatchTarget.targetKey);
       }
       // A bounded administrator candidate pins every supported template to its verified image.

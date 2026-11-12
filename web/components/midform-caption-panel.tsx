@@ -1,6 +1,7 @@
 "use client";
 
 import { emptyEntertainment, entertainmentStyles, type EntertainmentCaption, type EntertainmentCaptions } from "@/lib/midform-captions";
+import { EditorSelect } from "./editor-select";
 import styles from "./midform-workspace.module.css";
 
 const clock = (n: number) => `${Math.floor(n / 60).toString().padStart(2, "0")}:${(n % 60).toFixed(1).padStart(4, "0")}`;
@@ -36,7 +37,7 @@ export function MidformCaptionPanel({ value, disabled, position, duration, onCha
       <label className={styles.label}>작은 윗말<input className={styles.input} aria-label={`자막 ${index + 1} 윗말`} value={cue.kicker} maxLength={16} disabled={disabled} onChange={e => patch(cue.id, { kicker: e.target.value })} /></label>
       <label className={styles.label}>강조할 문구<input className={styles.input} aria-label={`자막 ${index + 1} 문구`} value={cue.text} maxLength={24} disabled={disabled} onChange={e => patch(cue.id, { text: e.target.value })} /></label>
       <div className={styles.funFields}>
-        <label>스타일<select className={styles.input} aria-label={`자막 ${index + 1} 스타일`} disabled={disabled} value={cue.style} onChange={e => patch(cue.id, { style: e.target.value as EntertainmentCaption["style"] })}>{Object.entries(entertainmentStyles).map(([key, style]) => <option value={key} key={key}>{style.label}</option>)}</select></label>
+        <label>스타일<EditorSelect label={`자막 ${index + 1} 스타일`} disabled={disabled} value={cue.style} onChange={value => patch(cue.id, { style: value as EntertainmentCaption["style"] })} options={Object.entries(entertainmentStyles).map(([key, style]) => ({ value: key, label: style.label }))} /></label>
         <label>시작 (초)<input className={styles.input} type="number" aria-label={`자막 ${index + 1} 시작`} min={0} max={duration} step={.1} value={cue.start} disabled={disabled} onChange={e => patch(cue.id, { start: Number(e.target.value) })} /></label>
         <label>끝 (초)<input className={styles.input} type="number" aria-label={`자막 ${index + 1} 끝`} min={0} max={duration} step={.1} value={cue.end} disabled={disabled} onChange={e => patch(cue.id, { end: Number(e.target.value) })} /></label>
         <label>크기 {Math.round(cue.scale * 100)}%<input type="range" aria-label={`자막 ${index + 1} 크기`} min={65} max={125} step={5} value={Math.round(cue.scale * 100)} disabled={disabled} onChange={e => patch(cue.id, { scale: Number(e.target.value) / 100 })} /></label>

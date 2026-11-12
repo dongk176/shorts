@@ -1,0 +1,86 @@
+.studio { position: fixed; inset: 0; z-index: 80; }
+.shell { height: 100%; }
+.cueCount { color: var(--studio-muted); font-size: 12px; }
+.studio button:disabled { opacity: .4; cursor: not-allowed; }
+.studio :global(.editor-preview-pane.has-range-editor) { justify-content: center; }
+.studio .dialogueScroll { display: flex; min-height: 0; flex-direction: column; overflow: hidden; }
+.studio .dialogueScroll > section { height: 0; min-height: 0; flex: 1; }
+@media(min-width:641px) {
+  .studio:global(.editor-v2-root.editor-studio) :global(.editor-page-body.has-editor-tool-sidebar) { grid-template-columns: minmax(360px,1fr) minmax(360px,1.1fr); grid-template-rows: minmax(0,1fr) var(--studio-timeline-height,300px); }
+  .studio:global(.editor-v2-root.editor-studio) :global(.editor-controls-pane.has-editor-tool-rail) { grid-column: 1; border-right: 1px solid var(--studio-line); border-left: 0; }
+  .studio:global(.editor-v2-root.editor-studio) :global(.editor-preview-pane.has-range-editor) { grid-column: 2; padding-right: 32px; padding-left: 32px; }
+  .studio:global(.editor-v2-root.editor-studio) :global(.editor-studio-inspector-heading) { padding-top: 14px; padding-bottom: 10px; }
+  .studio:global(.editor-v2-root.editor-studio) :global(.editor-controls-detail) { border: 0; background: transparent; padding: 4px 10px 12px; }
+  .studio:global(.editor-v2-root.editor-studio) :global(.editor-controls-scroll) { padding-right: 8px; }
+}
+.canvas { display: grid; width: 100%; height: 100%; min-height: 0; place-items: center; container-type: size; }
+.studio .canvas .frame { position: relative; width: min(100cqw, calc(100cqh * 16 / 9)); height: auto; max-height: none; aspect-ratio: 16 / 9; flex: none; overflow: hidden; background: #08090b; container-type: inline-size; transform-origin: center; }
+.frame video { display: block; width: 100%; height: 100%; object-fit: contain; }
+.caption { position: absolute; right: 6%; bottom: 8%; left: 6%; pointer-events: none; font-size: 2.6cqw; font-weight: 700; line-height: 1.5; text-align: center; text-shadow: 0 1px 4px #000, 0 0 8px #000; }
+.caption span { display: block; font-size: 1.6cqw; }
+.previewMode { border: 1px solid var(--studio-line); border-radius: 5px; padding: 3px 7px; font-size: 11px; }
+.previewMode[aria-pressed="false"] { border-color: var(--studio-accent-line); color: var(--studio-accent-text); }
+.transport { min-height: 38px; flex: none; }
+.fullscreen { position: absolute; right: 0; width: 34px; height: 34px; border: 1px solid var(--studio-line); border-radius: 8px; color: var(--studio-muted); font-size: 24px; }
+.studio :global(.editor-preview-transport) { margin-top: 10px; }
+.studio .previewZoom { position: absolute; bottom: 14px; left: 24px; }
+.studio :global(.editor-preview-play-control) { display: grid; width: 40px; height: 34px; place-items: center; }
+.download { display: inline-flex; min-height: 38px; align-items: center; gap: 12px; border: 1px solid var(--studio-line); padding: 0 12px; }
+.checkbox { display: flex; align-items: center; gap: 8px; color: var(--studio-muted); font-size: 13px; }
+.checkbox input { accent-color: var(--studio-accent); }
+.speaker { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
+.speaker > span { display: grid; width: 32px; height: 32px; flex: none; place-items: center; border: 1px solid currentColor; border-radius: 50%; font-size: 13px; font-weight: 700; }
+.speaker input { width: 100%; min-width: 0; padding: 8px 12px; }
+.layout { display: grid; gap: 8px; margin-top: 20px; color: var(--studio-muted); font-size: 13px; }
+.layout select { width: 100%; padding: 8px 12px; }
+.summary { margin-top: 24px; border-top: 1px solid var(--studio-line); padding-top: 18px; color: var(--studio-muted); font-size: 13px; line-height: 1.8; }
+.subtitleDownload { display: inline-flex; margin-top: 20px; color: var(--studio-accent-text); font-size: 13px; }
+.tracks { position: relative; min-width: 100%; padding-top: 8px !important; padding-right: 20px !important; padding-left: 20px !important; }
+.ruler { position: relative; height: 32px; margin-left: 50px; }
+.ruler :global(.editor-studio-ruler) { width: 100%; }
+.ruler input { position: absolute; inset: 0; z-index: 3; width: 100%; height: 100%; cursor: pointer; opacity: 0; }
+.track { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
+.track > span { width: 38px; flex: none; color: var(--studio-muted); font-size: 12px; }
+.filmstrip, .dialogueTrack { position: relative; height: 58px; min-width: 0; flex: 1; overflow: hidden; border: 1px solid var(--studio-line-strong); border-radius: 8px; background: var(--studio-field); }
+.filmstrip button { position: absolute; top: 0; bottom: 0; overflow: hidden; border: 1px solid #805047; border-radius: 3px; background: linear-gradient(150deg,#655248,#292d33 55%,#484741); background-size: auto 100%; background-position: center; color: #fff; font-size: 11px; text-align: left; }
+.filmstrip button span { position: absolute; top: 4px; left: 4px; border-radius: 3px; padding: 0 3px; background: #0007; }
+.filmstrip button:hover, .filmstrip .selected { z-index: 1; border-color: var(--studio-accent); box-shadow: inset 0 0 0 1px var(--studio-accent); }
+.dialogueTrack { height: 32px; border-color: transparent; border-radius: 0; background: transparent; }
+.dialogueTrack button { position: absolute; top: 0; bottom: 0; overflow: hidden; border: 1px solid; border-radius: 5px; padding: 0 6px; background: #193c43; color: #bce3e1; font-size: 11px; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.playhead { position: absolute; z-index: 4; top: 22px; bottom: 0; width: 1px; background: var(--studio-accent); pointer-events: none; }
+.playhead i { position: absolute; top: -3px; left: -4px; width: 9px; height: 11px; border-radius: 3px 3px 5px 5px; background: var(--studio-accent); }
+.modal { width: min(calc(100% - 40px),430px); margin: auto; border: 1px solid var(--studio-line); border-radius: 16px; padding: 28px; background: var(--studio-panel); color: var(--studio-text); box-shadow: 0 24px 90px #0008; }
+.modal::backdrop { background: #0009; }
+.modal h2 { font-size: 18px; font-weight: 700; }
+.modal p { margin-top: 12px; color: var(--studio-muted); font-size: 14px; line-height: 1.7; }
+.modal > div { display: flex; justify-content: flex-end; gap: 10px; margin-top: 26px; }
+.modal button { min-height: 40px; border: 1px solid var(--studio-line); border-radius: 9px; padding: 0 14px; font-size: 14px; }
+.modal button:last-child { border-color: var(--studio-accent); background: var(--studio-accent); color: var(--studio-on-accent); font-weight: 700; }
+.studio :global(.editor-preview-pane):fullscreen { padding: 40px; }
+@media (max-width: 640px) {
+  .studio { min-height: 0; height: 100dvh; overflow-y: auto; }
+  .studio :global(.editor-topbar-inner) { gap: 10px; padding: 0 12px; }
+  .studio :global(.editor-header-project) { padding-left: 10px; }
+  .studio :global(.editor-header-title-row h1) { max-width: 33vw; font-size: 12px; }
+  .studio :global(.editor-header-project-number) { font-size: 10px; }
+  .studio :global(.editor-history-controls), .studio :global(.editor-draft-status) { display: none; }
+  .studio :global(.editor-header-actions) { gap: 6px; }
+  .studio :global(.editor-apply-button), .download { min-height: 34px; padding: 0 9px; font-size: 12px; }
+  .studio :global(.editor-page-body.has-editor-tool-sidebar) { display: flex; height: auto; min-height: calc(100dvh - 64px); flex-direction: column; overflow: visible; padding: 0; }
+  .studio :global(.editor-preview-pane.has-range-editor) { position: relative; top: auto; min-height: 280px; height: 40dvh; max-height: 440px; flex: none; padding: 40px 16px 56px; }
+  .studio :global(.editor-controls-pane.has-editor-tool-rail) { position: relative; inset: auto; display: flex; width: 100%; height: auto; max-height: none; flex-direction: column; border-top: 1px solid var(--studio-line); padding: 0; transform: none; }
+  .studio :global(.editor-studio-inspector-heading) { display: none; }
+  .studio :global(.editor-tool-rail) { position: relative; order: 0; width: auto; margin: 12px 16px; border: 1px solid var(--studio-line); border-radius: 9px; padding: 4px; }
+  .studio :global(.editor-tool-rail-buttons) { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); }
+  .studio :global(.editor-tool-rail button) { min-height: 38px; flex-direction: row; gap: 5px; padding: 4px; font-size: 13px; }
+  .studio :global(.editor-tool-rail button > span) { width: 16px; height: 16px; }
+  .studio :global(.editor-tool-rail svg) { width: 16px; height: 16px; }
+  .studio :global(.editor-controls-detail) { display: flex; min-height: 280px; max-height: 460px; flex-direction: column; margin: 0 16px 16px; border: 1px solid var(--studio-line); border-radius: 9px; padding: 14px; }
+  .studio :global(.editor-controls-scroll) { min-height: 0; overflow-y: auto; }
+  .studio :global(.editor-workspace-timeline) { position: relative; min-height: 220px; flex: none; padding: 0; }
+  .studio :global(.editor-studio-timeline-toolbar) { gap: 8px; padding: 0 16px; }
+  .studio :global(.editor-studio-timeline-tools) { gap: 6px; }
+  .studio :global(.editor-studio-timeline-tools button) { font-size: 11px; }
+  .studio :global(.editor-studio-duration) { display: none; }
+  .studio :global(.editor-timeline-zoom-control) { position: relative; top: auto; right: auto; align-self: flex-end; margin: 4px 16px; }
+}

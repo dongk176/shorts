@@ -7,14 +7,14 @@ import { readLimitedJsonBody } from "@/lib/file-upload-control";
 import { apiError, HttpError } from "@/lib/http";
 import { midformAccess } from "@/lib/midform-access";
 import { midformDraftSchema, validateMidformDraft } from "@/lib/midform-cloud";
-import type { MidformDraft, MidformRow } from "@/lib/midform-local";
+import type { MidformDraft, MidformRow, MidformSourceScene } from "@/lib/midform-local";
 
 export const dynamic = "force-dynamic";
 type Context = { params: Promise<{ shortId: string }> };
 type Document = MidformDraft & {
   duration: number; sourceDuration: number; revision: number; draft?: MidformDraft;
   target: number; selectionMode: string; silences: number[][]; renderedDraft: MidformDraft;
-  outputSrt?: string;
+  outputSrt?: string; scenes?: MidformSourceScene[]; editContextSeconds?: number;
 };
 const inputSchema = z.object({
   draft: midformDraftSchema, revision: z.number().int().nonnegative(),
@@ -55,7 +55,8 @@ export async function GET(request: Request, context: Context) {
     return NextResponse.json({
       token: "session", projectId: shortId, generation: Number(row.renderVersion), revision: doc.revision,
       renderVersion: Number(row.renderVersion), title: row.videoTitle, duration: doc.duration,
-      sourceDuration: doc.sourceDuration, rows: draft.rows, framing: draft.framing, names: draft.names,
+      sourceDuration: doc.sourceDuration, rows: draft.rows, sourceRows: doc.rows, scenes: doc.scenes,
+      editContextSeconds: doc.editContextSeconds ?? 0, framing: draft.framing, names: draft.names,
       removeSilence: true, silencePreset: "aggressive", entertainment: draft.entertainment,
       silences: doc.silences, silenceProfiles: { aggressive: doc.silences }, target: doc.target,
       selectionMode: doc.selectionMode, busy: row.status === "rerendering",

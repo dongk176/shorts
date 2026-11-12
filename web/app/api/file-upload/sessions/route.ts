@@ -4,6 +4,7 @@ import { requireFileUploadLanguage } from "@/lib/file-upload-language";
 import { uploadCandidateConfig, uploadSilenceRequestMarker } from "@/lib/file-upload-candidate";
 import { shortsSilenceRequestSchema } from "@/lib/shorts-silence-contract";
 import { requireShortsSilenceAccess, assertSilenceTemplate } from "@/lib/shorts-silence-access";
+import { midformSourceRangeError } from "@/lib/creation-format";
 import { midformUploadRelease, requireMidformAdmin } from "@/lib/midform-release";
 import { midformRequestSchema } from "@/lib/midform-cloud";
 import { createHash, randomUUID } from "node:crypto";
@@ -314,7 +315,9 @@ export async function POST(request: Request) {
     ));
     if (input.midform) {
       await requireMidformAdmin(db, session.userId);
-      if (input.file.durationSeconds < 600 || input.file.durationSeconds > 3600 || input.rangeStartSeconds !== 0 || input.rangeEndSeconds !== input.file.durationSeconds || input.customTemplateId || input.subtitleTemplateId || input.templateId !== "dark-minimal" || input.videoAspectRatio !== "16:9" || input.outputLanguage !== "ko") throw new HttpError(400, "중폼은 10~60분 원본 영상을 선택해 주세요.");
+      const rangeError = midformSourceRangeError(input.file.durationSeconds, input.rangeStartSeconds, input.rangeEndSeconds);
+      if (rangeError) throw new HttpError(400, rangeError);
+      if (input.customTemplateId || input.subtitleTemplateId || input.templateId !== "dark-minimal" || input.videoAspectRatio !== "16:9" || input.outputLanguage !== "ko") throw new HttpError(400, "미들폼 제작 설정을 확인해 주세요.");
     }
     if (input.silenceRemoval) { await requireShortsSilenceAccess(db, session.userId); assertSilenceTemplate(input, { multilingual: true }); }
     const originalFilename = sanitizedDisplayFilename(input.file.name);
@@ -625,7 +628,7 @@ export async function POST(request: Request) {
           outputLanguage: input.outputLanguage, releaseId: initialRenderRelease.releaseId,
         };
       }
-      if (midform && initialRenderRelease.releaseId !== midform.releaseId) throw new HttpError(503, "중폼 업로드 서버를 준비하고 있습니다.");
+      if (midform && initialRenderRelease.releaseId !== midform.releaseId) throw new HttpError(503, "미들폼 업로드 서버를 준비하고 있습니다.");
       if (resolvedExecution.usesCustomTemplateDesign) {
         await assertCustomTemplateDesignRenderRelease(tx, initialRenderRelease.releaseId);
       }

@@ -1,10 +1,13 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { midformRanges, type MidformDraft, type MidformRow, type SilencePreset } from "@/lib/midform-local";
+import { midformRanges, type MidformDraft, type MidformRow, type MidformSourceScene, type SilencePreset } from "@/lib/midform-local";
 import styles from "./midform-workspace.module.css";
 import { MidformTranscript } from "./midform-transcript";
 import { initialSpeakerNames, speakerAppearance, speakerKeys } from "@/lib/midform-speakers";
 import { MidformCaptionPanel, MidformCaptionPreview } from "./midform-caption-panel";
+import { midformRenderableDraft, resetMidformSelection } from "@/lib/midform-story-edit";
+import { EditorSelect } from "./editor-select";
+import { MidformStudio } from "./midform-studio";
 import { emptyEntertainment, entertainmentSchema, visibleEntertainment, type EntertainmentCaptions } from "@/lib/midform-captions";
 const renderFingerprint = (draft: Pick<MidformDraft, "rows" | "framing" | "removeSilence" | "silencePreset" | "entertainment">) => JSON.stringify([
   draft.rows.map(row => [row.id, row.start, row.end, row.text, row.speaker, row.keep]),
@@ -18,10 +21,11 @@ function stableMediaUrl(previous?: string, next?: string) {
 }
 const fixedDraft = (draft: MidformDraft): MidformDraft => ({ ...draft, removeSilence: true, silencePreset: "aggressive" });
 const empty: MidformDraft = { rows: [], framing: {}, names: {}, removeSilence: false };
+const ignoreBusy = () => {};
 const time = (n: number) => `${Math.floor(n / 60).toString().padStart(2,"0")}:${Math.floor(n % 60).toString().padStart(2,"0")}`;
-type Status = { entertainment?: EntertainmentCaptions; sourceUrl?: string; outputUrl?: string; subtitleUrl?: string; revision?: number; renderVersion?: number; framing?: Record<string, string>; names?: Record<string, string>; removeSilence?: boolean; silencePreset?: SilencePreset; silenceProfiles?: Partial<Record<SilencePreset, number[][]>>; exportDraft?: Pick<MidformDraft, "rows" | "framing" | "removeSilence" | "silencePreset" | "entertainment">; projectId?: string; title?: string; projects?: { id: string; title: string }[]; token: string; busy: boolean; status: string; duration?: number; sourceDuration?: number; rows?: MidformRow[]; silences?: number[][]; generation?: number; note?: string; target?: number; selectionMode?: string; exportReady?: boolean; error?: string; transcriptionAvailable?: boolean };
+type Status = { entertainment?: EntertainmentCaptions; sourceUrl?: string; outputUrl?: string; subtitleUrl?: string; revision?: number; renderVersion?: number; framing?: Record<string, string>; names?: Record<string, string>; removeSilence?: boolean; silencePreset?: SilencePreset; silenceProfiles?: Partial<Record<SilencePreset, number[][]>>; exportDraft?: Pick<MidformDraft, "rows" | "framing" | "removeSilence" | "silencePreset" | "entertainment">; projectId?: string; title?: string; projects?: { id: string; title: string }[]; token: string; busy: boolean; status: string; duration?: number; sourceDuration?: number; rows?: MidformRow[]; sourceRows?: MidformRow[]; scenes?: MidformSourceScene[]; silences?: number[][]; generation?: number; note?: string; target?: number; selectionMode?: string; exportReady?: boolean; error?: string; transcriptionAvailable?: boolean };
 
-export function MidformWorkspace({ onBusyChange, active, cloudShortId, onClose }: { onBusyChange: (busy: boolean) => void; active: boolean; cloudShortId?: string; onClose?: () => void }) {
+export function MidformWorkspace({ onBusyChange = ignoreBusy, active, cloudShortId, projectNumber, onClose }: { onBusyChange?: (busy: boolean) => void; active: boolean; cloudShortId?: string; projectNumber?: number; onClose?: () => void }) {
   const base = cloudShortId ? `/api/midform/${cloudShortId}` : "/api/midform-local";
   const [cloudSaved, setCloudSaved] = useState(false);
   const [status, setStatus] = useState<Status | null>(null);
@@ -79,14 +83,16 @@ export function MidformWorkspace({ onBusyChange, active, cloudShortId, onClose }
           setDraft(empty); setDownload(false); generation.current = undefined; sync.current = true;
         }
         if (!value.busy && value.rows && (sync.current || generation.current !== value.generation)) {
-          let restored: { draft: MidformDraft; name: string; target: number } | null = null;
-          if (generation.current === undefined && !cloudShortId) {
+          let restored: { draft: MidformDraft; name: string; target: number; revision?: number; renderVersion?: number } | null = null;
+          if (generation.current === undefined) {
             try { restored = JSON.parse(localStorage.getItem(`easycut-midform:v2:${value.projectId || `${value.token}:${value.generation}`}`) || "null"); } catch { /* Storage may be unavailable. */ }
           }
-          if (restored?.draft?.rows?.length === value.rows.length) {
+          if (restored?.draft?.rows?.length === value.rows.length
+            && restored.draft.rows.every((row, index) => row.id === value.rows![index].id && row.start === value.rows![index].start && row.end === value.rows![index].end)
+            && (!cloudShortId || restored.revision === value.revision && restored.renderVersion === value.renderVersion)) {
             setDraft(fixedDraft(restored.draft)); setName(restored.name);
-          } else setDraft(old => fixedDraft({ ...empty, removeSilence: value.removeSilence ?? false, silencePreset: value.silencePreset || (Object.keys(value.silenceProfiles || {}).length ? "medium" : undefined), entertainment: value.entertainment, rows: value.rows!, framing: value.framing || {}, names: initialSpeakerNames(value.rows!, value.names, old.names) }));
-          if (!restored) { setName((value.title || "중폼 편집").replace(/ · 무음 빡세게$/, " 하이라이트")); }
+          } else { restored = null; setDraft(old => fixedDraft({ ...empty, removeSilence: value.removeSilence ?? false, silencePreset: value.silencePreset || (Object.keys(value.silenceProfiles || {}).length ? "medium" : undefined), entertainment: value.entertainment, rows: value.rows!, framing: value.framing || {}, names: initialSpeakerNames(value.rows!, value.names, old.names) })); }
+          if (!restored) { setName((value.title || "미들폼 편집").replace(/ · 무음 빡세게$/, " 하이라이트")); }
           setDownload(Boolean(value.exportReady) && (cloudShortId ? sameRender({ ...empty, rows: value.rows!, framing: value.framing || {}, removeSilence: value.removeSilence ?? false, silencePreset: value.silencePreset || (Object.keys(value.silenceProfiles || {}).length ? "medium" : undefined), entertainment: value.entertainment }, value.exportDraft) : sameRender(fixedDraft(restored?.draft || { ...empty, rows: value.rows!, framing: value.framing || {} }), value.exportDraft))); setPast([]); setFuture([]);
           generation.current = value.generation; sync.current = false;
         }
@@ -105,18 +111,17 @@ export function MidformWorkspace({ onBusyChange, active, cloudShortId, onClose }
     const timer = setTimeout(() => {
       try {
         const key = `easycut-midform:v2:${status.projectId || `${status.token}:${status.generation}`}`;
-        for (const oldKey of Object.keys(localStorage)) if (oldKey.startsWith("easycut-midform:") && !oldKey.startsWith("easycut-midform:v2:review-") && oldKey !== key) localStorage.removeItem(oldKey);
-        localStorage.setItem(key, JSON.stringify({ draft, target, name })); setSaved(true);
+        localStorage.setItem(key, JSON.stringify({ draft, target, name, revision: status.revision, renderVersion: status.renderVersion })); setSaved(true);
       } catch { setSaved(false); }
     }, 500);
     return () => clearTimeout(timer);
-  }, [draft, target, name, status?.token, status?.generation, status?.projectId]);
+  }, [draft, target, name, status?.token, status?.generation, status?.projectId, status?.revision, status?.renderVersion]);
   useEffect(() => {
-    if (!draft.rows.length && !busy) return;
+    if ((!draft.rows.length && !busy) || (cloudShortId && saved && !busy)) return;
     const prevent = (e: BeforeUnloadEvent) => { e.preventDefault(); };
     window.addEventListener("beforeunload", prevent);
     return () => window.removeEventListener("beforeunload", prevent);
-  }, [draft.rows.length, busy]);
+  }, [draft.rows.length, busy, cloudShortId, saved]);
   useEffect(() => {
     if (!active) { video.current?.pause(); renderedVideo.current?.pause(); return; }
     let frame: number;
@@ -153,7 +158,7 @@ export function MidformWorkspace({ onBusyChange, active, cloudShortId, onClose }
     requestInFlight.current = true; mutationEpoch.current += 1;
     try {
       const response = cloudShortId
-        ? await fetch(base, { signal: AbortSignal.timeout(30_000), method: action === "save" ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ draft: payload, revision: status.revision, renderVersion: status.renderVersion, ...(["export", "captions"].includes(action) ? { requestId: crypto.randomUUID(), ...(action === "captions" ? { generateCaptions: true } : {}) } : {}) }) })
+        ? await fetch(base, { signal: AbortSignal.timeout(30_000), method: action === "save" ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ draft: midformRenderableDraft(payload as MidformDraft), revision: status.revision, renderVersion: status.renderVersion, ...(["export", "captions"].includes(action) ? { requestId: crypto.randomUUID(), ...(action === "captions" ? { generateCaptions: true } : {}) } : {}) }) })
         : await fetch(`${base}/api/${action}`, { method: "POST", headers: { "X-Midform-Token": status.token, "Content-Type": payload instanceof File ? "application/octet-stream" : "application/json", "X-Midform-Target": String(target) }, body: payload instanceof File ? payload : JSON.stringify(payload) });
       if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(data.error || "요청을 처리하지 못했습니다."); }
       if (cloudShortId) { const result = await response.json(); setStatus(old => old ? { ...old, revision: result.revision } : old); if (action === "save") { setCloudSaved(true); setDownload(sameRender(draft, status.exportDraft)); return; } }
@@ -171,30 +176,41 @@ export function MidformWorkspace({ onBusyChange, active, cloudShortId, onClose }
   const speakers = speakerKeys(draft);
   const examples = status?.projects?.filter(project => project.id.endsWith("-silence-aggressive")) || [];
 
+  if (cloudShortId) return <MidformStudio projectNumber={projectNumber} title={name} draft={draft} sourceRows={status?.sourceRows || status?.rows || []} sourceScenes={status?.scenes}
+    sourceDuration={status?.duration || 0} sourceUrl={status?.sourceUrl}
+    outputUrl={status?.outputUrl} subtitleUrl={status?.subtitleUrl} duration={duration}
+    position={position} silences={measuredSilences} busy={busy} saved={saved}
+    outputReady={Boolean(status?.exportReady && sameRender(draft, status.exportDraft))}
+    error={visibleError || status?.error} canUndo={past.length > 0} canRedo={future.length > 0}
+    videoRef={video} editPreview={editPreview} onChange={update} onSeek={seek} onPosition={setPosition}
+    onReview={reviewExcluded} onEditPreview={setEditPreview} onUndo={undo} onRedo={redo}
+    onReset={() => { if (status?.rows) update(fixedDraft(resetMidformSelection(draft, status.sourceRows || status.rows))); }}
+    onClose={() => onClose?.()} onApply={() => void request("export", draft)} onGenerateCaptions={() => void request("captions", draft)} />;
+
   return <section className={styles.workspace} aria-label="긴 영상 편집" aria-busy={busy}>
     {cloudShortId && !draft.rows.length ? <p role="status">{visibleError || "저장된 편집 영상을 불러오고 있습니다…"}</p> : !draft.rows.length ? <section className="hero mx-auto flex w-full max-w-4xl flex-col items-center text-center">
       <p className={styles.kicker}>LONG TO MID</p>
       <h1 className="hero-title">볼 만한 장면을 모아<br /><span>한 편으로 완성하세요</span></h1>
       <p className={styles.intro}>쇼츠로 만들 만한 장면을 원본 순서로 이어 붙이고,<br className="hidden sm:block" /> 불필요한 쉼은 자동으로 줄여드려요.</p>
       <div className={styles.uploadCard}>
-        <input ref={input} type="file" accept=".mp4,.mov,.webm,.mkv" className="sr-only" aria-label="중폼으로 만들 영상 파일" onChange={e => { setSelectedFile(e.target.files?.[0] || null); e.target.value = ""; }} />
+        <input ref={input} type="file" accept=".mp4,.mov,.webm,.mkv" className="sr-only" aria-label="미들폼으로 만들 영상 파일" onChange={e => { setSelectedFile(e.target.files?.[0] || null); e.target.value = ""; }} />
         <button type="button" className={styles.dropzone} disabled={busy || !status} onClick={() => input.current?.click()} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); setSelectedFile(e.dataTransfer.files[0] || null); }}>
           <span className={styles.uploadIcon} aria-hidden="true">↥</span>
           <strong>{selectedFile ? selectedFile.name : "영상을 여기에 놓거나 선택해 주세요"}</strong>
           <span>{selectedFile ? `${(selectedFile.size / 1024 / 1024).toFixed(1)} MB · 클릭해서 다른 영상 선택` : "10~60분 영상 · 최대 1GB · MP4, MOV, WebM, MKV"}</span>
         </button>
         <label className={styles.rights}><input type="checkbox" checked={rights} disabled={busy} onChange={e => setRights(e.target.checked)} />내가 소유하거나 편집 허가를 받은 영상입니다.</label>
-        <button type="button" className={`ai-button ${styles.createButton}`} disabled={!selectedFile || !rights || busy || !status} onClick={() => upload(selectedFile || undefined)}>중폼 한 편 만들기 <span aria-hidden="true">↗</span></button>
+        <button type="button" className={`ai-button ${styles.createButton}`} disabled={!selectedFile || !rights || busy || !status} onClick={() => upload(selectedFile || undefined)}>미들폼 한 편 만들기 <span aria-hidden="true">↗</span></button>
         <p className={styles.privacy}>영상의 음성과 대본을 분석해 장면을 선택합니다.<br />음성은 ElevenLabs, 대본은 OpenAI에서 처리돼요.</p>
       </div>
       <div className={styles.autoBenefits}><span>✓ 장면 자동 선택</span><span>✓ 무음 자동 정리</span><span>✓ 화자별 대사 편집</span></div>
       {examples.length > 0 && <details className={styles.examples}><summary>완성 예시 먼저 보기 <span aria-hidden="true">＋</span></summary><div>{examples.map(project => <button key={project.id} type="button" disabled={busy} onClick={() => { generation.current = undefined; void request("open", { id: project.id }); }}><span aria-hidden="true">▶</span><strong>{project.title.startsWith("자동차") ? "첫 운전 하이라이트" : "팟캐스트 하이라이트"}</strong><span>열어보기 ↗</span></button>)}</div></details>}
     </section> : <>
-      <header className={styles.toolbar}><div><p className="text-xs text-neutral-500">중폼 편집</p><h1 className="mt-1 max-w-sm truncate text-lg font-bold">{name}</h1></div><div className={styles.actions}>
+      <header className={styles.toolbar}><div><p className="text-xs text-neutral-500">미들폼 편집</p><h1 className="mt-1 max-w-sm truncate text-lg font-bold">{name}</h1></div><div className={styles.actions}>
         <button className={styles.secondary} disabled={busy || !past.length} onClick={undo}>실행 취소</button><button className={styles.secondary} disabled={busy || !future.length} onClick={redo}>다시 실행</button><button className={styles.secondary} disabled={busy} onClick={() => setResetConfirm(true)}>새 영상</button>{cloudShortId ? <button className={styles.secondary} disabled={busy} onClick={() => void request("save", draft)}>{cloudSaved ? "계정에 저장됨" : "편집 저장"}</button> : null}<button className="ai-button" disabled={busy || duration <= 0 || duration > 1200.1} onClick={() => void request("export", draft)}>내보내기 · {time(duration)}</button>
       </div></header>
       {resetConfirm ? <div className={styles.download} role="alert"><span>편집 내용을 지우고 새 영상을 열까요?</span><button className={styles.secondary} disabled={busy} onClick={() => { setResetConfirm(false); void request("reset"); }}>새 영상 열기</button><button className={styles.secondary} onClick={() => setResetConfirm(false)}>취소</button></div> : null}
-      <p className={styles.editSummary}><span>원본 {time(status?.sourceDuration || status?.duration || 0)} <span aria-hidden="true">→</span> 중폼 {time(duration)}</span><span>{status?.selectionMode?.startsWith("수동") ? "자동 장면 선택을 완료하지 못했어요. 대사를 확인해 주세요." : "장면 연결 · 무음 정리 적용"}</span><span>{saved ? "편집 저장됨" : "편집 저장 중"}</span></p>
+      <p className={styles.editSummary}><span>원본 {time(status?.sourceDuration || status?.duration || 0)} <span aria-hidden="true">→</span> 미들폼 {time(duration)}</span><span>{status?.selectionMode?.startsWith("수동") ? "자동 장면 선택을 완료하지 못했어요. 대사를 확인해 주세요." : "장면 연결 · 무음 정리 적용"}</span><span>{saved ? "편집 저장됨" : "편집 저장 중"}</span></p>
       <div className={styles.editor}>
         <MidformTranscript key={status?.generation} draft={draft} busy={busy} currentId={current?.id} onChange={update} onSeek={seek} onReview={reviewExcluded} />
         <section className={styles.preview} aria-label="영상 미리보기"><div className={styles.previewHeading}><h2>미리보기</h2><label><input type="checkbox" checked={captionPreview} onChange={e => setCaptionPreview(e.target.checked)} /> 화자별 자막 미리보기</label><label><input type="checkbox" checked={editPreview} onChange={e => setEditPreview(e.target.checked)} /> 편집 결과</label></div>
@@ -202,7 +218,7 @@ export function MidformWorkspace({ onBusyChange, active, cloudShortId, onClose }
           <div className={styles.playerControls}><button className={styles.secondary} onClick={() => { const p = video.current; if (!p) return; if (p.paused) { if (editPreview && !ranges.some(r => r.end > p.currentTime)) seek(ranges[0]?.start || 0); void p.play().catch(() => setError("영상을 재생하지 못했습니다.")); } else p.pause(); }}>재생 / 일시정지</button><span>{time(position)} / {time(status?.duration || 0)} · 선택 장면 위치</span></div><p className={styles.notice}>선택 구간의 빠른 미리보기입니다. 내보낸 영상은 아래 완성본에서 확인하세요. 확대 구도는 직접 지정합니다. 화자 색상은 미리보기용이며 SRT에는 포함되지 않습니다.</p>
         </section>
         <aside className={styles.settings}><div className={styles.autoSummary}><div><h2>불필요한 쉼은 자동으로 정리했어요</h2><p className={styles.notice}>{detectedCount ? `${detectedCount}곳 · 약 ${removedSeconds.toFixed(1)}초 단축` : "현재 선택한 장면에 줄일 무음이 없어요."} · 길이는 내용에 맞춰 결정됩니다.</p></div>{!cloudShortId && <button type="button" className={styles.secondary} disabled={busy} onClick={() => void request("select", { ...draft, target: 0 })}>장면 다시 고르기</button>}</div><details className={styles.speakerDetails}><summary>화자 이름·화면 조정</summary>
-          {Object.entries(draft.names).map(([key, label]) => <div className={styles.speaker} key={key}><input className={styles.input} style={{ borderLeft: `3px solid ${speakerAppearance(key, speakers).color}` }} aria-label={`${key} 화자 이름`} value={label} maxLength={30} disabled={busy} onChange={e => update({ ...draft, names: { ...draft.names, [key]: e.target.value } })} /><select className={styles.input} aria-label={`${label} 화면 구도`} disabled={busy || ["unknown","overlap"].includes(key)} value={draft.framing[key] || "wide"} onChange={e => update({ ...draft, framing: { ...draft.framing, [key]: e.target.value } })}><option value="wide">전체 화면</option><option value="left">왼쪽 확대</option><option value="center">중앙 확대</option><option value="right">오른쪽 확대</option></select></div>)}</details>
+          {Object.entries(draft.names).map(([key, label]) => <div className={styles.speaker} key={key}><input className={styles.input} style={{ borderLeft: `3px solid ${speakerAppearance(key, speakers).color}` }} aria-label={`${key} 화자 이름`} value={label} maxLength={30} disabled={busy} onChange={e => update({ ...draft, names: { ...draft.names, [key]: e.target.value } })} /><EditorSelect label={`${label} 화면 구도`} disabled={busy || ["unknown","overlap"].includes(key)} value={draft.framing[key] || "wide"} onChange={value => update({ ...draft, framing: { ...draft.framing, [key]: value } })} options={[{value:"wide",label:"전체 화면"},{value:"left",label:"왼쪽 확대"},{value:"center",label:"중앙 확대"},{value:"right",label:"오른쪽 확대"}]} /></div>)}</details>
         </aside>
       </div>
       {cloudShortId ? <MidformCaptionPanel value={draft.entertainment} disabled={busy} position={position} duration={status?.duration || 0}

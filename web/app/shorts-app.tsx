@@ -6,11 +6,14 @@ import { creationActionDisabled, creationNeedsUpgrade, initialSourceRangeEnd } f
 import { trackConversion } from "@/lib/conversion-events-client";
 
 import { ShortsSilenceStatus } from "@/components/shorts-silence-status";
-import { SilenceRemovalChoice } from "@/components/silence-removal-choice";
+
 import { canSelectShortsSilence, SHORTS_SILENCE_REQUEST } from "@/lib/shorts-silence-contract";
 
 import { ConversionChoice } from "@/components/conversion-choice";
+import { SilenceRemovalChoice } from "@/components/silence-removal-choice";
 import { MidformCloudWorkspace } from "@/components/midform-cloud-workspace";
+
+import { creationRequest, midformSourceRangeError, MIDFORM_MIN_SOURCE_SECONDS, type CreationFormat } from "@/lib/creation-format";
 import { EnterpriseServiceGate } from "@/components/enterprise-service-gate";
 import { useHomeProjects } from "@/lib/use-home-projects";
 import { mergeHomeCore } from "@/lib/home-projects-state";
@@ -13376,6 +13379,8 @@ function recentJobsWithPendingProject(recentJobs: VideoJob[], pendingJob: VideoJ
   ];
 }
 
+const MidformWorkspace = dynamic(() => import("@/components/midform-workspace").then(module => module.MidformWorkspace));
+
 function SourceRangeSelector({
   sourceDurationSeconds,
   startSeconds,
@@ -13387,6 +13392,7 @@ function SourceRangeSelector({
   onReset,
   singleRowControls = false,
   showPlannedShortCount = true,
+  format = "shorts",
 }: {
   sourceDurationSeconds: number;
   startSeconds: number;
@@ -13398,6 +13404,7 @@ function SourceRangeSelector({
   onReset: () => void;
   singleRowControls?: boolean;
   showPlannedShortCount?: boolean;
+  format?: CreationFormat;
 }) {
   const ui = useUiText();
   const { locale, t } = useI18n();
@@ -13415,7 +13422,7 @@ function SourceRangeSelector({
         <div>
           <h2 className="text-lg font-extrabold text-white">{ui("사용할 영상 구간")}</h2>
           <p className="mt-1 text-sm leading-6 text-neutral-400">
-            {ui("양쪽 손잡이를 드래그해 쇼츠를 만들 범위를 정하세요. 4분부터 60분까지 선택할 수 있습니다.")}</p>
+            {ui(format === "midform" ? "미들폼에 사용할 원본 구간을 선택하세요. 10분부터 60분까지 선택할 수 있습니다." : "양쪽 손잡이를 드래그해 쇼츠를 만들 범위를 정하세요. 4분부터 60분까지 선택할 수 있습니다.")}</p>
         </div>
         <strong className="font-mono text-sm tabular-nums text-[#ffb4aa] sm:text-base">
           {formatTimestamp(startSeconds)} – {formatTimestamp(endSeconds)}
@@ -13552,16 +13559,38 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
   initialStateLoadedAt?: number;
 }) {
   const [conversionChoiceOpen, setConversionChoiceOpen] = useState(false);
-  const [conversionChoiceStage, setConversionChoiceStage] = useState<"analyze" | "create" | "switch">("analyze");
-  const [shortsChosen, setShortsChosen] = useState(false);
+  const [conversionChoiceStage, setConversionChoiceStage] = useState<"analyze" | "upload" | "switch">("analyze");
+  const [creationFormat, setCreationFormat] = useState<CreationFormat | null>(null);
   const [shortsSilenceSelected, setShortsSilenceSelected] = useState(false);
-  const [midformOpened, setMidformOpened] = useState(false);
-  const [midformBusy, setMidformBusy] = useState(false);
+  const [selectedMidformId, setSelectedMidformId] = useState<string | null>(null);
+  const [midformRefresh, setMidformRefresh] = useState(0);
+  const [midformActiveCount, setMidformActiveCount] = useState(0);
   const ui = useUiText();
   const { locale, t } = useI18n();
   const [resumedDraft] = useState(() => readCreationDraft<LocaleCreationDraft>(initialState?.user?.id ?? null, locale));
   useEffect(() => { clearCreationDraft(); }, []);
   const [state, setState] = useState<MvpState | null>(initialState);
+  const isMidform = state?.capabilities.midform === true && creationFormat === "midform";
+  const minimumSelectedSeconds = isMidform ? MIDFORM_MIN_SOURCE_SECONDS : MIN_SELECTED_SOURCE_SECONDS;
+  useEffect(() => {
+    if (!state?.capabilities.midform) return;
+    const id = new URLSearchParams(window.location.search).get("midform");
+    if (id && /^[0-9a-f-]{36}$/i.test(id)) setSelectedMidformId(id);
+  }, [state?.capabilities.midform]);
+  const openMidformEditor = useCallback((id: string, projectNumber?: number) => {
+    if (projectNumber) {
+      window.location.href = browserLocalizedHref(`/projects/${projectNumber}/edit/${id}?format=midform`);
+      return;
+    }
+    setSelectedMidformId(id);
+    const url = new URL(window.location.href); url.searchParams.set("midform", id);
+    window.history.replaceState(window.history.state, "", url);
+  }, []);
+  const closeMidformEditor = useCallback(() => {
+    setSelectedMidformId(null);
+    const url = new URL(window.location.href); url.searchParams.delete("midform");
+    window.history.replaceState(window.history.state, "", url);
+  }, []);
   const homeProjects = useHomeProjects(state, setState, locale);
   const [showExamples, setShowExamples] = useState(false);
   const [stateLoadStatus, setStateLoadStatus] = useState<"loading" | "ready" | "error">(
@@ -13741,7 +13770,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
   const shortsSilenceAllowed = canSelectShortsSilence({ capability: state?.capabilities.shortsSilenceRemoval,
     customTemplate: Boolean(customTemplateId), snsTemplate: snsTemplateActive, outputLanguage,
     sourceLanguage: sourceMode === "youtube" || uploadLanguageActive ? sourceLanguage : undefined, multilingual: sourceMode === "youtube" || uploadLanguageActive });
-  const shortsSilenceActive = shortsSilenceAllowed && shortsSilenceSelected;
+  const shortsSilenceActive = !isMidform && shortsSilenceAllowed && shortsSilenceSelected;
   useEffect(() => {
     if (!shortsSilenceAllowed) setShortsSilenceSelected(false);
   }, [shortsSilenceAllowed]);
@@ -13763,7 +13792,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
     selectedSource
     && sourceRangeStartSeconds >= 0
     && sourceRangeEndSeconds <= selectedSource.durationSeconds
-    && selectedSourceDurationSeconds >= MIN_SELECTED_SOURCE_SECONDS
+    && selectedSourceDurationSeconds >= minimumSelectedSeconds
     && selectedSourceDurationSeconds <= MAX_SELECTED_SOURCE_SECONDS
     && !selectedSourceExceedsUsage,
   );
@@ -13778,10 +13807,13 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
     trackConversion({ name: "upgrade_clicked", locale, surface: "creation" });
     window.location.href = browserLocalizedHref("/pricing");
   };
-  const selectedPlannedShortCount = sourceRangeSelectionEnabled
+  const midformSelectionError = isMidform && selectedSource
+    ? midformSourceRangeError(selectedSource.durationSeconds, sourceRangeSelectionEnabled ? sourceRangeStartSeconds : 0, sourceRangeSelectionEnabled ? sourceRangeEndSeconds : selectedSource.durationSeconds)
+    : null;
+  const selectedPlannedShortCount = isMidform ? 1 : sourceRangeSelectionEnabled
     ? expectedShortCount(selectedSourceDurationSeconds)
     : selectedSource ? expectedShortCount(selectedSource.durationSeconds) : 0;
-  const activeJobCount = state?.recentJobs.filter((job) => !terminalStatuses.has(job.status)).length || 0;
+  const activeJobCount = (state?.recentJobs.filter((job) => !terminalStatuses.has(job.status)).length || 0) + midformActiveCount;
   const planEnforcementEnabled = state?.usage.enforcementEnabled ?? true;
   const canUseCustomTemplates = Boolean(state && billingSupportsCustomTemplates(state.billing));
   const sourceCompatiblePersonalTemplates = useMemo(() => (
@@ -14188,13 +14220,13 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
   }, [adminTemplateLayoutEnabled, scrollToAnalysis, selectedSource]);
 
   useEffect(() => {
-    if (!scrollToProjects || !state?.recentJobs.length) return;
+    if (!scrollToProjects || (!state?.recentJobs.length && !state?.capabilities.midform)) return;
     const frame = window.requestAnimationFrame(() => {
       projectsSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       setScrollToProjects(false);
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [scrollToProjects, state?.recentJobs.length]);
+  }, [scrollToProjects, state?.recentJobs.length, state?.capabilities.midform]);
 
   useEffect(() => startHomeJobPolling({
     jobIds: JSON.parse(pollingJobIds) as string[],
@@ -14281,8 +14313,10 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
       if (inspectionVersion !== uploadInspectionVersion.current) return;
       setUploadVideo(inspected);
       resetSourceRangeGuide();
-      setScrollToAnalysis(true);
-      if (inspected.durationSeconds > 60 * 60) {
+      if (state?.capabilities.midform && !creationFormat) {
+        setConversionChoiceStage("upload"); setConversionChoiceOpen(true); setScrollToAnalysis(false);
+      } else setScrollToAnalysis(true);
+      if (inspected.durationSeconds > 60 * 60 && (!state?.capabilities.midform || creationFormat)) {
         setLongSourceNoticeOpen(true);
         setScrollToAnalysis(false);
       }
@@ -14365,6 +14399,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
       rightsCheckboxRef.current?.focus({ preventScroll: true });
       return;
     }
+    if (isMidform && midformSelectionError) { setError(midformSelectionError); return; }
     if (!sourceRangeIsValid) {
       setError(selectedSourceExceedsUsage
         ? "선택한 구간이 남은 원본 영상 처리시간을 초과합니다."
@@ -14387,6 +14422,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
     const controller = new AbortController();
     uploadAbortController.current = controller;
     const intentKey = JSON.stringify([
+      isMidform,
       uploadVideo.file.name,
       uploadVideo.contentType,
       uploadVideo.file.size,
@@ -14435,7 +14471,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: controller.signal,
-        body: JSON.stringify({
+        body: JSON.stringify(creationRequest({
           requestId,
           file: {
             name: uploadVideo.file.name,
@@ -14467,7 +14503,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
             ? { subtitleTemplateId, subtitleCaptionPlacement }
             : {}),
           ...(brandColorSelectionEnabled && !customTemplateId ? { brandColor } : {}),
-        }),
+        }, isMidform ? "midform" : "shorts")),
       }, 30_000);
       uploadSessionId = value.uploadSessionId;
       activeUploadSessionId.current = value.uploadSessionId;
@@ -14500,7 +14536,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
       setState((current) => current ? {
         ...current,
         usage: value.usage,
-        recentJobs: recentJobsWithPendingProject(current.recentJobs, pendingJob),
+        recentJobs: isMidform ? current.recentJobs : recentJobsWithPendingProject(current.recentJobs, pendingJob),
       } : current);
       publishUsageSnapshot(value.usage);
 
@@ -14539,6 +14575,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
       setUploadTransferActive(false);
       setUploadProgress(100);
       setUploadCompletionOpen(true);
+      if (isMidform) { setMidformRefresh(v => v + 1); setScrollToProjects(true); }
       setUploadVideo(null);
       setRightsConfirmed(false);
       setRightsConfirmationAttention(false);
@@ -14595,6 +14632,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
       if (receiverAccepted) {
         setUploadProgress(100);
         setUploadCompletionOpen(true);
+      if (isMidform) { setMidformRefresh(v => v + 1); setScrollToProjects(true); }
         setUploadVideo(null);
         setRightsConfirmed(false);
         setRightsConfirmationAttention(false);
@@ -14686,6 +14724,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
       rightsCheckboxRef.current?.focus({ preventScroll: true });
       return;
     }
+    if (isMidform && midformSelectionError) { setError(midformSelectionError); return; }
     if (!sourceRangeIsValid) {
       setError(selectedSourceExceedsUsage
         ? "선택한 구간이 남은 원본 영상 처리시간을 초과합니다."
@@ -14701,7 +14740,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
       setConcurrentJobNoticeOpen(true);
       return;
     }
-    const requestPayload = {
+    const requestPayload = creationRequest({
       analysisId: analysis.analysisId,
       templateId: snsTemplateActive ? "white-yellow" : templateId,
       ...(snsTemplateActive ? { snsTemplate: true, brandColor, ...(communityTemplateActive ? { communityTemplate: true } : {}) } : {}),
@@ -14721,7 +14760,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
         ? { subtitleTemplateId, subtitleCaptionPlacement }
         : {}),
       ...(brandColorSelectionEnabled && !customTemplateId ? { brandColor } : {}),
-    };
+    }, isMidform ? "midform" : "shorts");
     const intentKey = JSON.stringify(requestPayload);
     if (jobRequestIntentKey.current !== intentKey) {
       jobRequestId.current = null;
@@ -14755,7 +14794,8 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
         setShortsEventParticipationOpen(true);
       }
       const pendingJob: VideoJob = { id: value.jobId, projectNumber: value.projectNumber, isExample: false, videoTitle: analysis.title, channelName: analysis.channelName, channelThumbnailUrl: analysis.channelThumbnailUrl, thumbnailUrl: analysis.thumbnailUrl, sourceDurationSeconds: analysis.durationSeconds, outputLanguage, expectedShortCount: selectedPlannedShortCount, plannedShortCount: selectedPlannedShortCount, readyShortCount: 0, failedShortCount: 0, renderSuccessPercent: null, wordTimedSubtitlesAvailable: false, status: "queued", stage: "queued", progress: SIMULATED_PROGRESS_START, stageCompletedCount: 0, stageTotalCount: 0, errorMessage: null, createdAt: new Date().toISOString(), expiresAt: null, shorts: [] };
-      setState((current) => current ? { ...current, usage: value.usage, recentJobs: recentJobsWithPendingProject(current.recentJobs, pendingJob) } : current);
+      setState((current) => current ? { ...current, usage: value.usage, recentJobs: isMidform ? current.recentJobs : recentJobsWithPendingProject(current.recentJobs, pendingJob) } : current);
+      if (isMidform) setMidformRefresh(v => v + 1);
       publishUsageSnapshot(value.usage);
       setScrollToProjects(true);
       setYoutubeUrl("");
@@ -14812,6 +14852,10 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
     return <EnterpriseServiceGate access={state.enterpriseAccess} />;
   }
 
+  if (state?.capabilities.midform && selectedMidformId) return <MidformWorkspace
+    key={selectedMidformId} active cloudShortId={selectedMidformId}
+    onClose={closeMidformEditor} />;
+
   return (
     <div className="app-shell site-chrome desktop-sidebar-layout home-desktop-sidebar flex min-h-screen flex-col text-neutral-100">
       <div className="ambient ambient-coral" aria-hidden="true" />
@@ -14847,7 +14891,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
                 <span className="grid h-12 w-12 place-items-center rounded-full border border-emerald-300/30 bg-emerald-300/10 text-2xl font-black text-emerald-200" aria-hidden="true">✓</span>
                 <h2 id="upload-lifecycle-title" className="mt-5 text-2xl font-black text-white">{ui("업로드 완료")}</h2>
                 <p id="upload-lifecycle-description" className="mt-3 text-sm font-semibold leading-6 text-neutral-300">
-                  {ui("이제 창을 닫아도 쇼츠 생성 작업은 계속됩니다.")}</p>
+                  {ui(isMidform ? "이제 창을 닫아도 미들폼 생성 작업은 계속됩니다." : "이제 창을 닫아도 쇼츠 생성 작업은 계속됩니다.")}</p>
                 <button
                   type="button"
                   autoFocus
@@ -14957,16 +15001,17 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
           && selectedSource?.creationAllowed === true
           && !longSourceNoticeOpen
           && !creationRestrictionOpen
+          && !conversionChoiceOpen
         )}
         onComplete={completeSourceRangeGuide}
       />
       <LanguageGuide key={`${state?.user?.id ?? "anonymous"}:${selectedSource?.key ?? "no-source"}`}
         userId={state?.user?.id ?? null} available={languageAvailable}
-        enabled={Boolean((sourceRangeGuideComplete || languageGuideReplay > 0) && selectedSource?.creationAllowed && !longSourceNoticeOpen && !creationRestrictionOpen)}
+        enabled={Boolean(!isMidform && !conversionChoiceOpen && (sourceRangeGuideComplete || languageGuideReplay > 0) && selectedSource?.creationAllowed && !longSourceNoticeOpen && !creationRestrictionOpen)}
         replay={languageGuideReplay} locale={locale} onComplete={completeLanguageGuide} />
       <SubtitleTemplateDiscoveryOverlay
         enabled={Boolean(
-          sourceRangeGuideComplete
+          !isMidform && !conversionChoiceOpen && sourceRangeGuideComplete
           && (!languageAvailable || languageGuideComplete)
           && subtitleTemplateSelectionEnabled
           && selectedSource?.creationAllowed === true
@@ -14985,19 +15030,15 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
         locale={locale}
         className={adminTemplateLayoutEnabled ? "order-[-2]" : ""}
       />
-      {state?.capabilities.midform ? <ConversionChoice open={conversionChoiceOpen} onClose={() => setConversionChoiceOpen(false)} onChoose={mode => {
-        setConversionChoiceOpen(false); setMidformOpened(mode === "midform");
-        if (mode === "shorts") {
-          setShortsChosen(true);
-          if (conversionChoiceStage === "create") void (uploadSourceActive ? createUploadJob() : createJob());
-          else if (conversionChoiceStage === "analyze" && sourceMode === "youtube" && youtubeUrl.trim()) void analyze();
+      {state?.capabilities.midform ? <ConversionChoice open={conversionChoiceOpen} onClose={() => setConversionChoiceOpen(false)} onChoose={format => {
+        setCreationFormat(format); setConversionChoiceOpen(false);
+        if (conversionChoiceStage === "analyze" && sourceMode === "youtube" && youtubeUrl.trim()) void analyze();
+        else if (selectedSource) {
+          if (selectedSource.durationSeconds > 3600 && format === "shorts") setLongSourceNoticeOpen(true);
+          else setScrollToAnalysis(true);
         }
       }} /> : null}
-      {state?.capabilities.midform && midformOpened ? <>
-        <button type="button" className="text-sm text-neutral-400 hover:text-white" disabled={midformBusy} onClick={() => { setConversionChoiceStage("switch"); setConversionChoiceOpen(true); }}>← 제작 방식 바꾸기</button>
-        <MidformCloudWorkspace active onBusyChange={setMidformBusy} initialUrl={youtubeUrl} initialFile={uploadVideo?.file} initialSourceMode={sourceMode} />
-      </> : null}
-      <div style={{ display: state?.capabilities.midform === true && midformOpened ? "none" : "contents" }}>
+      <div style={{ display: state?.capabilities.midform && selectedMidformId ? "none" : "contents" }}>
       <section className={`hero mx-auto flex w-full max-w-4xl flex-col items-center text-center ${adminTemplateLayoutEnabled ? "order-[-2]" : ""}`}>
         <HomeHero
           locale={locale}
@@ -15035,7 +15076,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
         ) : null}
         {sourceMode === "youtube" ? (
           <>
-            <form id="workspace" onSubmit={event => { if (state?.capabilities.midform) { event.preventDefault(); setConversionChoiceStage("analyze"); setConversionChoiceOpen(true); } else void analyze(event); }} noValidate={state?.capabilities.midform === true} className={`url-console w-full max-w-3xl ${uploadModeVisible ? "mt-3" : "mt-8"}`}>
+            <form id="workspace" onSubmit={event => { if (state?.capabilities.midform && !creationFormat && youtubeUrl.trim()) { event.preventDefault(); setConversionChoiceStage("analyze"); setConversionChoiceOpen(true); } else void analyze(event); }} noValidate={state?.capabilities.midform === true} className={`url-console w-full max-w-3xl ${uploadModeVisible ? "mt-3" : "mt-8"}`}>
               <div className="relative flex-1">
                 <span className="absolute inset-y-0 left-4 flex items-center text-xl text-[#d7aaa4]" aria-hidden="true">↗</span>
                 <input type="url" value={youtubeUrl} onChange={(event) => { setYoutubeUrl(event.target.value); setRightsConfirmed(false); setRightsConfirmationAttention(false); }} placeholder={t("home.youtubePlaceholder")} className="url-input" aria-label={t("home.youtubeLabel")} />
@@ -15122,7 +15163,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
         )}
       </section>
       {!state?.user ? <TransformationShowcase /> : null}
-      {state?.recentJobs.length ? <section id="results" ref={projectsSectionRef} className="scroll-mt-24 sm:scroll-mt-28">
+      {state && (state.recentJobs.length > 0 || state.capabilities.midform) ? <section id="results" ref={projectsSectionRef} className="scroll-mt-24 sm:scroll-mt-28">
         <div className="mb-5 flex items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-2">
             <h2 className="text-2xl font-bold">{state.user ? t("home.projects") : t("home.exampleProjects")}</h2>
@@ -15133,6 +15174,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
           </Link>
         </div>
         <ProjectCollection projects={state.recentJobs} authenticated={Boolean(state.user)} />
+        {state.capabilities.midform ? <MidformCloudWorkspace refreshKey={midformRefresh} onActiveCountChange={setMidformActiveCount} onEdit={openMidformEditor} /> : null}
       </section> : null}
       {state && homeProjects.status !== "ready" ? <div role={homeProjects.status === "error" ? "alert" : "status"} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 p-4 text-sm text-neutral-300">
         <p>{t(homeProjects.status === "error" ? "home.projectsLoadError" : "home.projectsLoading")}</p>
@@ -15156,6 +15198,11 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
             backdropFilter: "none",
           } : undefined}
         >
+          {state?.capabilities.midform ? <div className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/[.025] px-5 py-4">
+            <div className="flex items-center gap-3"><span className={`rounded-lg px-3 py-1.5 text-sm font-bold ${isMidform ? "bg-violet-400/15 text-violet-200" : "bg-[#ff715e]/15 text-[#ffb4a8]"}`}>{isMidform ? "미들폼" : "숏폼"}</span>
+              <p className="text-sm text-neutral-400">{isMidform ? "핵심 장면을 이어 한 편으로" : "핵심 장면을 짧은 영상 여러 편으로"}</p></div>
+            <button type="button" disabled={busy} onClick={() => { setConversionChoiceStage("switch"); setConversionChoiceOpen(true); }} className="min-h-10 shrink-0 rounded-lg px-3 text-xs font-semibold text-neutral-300 hover:bg-white/5">제작 방식 변경</button>
+          </div> : null}
           <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#141416] sm:flex">
             {sourceVideoEmbedUrl ? (
               <div className="aspect-video w-full shrink-0 overflow-hidden bg-black sm:w-72">
@@ -15197,16 +15244,17 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
                 usageSeconds={selectedSourceUsageSeconds}
                 plannedShortCount={selectedPlannedShortCount}
                 singleRowControls={adminCompactSourceRangeEnabled}
-                showPlannedShortCount={!adminCompactSourceRangeEnabled}
+                showPlannedShortCount={!isMidform && !adminCompactSourceRangeEnabled}
+                format={isMidform ? "midform" : "shorts"}
                 onStartChange={(seconds) => setSourceRangeStartSeconds(Math.max(
                   0,
                   sourceRangeEndSeconds - MAX_SELECTED_SOURCE_SECONDS,
-                  Math.min(seconds, sourceRangeEndSeconds - MIN_SELECTED_SOURCE_SECONDS),
+                  Math.min(seconds, sourceRangeEndSeconds - minimumSelectedSeconds),
                 ))}
                 onEndChange={(seconds) => setSourceRangeEndSeconds(Math.min(
                   selectedSource.durationSeconds,
                   sourceRangeStartSeconds + MAX_SELECTED_SOURCE_SECONDS,
-                  Math.max(seconds, sourceRangeStartSeconds + MIN_SELECTED_SOURCE_SECONDS),
+                  Math.max(seconds, sourceRangeStartSeconds + minimumSelectedSeconds),
                 ))}
                 onReset={() => {
                   const availableSeconds = state?.usage.enforcementEnabled
@@ -15222,19 +15270,20 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
                     ? (state?.usage.remainingSeconds ?? 0) < MIN_SELECTED_SOURCE_SECONDS
                       ? conversionCopy[locale].rangeNeedsPlan
                       : t("home.insufficientTime", { duration: formatDuration(selectedSourceUsageSeconds, locale), remaining: formatDuration(state?.usage.remainingSeconds || 0, locale) })
-                    : selectedSourceDurationSeconds < MIN_SELECTED_SOURCE_SECONDS
-                      ? localizedValue(locale, { ko: "최소 4분 이상 선택해야 쇼츠를 만들 수 있습니다.", en: "Select at least 4 minutes to create shorts.", ja: "ショート動画を作成するには、4分以上の区間を選択してください。" })
+                    : selectedSourceDurationSeconds < minimumSelectedSeconds
+                      ? isMidform ? "미들폼에 사용할 원본 구간을 10분 이상 선택해 주세요." : localizedValue(locale, { ko: "최소 4분 이상 선택해야 쇼츠를 만들 수 있습니다.", en: "Select at least 4 minutes to create shorts.", ja: "ショート動画を作成するには、4分以上の区間を選択してください。" })
                       : localizedValue(locale, { ko: "한 작업에서 최대 60분까지 선택할 수 있습니다.", en: "Select up to 60 minutes per job.", ja: "1回の処理で選択できる区間は最大60分です。" })}
                 </div>
               )}
             </>
           )}
-          {state?.capabilities.shortsSilenceRemoval ? <SilenceRemovalChoice enabled={shortsSilenceActive} onChange={setShortsSilenceSelected}
+          {!isMidform && state?.capabilities.shortsSilenceRemoval ? <SilenceRemovalChoice enabled={shortsSilenceActive} onChange={setShortsSilenceSelected}
             unavailableReason={shortsSilenceAllowed ? undefined : ui(customTemplateId || snsTemplateActive
               ? "이 템플릿은 아직 무음 삭제를 지원하지 않아요. 기본·자막 템플릿에서 사용할 수 있어요."
               : "무음 삭제는 현재 원본과 자막이 모두 한국어인 영상에서 사용할 수 있어요.")}
             disabled={analysisCreationBlocked || busy} /> : null}
-          {(languageTestActive || uploadLanguageActive) && (
+          {midformSelectionError ? <p role="alert" className="text-sm text-amber-100">{midformSelectionError}</p> : null}
+          {!isMidform && (languageTestActive || uploadLanguageActive) && (
             <section className="rounded-xl border border-white/15 bg-white/[.025] p-4" data-language-selection>
               <div className="flex items-center justify-between gap-4 text-sm font-bold">
                 <h3>{ui(languageText.heading)}</h3>
@@ -15261,7 +15310,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
               <p className="mt-3 text-xs text-neutral-400">{languageText.preserved}</p>
             </section>
           )}
-          <TemplatePicker
+          {isMidform ? <div className="flex flex-wrap gap-x-6 gap-y-2 rounded-xl border border-white/10 px-5 py-4 text-sm text-neutral-400"><span>가로 영상 한 편</span><span>무음 자동 정리</span><span>완성 후 화자별 대사·자막 편집</span></div> : <TemplatePicker
             communityTemplateAvailable={state?.capabilities.communityTemplate === true && sourceMode === "youtube"}
             communityTemplateActive={communityTemplateActive}
             onCommunityTemplateSelect={() => {
@@ -15324,7 +15373,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
                 setVideoAspectRatio(template.config.video.aspectRatio);
               }
             }}
-          />
+          />}
           {analysisCreationBlocked && analysis && (
             <button type="button" onClick={() => { setCreationRestrictionReason(analysis.creationBlockReason || "영상 이용 제한을 확인했습니다."); setCreationRestrictionOpen(true); }} className="min-h-11 w-full rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-100 transition hover:bg-red-500/15">
               {ui("생성 불가 사유 보기")}</button>
@@ -15348,7 +15397,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
             <span>
               <strong className="block text-sm font-extrabold text-white">{ui("원본 영상 권리 확인")}</strong>
               <span id="rights-confirmation-description" className="mt-1 block text-xs font-medium leading-5 text-neutral-400">
-                {ui("이 영상은 내가 소유하고 있거나, 권리자로부터 쇼츠 제작·편집 및 이용에 필요한 허가를 받은 영상임을 확인합니다.")}</span>
+                {ui(isMidform ? "이 영상은 내가 소유하고 있거나, 권리자로부터 영상 제작·편집 및 이용에 필요한 허가를 받은 영상임을 확인합니다." : "이 영상은 내가 소유하고 있거나, 권리자로부터 쇼츠 제작·편집 및 이용에 필요한 허가를 받은 영상임을 확인합니다.")}</span>
             </span>
           </label>
           {error && (
@@ -15356,12 +15405,12 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
               {ui(error)}
             </div>
           )}
-          <button disabled={creationActionDisabled({ creationBlocked: analysisCreationBlocked, rangeValid: sourceRangeIsValid, needsUpgrade, busy, stateReady: stateLoadStatus === "ready" })} onClick={() => { if (needsUpgrade) { openUpgradePlans(); return; } if (state?.capabilities.midform && !shortsChosen) { setConversionChoiceStage("create"); setConversionChoiceOpen(true); } else void (uploadSourceActive ? createUploadJob() : createJob()); }} aria-busy={busy || loginPromptPending} className={`h-[52px] w-full rounded-xl py-4 font-bold text-black transition duration-150 disabled:bg-neutral-800 disabled:text-neutral-500 ${loginPromptPending ? "scale-[.985] bg-neutral-200 shadow-[inset_0_2px_6px_rgba(0,0,0,.22)] motion-reduce:transform-none" : "bg-white hover:bg-neutral-100 active:scale-[.985]"}`}>
+          <button disabled={creationActionDisabled({ creationBlocked: analysisCreationBlocked, rangeValid: sourceRangeIsValid && !midformSelectionError, needsUpgrade, busy, stateReady: stateLoadStatus === "ready" })} onClick={() => { if (needsUpgrade) { openUpgradePlans(); return; } if (state?.capabilities.midform && !creationFormat) { setConversionChoiceStage("switch"); setConversionChoiceOpen(true); } else void (uploadSourceActive ? createUploadJob() : createJob()); }} aria-busy={busy || loginPromptPending} className={`h-[52px] w-full rounded-xl py-4 font-bold text-black transition duration-150 disabled:bg-neutral-800 disabled:text-neutral-500 ${loginPromptPending ? "scale-[.985] bg-neutral-200 shadow-[inset_0_2px_6px_rgba(0,0,0,.22)] motion-reduce:transform-none" : "bg-white hover:bg-neutral-100 active:scale-[.985]"}`}>
             <span className="inline-flex items-center justify-center gap-2">
               {(busy || loginPromptPending) && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-black/25 border-t-black motion-reduce:animate-none" />}
               {ui(busy
                 ? localizedValue(locale, { ko: "작업을 시작하고 있어요", en: "Starting your job", ja: "処理を開始しています" })
-                : analysisCreationBlocked ? t("home.createUnavailable") : stateLoadStatus !== "ready" ? t("home.loginChecking") : needsUpgrade ? t("home.choosePlan") : t("home.create"))}
+                : analysisCreationBlocked ? t("home.createUnavailable") : stateLoadStatus !== "ready" ? t("home.loginChecking") : needsUpgrade ? t("home.choosePlan") : isMidform ? "미들폼 생성하기" : t("home.create"))}
             </span>
           </button>
         </section>

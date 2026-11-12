@@ -14,8 +14,9 @@ export function midformRequestAllowed(request: Request) {
 }
 
 export type MidformRow = { id: string; start: number; end: number; text: string; speaker: string; keep: boolean };
+export type MidformSourceScene = { start: number; end: number; availableStart?: number; availableEnd?: number; sourceStart?: number; sourceEnd?: number };
 export type SilencePreset = "aggressive" | "medium" | "relaxed";
-export type MidformDraft = { rows: MidformRow[]; framing: Record<string, string>; names: Record<string, string>; removeSilence: boolean; silencePreset?: SilencePreset; entertainment?: import("./midform-captions").EntertainmentCaptions };
+export type MidformDraft = { sceneSplits?: number[]; rows: MidformRow[]; framing: Record<string, string>; names: Record<string, string>; removeSilence: boolean; silencePreset?: SilencePreset; entertainment?: import("./midform-captions").EntertainmentCaptions };
 export function midformRanges(rows: MidformRow[], silences: number[][], removeSilence: boolean) {
   const blocks: { start: number; end: number; row: MidformRow }[] = [];
   let interrupted = true;

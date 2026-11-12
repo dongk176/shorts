@@ -27,7 +27,7 @@ export async function midformRelease(db: Sql | TransactionSql, userId: string | 
     || !Object.values(parsed.data.lanes).every(({current: t}) => t.releaseId.startsWith("midform-")
       && t.workerSourceGitSha === row.gitSha && t.imageUri.endsWith(`@${row.workerImageDigest}`)
       && t.fontManifestSha256 === row.fontManifestSha256)) {
-    throw new HttpError(503, "중폼 제작 서버를 준비하고 있습니다.", "MIDFORM_RELEASE_UNAVAILABLE");
+    throw new HttpError(503, "미들폼 제작 서버를 준비하고 있습니다.", "MIDFORM_RELEASE_UNAVAILABLE");
   }
   return { releaseId: row.id as string, registry: parsed.data };
 }
@@ -36,7 +36,7 @@ export async function midformRelease(db: Sql | TransactionSql, userId: string | 
 export async function midformUploadRelease(db: Sql | TransactionSql, userId: string | null) {
   const releaseId = process.env.MIDFORM_UPLOAD_RELEASE_ID;
   if (!releaseId || !/^[a-f0-9-]{36}$/.test(releaseId)) {
-    throw new HttpError(503, "중폼 업로드 서버를 준비하고 있습니다.", "MIDFORM_UPLOAD_RELEASE_UNAVAILABLE");
+    throw new HttpError(503, "미들폼 업로드 서버를 준비하고 있습니다.", "MIDFORM_UPLOAD_RELEASE_UNAVAILABLE");
   }
   return midformRelease(db, userId, releaseId);
 }

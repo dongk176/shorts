@@ -1,0 +1,10 @@
+.trigger { display: inline-flex; width: 100%; min-width: 0; min-height: 38px; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid #36373c; border-radius: 8px; padding: 7px 11px; background: #292a2e; color: #eee; font: inherit; font-size: 13px; text-align: left; }
+.trigger > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trigger svg { width: 16px; height: 16px; flex: none; color: #a8a8b1; }
+.trigger[aria-expanded=true] { border-color: #ff715e; }
+.trigger[aria-expanded=true] svg { transform: rotate(180deg); }
+.trigger:focus-visible { outline: 2px solid #ffb4a8; outline-offset: 2px; }
+.menu { position: fixed; z-index: 1000; overflow-y: auto; border: 1px solid #505158; border-radius: 10px; padding: 5px; background: #242529; color: #f5f4f3; box-shadow: 0 12px 36px #0008; font-family: inherit; }
+.menu button { display: flex; width: 100%; min-height: 36px; align-items: center; justify-content: space-between; gap: 14px; border-radius: 6px; padding: 8px 10px; font-size: 13px; text-align: left; }
+.menu button:hover,.menu button:focus-visible { outline: none; background: #ffffff0b; }
+.menu button[aria-selected=true] { background: #ff715e15; color: #ffb4a8; }

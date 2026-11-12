@@ -3,11 +3,13 @@ import { getRequestLocale } from "@/lib/i18n/server";
 import Link from "@/lib/i18n/navigation";
 import { ProjectAuthControls } from "@/components/project-login-gate";
 import { ProjectList } from "@/components/project-list";
+import { MidformCloudWorkspace } from "@/components/midform-cloud-workspace";
+import { midformCloudEnabled } from "@/lib/midform-cloud";
 import { RankingProjectList } from "@/components/ranking-project-list";
 import { loadRankingProjectList } from "@/lib/ranking-project-list";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
-import { ensureReadDbReady } from "@/lib/db";
+import { ensureReadDbReady, getDb } from "@/lib/db";
 import { loadProjectListPage, loadPublicExampleProjectList } from "@/lib/project-list";
 import { createNoIndexMetadata } from "@/lib/seo";
 import { authProfile, requireMvpSession } from "@/lib/session";
@@ -32,15 +34,20 @@ export default async function ProjectsPage() {
   const ui = createUiText(locale);
   const user = await getAuthenticatedUser();
   await ensureReadDbReady();
-  const [projectPage, rankingProjects] = await Promise.all([
-    user
-      ? requireMvpSession(user, { createIfMissing: false }).then((session) =>
-          loadProjectListPage({ locale, session }),
-        )
+  const session = user ? await requireMvpSession(user, { createIfMissing: false, readOnly: true }) : null;
+  const midformAvailable = session?.isAdmin === true && midformCloudEnabled();
+  const [projectPage, rankingProjects, midformCountRows] = await Promise.all([
+    session
+      ? loadProjectListPage({ locale, session })
       : loadPublicExampleProjectList(locale),
     // A ranking lookup failure must not take down ordinary project access.
     loadRankingProjectList(user?.id || null).catch(() => null),
+    midformAvailable ? getDb()`select count(*)::integer as count from shorts_mvp.video_jobs
+      where user_id=${session!.userId} and midform_request is not null
+        and user_deleted_at is null and status not in ('deleted','expired')
+        and (expires_at is null or expires_at > now())` : Promise.resolve([{ count: 0 }]),
   ]);
+  const midformCount = Number(midformCountRows[0]?.count || 0);
 
   return (
     <div className="app-shell site-chrome desktop-sidebar-layout flex min-h-screen flex-col text-neutral-100">
@@ -56,7 +63,7 @@ export default async function ProjectsPage() {
       <main className="projects-page-main relative mx-auto w-full max-w-6xl flex-1 px-5 pb-24 pt-10 sm:px-8 sm:pt-14">
         <div className="projects-page-heading flex flex-col gap-6 border-b border-white/10 pb-8 sm:flex-row sm:items-end sm:justify-between md:pr-36">
           <div>
-            <h1 className="text-3xl font-black tracking-[-0.045em] text-white sm:text-4xl">{ui("내 프로젝트")} {user ? <span className="ml-3 text-base font-semibold tabular-nums text-neutral-400">{projectPage.totalCount + (rankingProjects?.length || 0)}</span> : null}</h1>
+            <h1 className="text-3xl font-black tracking-[-0.045em] text-white sm:text-4xl">{ui("내 프로젝트")} {user ? <span className="ml-3 text-base font-semibold tabular-nums text-neutral-400">{projectPage.totalCount + (rankingProjects?.length || 0) + midformCount}</span> : null}</h1>
           </div>
           {user && (
             <Link href="/#workspace" className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-xl bg-white px-5 text-sm font-extrabold text-black transition hover:bg-neutral-200">
@@ -85,9 +92,10 @@ export default async function ProjectsPage() {
           <h2 className="mt-10 text-lg font-bold text-white">{ui("롱폼 → 숏폼")}</h2>
         ) : null}
 
+        {midformAvailable ? <MidformCloudWorkspace /> : null}
         {projectPage.projects.length ? (
           <ProjectList authenticated={Boolean(user)} initialPage={projectPage} />
-        ) : user && rankingProjects?.length ? null : user ? (
+        ) : user && (rankingProjects?.length || midformCount) ? null : user ? (
           <div className="mt-10 rounded-2xl border border-dashed border-white/15 bg-white/[.025] px-6 py-16 text-center sm:px-10">
             <h2 className="text-xl font-extrabold text-white">{ui("아직 만든 프로젝트가 없어요")}</h2>
             <p className="mt-3 text-sm leading-6 text-neutral-400">{ui("유튜브 링크 하나로 첫 쇼츠 프로젝트를 만들어 보세요.")}</p>

@@ -14,6 +14,8 @@ from uuid import uuid4
 
 from .media import media_duration, probe_media
 from .midform import (
+    MAX_OUTPUT_SECONDS,
+    checked_run,
     edit_ranges,
     inspect_source,
     normalize_segments,
@@ -25,13 +27,31 @@ from .midform import (
 from .midform_captions import generate_captions, validate_captions
 from .midform_selection import select_shorts_chain
 
+EDIT_CONTEXT_SECONDS = 30.0
 
-def reel_document(rows: list[dict], source_duration: float, fps: float) -> dict:
+
+def _context_windows(ranges: list[dict], duration: float, padding: float) -> list[dict]:
+    windows: list[dict] = []
+    for item in ranges:
+        start, end = max(0.0, item["start"] - padding), min(duration, item["end"] + padding)
+        if windows and start <= windows[-1]["end"]:
+            windows[-1]["end"] = max(windows[-1]["end"], end)
+        else:
+            windows.append({"start": start, "end": end})
+    return windows
+
+
+def reel_document(
+    rows: list[dict], source_duration: float, fps: float, *,
+    context_seconds: float = EDIT_CONTEXT_SECONDS,
+) -> dict:
     """Compile frame-aligned source mappings and editable transcript together."""
     if not math.isfinite(source_duration) or source_duration <= 0:
         raise ValueError("원본 영상 길이가 올바르지 않습니다.")
     if not math.isfinite(fps) or not 1 <= fps <= 60:
         raise ValueError("영상 프레임 정보가 올바르지 않습니다.")
+    if not math.isfinite(context_seconds) or not 0 <= context_seconds <= EDIT_CONTEXT_SECONDS:
+        raise ValueError("편집 여유 구간이 올바르지 않습니다.")
     normalized = normalize_segments(rows, source_duration)
     ranges = edit_ranges(normalized, [], False, {})
     selected_duration = sum(item["end"] - item["start"] for item in ranges)
@@ -39,19 +59,39 @@ def reel_document(rows: list[dict], source_duration: float, fps: float) -> dict:
     # complete source is not a way around the ephemeral-source boundary.
     if selected_duration >= source_duration * 0.95:
         raise ValueError("핵심 장면을 더 골라 주세요. 원본 전체는 편집용으로 보관하지 않습니다.")
+    def frame_count(windows: list[dict]) -> int:
+        return sum(max(1, round((w["end"] - w["start"]) * fps)) for w in windows)
+    # Preserve the existing 20-minute asset contract and never retain the full source.
+    limit_frames = min(math.floor((MAX_OUTPUT_SECONDS + 0.1) * fps),
+                       math.ceil(source_duration * 0.95 * fps) - 1)
+    if frame_count(_context_windows(ranges, source_duration, 0)) > limit_frames:
+        raise ValueError("핵심 장면의 길이를 줄여 주세요. 원본 전체는 보관하지 않습니다.")
+    padding = context_seconds
+    windows = _context_windows(ranges, source_duration, padding)
+    if frame_count(windows) > limit_frames:
+        low, high = 0.0, padding
+        for _ in range(40):
+            middle = (low + high) / 2
+            if frame_count(_context_windows(ranges, source_duration, middle)) <= limit_frames:
+                low = middle
+            else:
+                high = middle
+        padding = low
+        windows = _context_windows(ranges, source_duration, padding)
     cursor_frames = 0
     mapped_rows: list[dict] = []
     scenes: list[dict] = []
-    for item in ranges:
+    retained: list[dict] = []
+    for item in windows:
         frames = max(1, round((item["end"] - item["start"]) * fps))
         offset = cursor_frames / fps
         length = frames / fps
-        scenes.append({
+        retained.append({
             "sourceStart": item["start"], "sourceEnd": item["end"],
             "start": offset, "end": offset + length,
         })
         for row in normalized:
-            if not row["keep"] or row["end"] <= item["start"] or row["start"] >= item["end"]:
+            if row["end"] <= item["start"] or row["start"] >= item["end"]:
                 continue
             start = offset + max(0, row["start"] - item["start"])
             end = offset + min(length, row["end"] - item["start"])
@@ -60,24 +100,57 @@ def reel_document(rows: list[dict], source_duration: float, fps: float) -> dict:
             mapped_rows.append({
                 **row, "id": str(len(mapped_rows)), "start": start, "end": end,
             })
-        # Keep the frame-rounding tail and sentence gaps selectable. These are
-        # real video/reactions, not transcript-derived silence to auto-remove.
         cursor_frames += frames
     duration = cursor_frames / fps
+
+    def partition(left: float, right: float) -> float:
+        middle = (left + right) / 2
+        crossing = next((r for r in normalized if r["start"] < middle < r["end"]), None)
+        if crossing:
+            return min((p for p in (crossing["start"], crossing["end"])
+                        if left <= p <= right), key=lambda p: abs(p - middle))
+        return middle
+
+    def to_reel(window: dict, point: float) -> float:
+        if point >= window["sourceEnd"] - 1e-9:
+            return window["end"]
+        return min(window["end"], window["start"] + max(0, point - window["sourceStart"]))
+
+    for index, item in enumerate(ranges):
+        window = next(w for w in retained if w["sourceStart"] <= item["start"]
+                      and w["sourceEnd"] >= item["end"])
+        left, right = window["sourceStart"], window["sourceEnd"]
+        if index and ranges[index - 1]["end"] >= left:
+            left = max(left, partition(ranges[index - 1]["end"], item["start"]))
+        if index + 1 < len(ranges) and ranges[index + 1]["start"] <= right:
+            right = min(right, partition(item["end"], ranges[index + 1]["start"]))
+        scenes.append({"sourceStart": item["start"], "sourceEnd": item["end"],
+                       "start": to_reel(window, item["start"]),
+                       "end": window["end"] if not padding else to_reel(window, item["end"]),
+                       "availableStart": to_reel(window, left),
+                       "availableEnd": to_reel(window, right)})
     filled: list[dict] = []
+
+    def fill_gap(start: float, end: float) -> None:
+        boundaries = sorted({start, end, *(point for scene in scenes
+                             for point in (scene["start"], scene["end"], scene["availableStart"],
+                                           scene["availableEnd"]) if start < point < end)})
+        for a, b in zip(boundaries, boundaries[1:], strict=False):
+            if b - a > 0.001:
+                filled.append({"start": a, "end": b, "text": "", "speaker": "unknown",
+                               "keep": any(s["start"] <= (a + b) / 2 < s["end"]
+                                           for s in scenes)})
+
     cursor = 0.0
     for row in mapped_rows:
-        if row["start"] > cursor + 0.001:
-            filled.append({"start": cursor, "end": row["start"], "text": "",
-                           "speaker": "unknown", "keep": True})
+        fill_gap(cursor, row["start"])
         filled.append(row)
         cursor = row["end"]
-    if cursor < duration - 0.001:
-        filled.append({"start": cursor, "end": duration, "text": "",
-                       "speaker": "unknown", "keep": True})
+    fill_gap(cursor, duration)
     return {
         "version": 1, "duration": duration, "sourceDuration": source_duration,
-        "fps": fps, "scenes": scenes,
+        "fps": fps, "scenes": scenes, "retainedRanges": retained,
+        "editContextSeconds": round(padding, 3),
         "rows": normalize_segments(filled, duration),
         "framing": {}, "names": {}, "removeSilence": False,
     }
@@ -89,7 +162,8 @@ def build_edit_reel(source: Path, destination: Path, rows: list[dict]) -> dict:
     rate = str(video.get("avg_frame_rate", "30/1")).split("/")
     fps = min(60, max(1, float(rate[0]) / max(1, float(rate[-1]))))
     document = reel_document(rows, media_duration(probe), fps)
-    ranges = edit_ranges(normalize_segments(rows, document["sourceDuration"]), [], False, {})
+    ranges = [{"start": item["sourceStart"], "end": item["sourceEnd"], "position": "wide",
+               "text": "", "captions": []} for item in document["retainedRanges"]]
     render(source, destination, ranges,
            any(stream["codec_type"] == "audio" for stream in probe["streams"]))
     actual = media_duration(probe_media(destination))
@@ -98,6 +172,22 @@ def build_edit_reel(source: Path, destination: Path, rows: list[dict]) -> dict:
         destination.with_suffix(".srt").unlink(missing_ok=True)
         raise ValueError("편집 영상과 대본의 길이가 일치하지 않습니다.")
     return document
+
+
+def reel_silence_ranges(document: dict, silences: list[list[float]]) -> list[list[float]]:
+    """Keep silence decisions on the original audio clock, independent of retained context."""
+    result: list[list[float]] = []
+    for window in document.get("retainedRanges", document.get("scenes", [])):
+        for left, right in silences:
+            start, end = max(left, window["sourceStart"]), min(right, window["sourceEnd"])
+            if end <= start:
+                continue
+            a = window["start"] + start - window["sourceStart"]
+            b = (window["end"] if end >= window["sourceEnd"] else
+                 min(window["end"], window["start"] + end - window["sourceStart"]))
+            if b > a:
+                result.append([a, b])
+    return result
 
 
 def require_midform_worker_access(worker, job_id: str) -> None:
@@ -115,7 +205,39 @@ def require_midform_worker_access(worker, job_id: str) -> None:
             or row["midform_request"] != {"version": 1, "targetSeconds": 0}
             or str(row["midform_release_id"]) != os.getenv("MIDFORM_RELEASE_ID")
             or row["initial_editor_release_id"] != row["midform_release_id"]):
-        raise ValueError("중폼 제작 권한 또는 릴리스를 확인하지 못했습니다.")
+        raise ValueError("미들폼 제작 권한 또는 릴리스를 확인하지 못했습니다.")
+
+
+def prepare_midform_source(source: Path, job: dict, work_dir: Path) -> tuple[Path, float, dict]:
+    """Analyze only the admitted source range, with a zero-based transcript clock."""
+    duration, has_audio = inspect_source(source)
+    if not has_audio:
+        raise ValueError("음성이 있는 영상을 선택해 주세요.")
+    start, end = 0.0, duration
+    if job.get("source_range_selection_enabled"):
+        try:
+            start = float(job["range_start_seconds"])
+            end = float(job["range_end_seconds"])
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError("미들폼에 사용할 원본 구간을 확인해 주세요.") from error
+        if (not all(math.isfinite(value) for value in (start, end))
+                or start < 0 or end <= start or end > duration + 0.1):
+            raise ValueError("미들폼에 사용할 원본 구간을 확인해 주세요.")
+        end = min(end, duration)
+    source_range = {"start": start, "end": end, "sourceDuration": duration}
+    if start <= 0.001 and end >= duration - 0.001:
+        return source, duration, source_range
+    selected = work_dir / "midform-selected-source.mp4"
+    checked_run([
+        "ffmpeg", "-v", "error", "-y", "-ss", str(start), "-i", str(source),
+        "-t", str(end - start), "-map", "0:v:0", "-map", "0:a:0",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+        "-c:a", "aac", "-movflags", "+faststart", str(selected),
+    ], 900)
+    selected_duration, selected_has_audio = inspect_source(selected)
+    if not selected_has_audio or abs(selected_duration - (end - start)) > 0.15:
+        raise ValueError("선택한 영상 구간의 길이가 일치하지 않습니다.")
+    return selected, selected_duration, source_range
 
 
 def run_midform_project(worker, job: dict, source: Path, work_dir: Path) -> None:
@@ -130,9 +252,7 @@ def run_midform_project(worker, job: dict, source: Path, work_dir: Path) -> None
     if (job.get("source_type", "youtube") not in {"youtube", "upload"}
             or int(job.get("planned_short_count") or 0) != 1):
         raise ValueError("긴 영상 편집 작업 형식이 올바르지 않습니다.")
-    duration, has_audio = inspect_source(source)
-    if not has_audio:
-        raise ValueError("음성이 있는 영상을 선택해 주세요.")
+    source, duration, input_range = prepare_midform_source(source, job, work_dir)
     repository = worker.repository
     repository.stage(job["id"], "transcribing", 28, "대화와 화자를 분석하고 있습니다.")
     if worker.settings.elevenlabs_api_key:
@@ -154,7 +274,9 @@ def run_midform_project(worker, job: dict, source: Path, work_dir: Path) -> None
     reel = work_dir / "midform-reel.mp4"
     document = build_edit_reel(source, reel, rows)
     document.update({"target": target, "selectionMode": mode,
-                     "silences": silence_ranges(reel, document["duration"], "aggressive"),
+                     "inputSourceRange": input_range,
+                     "silences": reel_silence_ranges(
+                         document, silence_ranges(source, duration, "aggressive")),
                      "revision": 0, "outputSrt": reel.with_suffix(".srt").read_text()})
     document["removeSilence"] = True
     document["silencePreset"] = "aggressive"

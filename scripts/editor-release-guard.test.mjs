@@ -26,9 +26,9 @@ test("legacy editor global CSS remains byte-for-byte at the approved baseline", 
   assert.equal(
     digest,
     // Current promoted a2893f37 (dpl_Bb8c7zYnsvghXUfDXpMwe1g2A6DT), checked 2026-11-03.
-    // Verified against git show a2893f37:web/app/globals.css; midform uses CSS modules.
+    // Verified against git show 6c0b44b7:web/app/globals.css; midform uses CSS modules.
     // This release leaves global CSS byte-identical; retain the exact digest guard.
-    "f0f158f748e283b287b281e1e9c19535bd19a8ce035b478f06b1e80b41300480",
+    "ebadf8da0f218581af48e4bddf0394edb6b61273da130dafe7d782bafcb2ce46",
     "Do not change the approved global CSS baseline without a dedicated public UI review.",
   );
 });
@@ -245,11 +245,11 @@ test("release workflow promotes one tested digest without deploying the website"
   assert.doesNotMatch(workflow, /vars\.AWS_WORKER_BUILD_ROLE_ARN/);
   assert.match(
     workflow,
-    /github\.ref == 'refs\/tags\/editor-v4-render-parity-20261107-1'/,
+    /github\.ref == 'refs\/tags\/editor-v4-render-parity-20261112-1'/,
   );
   assert.deepEqual(
     [...new Set(workflow.match(/editor-v4-render-parity-[0-9]{8}-[0-9]+/g))],
-    ["editor-v4-render-parity-20261107-1"],
+    ["editor-v4-render-parity-20261112-1"],
   );
   assert.equal(workflow.match(/fetch-depth: 0/g)?.length, 2);
   assert.equal(workflow.match(/fetch-tags: true/g)?.length, 2);

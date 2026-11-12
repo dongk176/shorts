@@ -1,0 +1,47 @@
+.timeline { position: relative; display: flex; min-height: 0; flex: 1; flex-direction: column; }
+.controls { display: flex; min-height: 34px; align-items: center; gap: 12px; padding: 0 20px; color: var(--studio-muted); font-size: 11px; }
+.controls > button { border: 1px solid var(--studio-line); border-radius: 6px; padding: 3px 7px; }
+.controls > button[aria-pressed=true] { border-color: var(--studio-accent-line); color: var(--studio-accent-text); }
+.controls > button { display: inline-flex; min-height: 29px; align-items: center; gap: 5px; font-size: 12px; }
+.controls svg { width: 14px; height: 14px; }
+.divider { height: 14px; border-left: 1px solid var(--studio-line); }
+.count { margin-left: auto; }
+.scrollFrame { position: relative; display: flex; min-height: 0; flex: 1; isolation: isolate; }
+.scrollFrame > .scrollArea { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.gutterMask { position: absolute; z-index: 5; inset: 0 auto 0 0; width: 112px; background: var(--studio-shell); pointer-events: none; }
+.content { min-width: 100%; padding: 0 22px 4px 112px; }
+.ruler { height: 25px; }
+.ruler { position: relative; }
+.timeline .content .ruler > :global(.editor-studio-ruler) { top: 0; height: 100%; font-size: 11px; }
+.ruler > input { position: absolute; inset: 0; z-index: 5; width: 100%; height: 100%; cursor: pointer; opacity: 0; }
+.tracks { position: relative; }
+.track { position: relative; height: 52px; margin-top: 4px; border-radius: 5px; background: #ffffff04; }
+.label { position: sticky; z-index: 6; top: 0; left: 16px; display: flex; width: 88px; height: 100%; align-items: center; gap: 6px; margin-left: -96px; background: var(--studio-shell); box-shadow: -16px 0 var(--studio-shell), 8px 0 var(--studio-shell); color: var(--studio-muted); font-size: 12px; }
+.speakerBadge { display: grid; width: 21px; height: 21px; flex: none; place-items: center; border: 1px solid; border-radius: 50%; font-size: 11px; font-weight: 650; }
+.speakerName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scene { position: absolute; top: 0; bottom: 0; border: 1px solid #67615f; border-radius: 6px; background: var(--studio-field); }
+.sceneBody { position: absolute; inset: 0; overflow: hidden; width: calc(100% - 4px); margin: 0 2px; border-radius: 5px; padding: 7px 12px; background: linear-gradient(100deg,#51483f,#303840); background-position: center; background-size: auto 100%; color: white; font-size: 12px; text-align: left; }
+.sceneBody::after { position: absolute; inset: 0; background: linear-gradient(90deg,#0008,transparent 70%); content: ""; pointer-events: none; }
+.sceneBody span,.sceneBody time { position: relative; z-index: 1; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sceneBody time { margin-top: 3px; font-size: 10px; opacity: .75; }
+.selected { z-index: 2; border-color: var(--studio-accent); box-shadow: inset 0 0 0 1px var(--studio-accent); }
+.handle { position: absolute; z-index: 3; top: 0; bottom: 0; width: 11px; border-radius: 4px; background: var(--studio-accent); color: #3c1b12; font-size: 9px; opacity: 0; cursor: ew-resize; touch-action: none; }
+.selected .handle,.scene:hover .handle,.handle:focus-visible { opacity: 1; }
+.left { left: -1px; }
+.right { right: -1px; }
+.captionTracks { display: grid; gap: 5px; margin-top: 10px; }
+.captionTrack { position: relative; height: 30px; border-radius: 4px; background: #ffffff03; }
+.captionTrack > button { position: absolute; inset-block: 0; min-width: 1px; overflow: hidden; border: 1px solid; border-radius: 4px; padding: 0; color: #dcebea; font-size: 11px; text-align: left; text-overflow: ellipsis; white-space: nowrap; container-type: inline-size; }
+.captionText { display: block; overflow: hidden; padding: 0 5px; text-overflow: ellipsis; white-space: nowrap; }
+@container (max-width:40px) { .captionText { visibility: hidden; } }
+.captionTrack > button:hover,.captionTrack > .captionSelected { z-index: 2; border-color: var(--studio-accent) !important; box-shadow: inset 0 0 0 1px var(--studio-accent); }
+.playhead { position: absolute; z-index: 4; top: -24px; bottom: -3px; width: 1px; background: var(--studio-accent); pointer-events: none; }
+.playhead i { position: absolute; top: 0; left: -4px; width: 9px; height: 10px; border-radius: 3px 3px 5px 5px; background: var(--studio-accent); }
+.sourceTrack { position: relative; height: 24px; margin-top: 12px; border: 1px solid var(--studio-line); border-radius: 4px; background: var(--studio-field); }
+.sourceTrack > span:not(.label) { position: absolute; inset-block: 0; border-radius: 3px; background: #ff715e60; }
+.sourceTrack input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.hint { position: absolute; z-index: 8; right: 20px; bottom: 8px; margin: 0; border: 1px solid var(--studio-line); border-radius: 5px; padding: 4px 8px; background: var(--studio-shell); color: var(--studio-muted); font-size: 11px; line-height: 1.5; pointer-events: none; }
+@media(max-width:900px) { .controls > span { display: none; } }
+@media(max-width:640px) { .controls { gap: 8px; padding: 0 12px; } .content { padding-left: 94px; padding-right: 14px; } .gutterMask { width: 94px; } .label { left: 12px; width: 74px; margin-left: -82px; box-shadow: -12px 0 var(--studio-shell), 8px 0 var(--studio-shell); font-size: 11px; } .hint { margin-left: 16px; } }
+
+.trimTime { position: absolute; bottom: calc(100% + 7px); left: 50%; transform: translateX(-50%); border: 1px solid #855249; border-radius: 6px; padding: 4px 7px; background: #392723; color: #ffd4c8; font-size: 11px; white-space: nowrap; pointer-events: none; }

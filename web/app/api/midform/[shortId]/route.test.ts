@@ -12,7 +12,7 @@ const userId = "33333333-3333-4333-8333-333333333333";
 const rows = [{ id: "0", start: 0, end: 10, speaker: "speaker_0", text: "안녕하세요", keep: true }];
 const draft = { rows, framing: { speaker_0: "left" }, names: { speaker_0: "진행자" }, removeSilence: true };
 const context = () => ({ params: Promise.resolve({ shortId }) });
-function setup(options: { missing?: boolean; revision?: number; busy?: boolean; previousHash?: string } = {}) {
+function setup(options: { missing?: boolean; revision?: number; busy?: boolean; previousHash?: string; document?: Record<string, unknown> } = {}) {
   const calls: { sql: string; values: unknown[] }[] = [];
   const db = Object.assign(vi.fn(async (parts: TemplateStringsArray, ...values: unknown[]) => {
     const sql = parts.join("?").replace(/\s+/g, " "); calls.push({ sql, values });
@@ -20,7 +20,7 @@ function setup(options: { missing?: boolean; revision?: number; busy?: boolean; 
       midformReleaseId: requestId, status: options.busy ? "rerendering" : "ready", renderVersion: 1, cleanClipS3Key: "edit-sources/reel.mp4",
       outputS3Key: "outputs/v1.mp4", expiresAt: new Date(Date.now() + 86400000),
       midformDocumentJson: sql.includes("s.midform_document::text as midform_document_json")
-        ? JSON.stringify({ ...draft, revision: options.revision ?? 0, draft, renderedDraft: draft, duration: 10, sourceDuration: 60, silences: [[2, 4]], outputSrt: "captions" })
+        ? JSON.stringify({ ...draft, revision: options.revision ?? 0, draft, renderedDraft: draft, duration: 10, sourceDuration: 60, silences: [[2, 4]], outputSrt: "captions", ...options.document })
         : undefined,
     }];
     if (sql.includes("select snapshot_hash")) return options.previousHash ? [{ snapshotHash: options.previousHash }] : [];
@@ -70,6 +70,17 @@ describe("authenticated midform project routes", () => {
     expect(calls[0].sql).toContain("for update of s"); expect(calls[0].values).toContain(userId);
     expect(calls.some(c => c.sql.includes("update shorts_mvp.generated_shorts"))).toBe(true);
     expect(calls.some(c => c.sql.includes("editor_render_outbox"))).toBe(false);
+  });
+  it("reopens saved edits without replacing the immutable context rows or scene bounds", async () => {
+    const sourceRows=[{...rows[0],id:"0",start:0,end:30,keep:false},{...rows[0],id:"1",start:30,end:40},{...rows[0],id:"2",start:40,end:70,keep:false}];
+    const scenes=[{start:30,end:40,availableStart:0,availableEnd:70,sourceStart:100,sourceEnd:110}];
+    const saved={...draft,rows:sourceRows.map(row=>({...row,keep:row.id==="0"}))};
+    setup({document:{rows:sourceRows,draft:saved,scenes,editContextSeconds:30,duration:70}});
+    const body=await(await GET(new Request("https://www.easycut.co.kr/"),context())).json();
+    expect(body.rows).toEqual(saved.rows);
+    expect(body.sourceRows).toEqual(sourceRows);
+    expect(body.scenes).toEqual(scenes);
+    expect(body.editContextSeconds).toBe(30);
   });
   it.each([{ revision: 1 }, { busy: true }])("rejects stale or in-flight edits before mutation: %j", async options => {
     const calls = setup(options);

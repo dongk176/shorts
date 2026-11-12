@@ -20,7 +20,7 @@ const pricingStyles = readFileSync(
 
 describe("public home experience", () => {
   it("shows public example projects without exposing the signed-in usage pill", () => {
-    expect(homeSource).toContain("{state?.recentJobs.length ? <section id=\"results\"");
+    expect(homeSource).toContain("{state && (state.recentJobs.length > 0 || state.capabilities.midform) ? <section id=\"results\"");
     expect(homeSource).toContain('state.user ? t("home.projects") : t("home.exampleProjects")');
     expect(homeSource).not.toContain("state.billing.planCode.toUpperCase()");
   });

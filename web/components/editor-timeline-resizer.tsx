@@ -4,28 +4,29 @@ import { useUiText } from "@/lib/i18n/use-ui-text";
 import { useLayoutEffect, useRef, useState } from "react";
 import type { PointerEvent, RefObject } from "react";
 
-function timelineBounds(workspaceHeight: number) {
+function timelineBounds(workspaceHeight: number, compact = false) {
   // Keep enough room above the divider to operate the preview and settings.
   const max = Math.max(132, Math.floor(workspaceHeight - 220));
-  const min = Math.min(300, max);
-  return { min, max, defaultHeight: Math.min(max, Math.max(min, Math.min(380, Math.round(workspaceHeight / 2)))) };
+  const min = Math.min(compact ? 220 : 300, max);
+  return { min, max, defaultHeight: Math.min(max, Math.max(min, Math.min(compact ? 300 : 380, Math.round(workspaceHeight / 2)))) };
 }
 
-export function EditorTimelineResizer({ workspaceRef, timelineId }: {
+export function EditorTimelineResizer({ workspaceRef, timelineId, compact = false }: {
   workspaceRef: RefObject<HTMLDivElement | null>;
   timelineId: string;
+  compact?: boolean;
 }) {
   const ui = useUiText();
   const handleRef = useRef<HTMLDivElement>(null);
   const preferredHeight = useRef<number | null>(null);
   const drag = useRef<{ pointerId: number; startY: number; startHeight: number } | null>(null);
-  const [size, setSize] = useState({ min: 300, max: 600, height: 380 });
+  const [size, setSize] = useState({ min: compact ? 220 : 300, max: 600, height: compact ? 300 : 380 });
   const [resizing, setResizing] = useState(false);
 
   const applyHeight = (requested: number | null) => {
     const workspace = workspaceRef.current;
     if (!workspace || !window.matchMedia("(min-width: 641px)").matches) return;
-    const bounds = timelineBounds(workspace.clientHeight);
+    const bounds = timelineBounds(workspace.clientHeight, compact);
     const height = Math.round(Math.min(bounds.max, Math.max(bounds.min, requested ?? bounds.defaultHeight)));
     workspace.style.setProperty("--studio-timeline-height", `${height}px`);
     setSize((current) => current.height === height && current.min === bounds.min && current.max === bounds.max
@@ -42,7 +43,7 @@ export function EditorTimelineResizer({ workspaceRef, timelineId }: {
         setResizing(false);
         return;
       }
-      const bounds = timelineBounds(workspace.clientHeight);
+      const bounds = timelineBounds(workspace.clientHeight, compact);
       const height = Math.round(Math.min(bounds.max, Math.max(bounds.min, preferredHeight.current ?? bounds.defaultHeight)));
       workspace.style.setProperty("--studio-timeline-height", `${height}px`);
       setSize((current) => current.height === height && current.min === bounds.min && current.max === bounds.max
@@ -55,7 +56,7 @@ export function EditorTimelineResizer({ workspaceRef, timelineId }: {
       observer.disconnect();
       workspace.style.removeProperty("--studio-timeline-height");
     };
-  }, [workspaceRef]);
+  }, [workspaceRef, compact]);
 
   const finishDrag = (event: PointerEvent<HTMLDivElement>) => {
     if (drag.current?.pointerId !== event.pointerId) return;
@@ -90,7 +91,7 @@ export function EditorTimelineResizer({ workspaceRef, timelineId }: {
     onPointerMove={(event) => {
       const current = drag.current;
       if (!current || current.pointerId !== event.pointerId) return;
-      const bounds = timelineBounds(workspaceRef.current?.clientHeight ?? 0);
+      const bounds = timelineBounds(workspaceRef.current?.clientHeight ?? 0, compact);
       const height = Math.min(bounds.max, Math.max(bounds.min, current.startHeight + current.startY - event.clientY));
       preferredHeight.current = height;
       applyHeight(height);

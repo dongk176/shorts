@@ -102,7 +102,7 @@ describe("authorized subtitle template layout", () => {
       'rightsCheckboxRef.current?.focus({ preventScroll: true });',
     );
     expect(shortsAppSource).toContain(
-      'disabled={creationActionDisabled({ creationBlocked: analysisCreationBlocked, rangeValid: sourceRangeIsValid, needsUpgrade, busy, stateReady: stateLoadStatus === "ready" })}',
+      'disabled={creationActionDisabled({ creationBlocked: analysisCreationBlocked, rangeValid: sourceRangeIsValid && !midformSelectionError, needsUpgrade, busy, stateReady: stateLoadStatus === "ready" })}',
     );
     expect(shortsAppSource).not.toContain(
       'disabled={analysisCreationBlocked || !sourceRangeIsValid || !rightsConfirmed || busy',

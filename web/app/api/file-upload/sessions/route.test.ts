@@ -21,6 +21,13 @@ const mocks = vi.hoisted(() => ({
   uploadDispatchTarget: vi.fn(),
   ensureUploadCapacity: vi.fn(),
   releaseUploadCapacity: vi.fn(),
+  midformAdmin: vi.fn(),
+  midformRelease: vi.fn(),
+}));
+
+vi.mock("@/lib/midform-release", () => ({
+  requireMidformAdmin: mocks.midformAdmin,
+  midformUploadRelease: mocks.midformRelease,
 }));
 
 vi.mock("@/lib/shorts-silence-parallel", () => ({ parallelSilenceTarget: mocks.parallelTarget }));
@@ -223,6 +230,8 @@ function query(
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.parallelTarget.mockResolvedValue(null);
+  mocks.midformAdmin.mockResolvedValue(undefined);
+  mocks.midformRelease.mockResolvedValue({ releaseId: "f223e9e5-6aad-449f-8d2d-99202bfed190" });
   vi.stubEnv("NODE_ENV", "test");
   vi.stubEnv("FILE_UPLOAD_MULTILINGUAL_VERIFIED_RELEASE_ID", "");
   vi.stubEnv("UNIFIED_TEMPLATE_SUBTITLE_LOCAL_UPLOAD_ENABLED", "");
@@ -328,6 +337,40 @@ describe("file upload job control plane", () => {
     expect(JSON.stringify(queries.find(q => q.sql.includes("insert into shorts_mvp.video_jobs"))?.values)).toContain("shortsSilenceRemoval");
     expect(queries.filter(q => q.sql.includes("insert into shorts_mvp.usage_reservations"))).toHaveLength(1);
   });
+  it("admits the selected midform range and reserves only that range", async () => {
+    const { db, queries } = transactionDb();
+    mocks.getDb.mockReturnValue(db);
+    const response = await POST(jsonRequest({ ...validBody,
+      file: { ...validBody.file, durationSeconds: 1800 }, videoAspectRatio: "16:9",
+      rangeStartSeconds: 120, rangeEndSeconds: 900, midform: { version: 1, targetSeconds: 0 },
+    }));
+    expect(response.status, JSON.stringify(await response.clone().json())).toBe(201);
+    expect(mocks.midformAdmin).toHaveBeenCalled();
+    expect(query(queries, "insert into shorts_mvp.usage_reservations")?.values).toContain(780);
+    expect(query(queries, "insert into shorts_mvp.video_jobs")?.values).toEqual(expect.arrayContaining([120, 900]));
+  });
+
+  it("keeps non-admin midform upload admission hidden", async () => {
+    const { db } = transactionDb();
+    mocks.getDb.mockReturnValue(db);
+    mocks.midformAdmin.mockRejectedValueOnce(new HttpError(404, "찾을 수 없습니다."));
+    const response = await POST(jsonRequest({ ...validBody, videoAspectRatio: "16:9",
+      rangeStartSeconds: 0, rangeEndSeconds: 600, midform: { version: 1, targetSeconds: 0 },
+    }));
+    expect(response.status).toBe(404);
+    expect(db.begin).not.toHaveBeenCalled();
+  });
+
+  it("rejects a midform range below ten minutes before reserving usage", async () => {
+    const { db } = transactionDb();
+    mocks.getDb.mockReturnValue(db);
+    const response = await POST(jsonRequest({ ...validBody, videoAspectRatio: "16:9",
+      rangeStartSeconds: 60, rangeEndSeconds: 360, midform: { version: 1, targetSeconds: 0 },
+    }));
+    expect(response.status).toBe(400);
+    expect(db.begin).not.toHaveBeenCalled();
+  });
+
   it("conceals GET and signed-out/off POST probes with the same 404", async () => {
     const getResponse = await GET();
     expect(getResponse.status).toBe(404);

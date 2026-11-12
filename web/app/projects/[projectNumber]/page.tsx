@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { ProjectLoginRequiredPage } from "@/components/project-login-gate";
 import { getAuthenticatedProjectPageAccess } from "@/lib/data";
 import { getDb } from "@/lib/db";
@@ -8,6 +8,7 @@ import {
   editorRenderingV2MasterEnabled,
 } from "@/lib/editor-rendering-release";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
+import { midformCloudEnabled } from "@/lib/midform-cloud";
 import { resolveUnifiedTemplateSubtitleEditorContext } from "@/lib/subtitle-template-release";
 import { ProjectPage } from "../../shorts-app";
 import { canUseYoutubePublishing, youtubeReviewerShortForProject } from "@/lib/youtube-accounts/review-access";
@@ -47,6 +48,17 @@ export default async function ProjectNumberPage({
   }
 
   const db = getDb();
+  if (midformCloudEnabled()) {
+    const [midform] = await db`select s.id from shorts_mvp.video_jobs j
+      join shorts_mvp.generated_shorts s on s.job_id=j.id
+      join shorts_mvp.app_users u on u.id=j.user_id
+      where u.auth_user_id=${user.id} and u.is_admin=true
+        and j.project_number=${projectNumber} and s.user_id=u.id
+        and j.midform_request is not null and s.midform_document is not null
+        and s.status in ('ready','rerendering') and j.user_deleted_at is null
+        and s.deleted_at is null and s.expires_at > now() limit 1`;
+    if (midform) redirect(`/projects/${projectNumber}/edit/${midform.id}?format=midform`);
+  }
   const projectAccess = await getAuthenticatedProjectPageAccess(
     db,
     user.id,
