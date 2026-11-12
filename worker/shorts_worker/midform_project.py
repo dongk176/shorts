@@ -225,7 +225,7 @@ def prepare_midform_source(source: Path, job: dict, work_dir: Path) -> tuple[Pat
         # Clamp only that admitted endpoint, never an arbitrary out-of-range cut.
         declared = job.get("source_duration_seconds")
         metadata_endpoint = (
-            isinstance(declared, (int, float)) and math.isfinite(declared)
+            isinstance(declared, int | float) and math.isfinite(declared)
             and abs(end - declared) <= 0.001
             and 0 <= declared - duration < 1.0
         )

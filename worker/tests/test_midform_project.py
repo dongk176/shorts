@@ -58,6 +58,7 @@ def test_full_range_metadata_rounding_is_clamped_only_at_admitted_endpoint(
     monkeypatch, tmp_path, declared, end, accepted,
 ):
     from unittest.mock import Mock
+
     from shorts_worker import midform_project as project
 
     monkeypatch.setattr(project, "inspect_source", lambda _: (834.36263, True))
