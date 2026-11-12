@@ -85,3 +85,16 @@ it("parallel receiver pins its release and keeps private scope empty on a separa
   });
   Template.fromJSON(template).hasResourceProperties("AWS::Events::Rule", {State:"ENABLED", ScheduleExpression:"rate(1 minute)"});
 });
+
+it("allows midform only for the expiring administrator receiver", () => {
+  const template = Template.fromStack(new UploadCandidateStack(new cdk.App(), "Midform", { ...props, midform: true })).toJSON();
+  const task = Object.values(template.Resources).find((r: any) => r.Type === "AWS::ECS::TaskDefinition") as any;
+  const receiver = task.Properties.ContainerDefinitions.find((c: any) => c.Name === "file-upload-receiver");
+  const env = Object.fromEntries(receiver.Environment.map((e: any) => [e.Name, e.Value]));
+  expect(env.MIDFORM_ENABLED).toBe("true");
+  expect(env.MIDFORM_RELEASE_ID).toBe(props.releaseId);
+  expect(env.FILE_UPLOAD_CANDIDATE_ADMIN_ID).toBe(props.administratorId);
+  expect(env.FILE_UPLOAD_CANDIDATE_EXPIRES_AT).toBe(props.expiresAt);
+  expect(env.FILE_UPLOAD_PARALLEL_RELEASE_ID).toBe("");
+  expect(() => new UploadCandidateStack(new cdk.App(), "PublicMidform", { ...props, midform: true, parallel: true })).toThrow();
+});
