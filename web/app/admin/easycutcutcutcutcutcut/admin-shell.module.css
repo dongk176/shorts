@@ -1123,3 +1123,8 @@
  .content:has([data-meeting-report]) :global(thead) { background:#edf2f8!important; }
  .content:has([data-meeting-report]) :global(th) { color:#52647a!important; padding-top:8px; padding-bottom:8px; }
 }
+
+@media print {
+ .content:has([data-meeting-report]) :global(section > article),
+ .content:has([data-meeting-report]) :global(section.grid > article) { background:white!important; border-color:#d9e2ec!important; color:#172b45!important; }
+}
