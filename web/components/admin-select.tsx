@@ -17,7 +17,7 @@ export const AdminSelect=forwardRef<HTMLButtonElement,Omit<SelectHTMLAttributes<
  const uid=useId(),trigger=useRef<HTMLButtonElement>(null),native=useRef<HTMLSelectElement>(null),popup=useRef<HTMLDivElement>(null),search=useRef<HTMLInputElement>(null);
  useImperativeHandle(forwardedRef,()=>trigger.current!);
  const options=adminSelectOptions(children),[local,setLocal]=useState(String(defaultValue??options[0]?.value??''));
- const selected=String(value??local),[open,setOpen]=useState(false),[query,setQuery]=useState(''),[active,setActive]=useState(0),[position,setPosition]=useState({left:0,top:0,width:200,maxHeight:280});
+ const selected=String(value??local),[open,setOpen]=useState(false),[query,setQuery]=useState(''),[active,setActive]=useState(0),[position,setPosition]=useState({left:0,top:0,width:200,maxHeight:280,transform:'none'});
  const filtered=options.filter(o=>o.label.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
  const listId=`${uid}-list`,buttonId=id||`${uid}-trigger`;
  const [labelId,setLabelId]=useState<string|undefined>();
@@ -27,7 +27,7 @@ export const AdminSelect=forwardRef<HTMLButtonElement,Omit<SelectHTMLAttributes<
  useEffect(()=>{
   if(!open||disabled){popup.current?.hidePopover?.();if(disabled)setOpen(false);return;}
   const menu=popup.current;if(!menu)return;
-  const place=()=>{const r=trigger.current?.getBoundingClientRect();if(!r)return;const width=Math.min(Math.max(r.width,220),window.innerWidth-24),below=window.innerHeight-r.bottom-12,above=r.top-12,up=below<220&&above>below,height=Math.min(320,Math.max(100,up?above:below));setPosition({left:Math.max(12,Math.min(r.left,window.innerWidth-width-12)),top:up?Math.max(12,r.top-height-6):r.bottom+6,width,maxHeight:height});};
+  const place=()=>{const r=trigger.current?.getBoundingClientRect();if(!r)return;const width=Math.min(Math.max(r.width,220),window.innerWidth-24),below=window.innerHeight-r.bottom-12,above=r.top-12,up=below<220&&above>below,height=Math.min(320,Math.max(100,up?above:below));setPosition({left:Math.max(12,Math.min(r.left,window.innerWidth-width-12)),top:up?r.top-6:r.bottom+6,width,maxHeight:height,transform:up?'translateY(-100%)':'none'});};
   place();menu.showPopover?.();
   const outside=(e:PointerEvent)=>{if(!menu.contains(e.target as Node)&&!trigger.current?.contains(e.target as Node))setOpen(false);};
   const focus=(e:FocusEvent)=>{if(!menu.contains(e.target as Node)&&!trigger.current?.contains(e.target as Node))setOpen(false);};
