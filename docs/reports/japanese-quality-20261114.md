@@ -29,3 +29,30 @@ Observed comparison: existing pipeline transliterated the ASR-mistaken name
 임영웅 as イム・ヨンウン. New title context produced イ・ミョンハク for this
 sample; 모의평가 became 模擬試験 and 호락호락하지 않다 became そう甘くはない.
 This is a bounded sample, not a guarantee of all proper-name recognition.
+
+## Production verification
+
+Email deployment dpl_ySU5Hs4Vsmx4pnvvHvSXQJe1uz8b (7e0e1b0) was promoted
+after five protected-page checks and 636 identical registered function paths.
+Project 35214 mail 01a1d893-7fb2-717d-a5f3-49f3a5d6489b was delivered with
+Japanese subject, HTML lang=ja and Japanese plain text.
+
+Pop 35210 completed five clips. Native Japanese 35214 completed four clips,
+auto-detected jpn. All nine files decode. Native Japanese retained pop word
+highlighting; translated pop retains the existing translated-basic policy.
+Native ASR still contains errors in LoRA/Civitai and other terms.
+macOS FFmpeg showed disappearing footer pixels, but the same MP4 decoded by
+production Linux FFmpeg had an intact footer: a local audit decoder artifact.
+
+Worker candidates use exact active component sources and immutable image bases:
+language 8c1412a -> 4b6dd007; SNS e5ac690 -> a730f071. Renderer, fonts, editor
+document format and dependencies are unchanged. Both exact image cloud probes
+passed; all 69 fresh frame hashes match the active language release's verified,
+versioned manifest. Browser parity evidence is inherited by exact frame equality,
+not misrepresented as a new browser execution.
+
+Mail SQL, Japanese prompt, translation and SNS targeted tests pass. Full suite
+found existing stale CSS checksum and admin heading expectations; both reproduced
+on unchanged production baseline. These checks were not relaxed. Three new
+prompt failures were fixed by keeping added instructions Japanese-only,
+affirmative and free of Korean-language examples; corresponding tests now pass.
