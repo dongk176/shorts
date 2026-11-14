@@ -1108,3 +1108,9 @@
 .navLinkActive::before { width: 2px; }
 .kstBadge, .serviceLink { background: #a9c7e908; border-color: #a9c7e916; color: #bac8da; }
 @media (max-width: 820px) { .workspace { padding-top: 24px; } .metricGrid { gap: 12px; } }
+
+@media print {
+ .shell:has([data-meeting-report]) { display:block!important; background:white!important; min-height:0!important; }
+ .shell:has([data-meeting-report]) .sidebar,.shell:has([data-meeting-report]) .topbar { display:none!important; }
+ .shell:has([data-meeting-report]) .main,.shell:has([data-meeting-report]) .workspace,.shell:has([data-meeting-report]) .content { display:block!important; margin:0!important; padding:0!important; width:100%!important; max-width:none!important; overflow:visible!important; background:white!important; }
+}

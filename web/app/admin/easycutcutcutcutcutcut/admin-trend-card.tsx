@@ -1,4 +1,5 @@
 "use client";
+import { AdminSelect } from "@/components/admin-select";
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent, PointerEvent } from "react";
@@ -75,12 +76,12 @@ export function AdminTrendCard({ initialData, endpoint = "/api/admin/trends", cu
         <div className={styles.trendHeading}>
           <h3 className={styles.cardTitle}>{title}</h3>
           <label className={styles.trendSrOnly} htmlFor={selectId}>{title} 조회 기간</label>
-          <select id={selectId} className={styles.trendSelect} value={pending ?? data.period}
+          <AdminSelect id={selectId} className={styles.trendSelect} value={pending ?? data.period}
             onChange={(event) => void selectPeriod(event.target.value as AdminTrendPeriod)}>
             {ADMIN_TREND_PERIODS.map((period) => (
               <option key={period} value={period}>{ADMIN_TREND_LABELS[period]}</option>
             ))}
-          </select>
+          </AdminSelect>
         </div>
         <div>
           <p className={styles.chartTotal}>{sales ? "기간 합계" : "기간 신규"}

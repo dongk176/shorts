@@ -1,3 +1,4 @@
+import { AdminSelect } from "@/components/admin-select";
 import Link from "next/link";
 import { cancellationReasonLabels, type AdminCancellationData } from "@/lib/admin-cancellation-feedback";
 const base = "/admin/easycutcutcutcutcutcut";
@@ -13,8 +14,8 @@ export function AdminCancellationFeedbackDashboard({data}:{data:AdminCancellatio
     <p className="text-sm leading-6 text-neutral-400">해지 확정 시 남긴 사유와 운영진 메시지입니다. 필터에 맞는 응답을 집계하며, 사유 수집 도입 이전 해지와 결제사 외부 포털에서 직접 해지한 건은 포함되지 않습니다.</p>
     <form action={base} method="get" className="flex flex-wrap items-end gap-3 rounded-2xl border border-white/10 bg-[#171a1b] p-5">
       <input type="hidden" name="tab" value="cancellations" />
-      <label className="grid gap-2 text-xs font-bold text-neutral-400">기간<select name="period" defaultValue={filters.days} className="min-h-11 rounded-xl border border-white/15 bg-[#232526] px-3 text-sm text-white"><option value="7">최근 7일</option><option value="30">최근 30일</option><option value="90">최근 90일</option><option value="all">전체 기간</option></select></label>
-      <label className="grid gap-2 text-xs font-bold text-neutral-400">해지 사유<select name="reason" defaultValue={filters.reason} className="min-h-11 rounded-xl border border-white/15 bg-[#232526] px-3 text-sm text-white"><option value="all">전체 사유</option>{Object.entries(cancellationReasonLabels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label>
+      <label className="grid gap-2 text-xs font-bold text-neutral-400">기간<AdminSelect name="period" defaultValue={filters.days} className="min-h-11 rounded-xl border border-white/15 bg-[#232526] px-3 text-sm text-white"><option value="7">최근 7일</option><option value="30">최근 30일</option><option value="90">최근 90일</option><option value="all">전체 기간</option></AdminSelect></label>
+      <label className="grid gap-2 text-xs font-bold text-neutral-400">해지 사유<AdminSelect name="reason" defaultValue={filters.reason} className="min-h-11 rounded-xl border border-white/15 bg-[#232526] px-3 text-sm text-white"><option value="all">전체 사유</option>{Object.entries(cancellationReasonLabels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</AdminSelect></label>
       <label className="grid min-w-48 flex-1 gap-2 text-xs font-bold text-neutral-400">회원·답변 검색<input type="search" name="q" maxLength={100} defaultValue={filters.query} placeholder="이메일, 이름, 서비스명, 답변 내용" className="min-h-11 rounded-xl border border-white/15 bg-black/20 px-3 text-sm text-white" /></label>
       <button type="submit" className="min-h-11 rounded-xl bg-white px-5 text-sm font-black text-black">조회</button>
       <Link href={`${base}?tab=cancellations`} className="flex min-h-11 items-center px-2 text-sm text-neutral-400 underline">초기화</Link>

@@ -1,4 +1,5 @@
 "use client";
+import { AdminSelect } from "@/components/admin-select";
 
 import { formatAdminCurrency, paddleAdminProduct } from "@/lib/admin-paddle-contract";
 import { AdminBillingCalendar } from "./admin-billing-calendar";
@@ -286,9 +287,9 @@ export function AdminBillingDashboard({
       }}>
 
               <input aria-label="결제 내역 검색" name="q" maxLength={100} defaultValue={filters.query} placeholder="이메일·주문·거래번호" className="h-10 w-56 rounded-xl border border-white/10 bg-[#17191f] px-3 text-sm outline-none placeholder:text-slate-500 focus:border-[#ff8c7c]" />
-              <select aria-label="결제사" name="provider" defaultValue={filters.provider} className="h-10 rounded-xl border border-white/10 bg-[#1b1e24] px-3 text-sm">
+              <AdminSelect aria-label="결제사" name="provider" defaultValue={filters.provider} className="h-10 rounded-xl border border-white/10 bg-[#1b1e24] px-3 text-sm">
                 <option value="all">모든 결제사</option><option value="thepayone">더페이원</option><option value="nicepay">나이스페이</option><option value="toss">토스페이먼츠</option><option value="paddle">Paddle</option><option value="paypal">PayPal</option>
-              </select>
+              </AdminSelect>
 
               <button className="h-10 rounded-xl bg-[#3182f6] px-4 text-sm font-bold text-white transition hover:bg-blue-600">조회</button>
             </form>
@@ -305,9 +306,9 @@ export function AdminBillingDashboard({
               {selectedDay && <button type="button" className={styles.clearDay} onClick={() => selectDay(null)}>닫기 ×</button>}
               <p className="mt-1 text-xs text-slate-400">{selectedDay ? "선택한 날짜의 승인 결제 · 환불 포함" : `${month.replace("-", "년 ")}월 · 선택한 통화 기준`} · {loadingMoreOrders && !loadedOrders.length ? "불러오는 중…" : `현재 ${loadedOrders.length.toLocaleString("ko-KR")}건 표시`}</p>
             </div>
-              <select aria-label="결제 상태" name="status" value={filters.status} onChange={event => { setFilters(current => ({ ...current, status: event.target.value })); setSelectedDay(null); }} className="h-10 rounded-xl border border-white/10 bg-[#1b1e24] px-3 text-sm">
+              <AdminSelect aria-label="결제 상태" name="status" value={filters.status} onChange={event => { setFilters(current => ({ ...current, status: event.target.value })); setSelectedDay(null); }} className="h-10 rounded-xl border border-white/10 bg-[#1b1e24] px-3 text-sm">
                 <option value="all">모든 상태</option><option value="succeeded">승인</option><option value="pending">대기</option><option value="processing">처리 중</option><option value="failed">실패</option><option value="manual_review">확인 필요</option><option value="unknown">결과 불명</option><option value="expired">만료</option>
-              </select>
+              </AdminSelect>
           </div>
         </div>
 

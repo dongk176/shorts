@@ -1,4 +1,5 @@
 "use client";
+import { AdminSelect } from "@/components/admin-select";
 
 import { ReferralTransactionsTable } from "@/components/referral-transactions-table";
 import { ReferralSettlementTable } from "@/components/referral-settlement-table";
@@ -359,7 +360,7 @@ export function AdminReferralsDashboard({
       <section className="rounded-2xl border border-white/10 bg-[#171a1b] p-5">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div><h2 className="text-xl font-black">월별 실적 정산</h2><p className="mt-2 text-sm text-neutral-400">매월 1일~말일 발생분을 다음 달 10일에 지급합니다. 한국시간 기준입니다.</p></div>
-          <label className="text-sm font-bold">실적 월<select value={settlementMonth} onChange={(event) => setSettlementMonth(event.target.value)} className="ml-3 rounded-lg border border-white/15 bg-[#191c1d] px-3 py-2">{monthOptions.map((month) => <option key={month} value={month}>{month}</option>)}</select></label>
+          <label className="text-sm font-bold">실적 월<AdminSelect value={settlementMonth} onChange={(event) => setSettlementMonth(event.target.value)} className="ml-3 rounded-lg border border-white/15 bg-[#191c1d] px-3 py-2">{monthOptions.map((month) => <option key={month} value={month}>{month}</option>)}</AdminSelect></label>
         </div>
         <p className="mt-4 text-sm">{settlementMonth} 실적 → <strong className="text-emerald-200">{referralMonthPeriod(settlementMonth).scheduledPaymentDate} 지급 예정</strong></p>
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
@@ -452,7 +453,7 @@ export function AdminReferralsDashboard({
             <label className="mt-5 block text-xs font-bold text-neutral-400">크리에이터명<input required value={editForm.creatorName} onChange={(event) => setEditForm((current) => ({ ...current, creatorName: event.target.value }))} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-black/20 px-3" /></label>
             <label className="mt-4 block text-xs font-bold text-neutral-400">복구 이메일<input type="email" value={editForm.recoveryEmail} onChange={(event) => setEditForm((current) => ({ ...current, recoveryEmail: event.target.value }))} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-black/20 px-3" /></label>
             <label className="mt-4 block text-xs font-bold text-neutral-400">수익률 (%)<input required type="number" min="0" max="100" step="0.01" value={editForm.commissionPercent} onChange={(event) => setEditForm((current) => ({ ...current, commissionPercent: event.target.value }))} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-black/20 px-3" /></label>
-            <label className="mt-4 block text-xs font-bold text-neutral-400">상태<select value={editForm.status} onChange={(event) => setEditForm((current) => ({ ...current, status: event.target.value as AdminReferralPartner["status"] }))} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#191c1d] px-3"><option value="active">활성</option><option value="paused">일시정지</option><option value="terminated">종료</option></select></label>
+            <label className="mt-4 block text-xs font-bold text-neutral-400">상태<AdminSelect value={editForm.status} onChange={(event) => setEditForm((current) => ({ ...current, status: event.target.value as AdminReferralPartner["status"] }))} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#191c1d] px-3"><option value="active">활성</option><option value="paused">일시정지</option><option value="terminated">종료</option></AdminSelect></label>
             <button disabled={submitting} className="mt-6 h-11 rounded-xl bg-white px-5 text-sm font-black text-black disabled:opacity-50">저장</button>
           </form>
         </div>

@@ -1,4 +1,5 @@
 "use client";
+import { AdminSelect } from "@/components/admin-select";
 
 import { useEffect, useState } from "react";
 import { billingCalendarCells, shiftBillingMonth, type BillingCalendarData, type BillingCurrency } from "@/lib/admin-billing-calendar";
@@ -77,9 +78,9 @@ export function AdminBillingCalendar({ month, currency, selectedDay, provider, q
       </div>
       <div className={styles.calendarControls}>
         <label className={styles.monthPicker}>월 선택<input aria-label="조회 월" type="month" value={month} min="2000-01" max={currentMonth} onChange={event => { if (/^20\d{2}-(0[1-9]|1[0-2])$/.test(event.target.value) && event.target.value <= currentMonth) onMonthChange(event.target.value); }} /></label>
-        {!overseas && <select aria-label="매출 통화" value={currency} onChange={event => onCurrencyChange(event.target.value as BillingCurrency)}>
+        {!overseas && <AdminSelect aria-label="매출 통화" value={currency} onChange={event => onCurrencyChange(event.target.value as BillingCurrency)}>
           {!overseas && <option value="KRW">국내 · KRW</option>}<option value="USD">해외 · USD</option><option value="JPY">해외 · JPY</option>
-        </select>}
+        </AdminSelect>}
         {overseas && <span className={styles.currencyNote}>USD · JPY 함께 보기</span>}
       </div>
     </div>

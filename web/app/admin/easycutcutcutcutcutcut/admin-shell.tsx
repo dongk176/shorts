@@ -11,6 +11,7 @@ import { AdminSalesCard } from "./admin-sales-card";
 import type { AdminTrendData } from "@/lib/admin-trends";
 
 export type AdminTab =
+  | "dashboard"
   | "cancellations"
   | "updates"
   | "billing"
@@ -138,6 +139,7 @@ const navigationGroups: Array<{
     label: "시스템",
     icon: "settings",
     items: [
+      { tab: "dashboard", label: "대시보드", icon: "onboarding" },
       { tab: "editor-releases", label: "편집기 릴리스", icon: "editor-releases" },
       { tab: "settings", label: "운영 설정", icon: "settings" },
     ],
@@ -145,6 +147,7 @@ const navigationGroups: Array<{
 ];
 
 const pageCopy: Record<AdminTab, { eyebrow: string; title: string }> = {
+  dashboard: { eyebrow: "System / Dashboard", title: "대시보드" },
   cancellations: { eyebrow: "Commerce / Cancellations", title: "해지 사유" },
   updates: { eyebrow: "Content / Updates", title: "업데이트 관리" },
   expenses: { eyebrow: "Finance / Expenses", title: "매입·비용 관리" },
@@ -283,7 +286,7 @@ export function AdminShell({
   const [overviewError, setOverviewError] = useState<string | null>(null);
   const [overviewAttempt, setOverviewAttempt] = useState(0);
   useEffect(() => {
-    if (activeTab === "expenses" || activeTab === "updates") return;
+    if (activeTab === "expenses" || activeTab === "updates" || activeTab === "dashboard") return;
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 8_000);
     setOverviewError(null);
@@ -381,7 +384,7 @@ export function AdminShell({
         </header>
 
         <div className={styles.workspace}>
-          {activeTab !== "expenses" && activeTab !== "updates" ? <section aria-labelledby="admin-overview-title" aria-busy={!overview && !overviewError}>
+          {activeTab !== "expenses" && activeTab !== "updates" && activeTab !== "dashboard" ? <section aria-labelledby="admin-overview-title" aria-busy={!overview && !overviewError}>
             <div className={styles.overviewHeading}>
               <div>
                 <p className={styles.overviewKicker}>Operations overview</p>

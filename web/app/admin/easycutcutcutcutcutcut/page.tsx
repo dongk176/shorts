@@ -1,3 +1,4 @@
+import { AdminMeetingDashboard } from "./admin-meeting-dashboard";
 import { loadRankingFeedback } from "@/lib/ranking-feedback-store";
 import { AdminRankingFeedback } from "./admin-ranking-feedback";
 import { loadAdminCancellationFeedback } from "@/lib/admin-cancellation-feedback";
@@ -127,6 +128,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
   const params = await searchParams;
   const requestedTab = first(params.tab);
   const validTabs: AdminTab[] = [
+    "dashboard",
     "cancellations",
     "updates",
     "billing",
@@ -149,6 +151,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
     ? requestedTab as AdminTab
     : "billing";
   const expenseAccess = await hasExpenseAccess(admin);
+  if (tab === "dashboard") return <AdminShell activeTab={tab} expenseAccess={expenseAccess}><AdminMeetingDashboard /></AdminShell>;
   if (tab === "expenses") {
     if (!expenseAccess) notFound();
     return <AdminShell activeTab={tab} expenseAccess><AdminExpenses /></AdminShell>;

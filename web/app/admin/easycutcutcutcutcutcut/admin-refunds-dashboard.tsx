@@ -1,4 +1,5 @@
 "use client";
+import { AdminSelect } from "@/components/admin-select";
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -416,10 +417,10 @@ export function AdminRefundsDashboard({
               <form className="flex flex-1 flex-wrap gap-2 xl:flex-none" method="get">
                 <input type="hidden" name="tab" value="refunds" />
                 <input name="q" defaultValue={initialFilters.query} placeholder="이메일·주문번호·환불 건 ID" className="h-10 min-w-56 flex-1 rounded-xl border border-white/10 bg-black/20 px-3 text-sm outline-none" />
-                <select name="refundStatus" defaultValue={initialFilters.status} className="h-10 rounded-xl border border-white/10 bg-[#151819] px-3 text-sm">
+                <AdminSelect name="refundStatus" defaultValue={initialFilters.status} className="h-10 rounded-xl border border-white/10 bg-[#151819] px-3 text-sm">
                   <option value="all">전체 상태</option>
                   {adminRefundCaseStatuses.map((status) => <option key={status} value={status}>{caseStatusLabels[status]}</option>)}
-                </select>
+                </AdminSelect>
                 <button className="h-10 rounded-xl border border-white/10 px-4 text-sm font-black">조회</button>
               </form>
               <button type="button" onClick={() => setAdding(true)} className="h-10 rounded-xl bg-[#ff806f] px-4 text-sm font-black text-white">환불 건 추가</button>
@@ -526,12 +527,12 @@ export function AdminRefundsDashboard({
                   </dl>
                 </div>
                 <div className="grid gap-4">
-                  <label className="text-sm font-bold">환불 유형<select value={reasonCode} onChange={(event) => setReasonCode(event.target.value as AdminRefundReasonCode)} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#191c1d] px-3">{adminRefundReasonCodes.map((code) => <option key={code} value={code}>{adminRefundReasonLabel(code)}</option>)}</select></label>
-                  <label className="text-sm font-bold">환불 금액 방식<select value={refundAction} onChange={(event) => setRefundAction(event.target.value as AdminRefundAction)} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#191c1d] px-3">{adminRefundActions.map((action) => <option key={action} value={action}>{action === "policy_refund" ? "첫 작업 기준 자동 계산" : action === "manual_amount" ? "금액 직접 입력" : "환불 없음"}</option>)}</select></label>
+                  <label className="text-sm font-bold">환불 유형<AdminSelect value={reasonCode} onChange={(event) => setReasonCode(event.target.value as AdminRefundReasonCode)} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#191c1d] px-3">{adminRefundReasonCodes.map((code) => <option key={code} value={code}>{adminRefundReasonLabel(code)}</option>)}</AdminSelect></label>
+                  <label className="text-sm font-bold">환불 금액 방식<AdminSelect value={refundAction} onChange={(event) => setRefundAction(event.target.value as AdminRefundAction)} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#191c1d] px-3">{adminRefundActions.map((action) => <option key={action} value={action}>{action === "policy_refund" ? "첫 작업 기준 자동 계산" : action === "manual_amount" ? "금액 직접 입력" : "환불 없음"}</option>)}</AdminSelect></label>
                   {refundAction === "manual_amount" ? <label className="text-sm font-bold">직접 입력 환불액<input type="number" min={1} max={Number(selectedOrder.amountKrw) - Number(selectedOrder.refundedAmountKrw)} value={manualRefundKrw} onChange={(event) => setManualRefundKrw(Number(event.target.value))} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-black/20 px-3" /></label> : null}
                 </div>
-                <label className="text-sm font-bold">자동결제 처리<select value={billingAction} onChange={(event) => setBillingAction(event.target.value as AdminRefundBillingAction)} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#191c1d] px-3">{adminRefundBillingActions.map((action) => <option key={action} value={action} disabled={action !== "none" && (selectedOrder.provider !== "thepayone" || selectedOrder.billingCycle !== "monthly")}>{billingActionLabels[action]}</option>)}</select></label>
-                <label className="text-sm font-bold">이용권 처리<select value={entitlementAction} onChange={(event) => setEntitlementAction(event.target.value as AdminRefundEntitlementAction)} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#191c1d] px-3">{adminRefundEntitlementActions.map((action) => <option key={action} value={action}>{entitlementActionLabels[action]}</option>)}</select></label>
+                <label className="text-sm font-bold">자동결제 처리<AdminSelect value={billingAction} onChange={(event) => setBillingAction(event.target.value as AdminRefundBillingAction)} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#191c1d] px-3">{adminRefundBillingActions.map((action) => <option key={action} value={action} disabled={action !== "none" && (selectedOrder.provider !== "thepayone" || selectedOrder.billingCycle !== "monthly")}>{billingActionLabels[action]}</option>)}</AdminSelect></label>
+                <label className="text-sm font-bold">이용권 처리<AdminSelect value={entitlementAction} onChange={(event) => setEntitlementAction(event.target.value as AdminRefundEntitlementAction)} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#191c1d] px-3">{adminRefundEntitlementActions.map((action) => <option key={action} value={action}>{entitlementActionLabels[action]}</option>)}</AdminSelect></label>
                 <label className="text-sm font-bold lg:col-span-2">환불 사유<textarea required minLength={2} maxLength={1000} rows={3} value={reasonDetail} onChange={(event) => setReasonDetail(event.target.value)} className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 p-3" /></label>
                 <label className="text-sm font-bold lg:col-span-2">관리자 메모<textarea maxLength={2000} rows={2} value={adminNote} onChange={(event) => setAdminNote(event.target.value)} className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 p-3" /></label>
                 <p className="text-xs leading-5 text-amber-200 lg:col-span-2">{selectedOrder.provider === "toss" ? "이 단계에서는 환불 건만 등록합니다. 등록 후 상세 관리에서 실제 토스 카드 환불을 실행하세요." : "이 단계는 미처리 환불 건만 등록합니다. 카드 환불이나 구독·이용권 변경은 실행하지 않습니다."}</p>
@@ -557,11 +558,11 @@ export function AdminRefundsDashboard({
               <dt className="text-neutral-500">이용권</dt><dd>{entitlementActionLabels[editing.entitlementAction]}{editing.entitlementEffectiveAt ? ` · ${date(editing.entitlementEffectiveAt)}` : ""}</dd>
             </dl>
             <div className="mt-5 grid gap-4 sm:grid-cols-2">
-              <label className="text-sm font-bold">업무 상태<select value={editingStatus} onChange={(event) => setEditingStatus(event.target.value as AdminRefundCaseStatus)} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#191c1d] px-3">{adminRefundCaseStatuses.map((status) => <option key={status} value={status} disabled={editing.provider === "toss" && status === "completed" && editing.paymentStatus !== "completed"}>{caseStatusLabels[status]}</option>)}</select></label>
+              <label className="text-sm font-bold">업무 상태<AdminSelect value={editingStatus} onChange={(event) => setEditingStatus(event.target.value as AdminRefundCaseStatus)} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#191c1d] px-3">{adminRefundCaseStatuses.map((status) => <option key={status} value={status} disabled={editing.provider === "toss" && status === "completed" && editing.paymentStatus !== "completed"}>{caseStatusLabels[status]}</option>)}</AdminSelect></label>
               {editing.provider === "toss" ? (
                 <div className="text-sm font-bold">결제 환불 상태<div className="mt-2 flex h-11 items-center rounded-xl border border-white/10 bg-black/20 px-3 text-neutral-300">{paymentStatusLabels[editing.paymentStatus] || editing.paymentStatus}</div></div>
               ) : (
-                <label className="text-sm font-bold">결제 환불 기록<select value={editingPaymentStatus} onChange={(event) => setEditingPaymentStatus(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#191c1d] px-3">{Object.entries(paymentStatusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+                <label className="text-sm font-bold">결제 환불 기록<AdminSelect value={editingPaymentStatus} onChange={(event) => setEditingPaymentStatus(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#191c1d] px-3">{Object.entries(paymentStatusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</AdminSelect></label>
               )}
               {editing.provider === "toss" ? (
                 <div className="text-sm font-bold sm:col-span-2">PG·카드사 확인번호<div className="mt-2 min-h-11 break-all rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-xs text-neutral-400">{editing.providerReference || "실제 환불 후 자동 기록됩니다."}</div></div>

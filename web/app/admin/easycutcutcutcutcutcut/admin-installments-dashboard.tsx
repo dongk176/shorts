@@ -1,4 +1,5 @@
 "use client";
+import { AdminSelect } from "@/components/admin-select";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -201,9 +202,9 @@ export function AdminInstallmentsDashboard() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div><h2 className="text-lg font-black">할부 혜택 캠페인</h2><p className="mt-1 text-xs text-neutral-500">arti02 capability가 일반 할부 범위를 정하고, 카드사 캠페인과 일치하는 개월에는 무이자·부분 무이자 혜택을 표시합니다.</p></div>
           <div className="flex gap-2">
-            <select value={selectedId} onChange={(event) => setSelectedId(event.target.value)} className="h-10 max-w-80 rounded-xl border border-white/10 bg-[#191c1d] px-3 text-sm">
+            <AdminSelect value={selectedId} onChange={(event) => setSelectedId(event.target.value)} className="h-10 max-w-80 rounded-xl border border-white/10 bg-[#191c1d] px-3 text-sm">
               {campaigns.map((campaign) => <option key={campaign.id} value={campaign.id}>{dateOnly(campaign.effectiveFrom)} · {campaign.name} · {campaign.status}</option>)}
-            </select>
+            </AdminSelect>
             <button type="button" onClick={() => void clone()} className="rounded-xl border border-white/10 px-4 text-sm font-black">지난달 복제</button>
           </div>
         </div>
@@ -223,7 +224,7 @@ export function AdminInstallmentsDashboard() {
           <thead className="bg-black/20 text-xs text-neutral-500"><tr><th className="px-4 py-3">카드사 코드/이름</th><th className="px-4 py-3">혜택</th><th className="px-4 py-3">개월</th><th className="px-4 py-3">고객 부담</th><th className="px-4 py-3">최소금액</th><th className="px-4 py-3">PG 상태</th><th className="px-4 py-3">관리</th></tr></thead>
           <tbody className="divide-y divide-white/[.06]">{terms.map((term, index) => <tr key={`${term.id || "new"}-${index}`}>
             <td className="px-4 py-3"><input disabled={draft.status !== "draft"} value={term.issuerCode} onChange={(event) => updateTerm(index, { issuerCode: event.target.value })} className="w-20 bg-transparent" /> / <input disabled={draft.status !== "draft"} value={term.issuerName} onChange={(event) => updateTerm(index, { issuerName: event.target.value })} className="w-28 bg-transparent" /></td>
-            <td className="px-4 py-3"><select disabled={draft.status !== "draft"} value={term.benefitType} onChange={(event) => updateTerm(index, { benefitType: event.target.value as Term["benefitType"], customerPaidInstallments: event.target.value === "interest_free" ? null : term.customerPaidInstallments || 1 })} className="bg-transparent"><option value="interest_free">무이자</option><option value="partial_interest_free">부분 무이자</option></select></td>
+            <td className="px-4 py-3"><AdminSelect disabled={draft.status !== "draft"} value={term.benefitType} onChange={(event) => updateTerm(index, { benefitType: event.target.value as Term["benefitType"], customerPaidInstallments: event.target.value === "interest_free" ? null : term.customerPaidInstallments || 1 })} className="bg-transparent"><option value="interest_free">무이자</option><option value="partial_interest_free">부분 무이자</option></AdminSelect></td>
             <td className="px-4 py-3"><input type="number" min={2} max={36} disabled={draft.status !== "draft"} value={term.installmentMonths} onChange={(event) => updateTerm(index, { installmentMonths: Number(event.target.value) })} className="w-16 bg-transparent" />개월</td>
             <td className="px-4 py-3">{term.benefitType === "partial_interest_free" ? <><input type="number" disabled={draft.status !== "draft"} value={term.customerPaidInstallments || 1} onChange={(event) => updateTerm(index, { customerPaidInstallments: Number(event.target.value) })} className="w-14 bg-transparent" />회차</> : "-"}</td>
             <td className="px-4 py-3"><input type="number" disabled={draft.status !== "draft"} value={term.minAmountKrw ?? ""} placeholder={String(draft.defaultMinAmountKrw)} onChange={(event) => updateTerm(index, { minAmountKrw: event.target.value ? Number(event.target.value) : null })} className="w-28 bg-transparent" /></td>

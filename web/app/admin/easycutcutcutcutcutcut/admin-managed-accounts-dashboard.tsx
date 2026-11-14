@@ -1,4 +1,5 @@
 "use client";
+import { AdminSelect } from "@/components/admin-select";
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -189,7 +190,7 @@ function EnterpriseProductEditor({
               <div className="text-xs font-bold text-neutral-400">기간 단위<div className="mt-2 grid h-11 grid-cols-2 rounded-xl border border-white/10 p-1">{(["days", "months"] as const).map((unit) => <button key={unit} type="button" onClick={() => update(index, { durationUnit: unit, durationValue: "1" })} className={`rounded-lg text-xs font-black ${item.durationUnit === unit ? "bg-white text-black" : "text-neutral-400"}`}>{unit === "days" ? "일" : "개월"}</button>)}</div></div>
               <label className="text-xs font-bold text-neutral-400">제공 처리시간(분)<input type="number" min={1} max={100000} value={item.includedMinutes} onChange={(event) => update(index, { includedMinutes: event.target.value })} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-white outline-none" /></label>
               <label className="text-xs font-bold text-neutral-400">최종 결제금액(원)<input type="number" min={100} max={1000000000} value={item.amountKrw} onChange={(event) => update(index, { amountKrw: event.target.value })} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-white outline-none" /></label>
-              <label className="text-xs font-bold text-neutral-400">부가세 표시<select value={item.vatTreatment} onChange={(event) => update(index, { vatTreatment: event.target.value as EnterpriseVatTreatment })} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-white outline-none"><option value="included">부가세 포함</option><option value="not_applicable">부가세 해당 없음</option></select></label>
+              <label className="text-xs font-bold text-neutral-400">부가세 표시<AdminSelect value={item.vatTreatment} onChange={(event) => update(index, { vatTreatment: event.target.value as EnterpriseVatTreatment })} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-white outline-none"><option value="included">부가세 포함</option><option value="not_applicable">부가세 해당 없음</option></AdminSelect></label>
               <label className="text-xs font-bold text-neutral-400">결제 기한<input type="date" value={item.paymentDueDate} onChange={(event) => update(index, { paymentDueDate: event.target.value })} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-white outline-none" /></label>
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
@@ -765,14 +766,14 @@ export function AdminManagedAccountsDashboard({
         <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-7">
           <label className="text-xs font-bold text-neutral-400">
             계정 구분
-            <select
+            <AdminSelect
               value={accountType}
               onChange={(event) => setAccountType(event.target.value as ManagedAccountType)}
               className="mt-2 h-12 w-full rounded-xl border border-white/10 bg-black/20 px-4 text-sm font-bold text-white outline-none focus:border-[#ff8c7c]/60"
             >
               <option value="personal">개인</option>
               <option value="enterprise">기업</option>
-            </select>
+            </AdminSelect>
           </label>
           <label className="text-xs font-bold text-neutral-400">
             로그인 아이디

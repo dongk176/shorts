@@ -1,4 +1,5 @@
 "use client";
+import { AdminSelect } from "@/components/admin-select";
 
 import { useEffect, useRef, useState } from "react";
 import { AdminBillingCalendar, billingMoney } from "../admin-billing-calendar";
@@ -52,7 +53,7 @@ export function OverseasBilling({ initialQuery = "" }: { initialQuery?: string }
     }}>
 
       <input aria-label="해외 결제 검색" name="q" type="search" maxLength={100} defaultValue={initialQuery} placeholder="이메일·이름·상품·거래번호" className="h-10 rounded-xl border border-white/10 px-3 text-sm" />
-      <select aria-label="해외 결제사" name="provider" className="h-10 rounded-xl border border-white/10 bg-[#1b1e24] px-3 text-sm"><option value="all">모든 결제사</option><option value="paddle">Paddle</option><option value="paypal">PayPal</option></select>
+      <AdminSelect aria-label="해외 결제사" name="provider" className="h-10 rounded-xl border border-white/10 bg-[#1b1e24] px-3 text-sm"><option value="all">모든 결제사</option><option value="paddle">Paddle</option><option value="paypal">PayPal</option></AdminSelect>
       <button className="h-10 rounded-xl bg-[#3182f6] px-4 text-sm font-bold text-white">조회</button>
     </form>
     </div>

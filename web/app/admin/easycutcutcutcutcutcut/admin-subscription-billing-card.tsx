@@ -1,4 +1,5 @@
 "use client";
+import { AdminSelect } from "@/components/admin-select";
 import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { kstDate, shiftTrendDate } from "@/lib/admin-trends";
 import { subscriptionProduct, summarizeSubscriptionBilling, type SubscriptionBillingData } from "@/lib/admin-subscription-billing-contract";
@@ -17,7 +18,7 @@ export function AdminSubscriptionBillingCard({ icon }: { icon: ReactNode }) {
   const [selectedDate, setSelectedDate] = useState(kstDate());
   const [start, setStart] = useState(kstDate());
   const [end, setEnd] = useState(kstDate());
-  const root = useRef<HTMLElement>(null), trigger = useRef<HTMLButtonElement>(null), first = useRef<HTMLSelectElement>(null);
+  const root = useRef<HTMLElement>(null), trigger = useRef<HTMLButtonElement>(null), first = useRef<HTMLButtonElement>(null);
   const id = useId();
   useEffect(() => {
     const controller = new AbortController();
@@ -60,9 +61,9 @@ export function AdminSubscriptionBillingCard({ icon }: { icon: ReactNode }) {
       </button><span className={styles.metricIcon}>{icon}</span>
     </div>
     {open && <div id={id} className={filters.panel} role="group" aria-label="구독 결제 예정액 조회 조건">
-      <label>상품<select ref={first} value={product} onChange={event => { setProduct(event.target.value); setMonths("all"); }}><option value="all">전체 상품</option>{products.map(([code,label]) => <option key={code} value={code}>{label}</option>)}</select></label>
-      <label>이용 기간<select value={months} onChange={event => setMonths(event.target.value)}><option value="all">전체 기간</option>{terms.map(term => <option key={term} value={term}>{term}개월</option>)}</select></label>
-      <label>결제 예정일 · 한국시간<select value={period} onChange={event => setPeriod(event.target.value as keyof typeof periods)}>{Object.entries(periods).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+      <label>상품<AdminSelect ref={first} value={product} onChange={event => { setProduct(event.target.value); setMonths("all"); }}><option value="all">전체 상품</option>{products.map(([code,label]) => <option key={code} value={code}>{label}</option>)}</AdminSelect></label>
+      <label>이용 기간<AdminSelect value={months} onChange={event => setMonths(event.target.value)}><option value="all">전체 기간</option>{terms.map(term => <option key={term} value={term}>{term}개월</option>)}</AdminSelect></label>
+      <label>결제 예정일 · 한국시간<AdminSelect value={period} onChange={event => setPeriod(event.target.value as keyof typeof periods)}>{Object.entries(periods).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</AdminSelect></label>
       {period === "date" && <label>날짜<input type="date" value={selectedDate} min={today} onChange={event => setSelectedDate(event.target.value)} /></label>}
       {period === "custom" && <div className={filters.dates}><label>시작일<input type="date" value={start} min={today} onChange={event => setStart(event.target.value)} /></label><label>종료일<input type="date" value={end} min={today} onChange={event => setEnd(event.target.value)} /></label></div>}
       <p>활성 구독에 등록된 다음 결제 1회씩 합산해요. 오늘은 이미 결제 완료되어 다음 결제일로 넘어간 건을 제외하며, 예정 시각이 지났지만 다음 결제일이 갱신되지 않은 건은 포함해요. 해지 예약·결제 중지·해외 결제는 제외하며, 예정된 상품 변경은 반영해요.</p>

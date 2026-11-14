@@ -1,4 +1,5 @@
 "use client";
+import { AdminSelect } from "@/components/admin-select";
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -399,7 +400,7 @@ export function AdminMembersDashboard({
                 placeholder="이메일·이름·회원 ID"
                 className="h-10 rounded-xl border border-white/10 bg-black/20 px-3 text-sm outline-none placeholder:text-neutral-600 focus:border-[#ff8c7c]"
               />
-              <select
+              <AdminSelect
                 name="memberType"
                 defaultValue={initialFilters.memberType}
                 aria-label="회원 결제 상태"
@@ -410,8 +411,8 @@ export function AdminMembersDashboard({
                 <option value="paid_active">활성 유료</option>
                 <option value="paid_attention">결제 확인 필요</option>
                 <option value="paid_inactive">종료 유료</option>
-              </select>
-              <select
+              </AdminSelect>
+              <AdminSelect
                 name="memberPlan"
                 defaultValue={initialFilters.memberPlan}
                 aria-label="회원 상품군"
@@ -421,8 +422,8 @@ export function AdminMembersDashboard({
                 <option value="monthly">월간 자동결제</option>
                 <option value="starter">스타터 패키지</option>
                 <option value="expert">전문가 패키지</option>
-              </select>
-              <select
+              </AdminSelect>
+              <AdminSelect
                 name="memberActivity"
                 defaultValue={initialFilters.memberActivity}
                 aria-label="회원 생성 활동"
@@ -432,8 +433,8 @@ export function AdminMembersDashboard({
                 <option value="with_projects">프로젝트 생성</option>
                 <option value="with_shorts">쇼츠 생성</option>
                 <option value="no_projects">미생성 회원</option>
-              </select>
-              <select
+              </AdminSelect>
+              <AdminSelect
                 name="memberReferrer"
                 defaultValue={initialFilters.memberReferrer}
                 aria-label="추천인"
@@ -445,7 +446,7 @@ export function AdminMembersDashboard({
                 {referralOptions.map((partner) => (
                   <option key={partner.id} value={partner.id}>{partner.creatorName} · {partner.slug}</option>
                 ))}
-              </select>
+              </AdminSelect>
               <button className="h-10 rounded-xl bg-white px-4 text-sm font-black text-black transition hover:bg-neutral-200">조회</button>
             </form>
           </div>
@@ -769,7 +770,7 @@ export function AdminMembersDashboard({
 
             <label className="mt-5 block text-sm font-bold">
               변경할 상태
-              <select
+              <AdminSelect
                 value={targetStatus}
                 onChange={(event) => setTargetStatus(event.target.value as AdminSubscriptionStatus)}
                 className="mt-2 h-12 w-full rounded-xl border border-white/10 bg-[#151819] px-4 outline-none focus:border-[#ff8c7c]"
@@ -778,7 +779,7 @@ export function AdminMembersDashboard({
                 <option value="past_due">연체</option>
                 <option value="canceled">취소</option>
                 <option value="expired">만료</option>
-              </select>
+              </AdminSelect>
             </label>
             <label className="mt-4 block text-sm font-bold">
               변경 사유
@@ -833,7 +834,7 @@ export function AdminMembersDashboard({
             <p className="mt-4 text-sm text-neutral-400">{referralEditing.email}</p>
             <label className="mt-5 block text-xs font-bold text-neutral-400">
               추천인
-              <select
+              <AdminSelect
                 value={targetReferralPartnerId}
                 onChange={(event) => setTargetReferralPartnerId(event.target.value)}
                 className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#191c1d] px-3 outline-none"
@@ -842,7 +843,7 @@ export function AdminMembersDashboard({
                 {referralOptions.map((partner) => (
                   <option key={partner.id} value={partner.id}>{partner.creatorName} · {partner.slug}</option>
                 ))}
-              </select>
+              </AdminSelect>
             </label>
             <label className="mt-4 block text-xs font-bold text-neutral-400">
               변경 사유

@@ -1,3 +1,4 @@
+import { AdminSelect } from "@/components/admin-select";
 import Link from "next/link";
 import type {
   SupportInquiryCategory,
@@ -140,7 +141,7 @@ export function AdminInquiriesDashboard({
                 placeholder="이메일·이름·문의·주문번호"
                 className="h-10 w-64 rounded-xl border border-white/10 bg-black/20 px-3 text-sm outline-none placeholder:text-neutral-600 focus:border-[#ff8c7c]"
               />
-              <select
+              <AdminSelect
                 name="inquiryStatus"
                 defaultValue={initialFilters.status}
                 aria-label="문의 상태"
@@ -152,8 +153,8 @@ export function AdminInquiriesDashboard({
                 <option value="waiting_on_customer">고객 답변 대기</option>
                 <option value="resolved">처리 완료 이력</option>
                 <option value="closed">종료 이력</option>
-              </select>
-              <select
+              </AdminSelect>
+              <AdminSelect
                 name="inquiryCategory"
                 defaultValue={initialFilters.category}
                 aria-label="문의 유형"
@@ -164,8 +165,8 @@ export function AdminInquiriesDashboard({
                 <option value="billing_refund">결제·환불</option>
                 <option value="technical_issue">오류 신고</option>
                 <option value="other">기타</option>
-              </select>
-              <select
+              </AdminSelect>
+              <AdminSelect
                 name="inquiryKind"
                 defaultValue={initialFilters.kind}
                 aria-label="접수 종류"
@@ -174,7 +175,7 @@ export function AdminInquiriesDashboard({
                 <option value="all">일반·환불 전체</option>
                 <option value="general">일반 문의</option>
                 <option value="refund_request">환불 요청</option>
-              </select>
+              </AdminSelect>
               <button className="h-10 rounded-xl bg-white px-4 text-sm font-black text-black transition hover:bg-neutral-200">
                 조회
               </button>

@@ -1,4 +1,5 @@
 "use client";
+import { AdminSelect } from "@/components/admin-select";
 import { useCallback, useEffect, useState } from "react";
 import { creatorKstDate } from "@/lib/creator-support";
 import { CREATOR_APPLICATION_LIMIT, type CreatorApplication } from "@/lib/creator-application";
@@ -33,7 +34,7 @@ export function AdminCreatorApplications({ onSelected }: { onSelected: () => voi
   }
   return <section className="space-y-4 rounded-2xl border border-white/10 p-5" aria-label="파트너 신청 접수 목록">
     <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-lg font-bold">신청 접수</h3><p className="mt-1 text-sm text-neutral-400">선정 {data?.selected ?? 0} / {CREATOR_APPLICATION_LIMIT}명 · 신청 단계에서는 사용량이 지급되지 않습니다.</p></div><button className={button} disabled={busy} onClick={() => void refresh().catch(error => setMessage(error.message))}>새로고침</button></div>
-    <label className="flex items-center gap-3 text-sm">상태<select className="rounded-lg border border-white/20 bg-neutral-900 p-2" value={state} onChange={e => { setState(e.target.value); setPage(1); }}><option value="all">전체</option>{Object.entries(states).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
+    <label className="flex items-center gap-3 text-sm">상태<AdminSelect className="rounded-lg border border-white/20 bg-neutral-900 p-2" value={state} onChange={e => { setState(e.target.value); setPage(1); }}><option value="all">전체</option>{Object.entries(states).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</AdminSelect></label>
     {message && <p role="status" className="rounded-lg bg-white/5 p-3 text-sm">{message}</p>}
     <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="text-neutral-400"><tr>{["신청 계정", "연락처 · 채널", "접수일 · 상태", "관리"].map(title => <th className="p-3" key={title}>{title}</th>)}</tr></thead><tbody>{data?.items.map(item => <tr key={item.id} className="border-t border-white/10 align-top"><td className="p-3">{item.displayName || "이지컷 회원"}<p className="mt-1 text-xs text-neutral-400">{item.email || "이메일 미제공"}</p></td><td className="max-w-sm p-3"><p>{item.phoneNumber || "보관 종료"}</p>{item.channels.map(channel => <a key={channel.platform} className="mt-2 block break-all text-orange-200" href={channel.channelUrl} target="_blank" rel="noreferrer">{channel.platform === "youtube" ? "유튜브" : "인스타그램"} · {channel.channelUrl} ↗</a>)}</td><td className="whitespace-nowrap p-3"><p>{creatorKstDate(item.submittedAt, true)}</p><p className="mt-2 text-orange-200">{states[item.state]}</p></td><td className="p-3"><button className={button} disabled={busy} onClick={() => void open(item.id)}>상세·선정</button></td></tr>)}</tbody></table></div>
     {data?.items.length === 0 && <p className="py-5 text-sm text-neutral-400">접수된 신청이 없습니다.</p>}

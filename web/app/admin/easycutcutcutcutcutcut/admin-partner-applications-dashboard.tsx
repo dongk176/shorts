@@ -1,3 +1,4 @@
+import { AdminSelect } from "@/components/admin-select";
 import Link from "next/link";
 import {
   partnerApplicationAudienceLabels,
@@ -126,7 +127,7 @@ export function AdminPartnerApplicationsDashboard({
                 placeholder="이름·이메일·전화번호"
                 className="h-10 w-64 rounded-xl border border-white/10 bg-black/20 px-3 text-sm outline-none placeholder:text-neutral-600 focus:border-[#ff8c7c]"
               />
-              <select
+              <AdminSelect
                 name="partnerApplicationStatus"
                 defaultValue={initialFilters.status}
                 aria-label="파트너 신청 상태"
@@ -139,7 +140,7 @@ export function AdminPartnerApplicationsDashboard({
                 <option value="contacted">연락 완료</option>
                 <option value="accepted">선정</option>
                 <option value="rejected">미선정</option>
-              </select>
+              </AdminSelect>
               <button className="h-10 rounded-xl bg-white px-4 text-sm font-black text-black transition hover:bg-neutral-200">
                 조회
               </button>
@@ -235,7 +236,7 @@ export function AdminPartnerApplicationsDashboard({
 
                 <form action={updatePartnerApplication.bind(null, application.id)} className="rounded-2xl border border-white/[.07] bg-black/20 p-4">
                   <label className="block text-xs font-bold text-neutral-500" htmlFor={`partner-status-${application.id}`}>검토 상태</label>
-                  <select
+                  <AdminSelect
                     id={`partner-status-${application.id}`}
                     name="status"
                     defaultValue={application.status}
@@ -244,7 +245,7 @@ export function AdminPartnerApplicationsDashboard({
                     {Object.entries(partnerApplicationStatusLabels).map(([value, label]) => (
                       <option key={value} value={value}>{label}</option>
                     ))}
-                  </select>
+                  </AdminSelect>
                   <label className="mt-4 block text-xs font-bold text-neutral-500" htmlFor={`partner-note-${application.id}`}>관리자 메모</label>
                   <textarea
                     id={`partner-note-${application.id}`}
