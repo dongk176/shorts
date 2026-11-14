@@ -1114,3 +1114,12 @@
  .shell:has([data-meeting-report]) .sidebar,.shell:has([data-meeting-report]) .topbar { display:none!important; }
  .shell:has([data-meeting-report]) .main,.shell:has([data-meeting-report]) .workspace,.shell:has([data-meeting-report]) .content { display:block!important; margin:0!important; padding:0!important; width:100%!important; max-width:none!important; overflow:visible!important; background:white!important; }
 }
+
+/* Meeting reports own their page and table palette, including browser PDF export. */
+.content:has([data-meeting-report]) :global(section) { background:transparent!important; border-color:transparent!important; border-radius:0!important; }
+.content:has([data-meeting-report]) :global(table) { width:100%; min-width:0; }
+@media print {
+ .content:has([data-meeting-report]) :global(section), .content:has([data-meeting-report]) :global(tbody tr) { background:white!important; color:#172b45!important; }
+ .content:has([data-meeting-report]) :global(thead) { background:#edf2f8!important; }
+ .content:has([data-meeting-report]) :global(th) { color:#52647a!important; padding-top:8px; padding-bottom:8px; }
+}
