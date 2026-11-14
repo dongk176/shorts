@@ -283,11 +283,11 @@ export function AdminShell({
   const [overviewError, setOverviewError] = useState<string | null>(null);
   const [overviewAttempt, setOverviewAttempt] = useState(0);
   useEffect(() => {
-    if (activeTab === "expenses" || activeTab === "updates" || activeTab === "billing") return;
+    if (activeTab === "expenses" || activeTab === "updates") return;
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 8_000);
     setOverviewError(null);
-    void fetch("/api/admin/overview", {
+    void fetch(activeTab === "billing" ? "/api/admin/overview?view=metrics" : "/api/admin/overview", {
       cache: "no-store",
       credentials: "same-origin",
       signal: controller.signal,
@@ -381,7 +381,7 @@ export function AdminShell({
         </header>
 
         <div className={styles.workspace}>
-          {activeTab !== "expenses" && activeTab !== "updates" && activeTab !== "billing" ? <section aria-labelledby="admin-overview-title" aria-busy={!overview && !overviewError}>
+          {activeTab !== "expenses" && activeTab !== "updates" ? <section aria-labelledby="admin-overview-title" aria-busy={!overview && !overviewError}>
             <div className={styles.overviewHeading}>
               <div>
                 <p className={styles.overviewKicker}>Operations overview</p>
@@ -430,9 +430,9 @@ export function AdminShell({
               ))}
             </div>
 
-            <AdminPaddleSales />
-            <div className={styles.analyticsGrid}>
-              {overview ? (
+            {activeTab !== "billing" && <AdminPaddleSales />}
+            <div className={styles.analyticsGrid} hidden={activeTab === "billing"}>
+              {overview && activeTab !== "billing" ? (
                 <>
                   <AdminTrendCard key={`${activeTab}-sales`} initialData={overview.salesTrend} />
                   <AdminTrendCard key={`${activeTab}-members`} initialData={overview.memberTrend} />

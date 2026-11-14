@@ -106,7 +106,7 @@ describe("administrator shell recovery", () => {
     expect(overviewSource).toContain("revalidate: 60");
     expect(overviewSource).toContain("from metrics cross join subscriptions");
     expect(pageSource).not.toContain("loadAdminOverview()");
-    expect(shellSource).toContain('fetch("/api/admin/overview"');
+    expect(shellSource).toContain('"/api/admin/overview?view=metrics"');
     expect(overviewRouteSource).toContain("await requireAdminUser();");
     expect(overviewSource).not.toContain("await Promise.all([");
   });
@@ -120,7 +120,7 @@ describe("administrator shell recovery", () => {
     expect(billingOrderLoaderSource).toContain('productCode: row.productCode ? String(row.productCode) : "unknown"');
     expect(billingOrderRouteSource).toContain("await requireAdminUser();");
     expect(billingDashboardSource).toContain('"더보기"');
-    expect(billingDashboardSource).toContain("IntersectionObserver");
+    expect(billingDashboardSource).not.toContain("IntersectionObserver");
     expect(billingDashboardSource).toContain("setLoadedOrders");
   });
 

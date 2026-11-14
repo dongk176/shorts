@@ -45,8 +45,8 @@ describe("administrator billing pagination", () => {
     expect(loaderSource).toContain("offset?: number");
   });
 
-  it("auto-loads while retaining retry and manual fallback", () => {
-    expect(dashboardSource).toContain("IntersectionObserver");
+  it("loads additional pages on demand while retaining retry", () => {
+    expect(dashboardSource).not.toContain("IntersectionObserver");
     expect(dashboardSource).toContain("orderRequestInFlight.current");
     expect(dashboardSource).toContain("knownIds.has(order.id)");
     expect(dashboardSource).toContain('"다시 시도"');

@@ -118,3 +118,9 @@
   .dualAmount .dayCount { display:none; }
   .currencyNote { font-size:10px; }
 }
+
+.inlineOrders { display:block; position:static; width:100%; max-width:none; margin:0; padding:0; border:0; background:transparent; color:inherit; }
+.dayDialog { width:min(1280px,94vw); max-height:85dvh; margin:auto; padding:0; border:1px solid #394452; border-radius:20px; background:#1b1e24; color:#e6e9ef; overflow:auto; box-shadow:0 24px 90px #0008; }
+.dayDialog::backdrop { background:#060b16b8; backdrop-filter:blur(5px); }
+.dayDialog button, .dayDialog th { white-space:nowrap; }
+@media(prefers-reduced-motion:no-preference) { .dayDialog[open] { animation:dialogAppear 180ms ease-out; } @keyframes dialogAppear { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } } }

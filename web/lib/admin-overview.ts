@@ -150,3 +150,7 @@ export async function loadAdminOverview(): Promise<AdminOverviewData> {
   const memberTrend = await loadAdminTrend("members", "7d", today);
   return { metrics, salesTrend, memberTrend };
 }
+
+export async function loadAdminOverviewMetrics() {
+  return { metrics: await loadAdminMetrics(kstDate()) };
+}

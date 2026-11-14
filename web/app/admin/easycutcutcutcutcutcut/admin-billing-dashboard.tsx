@@ -89,14 +89,16 @@ export function AdminBillingDashboard({
   const [currency, setCurrency] = useState<BillingCurrency>(["paddle", "paypal"].includes(filters.provider) ? "USD" : "KRW");
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const ordersHeadingRef = useRef<HTMLHeadingElement>(null);
-  const selectDay = (day: string | null) => {
-    setSelectedDay(day);
-    if (day) setFilters(current => ({ ...current, status: "all" }));
-    if (day) requestAnimationFrame(() => {
-      ordersHeadingRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-      ordersHeadingRef.current?.focus({ preventScroll: true });
-    });
-  };
+  const dayDialogRef = useRef<HTMLDialogElement>(null);
+  const [operationsOpen, setOperationsOpen] = useState(false);
+  const selectDay = (day: string | null) => setSelectedDay(day);
+  useEffect(() => {
+    const dialog = dayDialogRef.current;
+    if (!dialog) return;
+    dialog.close();
+    if (selectedDay) dialog.showModal();
+    else dialog.show();
+  }, [selectedDay]);
   const [loadedOrders, setLoadedOrders] = useState<AdminOrder[]>([]);
   const [hasMoreOrders, setHasMoreOrders] = useState(false);
   const [nextOrderCursor, setNextOrderCursor] = useState<string | null>(null);
@@ -182,6 +184,7 @@ export function AdminBillingDashboard({
   }, [loadOrders]);
 
   useEffect(() => {
+    if (!operationsOpen) return;
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 8_000);
     let active = true;
@@ -215,21 +218,9 @@ export function AdminBillingDashboard({
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [supportingAttempt]);
+  }, [supportingAttempt, operationsOpen]);
 
-  useEffect(() => {
-    if (!hasMoreOrders || !nextOrderCursor || !orderSentinelRef.current || loadMoreError) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          void loadOrders(nextOrderCursor);
-        }
-      },
-      { rootMargin: "600px 0px" },
-    );
-    observer.observe(orderSentinelRef.current);
-    return () => observer.disconnect();
-  }, [hasMoreOrders, loadMoreError, loadOrders, nextOrderCursor]);
+
 
   const loadMoreOrders = () => {
     if (loadMoreError && !nextOrderCursor) {
@@ -303,12 +294,13 @@ export function AdminBillingDashboard({
       <AdminBillingCalendar month={month} currency={currency} selectedDay={selectedDay} provider={filters.provider} query={filters.query}
         onMonthChange={value => { setMonth(value); setSelectedDay(null); }}
         onCurrencyChange={value => { setCurrency(value); setSelectedDay(null); }} onSelectDay={selectDay} />
+      <dialog ref={dayDialogRef} className={selectedDay ? styles.dayDialog : styles.inlineOrders} onCancel={() => selectDay(null)} aria-labelledby="billing-orders-title">
       <section className="overflow-hidden rounded-2xl border border-white/10 bg-[#1b1e24]">
         <div className="border-b border-white/10 p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 ref={ordersHeadingRef} tabIndex={-1} className="scroll-mt-28 text-lg font-bold outline-none">{selectedDay ? `${Number(selectedDay.slice(5, 7))}월 ${Number(selectedDay.slice(8))}일 결제 내역` : "결제 내역"}</h2>
-              {selectedDay && <button type="button" className={styles.clearDay} onClick={() => selectDay(null)}>월 전체 내역 보기 ×</button>}
+              <h2 id="billing-orders-title" ref={ordersHeadingRef} tabIndex={-1} className="scroll-mt-28 text-lg font-bold outline-none">{selectedDay ? `${Number(selectedDay.slice(5, 7))}월 ${Number(selectedDay.slice(8))}일 결제 내역` : "결제 내역"}</h2>
+              {selectedDay && <button type="button" className={styles.clearDay} onClick={() => selectDay(null)}>닫기 ×</button>}
               <p className="mt-1 text-xs text-slate-400">{selectedDay ? "선택한 날짜의 승인 결제 · 환불 포함" : `${month.replace("-", "년 ")}월 · 선택한 통화 기준`} · {loadingMoreOrders && !loadedOrders.length ? "불러오는 중…" : `현재 ${loadedOrders.length.toLocaleString("ko-KR")}건 표시`}</p>
             </div>
               <select aria-label="결제 상태" name="status" value={filters.status} onChange={event => { setFilters(current => ({ ...current, status: event.target.value })); setSelectedDay(null); }} className="h-10 rounded-xl border border-white/10 bg-[#1b1e24] px-3 text-sm">
@@ -375,8 +367,9 @@ export function AdminBillingDashboard({
         </div>}
       </section>
 
-      <details className={styles.operations}><summary>결제 운영 · 조치 현황<span>카드 확인 및 업그레이드 환불</span></summary><div className="grid gap-5 p-5">
-      {!["toss", "paddle", "paypal"].includes(filters.provider) && <AdminUpgradeRefunds />}
+      </dialog>
+      <details className={styles.operations} onToggle={event => setOperationsOpen(event.currentTarget.open)}><summary>결제 운영 · 조치 현황<span>카드 확인 및 업그레이드 환불</span></summary><div className="grid gap-5 p-5">
+      {operationsOpen && !["toss", "paddle", "paypal"].includes(filters.provider) && <AdminUpgradeRefunds />}
       {supportingError ? (
         <section className="rounded-2xl border border-amber-300/20 bg-amber-300/[.06] p-5" role="alert">
           <p className="text-sm font-bold text-amber-200">{supportingError}</p>

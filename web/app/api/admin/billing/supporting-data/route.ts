@@ -9,8 +9,8 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    await ensureReadDbReady();
     await requireAdminUser();
+    await ensureReadDbReady();
     const result = await loadAdminBillingSupportingData();
     return NextResponse.json(result, {
       headers: { "Cache-Control": "private, no-store" },

@@ -7,8 +7,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export async function GET() {
   try {
-    await ensureReadDbReady();
     await requireAdminUser();
+    await ensureReadDbReady();
     return NextResponse.json({ totals: await loadAdminPaddleSales() }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     return apiError(error, "Paddle 매출을 불러오지 못했습니다.");

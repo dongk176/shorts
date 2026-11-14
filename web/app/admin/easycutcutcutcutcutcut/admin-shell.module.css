@@ -1046,3 +1046,23 @@
 .billingShell .topbar { background:#101216ed; }
 
 .billingContent { margin-top:0; }
+
+/* Keep Korean action labels intact while tables scroll within their panels. */
+.content :global(th), .content :global(td button), .content :global(td .rounded-full),
+.content :global(td a) { white-space: nowrap; word-break: keep-all; flex-shrink: 0; }
+.content :global(td) { word-break: keep-all; }
+.content :global(th) { font-size: 11px; color: #9ca5b3 !important; }
+.content :global(table) { width: max-content; min-width: 100%; }
+.content :global(td) { max-width: 360px; }
+.content :global(section) { background: #1b1e24 !important; border-color: #2a2e36 !important; }
+.metricCard { background: #1b1e24; border-color: #2a2e36; }
+.metricValue { color: #75aaff; }
+.analyticsGrid[hidden] { display: none; }
+.content :global(button:focus-visible), .billingContent :global(button:focus-visible) { outline: 2px solid #75aaff; outline-offset: 3px; }
+@media (prefers-reduced-motion: no-preference) {
+  .metricCard { animation: adminReveal 240ms ease-out both; }
+  @keyframes adminReveal { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+}
+@media (prefers-reduced-motion: reduce) {
+  .content *, .billingContent * { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}

@@ -32,8 +32,8 @@ const querySchema = z.object({
 
 export async function GET(request: Request) {
   try {
-    await ensureReadDbReady();
     await requireAdminUser();
+    await ensureReadDbReady();
     const url = new URL(request.url);
     const query = querySchema.parse({
       offset: url.searchParams.get("offset") ?? undefined,
