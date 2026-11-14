@@ -41,8 +41,9 @@ Pop 35210 completed five clips. Native Japanese 35214 completed four clips,
 auto-detected jpn. All nine files decode. Native Japanese retained pop word
 highlighting; translated pop retains the existing translated-basic policy.
 Native ASR still contains errors in LoRA/Civitai and other terms.
-macOS FFmpeg showed disappearing footer pixels, but the same MP4 decoded by
-production Linux FFmpeg had an intact footer: a local audit decoder artifact.
+Full-frame inspection appeared to hide footer pixels. Cropped original-frame
+inspection and pixel counts show intact names in both decoders. This was an
+inspection-preview artifact, not evidence of a production crop defect.
 
 Worker candidates use exact active component sources and immutable image bases:
 language 8c1412a -> 4b6dd007; SNS e5ac690 -> a730f071. Renderer, fonts, editor
@@ -56,3 +57,9 @@ found existing stale CSS checksum and admin heading expectations; both reproduce
 on unchanged production baseline. These checks were not relaxed. Three new
 prompt failures were fixed by keeping added instructions Japanese-only,
 affirmative and free of Korean-language examples; corresponding tests now pass.
+
+Initial registration names failed the application admission schema. Admission was
+restored to the previous release, with no jobs referencing the rejected versions.
+Immutable registry protection was retained; corrected definitions use new release
+identities. Both real registries now pass the unchanged application schema and
+admission functions. The previous registered versions remain preserved.

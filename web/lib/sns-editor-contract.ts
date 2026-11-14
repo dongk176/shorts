@@ -4,7 +4,7 @@ import type { VideoAspectRatio } from "./contracts";
 
 export const SNS_EDITOR_RELEASE_ID = "4fbfeeaa-e210-4143-aece-c17029d962a0";
 export const SNS_GENERATION_RELEASE_IDS = [
-  "daf2f4e3-ce57-49ed-a439-f83ec1d14a8e",
+  "221b1fcd-9b06-499d-97e9-d2093db2a4e3",
   "b871796a-f83a-4aed-8d56-bf039de1cdbf",
   "8dc98fc0-a5bb-411f-9cc6-0e8dc28648ca",
   "8af2c7e6-5421-4e93-9671-b0e8bb41de8a",
