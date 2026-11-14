@@ -65,12 +65,12 @@ export function AdminSubscriptionBillingCard({ icon }: { icon: ReactNode }) {
       <label>결제 예정일 · 한국시간<select value={period} onChange={event => setPeriod(event.target.value as keyof typeof periods)}>{Object.entries(periods).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label>
       {period === "date" && <label>날짜<input type="date" value={selectedDate} min={today} onChange={event => setSelectedDate(event.target.value)} /></label>}
       {period === "custom" && <div className={filters.dates}><label>시작일<input type="date" value={start} min={today} onChange={event => setStart(event.target.value)} /></label><label>종료일<input type="date" value={end} min={today} onChange={event => setEnd(event.target.value)} /></label></div>}
-      <p>활성 구독에 등록된 다음 결제 1회씩 합산해요. 해지 예약·결제 중지·해외 결제는 제외하며, 예정된 상품 변경은 반영해요.</p>
+      <p>활성 구독에 등록된 다음 결제 1회씩 합산해요. 오늘은 이미 결제 완료되어 다음 결제일로 넘어간 건을 제외하며, 예정 시각이 지났지만 다음 결제일이 갱신되지 않은 건은 포함해요. 해지 예약·결제 중지·해외 결제는 제외하며, 예정된 상품 변경은 반영해요.</p>
       <button type="button" onClick={() => { setOpen(false); trigger.current?.focus(); }}>완료</button>
     </div>}
     <p className={styles.metricValue} aria-live="polite">{invalid ? "기간 확인" : error ? "조회 실패" : !data ? "불러오는 중…" : money(summary.amount)}</p>
     <p className={styles.metricHint}>{invalid ? "선택한 날짜를 확인해 주세요." : `${name}${months === "all" ? "" : ` ${months}개월`} · ${period === "date" ? selectedDate : period === "custom" ? `${start} ~ ${end}` : periods[period]} · 예정 ${summary.count}건`}</p>
-    <p className={styles.metricHint}>국내 자동결제 예정 · 실제 결제액은 달라질 수 있어요</p>
+    <p className={styles.metricHint}>등록된 다음 결제 기준 · 오늘 결제 완료분 제외</p>
     {error && <button type="button" className={styles.serviceLink} onClick={() => setAttempt(value => value+1)}>다시 시도</button>}
   </article>;
 }

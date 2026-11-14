@@ -388,8 +388,9 @@ export function AdminShell({
                 <h2 id="admin-overview-title" className={styles.overviewTitle}>비즈니스 현황을 한눈에.</h2>
               </div>
               <p className={styles.overviewDescription}>
-                결제 승인, 회원 가입, 구독 상태를 최근 데이터로 집계합니다.
-                주요 운영 지표와 최근 흐름을 확인한 뒤 아래에서 상세 업무를 처리하세요.
+                {activeTab === "billing"
+                  ? "상단 매출은 전체 국내 기준이며 아래 달력의 월·통화·검색 조건과 별개입니다. 매출 요약은 최대 1분 간격으로 갱신됩니다."
+                  : "결제 승인, 회원 가입, 구독 상태를 최근 데이터로 집계합니다. 주요 운영 지표와 최근 흐름을 확인한 뒤 아래에서 상세 업무를 처리하세요."}
               </p>
             </div>
 

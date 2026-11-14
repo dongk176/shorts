@@ -1045,7 +1045,7 @@
 .billingShell .sidebar { background:#121418; box-shadow:none; }
 .billingShell .topbar { background:#101216ed; }
 
-.billingContent { margin-top:0; }
+.billingContent { margin-top: 32px; }
 
 /* Keep Korean action labels intact while tables scroll within their panels. */
 .content :global(th), .content :global(td button), .content :global(td .rounded-full),
