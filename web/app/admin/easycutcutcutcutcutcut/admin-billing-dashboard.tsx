@@ -368,7 +368,7 @@ export function AdminBillingDashboard({
       </section>
 
       </dialog>
-      <details className={styles.operations} onToggle={event => setOperationsOpen(event.currentTarget.open)}><summary>결제 운영 · 조치 현황<span>카드 확인 및 업그레이드 환불</span></summary><div className="grid gap-5 p-5">
+      <details className={styles.operations} onToggle={event => setOperationsOpen(event.currentTarget.open)}><summary>결제 운영 · 조치 현황<span>카드 확인 · 업그레이드 환불 · 환불 기록</span></summary><div className="grid gap-5 p-5">
       {operationsOpen && !["toss", "paddle", "paypal"].includes(filters.provider) && <AdminUpgradeRefunds />}
       {supportingError ? (
         <section className="rounded-2xl border border-amber-300/20 bg-amber-300/[.06] p-5" role="alert">
@@ -414,7 +414,6 @@ export function AdminBillingDashboard({
           )}
         </section>
       )}
-      </div></details>
       <section className="overflow-hidden rounded-2xl border border-white/10 bg-[#1b1e24]">
         <div className="border-b border-white/10 p-5"><h2 className="text-lg font-black">국내 결제 환불 기록</h2><p className="mt-1 text-xs text-slate-400">관리자, 사유, 결제사 결과와 권한 처리 상태를 보존합니다. Paddle 환불은 위 결제 주문과 해외 매출에 표시됩니다.</p></div>
         <div className="overflow-x-auto"><table className="w-full min-w-[1000px] text-left text-sm">
@@ -433,6 +432,8 @@ export function AdminBillingDashboard({
           </tbody>
         </table></div>
       </section>
+
+      </div></details>
 
       {manualReviewOrder && <div className="fixed inset-0 z-[100] grid place-items-center bg-black/75 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="manual-review-title">
         <div className="w-full max-w-lg rounded-3xl border border-amber-300/20 bg-[#1b1e24] p-6 shadow-2xl">
