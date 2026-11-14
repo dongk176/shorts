@@ -1636,6 +1636,7 @@ class BatchWorker:
                             source_language=source_language,
                             output_language=str(job["output_language"]),
                             priority_windows=priority_windows,
+                            video_title=str(job["video_title"]),
                         )
                         display_transcript = translation_result.segments
                         translation_outcomes = {

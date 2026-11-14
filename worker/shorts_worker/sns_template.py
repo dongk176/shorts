@@ -12,6 +12,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from .config import Settings
 from .errors import RenderError
+from .japanese_quality import JAPANESE_QUALITY_RULES
 from .media import media_duration, probe_media, run_command, video_fps
 from .overlays import contrasting_title_text_color, load_custom_template_font
 from .schemas import EditorFontId
@@ -253,7 +254,8 @@ def copy_messages(
     messages = [
         {
             "role": "system",
-            "content": prompts[language] + '\n\n'
+            "content": prompts[language]
+            + ("\n" + JAPANESE_QUALITY_RULES if language == "ja" else "") + '\n\n'
             'Return JSON with exactly {"title": "...", "body": ["..."], "hashtags": []}.',
         },
         {

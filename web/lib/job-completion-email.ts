@@ -10,6 +10,7 @@ export type JobCompletionEmailClaim = {
   projectNumber: number;
   videoTitle: string;
   attemptCount: number;
+  outputLanguage?: string;
 };
 
 export type JobCompletionEmailSender = (
@@ -19,14 +20,42 @@ export type JobCompletionEmailSender = (
 const MAX_ATTEMPTS = 5;
 const RETRY_MINUTES = [1, 5, 15, 60] as const;
 
+const COMPLETION_COPY = {
+  ko: {
+    title: "이지컷 쇼츠 작업 완료", heading: "쇼츠 작업이 완료됐어요!",
+    description: "요청하신 쇼츠를 모두 준비했습니다.", project: "프로젝트",
+    action: "완성된 쇼츠 확인하기",
+    footer: "이 메일은 이지컷에서 직접 요청하신 작업 완료 알림입니다.",
+    subject: (number: number) => `[이지컷] 프로젝트 #${number} 쇼츠가 완성됐어요`,
+  },
+  ja: {
+    title: "EasyCut ショート動画の作成が完了しました",
+    heading: "ショート動画が完成しました！",
+    description: "ご依頼のショート動画の作成がすべて完了しました。", project: "プロジェクト",
+    action: "完成したショート動画を見る",
+    footer: "このメールは、EasyCutでご依頼いただいた動画の作成完了をお知らせするものです。",
+    subject: (number: number) => `[EasyCut] プロジェクト #${number} のショート動画が完成しました`,
+  },
+} as const;
+
+function completionCopy(claim: JobCompletionEmailClaim) {
+  const language = claim.outputLanguage === "ja" ? "ja" : "ko";
+  return { language, ...COMPLETION_COPY[language] };
+}
+
+export function jobCompletionEmailSubject(claim: JobCompletionEmailClaim) {
+  return completionCopy(claim).subject(claim.projectNumber);
+}
+
 export function jobCompletionEmailHtml(claim: JobCompletionEmailClaim) {
+  const copy = completionCopy(claim);
   const projectUrl = absoluteUrl(`/projects/${claim.projectNumber}`);
   return `<!doctype html>
-<html lang="ko">
+<html lang="${copy.language}">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>이지컷 쇼츠 작업 완료</title>
+    <title>${copy.title}</title>
   </head>
   <body style="margin:0;background:#f4f4f5;color:#18181b;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f4f5">
@@ -36,13 +65,13 @@ export function jobCompletionEmailHtml(claim: JobCompletionEmailClaim) {
             <tr>
               <td style="padding:36px 32px">
                 <p style="margin:0 0 24px;color:#ef4444;font-size:14px;font-weight:800;letter-spacing:.08em">EASY CUT</p>
-                <h1 style="margin:0;color:#18181b;font-size:28px;line-height:1.35;letter-spacing:-.03em">쇼츠 작업이 완료됐어요!</h1>
-                <p style="margin:18px 0 0;color:#52525b;font-size:16px;line-height:1.75">요청하신 쇼츠를 모두 준비했습니다.</p>
+                <h1 style="margin:0;color:#18181b;font-size:28px;line-height:1.35;letter-spacing:-.03em">${copy.heading}</h1>
+                <p style="margin:18px 0 0;color:#52525b;font-size:16px;line-height:1.75">${copy.description}</p>
                 <div style="margin:24px 0;padding:18px 20px;border-radius:14px;background:#f4f4f5">
-                  <p style="margin:0;color:#27272a;font-size:15px;font-weight:700">프로젝트 #${claim.projectNumber}</p>
+                  <p style="margin:0;color:#27272a;font-size:15px;font-weight:700">${copy.project} #${claim.projectNumber}</p>
                 </div>
-                <a href="${projectUrl}" style="display:block;padding:15px 22px;border-radius:12px;background:#18181b;color:#ffffff;font-size:15px;font-weight:800;text-align:center;text-decoration:none">완성된 쇼츠 확인하기</a>
-                <p style="margin:28px 0 0;color:#a1a1aa;font-size:12px;line-height:1.7">이 메일은 이지컷에서 직접 요청하신 작업 완료 알림입니다.</p>
+                <a href="${projectUrl}" style="display:block;padding:15px 22px;border-radius:12px;background:#18181b;color:#ffffff;font-size:15px;font-weight:800;text-align:center;text-decoration:none">${copy.action}</a>
+                <p style="margin:28px 0 0;color:#a1a1aa;font-size:12px;line-height:1.7">${copy.footer}</p>
               </td>
             </tr>
           </table>
@@ -54,14 +83,15 @@ export function jobCompletionEmailHtml(claim: JobCompletionEmailClaim) {
 }
 
 export function jobCompletionEmailText(claim: JobCompletionEmailClaim) {
+  const copy = completionCopy(claim);
   return [
-    "쇼츠 작업이 완료됐어요!",
+    copy.heading,
     "",
-    `프로젝트 #${claim.projectNumber}`,
+    `${copy.project} #${claim.projectNumber}`,
     "",
-    `완성된 쇼츠 확인하기: ${absoluteUrl(`/projects/${claim.projectNumber}`)}`,
+    `${copy.action}: ${absoluteUrl(`/projects/${claim.projectNumber}`)}`,
     "",
-    "이 메일은 이지컷에서 직접 요청하신 작업 완료 알림입니다.",
+    copy.footer,
   ].join("\n");
 }
 
@@ -84,7 +114,7 @@ export function createResendJobCompletionEmailSender(): JobCompletionEmailSender
     const { data, error } = await resend.emails.send({
       from,
       to: claim.recipientEmail,
-      subject: `[이지컷] 프로젝트 #${claim.projectNumber} 쇼츠가 완성됐어요`,
+      subject: jobCompletionEmailSubject(claim),
       html: jobCompletionEmailHtml(claim),
       text: jobCompletionEmailText(claim),
       tags: [
@@ -116,9 +146,14 @@ export async function processJobCompletionEmailNotifications(
   limit = 10,
 ) {
   const rows = await db`
-    select * from shorts_mvp.claim_job_completion_email_notifications(
-      ${Math.max(1, Math.min(limit, 25))}
+    with claimed as materialized (
+      select * from shorts_mvp.claim_job_completion_email_notifications(
+        ${Math.max(1, Math.min(limit, 25))}
+      )
     )
+    select claimed.*, job.output_language as output_language
+    from claimed
+    join shorts_mvp.video_jobs job on job.id=claimed.job_id
   `;
   const claims: JobCompletionEmailClaim[] = rows.map((row) => ({
     jobId: String(row.jobId),
@@ -128,6 +163,7 @@ export async function processJobCompletionEmailNotifications(
     projectNumber: Number(row.projectNumber),
     videoTitle: String(row.videoTitle),
     attemptCount: Number(row.attemptCount),
+    outputLanguage: String(row.outputLanguage || "ko"),
   }));
   const result = { claimed: claims.length, sent: 0, retried: 0, failed: 0 };
 

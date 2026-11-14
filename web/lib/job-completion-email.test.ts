@@ -2,6 +2,7 @@ import type { Sql } from "postgres";
 import { describe, expect, it, vi } from "vitest";
 import {
   jobCompletionEmailHtml,
+  jobCompletionEmailSubject,
   jobCompletionEmailText,
   processJobCompletionEmailNotifications,
   type JobCompletionEmailClaim,
@@ -34,6 +35,27 @@ describe("job completion email", () => {
     expect(html).toContain("직접 요청하신 작업 완료 알림");
     expect(text).not.toContain(claim.displayName || "");
     expect(text).not.toContain(claim.videoTitle);
+  });
+
+  it("uses the project output language for Japanese subject, HTML and plain text", async () => {
+    const japaneseClaim = { ...claim, outputLanguage: "ja" };
+    expect(jobCompletionEmailSubject(japaneseClaim)).toBe("[EasyCut] プロジェクト #12 のショート動画が完成しました");
+    expect(jobCompletionEmailHtml(japaneseClaim)).toContain('<html lang="ja">');
+    expect(jobCompletionEmailHtml(japaneseClaim)).toContain("完成したショート動画を見る");
+    expect(jobCompletionEmailText(japaneseClaim)).toContain("プロジェクト #12");
+    expect(jobCompletionEmailText(japaneseClaim)).not.toMatch(/[가-힣]/);
+    const db = sqlWithRows([japaneseClaim], [{ jobId: claim.jobId }]);
+    const send = vi.fn().mockResolvedValue("provider-message-id");
+    await processJobCompletionEmailNotifications(db as unknown as Sql, send);
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ outputLanguage: "ja" }));
+    expect(db.mock.calls[0][0].join("")).toContain("job.output_language");
+  });
+
+  it("retains Korean for legacy or unsupported language values", () => {
+    for (const outputLanguage of [undefined, "ko", "en", "unknown"]) {
+      expect(jobCompletionEmailHtml({ ...claim, outputLanguage })).toContain('<html lang="ko">');
+      expect(jobCompletionEmailSubject({ ...claim, outputLanguage })).toContain("쇼츠가 완성됐어요");
+    }
   });
 
   it("marks a claimed notification sent after provider acceptance", async () => {

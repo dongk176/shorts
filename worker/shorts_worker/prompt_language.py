@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .content_language import CONTENT_LANGUAGES
+from .japanese_quality import JAPANESE_QUALITY_RULES
 from .language_context import language_context
 
 if TYPE_CHECKING:
@@ -45,7 +46,8 @@ def translated_selection_messages(
     user = templates["user"].format(**values)
     return [
         {"role": "system", "content": language_context(source_language, output_language)
-         + "\n\n" + templates["system"].format(**values)},
+         + "\n\n" + templates["system"].format(**values)
+         + ("\n" + JAPANESE_QUALITY_RULES if output_language == "ja" else "")},
         {"role": "user", "content": user},
     ]
 
@@ -74,6 +76,6 @@ def translated_comment_messages(
     return [
         {"role": "system", "content": templates["comment_system"].format(
             language_rules=language_rules, min_chars=min_chars, max_chars=max_chars,
-        )},
+        ) + ("\n" + JAPANESE_QUALITY_RULES if language == "ja" else "")},
         {"role": "user", "content": "\n\n".join(sections)},
     ]

@@ -492,3 +492,29 @@ def test_server_preserves_ai_wording_without_currency_or_script_rejection(text):
     assert validate_translation(
         {"segments": [{"id": 0, "text": text}]}, {0: "원문"}, "ja",
     ) == {0: text}
+
+
+def test_translation_title_context_is_scoped_to_each_call(monkeypatch):
+    translator = SubtitleTranslator(
+        SimpleNamespace(gemini_api_key="test", gemini_paid_data_processing_confirmed=True)
+    )
+    contexts = []
+
+    def reply(texts, *_):
+        contexts.append(translator._video_title)
+        return {"segments": [{"id": key, "text": "そう甘くない。"} for key in texts]}
+
+    monkeypatch.setattr(translator, "_request", reply)
+    source = [SubtitleSegment(start=0, end=2, text="호락호락하지 않다.")]
+    translated = translator.translate_partial(
+        source, source_language="ko", output_language="ja", video_title="이명학T",
+    )
+    translator.translate_partial(source, source_language="ko", output_language="ja")
+    assert contexts == ["이명학T", ""]
+    assert [(s.start, s.end) for s in translated.segments] == [(0, 2)]
+    assert source[0].text == "호락호락하지 않다."
+
+
+def test_japanese_detected_language_does_not_trigger_translation(monkeypatch):
+    monkeypatch.setenv("EASYCUT_LANGUAGE_TEST_WORKER", "true")
+    assert translation_required("jpn", "ja") is False
