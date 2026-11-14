@@ -25,7 +25,7 @@ export const AdminSelect=forwardRef<HTMLButtonElement,Omit<SelectHTMLAttributes<
  useEffect(()=>{const node=native.current;const form=node?.form;const reset=()=>queueMicrotask(()=>{if(node)setLocal(node.value);});form?.addEventListener('reset',reset);return()=>form?.removeEventListener('reset',reset);},[]);
  useEffect(()=>{if(autoFocus)trigger.current?.focus({preventScroll:true});},[autoFocus]);
  useEffect(()=>{
-  if(!open||disabled){popup.current?.hidePopover?.();return;}
+  if(!open||disabled){popup.current?.hidePopover?.();if(disabled)setOpen(false);return;}
   const menu=popup.current;if(!menu)return;
   const place=()=>{const r=trigger.current?.getBoundingClientRect();if(!r)return;const width=Math.min(Math.max(r.width,220),window.innerWidth-24),below=window.innerHeight-r.bottom-12,above=r.top-12,up=below<220&&above>below,height=Math.min(320,Math.max(100,up?above:below));setPosition({left:Math.max(12,Math.min(r.left,window.innerWidth-width-12)),top:up?Math.max(12,r.top-height-6):r.bottom+6,width,maxHeight:height});};
   place();menu.showPopover?.();
@@ -36,7 +36,7 @@ export const AdminSelect=forwardRef<HTMLButtonElement,Omit<SelectHTMLAttributes<
  },[open,disabled]);
  useEffect(()=>{if(open)popup.current?.querySelector(`[data-option-index="${active}"]`)?.scrollIntoView({block:'nearest'});},[active,open]);
  function expand(){if(disabled||trigger.current?.matches(':disabled'))return;setQuery('');setActive(Math.max(0,options.findIndex(o=>o.value===selected)));setOpen(true);}
- function choose(option:Option){if(option.disabled||disabled)return;const field=native.current;if(field){field.value=option.value;field.dispatchEvent(new Event('change',{bubbles:true}));}setLocal(option.value);setOpen(false);trigger.current?.focus({preventScroll:true});}
+ function choose(option:Option){if(option.disabled||disabled||trigger.current?.matches(':disabled'))return;const field=native.current;if(field){field.value=option.value;field.dispatchEvent(new Event('change',{bubbles:true}));}setLocal(option.value);setOpen(false);trigger.current?.focus({preventScroll:true});}
  function keyboard(e:React.KeyboardEvent){
   if(e.key==='Escape'&&open){e.preventDefault();e.stopPropagation();setOpen(false);trigger.current?.focus({preventScroll:true});return;}
   if(e.key==='Tab'){setOpen(false);return;}
