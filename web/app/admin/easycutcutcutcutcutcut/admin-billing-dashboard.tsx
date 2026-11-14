@@ -97,7 +97,9 @@ export function AdminBillingDashboard({
     if (!dialog) return;
     dialog.close();
     if (selectedDay) dialog.showModal();
-    else dialog.show();
+    // show() runs the browser's dialog focus steps and scrolls to the orders.
+    // Inline results must become visible without taking focus on page load.
+    else dialog.setAttribute("open", "");
   }, [selectedDay]);
   const [loadedOrders, setLoadedOrders] = useState<AdminOrder[]>([]);
   const [hasMoreOrders, setHasMoreOrders] = useState(false);
@@ -294,7 +296,7 @@ export function AdminBillingDashboard({
       <AdminBillingCalendar month={month} currency={currency} selectedDay={selectedDay} provider={filters.provider} query={filters.query}
         onMonthChange={value => { setMonth(value); setSelectedDay(null); }}
         onCurrencyChange={value => { setCurrency(value); setSelectedDay(null); }} onSelectDay={selectDay} />
-      <dialog ref={dayDialogRef} className={selectedDay ? styles.dayDialog : styles.inlineOrders} onCancel={() => selectDay(null)} aria-labelledby="billing-orders-title">
+      <dialog ref={dayDialogRef} role={selectedDay ? "dialog" : "region"} className={selectedDay ? styles.dayDialog : styles.inlineOrders} onCancel={() => selectDay(null)} aria-labelledby="billing-orders-title">
       <section className="overflow-hidden rounded-2xl border border-white/10 bg-[#1b1e24]">
         <div className="border-b border-white/10 p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
