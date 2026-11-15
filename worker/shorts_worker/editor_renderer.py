@@ -78,6 +78,7 @@ EDITOR_FONT_FILES = {
     EditorFontId.SUIT: "SUIT-Bold.woff2",
     EditorFontId.SPOQA_HAN_SANS_NEO: "SpoqaHanSansNeo-Bold.woff2",
     EditorFontId.NOTO_SANS_KR: "NotoSansKR-Variable.ttf",
+    EditorFontId.NOTO_SANS_JP: "NotoSansCJKjp-Variable.ttf",
     EditorFontId.NANUM_SQUARE_NEO: "NanumSquareNeo-Bold.ttf",
     EditorFontId.SANDBOX_AGGRO: "SandboxAggro-Bold.ttf",
     EditorFontId.JUA: "Jua-Regular.ttf",
@@ -94,6 +95,7 @@ EDITOR_FONT_DIRECTORY = Path(__file__).parent / "assets" / "editor_fonts"
 EDITOR_FONT_DEFAULT_VARIATION_WEIGHTS = {
     EditorFontId.NOTO_SERIF_KR: 700,
     EditorFontId.NOTO_SANS_KR: 700,
+    EditorFontId.NOTO_SANS_JP: 700,
 }
 TIMED_OVERLAY_TRANSITION_FRAMES = 3
 TIMED_OVERLAY_CONTIGUOUS_TOLERANCE_SECONDS = 0.001

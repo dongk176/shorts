@@ -42,6 +42,7 @@ EDITOR_FONT_DIRECTORY = Path(__file__).parent / "assets" / "editor_fonts"
 EDITOR_FONT_RENDER_FAMILIES = {
     EditorFontId.PRETENDARD: '"Editor V4 Pretendard"',
     EditorFontId.NOTO_SANS_KR: '"Editor V4 Noto Sans KR"',
+    EditorFontId.NOTO_SANS_JP: '"Editor V4 Noto Sans JP"',
     EditorFontId.DO_HYEON: '"Editor V4 Do Hyeon"',
     EditorFontId.JUA: '"Editor V4 Jua"',
     EditorFontId.JALNAN_2: '"Editor V4 Jalnan 2"',

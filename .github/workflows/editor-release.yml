@@ -200,6 +200,7 @@ jobs:
             def expected_files: {
               "pretendard":"Pretendard-Bold.woff2",
               "noto-sans-kr":"NotoSansKR-Variable.ttf",
+              "noto-sans-jp":"NotoSansCJKjp-Variable.ttf",
               "do-hyeon":"DoHyeon-Regular.ttf",
               "jua":"Jua-Regular.ttf",
               "jalnan-2":"Jalnan2-Regular.woff2",
@@ -222,7 +223,7 @@ jobs:
             def font_root: "/app/worker/shorts_worker/assets/editor_fonts/";
             (.sha256 | test("^[0-9a-f]{64}$"))
             and (.fallbackDetected == false)
-            and (.entries | type == "array" and length == 20)
+            and (.entries | type == "array" and length == 21)
             and ([.entries[].fontId] | sort) == (expected_files | keys | sort)
             and ([.entries[] | select(
               (keys | sort) != (["cssToAssBaselineOffsetEm","cssToAssScale","fontId","postscriptName","resolvedPath","sha256","titleBaselineOffsetEm","wordSpaceAdvanceEm"] | sort)

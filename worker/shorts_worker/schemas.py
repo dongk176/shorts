@@ -45,6 +45,7 @@ class EditorFontId(StrEnum):
     SUIT = "suit"
     SPOQA_HAN_SANS_NEO = "spoqa-han-sans-neo"
     NOTO_SANS_KR = "noto-sans-kr"
+    NOTO_SANS_JP = "noto-sans-jp"
     NANUM_SQUARE_NEO = "nanum-square-neo"
     SANDBOX_AGGRO = "sandbox-aggro"
     JUA = "jua"
@@ -463,6 +464,7 @@ EDITOR_FONT_FILE_IDS = {
     EditorFontId.SUIT: "SUIT-Bold.woff2",
     EditorFontId.SPOQA_HAN_SANS_NEO: "SpoqaHanSansNeo-Bold.woff2",
     EditorFontId.NOTO_SANS_KR: "NotoSansKR-Variable.ttf",
+    EditorFontId.NOTO_SANS_JP: "NotoSansCJKjp-Variable.ttf",
     EditorFontId.NANUM_SQUARE_NEO: "NanumSquareNeo-Bold.ttf",
     EditorFontId.SANDBOX_AGGRO: "SandboxAggro-Bold.ttf",
     EditorFontId.JUA: "Jua-Regular.ttf",
@@ -498,6 +500,7 @@ EDITOR_FONT_STATIC_WEIGHTS = {
 EDITOR_FONT_VARIABLE_IDS = {
     EditorFontId.NOTO_SERIF_KR,
     EditorFontId.NOTO_SANS_KR,
+    EditorFontId.NOTO_SANS_JP,
 }
 
 

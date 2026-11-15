@@ -24,6 +24,9 @@ PROBE_TEMPLATE_ID = "00000000-0000-4000-8000-000000000001"
 PROBE_ASSET_ID = "00000000-0000-4000-8000-000000000002"
 
 
+TEMPLATE_DESIGN_FONT_IDS = tuple(font for font in EditorFontId if font != EditorFontId.NOTO_SANS_JP)
+
+
 def custom_template_design_evidence(
     *,
     source_git_sha: str,
@@ -52,7 +55,7 @@ def custom_template_design_evidence(
         or not 0 <= error <= 2
         or not isinstance(fonts, list)
         or len(fonts) != 20
-        or set(fonts) != {font.value for font in EditorFontId}
+        or set(fonts) != {font.value for font in TEMPLATE_DESIGN_FONT_IDS}
         or not isinstance(frames, list)
         or len(frames) != 5
         or any(not isinstance(frame, dict) for frame in frames)
@@ -83,7 +86,7 @@ def design_probe_config(*, text_behind_video: bool = False) -> CustomTemplateCon
         },
         "width": 300,
         "scale": 0.52,
-    } for index, font in enumerate(EditorFontId)]
+    } for index, font in enumerate(TEMPLATE_DESIGN_FONT_IDS)]
     text_layers = [f"text:{overlay['id']}" for overlay in overlays]
     return CustomTemplateConfig.model_validate({
         "schemaVersion": 4,
@@ -268,8 +271,8 @@ def verify_custom_template_design(*, root: Path, settings: Settings) -> dict[str
     if max(ImageStat.Stat(deleted_frame.crop((0, 0, 1080, 580))).stddev) > 1:
         raise RenderError("삭제한 템플릿 텍스트가 다시 나타났습니다.")
     return {
-        "caseCount": 3, "fontIds": [font.value for font in EditorFontId],
-        "textOverlayCount": len(EditorFontId), "wrapRevision": DESIGN_WRAP_REVISION,
+        "caseCount": 3, "fontIds": [font.value for font in TEMPLATE_DESIGN_FONT_IDS],
+        "textOverlayCount": len(TEMPLATE_DESIGN_FONT_IDS), "wrapRevision": DESIGN_WRAP_REVISION,
         "maximumFrameMeanError": round(max(errors), 6), "deletedTextPreserved": True,
         "backgroundSha256": hashlib.sha256(background.read_bytes()).hexdigest(),
         "frames": [{"file": path.name, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
