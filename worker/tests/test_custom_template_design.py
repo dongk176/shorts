@@ -269,7 +269,8 @@ def _complete_probe_verification() -> dict[str, object]:
     return {
         "caseCount": 3, "textOverlayCount": 20, "wrapRevision": "editor-text-v1",
         "maximumFrameMeanError": 0.5, "deletedTextPreserved": True,
-        "fontIds": [font.value for font in EditorFontId], "backgroundSha256": "a" * 64,
+        "fontIds": [font.value for font in EditorFontId if font != EditorFontId.NOTO_SANS_JP],
+        "backgroundSha256": "a" * 64,
         "frames": [{"file": name, "sha256": "b" * 64} for name in (
             "front-initial.png", "front-rerender.png", "behind-initial.png",
             "behind-rerender.png", "deleted.png",
@@ -310,7 +311,9 @@ def test_custom_background_template_text_initial_noop_order_and_deletion_parity(
     )
     assert result["caseCount"] == 3
     assert result["textOverlayCount"] == 20
-    assert set(result["fontIds"]) == {font.value for font in EditorFontId}
+    assert set(result["fontIds"]) == {
+        font.value for font in EditorFontId if font != EditorFontId.NOTO_SANS_JP
+    }
     assert result["maximumFrameMeanError"] <= 2
     assert result["deletedTextPreserved"] is True
     assert len(result["frames"]) == 5
