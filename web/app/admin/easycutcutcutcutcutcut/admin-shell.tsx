@@ -46,8 +46,8 @@ type AdminMetrics = {
 
 type AdminOverviewData = {
   metrics: AdminMetrics;
-  salesTrend: AdminTrendData;
-  memberTrend: AdminTrendData;
+  salesTrend?: AdminTrendData;
+  memberTrend?: AdminTrendData;
 };
 
 type AdminShellProps = {
@@ -436,7 +436,7 @@ export function AdminShell({
 
             {activeTab !== "billing" && <AdminPaddleSales />}
             <div className={styles.analyticsGrid} hidden={activeTab === "billing"}>
-              {overview && activeTab !== "billing" ? (
+              {overview?.salesTrend && overview.memberTrend && activeTab !== "billing" ? (
                 <>
                   <AdminTrendCard key={`${activeTab}-sales`} initialData={overview.salesTrend} />
                   <AdminTrendCard key={`${activeTab}-members`} initialData={overview.memberTrend} />

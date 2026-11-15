@@ -337,6 +337,12 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
           limit 1
         `,
         db`
+          with visible_editor_releases as (
+            (select id from shorts_mvp.editor_releases order by created_at desc limit 30)
+            union
+            select unnest(array[stable_release_id,candidate_release_id,previous_stable_release_id])
+            from shorts_mvp.editor_release_state where singleton
+          )
           select release.id,git_sha,ui_version,document_version,
             worker_image_digest,production_job_definition_arn,status,
             subtitle_editing_capable,render_spec_version,
@@ -352,19 +358,20 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
                 and design_check.details#>>'{customTemplateDesign,passed}'='true'
             ) as custom_template_design_verified
           from shorts_mvp.editor_releases release
-          where ${true}::boolean
+          where release.id in (select id from visible_editor_releases)
+            and ${true}::boolean
           order by release.created_at desc
-          limit 30
         `,
         db`
+          with visible_editor_releases as (
+            (select id from shorts_mvp.editor_releases order by created_at desc limit 30)
+            union
+            select unnest(array[stable_release_id,candidate_release_id,previous_stable_release_id])
+            from shorts_mvp.editor_release_state where singleton
+          )
           select release_id,environment,check_name,status,updated_at
           from shorts_mvp.editor_release_checks
-          where release_id in (
-            select id
-            from shorts_mvp.editor_releases
-            order by created_at desc
-            limit 30
-          )
+          where release_id in (select id from visible_editor_releases)
             and ${true}::boolean
           order by updated_at desc
         `,
