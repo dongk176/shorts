@@ -401,9 +401,30 @@ async function assertPublicPreservingSuccessor(
   const stable = stableRows[0];
   if (!stable || stable.status !== "stable"
     || stable.renderSpecVersion !== 4 || release.renderSpecVersion !== 4
-    || stable.captionRenderSpecVersion !== 4 || release.captionRenderSpecVersion !== 4
-    || stable.fontManifestSha256 !== release.fontManifestSha256) {
+    || stable.captionRenderSpecVersion !== 4 || release.captionRenderSpecVersion !== 4) {
     throw new HttpError(409, "동일 렌더·폰트 규격의 검증된 후속 버전만 공개 설정을 유지할 수 있습니다.", "EDITOR_SUCCESSOR_CAPABILITY_MISMATCH");
+  }
+  if (stable.fontManifestSha256 !== release.fontManifestSha256) {
+    // The protected DB contract verifies finalized, versioned additive-font
+    // evidence for this exact pair; arbitrary manifest changes remain blocked.
+    let fontContract;
+    try {
+      const rows = await tx`
+        select shorts_mvp._project_target_successor_contract(
+          ${expectedStableReleaseId}::uuid,${String(release.id)}::uuid,false
+        )::text as proof_json
+      `;
+      fontContract = JSON.parse(rows[0]?.proofJson ?? "null");
+    } catch {
+      throw new HttpError(409, "기존 글꼴을 유지한 후속 버전인지 검증되지 않았습니다.", "EDITOR_SUCCESSOR_CAPABILITY_MISMATCH");
+    }
+    if (fontContract?.sourceGitSha !== release.gitSha
+      || fontContract?.workerImageDigest !== release.workerImageDigest
+      || fontContract?.fontManifestSha256 !== release.fontManifestSha256
+      || fontContract?.compatibleSuccessor?.predecessorReleaseId !== expectedStableReleaseId
+      || fontContract?.compatibleSuccessor?.fontManifestSha256 !== stable.fontManifestSha256) {
+      throw new HttpError(409, "글꼴 호환 증거가 현재 운영·후보 버전과 다릅니다.", "EDITOR_SUCCESSOR_CAPABILITY_MISMATCH");
+    }
   }
   const runtime = await tx`
     select enabled from shorts_mvp.runtime_feature_flags

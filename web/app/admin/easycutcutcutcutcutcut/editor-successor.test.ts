@@ -32,12 +32,15 @@ const canary = ["save-render-download", "gemini-comments", "reopen-reedit", "rol
 function database(options: {
   state?: Record<string, unknown>; release?: Record<string, unknown>; stable?: Record<string, unknown>;
   missingCheck?: string; runtimeEnabled?: boolean; lease?: boolean; targetDrift?: boolean;
-  successorAdminReleaseId?: string | null;
+  successorAdminReleaseId?: string | null; fontContract?: unknown;
 } = {}) {
   const calls: Array<{ sql: string; values: unknown[] }> = [];
   const tx = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
     const sql = strings.join("?").replace(/\s+/g, " ").trim();
     calls.push({ sql, values });
+    if (sql.includes("select shorts_mvp._project_target_successor_contract")) {
+      return options.fontContract ? [{ proofJson: JSON.stringify(options.fontContract) }] : [];
+    }
     if (sql.includes("select shorts_mvp.editor_target_successor_admin_release")) {
       return [{ releaseId: options.successorAdminReleaseId === undefined ? CANDIDATE : options.successorAdminReleaseId }];
     }
@@ -155,6 +158,24 @@ describe("explicit compatible editor successor", () => {
     const db = database(options);
     await expect(promoteEditorRelease(CANDIDATE, STABLE)).rejects.toBeInstanceOf(Error);
     expect(db.mutations()).toEqual([]);
+  });
+  it("accepts only the DB-attested additive font identity without changing public settings", async () => {
+    const font = "f".repeat(64);
+    const contract = { sourceGitSha: "b".repeat(40), workerImageDigest: `sha256:${"c".repeat(64)}`,
+      fontManifestSha256: font, compatibleSuccessor: { predecessorReleaseId: STABLE, fontManifestSha256: FONT } };
+    mocks.targets.mockReturnValue(Array.from({ length: 5 }, (_, targetKey) => ({ targetKey,
+      v4Capability: { renderSpecVersion: 4, captionRenderSpecVersion: 4, fontManifestSha256: font } })));
+    const db = database({ release: { fontManifestSha256: font }, fontContract: contract });
+    await promoteEditorRelease(CANDIDATE, STABLE);
+    expect(db.calls.find(({sql}) => sql.includes("_project_target_successor_contract"))?.values).toEqual([STABLE,CANDIDATE]);
+    expect(db.mutations().map(({sql}) => sql).join("\n")).not.toMatch(/render_v4_(rollout_percent|kill_switch|internal_enabled)=/);
+    for (const drift of [{sourceGitSha:OLD_SHA},{workerImageDigest:OLD_DIGEST},{fontManifestSha256:FONT},
+      {compatibleSuccessor:{predecessorReleaseId:CANDIDATE,fontManifestSha256:FONT}},
+      {compatibleSuccessor:{predecessorReleaseId:STABLE,fontManifestSha256:font}}]) {
+      const invalid = database({ release: { fontManifestSha256: font }, fontContract: {...contract,...drift} });
+      await expect(promoteEditorRelease(CANDIDATE,STABLE)).rejects.toMatchObject({code:"EDITOR_SUCCESSOR_CAPABILITY_MISMATCH"});
+      expect(invalid.mutations()).toEqual([]);
+    }
   });
   it("cannot substitute a merely-v4 renderer for the new verified contract", async () => {
     const db = database();
