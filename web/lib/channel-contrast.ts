@@ -34,9 +34,9 @@ export function channelContrastStyle(
 // Candidate IDs remain unreachable until their immutable renderer verification and rollout.
 // Older owned projects retain the preview matching their pinned renderer.
 const channelContrastReleaseIds = new Set([
-  "0da9c98f-ac82-4768-b26f-e5be1cee6989",
-  "34df634e-d49a-4171-b3ea-f86199543ec1",
-  "6f50a87c-250c-4d3e-a8c9-b79d1fbc2f91",
+  "752221d5-00c6-48fc-b4b5-af2d8ddc9182",
+  "c8324dfe-06f1-4765-b6d3-14410d8bd114",
+  "3355b631-73ec-4f0f-a669-1fd460d2c284",
   "ec4790a8-1c5c-41c8-ab95-c1e1db19055c",
   "f8f16bdc-a6ec-4de2-b4ed-08947d4b2994"
 ]);
