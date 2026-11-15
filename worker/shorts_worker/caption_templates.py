@@ -52,6 +52,7 @@ CAPTION_FONT_FAMILIES = {
     EditorFontId.SUIT: "SUIT",
     EditorFontId.SPOQA_HAN_SANS_NEO: "Spoqa Han Sans Neo",
     EditorFontId.NOTO_SANS_KR: "Noto Sans KR",
+    EditorFontId.NOTO_SANS_JP: "Noto Sans CJK JP",
     EditorFontId.NANUM_SQUARE_NEO: "NanumSquare Neo",
     EditorFontId.SANDBOX_AGGRO: "SB Aggro",
     EditorFontId.JUA: "Jua",

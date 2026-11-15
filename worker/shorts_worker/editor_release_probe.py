@@ -48,6 +48,7 @@ from .subtitles import TranscriptWord
 FONT_IDS = (
     "pretendard",
     "noto-sans-kr",
+    "noto-sans-jp",
     "do-hyeon",
     "jua",
     "jalnan-2",
@@ -67,6 +68,9 @@ FONT_IDS = (
     "ridi-batang",
     "paperlogy",
 )
+
+# The design editor still exposes the original 20 fonts; JP is title-only.
+TEXT_OVERLAY_FONT_IDS = tuple(font for font in FONT_IDS if font != "noto-sans-jp")
 
 PROBE_SCENARIOS = (
     "baseline",
@@ -227,12 +231,12 @@ def _document(scenario: str = "baseline") -> EditorDocument:
             "startSeconds": 0,
             "endSeconds": 3.5,
         }
-        for index, font_id in enumerate(FONT_IDS)
+        for index, font_id in enumerate(TEXT_OVERLAY_FONT_IDS)
     ]
     layer_order = [
         "video",
         "comment",
-        *[f"text:font-{index}" for index in range(len(FONT_IDS))],
+        *[f"text:font-{index}" for index in range(len(TEXT_OVERLAY_FONT_IDS))],
         "title",
         "channel",
     ]
