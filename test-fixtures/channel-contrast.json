@@ -1,0 +1,10 @@
+[
+ {"name":"short video","video":[0,432,1080,608],"channel":[540,1700,800,48],"color":"#FFFFFF","background":null,"active":false},
+ {"name":"portrait overlaps","video":[0,0,1080,1920],"channel":[540,1700,800,48],"color":"#FFFFFF","background":null,"active":true,"stroke":"#000000"},
+ {"name":"dark glyph","video":[0,0,1080,1920],"channel":[540,1700,800,48],"color":"#111111","background":null,"active":true,"stroke":"#FFFFFF"},
+ {"name":"explicit background","video":[0,0,1080,1920],"channel":[540,1700,800,48],"color":"#FFFFFF","background":"#222222","active":false},
+ {"name":"touching edge","video":[0,0,1080,1664],"channel":[540,1700,800,48],"color":"#FFFFFF","background":null,"active":false},
+ {"name":"one pixel overlap","video":[0,0,1080,1665],"channel":[540,1700,800,48],"color":"#FFFFFF","background":null,"active":true,"stroke":"#000000"},
+ {"name":"horizontal separation","video":[0,0,100,1920],"channel":[800,1700,300,48],"color":"#FFFFFF","background":null,"active":false},
+ {"name":"outside canvas","video":[0,1900,1080,500],"channel":[540,2100,800,48],"color":"#FFFFFF","background":null,"active":false}
+]
