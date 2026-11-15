@@ -19,6 +19,7 @@ from .caption_templates import (
     reflow_caption_cues_for_clips,
     verify_caption_font_selection_v4,
 )
+from .channel_contrast import channel_overlaps_video, channel_stroke
 from .config import Settings
 from .editor_text_layout import composition_steps, normalize_composition_layer_order
 from .errors import RenderError
@@ -1379,6 +1380,19 @@ def create_editor_channel_layer(
         caption_render_spec,
         custom_template_config=config,
     )
+    video_frame = editor_video_frame(document, caption_render_spec)
+    channel_scale = document.overlays.scales["channel"]
+    channel_offset = document.overlays.offsets["channel"]
+
+    def protect(
+        x: float, y: float, width: float, size: float, background: str | None = None,
+    ) -> bool:
+        return channel_overlaps_video(
+            (video_frame.x, video_frame.y, video_frame.width, video_frame.height),
+            x + channel_offset.x, y + channel_offset.y,
+            width * channel_scale, size * channel_scale, background,
+        )
+
     font_id = document.overlays.fonts["channel"]
     if caption_layout is not None:
         base_font_size = 48
@@ -1511,6 +1525,9 @@ def create_editor_channel_layer(
         name,
         font=font,
         fill=foreground,
+        **channel_stroke(
+            protect(center_x, center_y, maximum_width, base_font_size, background), foreground,
+        ),
     )
     content = _scale_layer(content, document.overlays.scales["channel"])
     offset = document.overlays.offsets["channel"]

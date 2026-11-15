@@ -14,6 +14,7 @@ from .caption_templates import (
     prepare_caption_fonts,
     verify_caption_font_selection_v4,
 )
+from .channel_contrast import channel_overlaps_video
 from .config import Settings
 from .editor_text_layout import (
     composition_steps,
@@ -541,6 +542,7 @@ class VideoRenderer:
                 else video_layout(layout_ratio)
             )
         )
+        channel_video_rect = (0, layout.video_y, CANVAS_WIDTH, layout.video_height)
         overlay_started_at = time.monotonic()
         top, bottom = create_panel_overlays(
             title=title,
@@ -552,6 +554,9 @@ class VideoRenderer:
             channel_thumbnail_path=channel_thumbnail_path,
             top_height=layout.top_height,
             bottom_height=layout.bottom_height,
+            protect_channel_contrast=channel_overlaps_video(
+                channel_video_rect, 540, layout.bottom_y + layout.bottom_height / 2, 800, 48,
+            ),
             overlay_mode=layout.overlay_mode,
             title_text_styles=caption_title_text_styles(
                 caption_render_spec,
@@ -611,6 +616,12 @@ class VideoRenderer:
                 bottom,
                 channel_thumbnail_path=channel_thumbnail_path,
                 panel_height=PRESET_CHANNEL_OVERLAY_HEIGHT,
+                protect_contrast=channel_overlaps_video(
+                    channel_video_rect, 540,
+                    preset_channel_center_y(
+                        template_id.value, video_aspect_ratio.value, preset_version,
+                    ), 800, 48,
+                ),
                 overlay_mode=True,
             )
             channel_overlay_y = (
@@ -637,6 +648,10 @@ class VideoRenderer:
                     bottom,
                     channel_name=channel_name,
                     channel_center_y=comment_channel_center_y,
+                    protect_contrast=channel_overlaps_video(
+                        channel_video_rect, 540,
+                        layout.bottom_y + comment_channel_center_y, 800, 42,
+                    ),
                     channel_thumbnail_path=channel_thumbnail_path,
                     overlay_mode=layout.overlay_mode,
                 )
