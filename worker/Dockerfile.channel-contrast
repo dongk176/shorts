@@ -1,0 +1,8 @@
+# Preserve the exact currently deployed runtime dependencies for this bounded patch.
+# The older from-scratch package pins are no longer served by Alpine.
+FROM 181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:8af59b84aa7df9798275769d14047b62c1859564e7348a2010d410315fc6ca59 AS render
+WORKDIR /app/worker
+COPY shorts_worker ./shorts_worker
+ARG WORKER_SOURCE_GIT_SHA=legacy
+RUN printf '%s\n' "$WORKER_SOURCE_GIT_SHA" > /app/worker/.worker-source-git-sha \
+    && python -c "from shorts_worker.editor_renderer import verify_editor_fonts; verify_editor_fonts()"
