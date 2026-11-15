@@ -1,0 +1,32 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { PGlite } from '../test-tools/node_modules/@electric-sql/pglite/dist/index.js';
+const base=fs.readFileSync(new URL('../supabase/migrations/202608310003_project_target_successor.sql',import.meta.url),'utf8');
+const migration=fs.readFileSync(new URL('../supabase/migrations/20261115142757_project_successor_predecessor_font_binding.sql',import.meta.url),'utf8');
+const extract=name=>new RegExp(`create or replace function shorts_mvp\\.${name}\\([\\s\\S]*?\\n\\$\\$;`).exec(base)[0];
+const oldId='11111111-1111-4111-8111-111111111111',newId='22222222-2222-4222-8222-222222222222',admin='33333333-3333-4333-8333-333333333333';
+const oldFont='a'.repeat(64),newFont='b'.repeat(64);
+const target=(suffix,font)=>({releaseId:suffix,workerSourceGitSha:suffix.repeat(40),jobDefinitionArn:suffix,jobQueueArn:'same',imageUri:'repo@sha256:'+suffix.repeat(64),renderSpecVersion:4,captionRenderSpecVersion:4,fontManifestSha256:font});
+const dbTarget=t=>({batchTargetReleaseId:t.releaseId,workerSourceGitSha:t.workerSourceGitSha,jobDefinitionArn:t.jobDefinitionArn,jobQueueArn:t.jobQueueArn,workerImageDigest:t.imageUri.split('@')[1]});
+async function setup(font=newFont){
+ const db=new PGlite();
+ await db.exec(`create schema shorts_mvp; create table shorts_mvp.app_users(id uuid,is_admin boolean,withdrawn_at timestamptz);
+ create table shorts_mvp.editor_release_state(singleton boolean,render_v4_target_successor jsonb,render_v4_infra_lease_id uuid,render_v4_infra_lease_expires_at timestamptz);
+ create table shorts_mvp.runtime_feature_flags(flag_key text);create table shorts_mvp.admin_audit_logs(actor_user_id uuid,action text,entity_type text,entity_id text,metadata jsonb);
+ create table shorts_mvp.fixture(proof jsonb);insert into shorts_mvp.app_users values('${admin}',true,null);insert into shorts_mvp.editor_release_state values(true,null,null,null);
+ insert into shorts_mvp.runtime_feature_flags values('editor_rendering_v2');
+ create function shorts_mvp._project_target_successor_contract(uuid,uuid) returns jsonb language plpgsql as $$declare p jsonb;begin select proof into p from shorts_mvp.fixture;if p is null then raise exception 'immutable proof required';end if;return p;end;$$;
+ create function shorts_mvp._project_target_successor_flags() returns jsonb language sql as $$select '{"publicEnabled":true,"runtimeEnabled":true,"killSwitch":false,"rolloutPercent":100}'::jsonb$$;`);
+ await db.exec(extract('_assert_project_successor_registry'));await db.exec(migration);
+ const old=target('c',oldFont),next=target('d',font);
+ const registry=current=>({version:1,environment:'production',lanes:{legacy_project:{current,schedulingMode:'fifo'}}});
+ const binding={head:'e'.repeat(40),base:'f'.repeat(40),oldRegistrySha256:'1'.repeat(64),newRegistrySha256:'2'.repeat(64),oldRegistry:registry(old),newRegistry:registry(next),oldRuntime:Object.fromEntries(['editorTemplateSha256','computeTemplateSha256','registrarCodeSha256','submitterCodeSha256','inventorySha256'].map(k=>[k,'3'.repeat(64)]))};
+ binding.newRegistry.lanes.legacy_project.previous={...old,submitAsReleaseId:old.releaseId};
+ await db.query('insert into shorts_mvp.fixture values($1)',[{fontManifestSha256:font,compatibleSuccessor:{fontManifestSha256:oldFont},oldTargets:{legacy_project:dbTarget(old)},newTargets:{legacy_project:dbTarget(next)}}]);
+ const begin=()=>db.query('select shorts_mvp.begin_project_target_successor($1,$2,$3,$4) as value',[oldId,newId,binding,admin]);return {db,binding,begin};
+}
+for(const [name,font] of [['unchanged fonts',oldFont],['attested additive fonts',newFont]])test(name,async()=>{const {db,begin}=await setup(font);try{assert.equal((await begin()).rows[0].value.phase,'fenced');}finally{await db.close();}});
+for(const side of ['oldRegistry','newRegistry'])test(`rejects wrong ${side} font`,async()=>{const {db,begin,binding}=await setup();try{binding[side].lanes.legacy_project.current.fontManifestSha256='0'.repeat(64);await assert.rejects(begin(),/registry target differs/);assert.equal((await db.query('select render_v4_target_successor as value from shorts_mvp.editor_release_state')).rows[0].value,null);}finally{await db.close();}});
+test('keeps immutable proof and administrator gates',async()=>{const {db,begin}=await setup();try{await db.exec('delete from shorts_mvp.fixture');await assert.rejects(begin(),/immutable proof required/);await db.exec('update shorts_mvp.app_users set is_admin=false');await assert.rejects(begin(),/administrator required/);}finally{await db.close();}});
+test('changes only the old registry font argument',()=>{const original=extract('begin_project_target_successor');const expected=original.replace("p_binding->'oldRegistry',v_proof->'oldTargets',v_proof->>'fontManifestSha256'","p_binding->'oldRegistry',v_proof->'oldTargets',v_proof#>>'{compatibleSuccessor,fontManifestSha256}'");assert.equal(migration.slice(migration.indexOf('create or replace')).trim(),expected.trim());});

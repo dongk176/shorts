@@ -18,6 +18,7 @@ const SUCCESSOR_MIGRATION = path.join(
 );
 const ADDITIVE_FONT_MIGRATION = path.join(ROOT, "supabase/migrations/20261106162500_project_additive_font_proof.sql");
 const FUNCTION_MIGRATIONS = Object.freeze({
+  begin_project_target_successor: path.join(ROOT, "supabase/migrations/20261115142757_project_successor_predecessor_font_binding.sql"),
   _project_target_successor_contract: ADDITIVE_FONT_MIGRATION,
   record_project_font_successor_proof: ADDITIVE_FONT_MIGRATION,
   _project_successor_fonts_compatible: ADDITIVE_FONT_MIGRATION,
