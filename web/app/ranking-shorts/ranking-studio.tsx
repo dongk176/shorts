@@ -1268,7 +1268,7 @@ export function RankingStudio({
               controlsBelow
               framedSources={Object.fromEntries(visible.flatMap(item => item.source ? [[item.source.id,{width:item.source.width,height:item.source.height,framing:item.framing}]] : []))}
               localMedia={localMedia}
-              key={sequenceKey + hasRemote + transitionSound + backgroundMusic?.sourceId + backgroundMusic?.volume}
+              resetKey={sequenceKey + hasRemote + transitionSound + backgroundMusic?.sourceId + backgroundMusic?.volume}
               layoutOnly={hasRemote}
               clips={sequence}
               backgroundMusic={backgroundMusic}

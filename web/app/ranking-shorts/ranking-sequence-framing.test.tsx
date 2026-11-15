@@ -74,3 +74,47 @@ it("pauses media/music when the completed output or a mobile sheet takes focus",
   expect(current().paused).toBe(true);expect(container.querySelector<HTMLAudioElement>("audio")!.paused).toBe(true);
   expect(container.querySelector<HTMLButtonElement>(".ranking-preview-toggle")!.disabled).toBe(true);
 });
+
+it("keeps buffered media while trimming and resets playback to the edited sequence", async () => {
+  await mount({resetKey:"before"});
+  const media = Array.from(container.querySelectorAll("video"));
+  const audio = container.querySelector("audio");
+  await clickPlay();
+  await tick(3);
+  await tick(.86);
+  expect(current().getAttribute("src")).toBe("blob:b");
+  const clips = props.clips.map((clip, index) => index === 0 ? {...clip, start:1.5, end:2.5} : clip);
+  await mount({clips, resetKey:"after"});
+  expect(Array.from(container.querySelectorAll("video"))).toEqual(media);
+  expect(container.querySelector("audio")).toBe(audio);
+  expect(current()).toBe(media[0]);
+  expect(current().currentTime).toBe(1.5);
+  expect(current().paused).toBe(true);
+  expect(audio!.paused).toBe(true);
+  await clickPlay();
+  await tick(2.5);
+  expect(current().getAttribute("src")).toBe("/audio/lip-bass.mp4");
+});
+
+it("retains sources when reordering and starts at the new first clip", async () => {
+  await mount({resetKey:"before"});
+  const a=current();
+  const b=container.querySelector<HTMLVideoElement>('video[src="blob:b"]')!;
+  await mount({clips:[props.clips[2],props.clips[0]], resetKey:"reordered"});
+  expect(current()).toBe(b);
+  expect(current().currentTime).toBe(2);
+  expect(container.querySelector('video[src="blob:a"]')).toBe(a);
+  await clickPlay();await tick(4);
+  expect(current()).toBe(a);
+});
+
+it("does not show a playback error when trimming cancels a pending play", async () => {
+  await mount({resetKey:"before"});
+  let rejectPlay!: (reason: unknown) => void;
+  play.mockImplementationOnce(() => new Promise((_resolve, reject) => {rejectPlay=reject;}));
+  await clickPlay();
+  await mount({resetKey:"trimmed"});
+  await act(async () => rejectPlay(new DOMException("interrupted", "AbortError")));
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(current().paused).toBe(true);
+});

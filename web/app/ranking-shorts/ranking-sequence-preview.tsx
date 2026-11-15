@@ -39,7 +39,9 @@ export function RankingSequencePreview({
   previewRank = 1,
   framedSources,
   controlsBelow = false,
+  resetKey,
 }: {
+  resetKey?: string;
   framedSources?: Record<string, {width:number;height:number;framing?:RankingFraming}>;
   controlsBelow?: boolean;
   clips: RankingPlaybackClip[];
@@ -143,7 +145,9 @@ export function RankingSequencePreview({
     });
   }
   function play(media: HTMLVideoElement) {
-    void media.play().catch(() => {
+    void media.play().catch((cause: unknown) => {
+      // Editing can pause a pending play() without a playback failure.
+      if ((cause instanceof DOMException && cause.name === "AbortError") || !intent.current || video.current !== media) return;
       intent.current = false;
       setPlaying(false);
       setError(ui("재생 버튼을 다시 눌러 주세요."));
@@ -207,23 +211,30 @@ export function RankingSequencePreview({
       media.currentTime = pendingSeek.current ?? clipStart;
       pendingSeek.current = null;
       transitioning.current = false;
-      if (intent.current) void media.play().catch(() => { intent.current = false; setPlaying(false); setError(ui("재생 버튼을 다시 눌러 주세요.")); });
+      if (intent.current) void media.play().catch((cause: unknown) => {
+        if ((cause instanceof DOMException && cause.name === "AbortError") || !intent.current || video.current !== media) return;
+        intent.current = false; setPlaying(false); setError(ui("재생 버튼을 다시 눌러 주세요."));
+      });
     }
   }, [index, clipStart, ui]);
   const framed = Boolean(framedSources);
   const selectedSourceId = previewSource?.id;
   const firstClipStart = clips[0]?.start;
   useEffect(() => {
-    if (!framed) return;
+    // Reset the transport without replacing video elements and their buffered bytes.
+    // The studio changes resetKey while trimming, reordering or changing music.
+    if (!framed && resetKey === undefined) return;
     intent.current = false; transitioning.current = false;
     mediaElements.current.forEach(media => media.pause());
+    music.current?.pause();
+    setError("");
     setPlaying(false); setElapsed(0); setIndex(0);
     const first = mediaElements.current.get(0);
     pendingSeek.current = firstClipStart ?? null;
     if (first && first.readyState >= 1 && firstClipStart !== undefined) {
       first.currentTime = firstClipStart; video.current = first; pendingSeek.current = null;
     }
-  }, [framed, selectedSourceId, previewStart, previewRank, firstClipStart]);
+  }, [framed, selectedSourceId, previewStart, previewRank, firstClipStart, resetKey]);
   const videoStyle = {
     "--ranking-video-top": `${(rankingDesign.layout.headerHeight / rankingDesign.layout.height) * 100}%`,
   } as CSSProperties;
