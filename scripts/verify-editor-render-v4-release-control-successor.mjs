@@ -189,6 +189,7 @@ export async function verifyProjectSuccessorSchema(tx) {
         "202609120001_admin_language_test.sql",
         "202611030001_admin_midform_projects.sql",
         "20261105075326_admin_silence_isolated_admission.sql",
+        "20261106181941_shorts_silence_parallel_admission.sql",
       ].map(file => fs.readFileSync(path.join(ROOT, "supabase/migrations", file), "utf8")));
     }
     const normalized = (text) => String(text || "").trim().replace(/\s+/gu, " ");

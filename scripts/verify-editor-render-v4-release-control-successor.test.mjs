@@ -352,11 +352,11 @@ test("exact migration bodies include additive font proof functions without cross
 });
 
 
-test("admission verifier composes the three committed guards in migration order", () => {
+test("admission verifier composes all four committed guards in migration order", () => {
   const read = file => fs.readFileSync(new URL(`../supabase/migrations/${file}`, import.meta.url), "utf8");
   const base = successorMigrationFunctionBody(read("202609020001_project_successor_admin_dual_admission.sql"), "enforce_project_target_successor_admission");
-  const body = successorAdmissionBody(base, ["202609120001_admin_language_test.sql", "202611030001_admin_midform_projects.sql", "20261105075326_admin_silence_isolated_admission.sql"].map(read));
-  assert.match(body, /assert_silence_test_job[\s\S]*assert_midform_job[\s\S]*assert_language_test_job/);
+  const body = successorAdmissionBody(base, ["202609120001_admin_language_test.sql", "202611030001_admin_midform_projects.sql", "20261105075326_admin_silence_isolated_admission.sql", "20261106181941_shorts_silence_parallel_admission.sql"].map(read));
+  assert.match(body, /assert_shorts_silence_inline_job[\s\S]*assert_silence_test_job[\s\S]*assert_midform_job[\s\S]*assert_language_test_job/);
   assert.ok(body.endsWith(base.slice(base.indexOf("  if new.source_type"))));
   assert.throws(() => successorAdmissionBody(base, ["unexpected migration"]));
 });
