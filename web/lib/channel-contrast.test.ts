@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
-import { channelContrastStyle, channelContrastColor } from "./channel-contrast";
+import { channelContrastStyle, channelContrastColor, editorHasChannelContrast } from "./channel-contrast";
 const cases = JSON.parse(readFileSync(new URL("../../test-fixtures/channel-contrast.json", import.meta.url), "utf8"));
 describe("channel contrast shared geometry", () => {
   for (const item of cases) it(item.name, () => {
@@ -16,4 +16,9 @@ describe("channel contrast shared geometry", () => {
     expect(channelContrastStyle({ video }, channel)).toEqual({});
     expect(channelContrastStyle({ video, offset: { x: 0, y: -450 }, scale: 1.5 }, channel).WebkitTextStroke).toBeDefined();
   });
+});
+
+it("keeps previews compatible with older pinned renderers", () => {
+ expect(editorHasChannelContrast(null)).toBe(false);
+ expect(editorHasChannelContrast("3c559307-a495-4082-9ac8-d5d9147452b9")).toBe(false);
 });

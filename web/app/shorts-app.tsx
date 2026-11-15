@@ -1,6 +1,6 @@
 "use client";
 import { ChannelContrastContext, useChannelContrast } from "@/components/channel-contrast-context";
-import { channelContrastStyle } from "@/lib/channel-contrast";
+import { channelContrastStyle, editorHasChannelContrast } from "@/lib/channel-contrast";
 
 import { conversionCopy } from "@/lib/conversion-copy";
 import { ProcessingTimeNotice } from "@/components/processing-time-notice";
@@ -11178,7 +11178,7 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
                   {activeSubtitle.text}
                 </button>}
           </div>}
-          <ChannelContrastContext.Provider value={{ video: editorVideoRect, offset: overlayOffsets.channel, scale: channelScale }}>
+          <ChannelContrastContext.Provider value={editorHasChannelContrast(editorRelease.releaseId) ? { video: editorVideoRect, offset: overlayOffsets.channel, scale: channelScale } : null}>
           {activeCustomTemplate
             ? <>
                 {renderOverlayLayout.visible.comment && templateId === "comment-capture" && layoutPreviewComment && activeCustomTemplate.config.comment.visible

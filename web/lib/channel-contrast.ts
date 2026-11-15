@@ -30,3 +30,16 @@ export function channelContrastStyle(
   // CSS stroke is centered on the glyph edge; Pillow's width is outward.
   return { WebkitTextStroke: `${6 / 10.8}cqw ${channelContrastColor(channel.color)}`, paintOrder: "stroke fill" };
 }
+
+// Candidate IDs remain unreachable until their immutable renderer verification and rollout.
+// Older owned projects retain the preview matching their pinned renderer.
+const channelContrastReleaseIds = new Set([
+  "0da9c98f-ac82-4768-b26f-e5be1cee6989",
+  "34df634e-d49a-4171-b3ea-f86199543ec1",
+  "6f50a87c-250c-4d3e-a8c9-b79d1fbc2f91",
+  "ec4790a8-1c5c-41c8-ab95-c1e1db19055c",
+  "f8f16bdc-a6ec-4de2-b4ed-08947d4b2994"
+]);
+export function editorHasChannelContrast(releaseId: string | null): boolean {
+  return releaseId !== null && channelContrastReleaseIds.has(releaseId);
+}
