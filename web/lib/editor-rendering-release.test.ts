@@ -71,6 +71,8 @@ describe("editor release gate", () => {
       candidateRenderSpecVersion: 4, candidateCaptionRenderSpecVersion: 4,
       candidateFontManifestSha256: fontManifestSha256,
       successorAdminReleaseId: releaseId,
+      successorFontManifestSha256: fontManifestSha256,
+      successorPredecessorFontManifestSha256: fontManifestSha256,
       ...overrides,
     });
   }
@@ -91,12 +93,27 @@ describe("editor release gate", () => {
     { renderV4KillSwitch: true }, { candidateDocumentVersion: 2 },
     { candidateRenderSpecVersion: 3 }, { candidateCaptionRenderSpecVersion: 3 },
     { candidateFontManifestSha256: "b".repeat(64) }, { candidateStatus: "failed" },
+    { successorFontManifestSha256: null },
+    { successorPredecessorFontManifestSha256: null },
+    { successorPredecessorFontManifestSha256: "b".repeat(64) },
   ])("never gives successor v4 authority without exact current attestation: %j", async (override) => {
     const db = vi.fn().mockResolvedValue([successorAdminRow(override)]);
     const result = await resolveEditorRelease(db as never, userId, {
       EDITOR_RENDERING_V2_ENABLED: "true", EDITOR_RENDERING_V2_GLOBAL_ENABLED: "true",
     });
     expect(result.releaseId === releaseId && result.renderV4Authorized === true).toBe(false);
+  });
+
+  it("authorizes additive fonts only when both exact manifests match the DB-attested handoff", async () => {
+    const addedFontManifest = "b".repeat(64);
+    const db = vi.fn().mockResolvedValue([successorAdminRow({
+      candidateFontManifestSha256: addedFontManifest,
+      successorFontManifestSha256: addedFontManifest,
+    })]);
+    await expect(resolveEditorRelease(db as never, userId, {
+      EDITOR_RENDERING_V2_ENABLED: "true", EDITOR_RENDERING_V2_GLOBAL_ENABLED: "true",
+    })).resolves.toMatchObject({ channel: "canary", releaseId, renderV4Authorized: true,
+      renderSpecVersion: 4, captionRenderSpecVersion: 4, fontManifestSha256: addedFontManifest });
   });
 
   it("uses render spec v3 only for a renderer release that passed its probe", () => {

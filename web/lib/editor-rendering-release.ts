@@ -168,6 +168,8 @@ type EditorReleaseRow = {
   renderV4RolloutBucket: number;
   /** Administrator-only handoff attested by the durable successor controller. */
   successorAdminReleaseId?: string | null;
+  successorFontManifestSha256?: string | null;
+  successorPredecessorFontManifestSha256?: string | null;
 };
 
 type EditorRenderV4ReleaseCapability = {
@@ -290,6 +292,10 @@ export async function resolveEditorRelease(
     select state.public_enabled,state.canary_enabled,
       shorts_mvp.editor_target_successor_admin_release(${userId}::uuid)
         as successor_admin_release_id,
+      state.render_v4_target_successor#>>'{proof,fontManifestSha256}'
+        as successor_font_manifest_sha256,
+      state.render_v4_target_successor#>>'{proof,compatibleSuccessor,fontManifestSha256}'
+        as successor_predecessor_font_manifest_sha256,
       coalesce(flag.enabled,false) as runtime_enabled,
       coalesce(tester.enabled,false) as tester_enabled,
       coalesce(release_user.is_admin,false) as user_is_admin,
@@ -355,7 +361,10 @@ export async function resolveEditorRelease(
     && state.successorAdminReleaseId === state.candidateReleaseId
     && ["canary_ready", "canary_active", "approved"].includes(state.candidateStatus || "")
     && state.candidateDocumentVersion === 3
-    && state.candidateFontManifestSha256 === state.stableFontManifestSha256
+    // The protected DB attestation verifies unchanged or additive fonts.
+    // Bind both sides to that frozen proof instead of requiring equal hashes.
+    && state.candidateFontManifestSha256 === state.successorFontManifestSha256
+    && state.stableFontManifestSha256 === state.successorPredecessorFontManifestSha256
     && exactEditorRenderV4Capability({
       renderSpecVersion: state.candidateRenderSpecVersion,
       captionRenderSpecVersion: state.candidateCaptionRenderSpecVersion,
