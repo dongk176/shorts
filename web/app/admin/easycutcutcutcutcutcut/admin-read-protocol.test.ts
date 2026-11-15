@@ -38,8 +38,9 @@ const baselineQueryHashes = [
   "7dc88590040d6bccfd3038808f8892fd12aae939070eb61f754f57fb6628a7f6",
   "b5fdee867e7b811213410e85d25a82d6e58502ddd4159263b0c38001a8211eaa",
   "2fd187b37d6fed9ae9687bcbc28c371b9b61c16b4ce153169a9ef1648ed50874",
-  "b198e326fce156b5ac6d6b3a6074de6107b07e7888e95af2d9c078e6b0dc9d49",
-  "4b32d0a5e0ee4d9d80c6ff7537932e86904334efa70681e35221b3a6a5247720",
+  // f4b8b32a adds selected stable/candidate/previous IDs to the latest thirty.
+  "62e9a39372d69541963249fceaa63d15db941309fd9743d0229dafbfe676dcbb",
+  "cc61d4eaa36ab36f685f3283b76adc9e1aca258f329f75a146c1d1dca2481f83",
   "d1d0c25753ec3833ef7453ef8afa3d355557cbde188eb3c512c8af2db59acdfe",
   "2de6becbf1a746aaff0bfe7d6a9c8c7502da6979033206a5acc8032d482bbab4",
   "5ab721261debd35e33c72a52e974a44ef645e6e5b05bb20d3617c22c216b70c4",
@@ -59,8 +60,8 @@ const baselineQueryHashes = [
   "fbe6aeb0be682dda4b25b941b0ab2b55b12f78a4d567c2c6ab7c70b866373d85",
 ];
 const targets = [
-  { index: 5, name: "releases", clause: "where", preceding: "from shorts_mvp.editor_releases release" },
-  { index: 6, name: "checks", clause: "and", preceding: ")" },
+  { index: 5, name: "releases", clause: "and", preceding: "where release.id in (select id from visible_editor_releases)" },
+  { index: 6, name: "checks", clause: "and", preceding: "where release_id in (select id from visible_editor_releases)" },
   { index: 7, name: "testers", clause: "where", preceding: "join shorts_mvp.app_users tester_user on tester_user.id=tester.user_id" },
   { index: 8, name: "renders", clause: "and", preceding: "where release_id is not null" },
 ] as const;
