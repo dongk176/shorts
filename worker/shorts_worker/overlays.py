@@ -7,6 +7,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps, UnidentifiedImageError
 
+from .channel_contrast import channel_overlaps_video, channel_stroke
 from .comment_emoji import comment_text_width, display_units, draw_comment_text
 from .content_language import comment_action_labels, japanese_comment_font
 from .font_manifest import normalized_editor_font_bytes
@@ -483,6 +484,7 @@ def create_channel_panel(
     channel_thumbnail_path: Path | None = None,
     panel_height: int = PANEL_HEIGHT,
     overlay_mode: bool = False,
+    protect_contrast: bool = False,
 ) -> Path:
     style = TEMPLATE_STYLES[template_id]
     if template_id is TemplateId.COMMENT_CAPTURE:
@@ -546,6 +548,7 @@ def create_channel_panel(
         name,
         font=font,
         fill=style.channel,
+        **channel_stroke(protect_contrast, style.channel),
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     image.save(output_path, format="PNG", optimize=True)
@@ -1004,6 +1007,7 @@ def _draw_custom_channel(
     channel_thumbnail_path: Path | None,
     center_x: float | None = None,
     font_id: EditorFontId | None = None,
+    protect_contrast: bool = False,
 ) -> int:
     draw = ImageDraw.Draw(image)
     font_size = layer.font_size
@@ -1061,6 +1065,7 @@ def _draw_custom_channel(
         name,
         font=font,
         fill=layer.color,
+        **channel_stroke(protect_contrast and not layer.background_color, layer.color),
     )
     return group_height + pad * 2
 
@@ -1071,6 +1076,7 @@ def caption_comment_channel_image(
     panel_height: int,
     font_id: EditorFontId = EditorFontId.PRETENDARD,
     thumbnail_path: Path | None = None,
+    protect_contrast: bool = False,
 ) -> Image.Image:
     """One white, bundled-font channel row for initial and edited captions."""
     panel = Image.new("RGBA", (PANEL_WIDTH, panel_height), (0, 0, 0, 0))
@@ -1083,6 +1089,7 @@ def caption_comment_channel_image(
         panel, channel_name=channel_name, layer=layer,
         center_y=panel_height / 2, channel_thumbnail_path=thumbnail_path,
         font_id=font_id,
+        protect_contrast=protect_contrast,
     )
     return panel
 
@@ -1094,6 +1101,7 @@ def add_comment_channel_to_panel(
     channel_center_y: float,
     channel_thumbnail_path: Path | None = None,
     overlay_mode: bool = False,
+    protect_contrast: bool = False,
 ) -> Path:
     """Add the persistent comment-template channel row to a static panel."""
     with Image.open(panel_path) as source:
@@ -1116,6 +1124,7 @@ def add_comment_channel_to_panel(
         center_y=channel_center_y,
         center_x=PANEL_WIDTH / 2,
         channel_thumbnail_path=channel_thumbnail_path,
+        protect_contrast=protect_contrast,
     )
     output = panel if overlay_mode else panel.convert("RGB")
     output.save(panel_path, format="PNG", optimize=True)
@@ -1169,6 +1178,11 @@ def create_custom_comment_overlay(
         layer=config.channel,
         center_y=channel_center_y,
         center_x=PANEL_WIDTH / 2,
+        protect_contrast=channel_overlaps_video(
+            (config.video.x, config.video.y, config.video.width, config.video.height),
+            PANEL_WIDTH / 2, channel_center_y + (comment_y or 0),
+            config.channel.max_width, config.channel.font_size, config.channel.background_color,
+        ),
         channel_thumbnail_path=channel_thumbnail_path,
     )
     combined.save(output_path, format="PNG", optimize=True)
@@ -1191,6 +1205,7 @@ def create_panel_overlays(
     overlay_mode: bool = False,
     title_text_styles: list[TitleTextStyle] | None = None,
     title_accent_color: str | None = None,
+    protect_channel_contrast: bool = False,
 ) -> tuple[Path, Path]:
     top = create_title_panel(
         title,
@@ -1210,6 +1225,7 @@ def create_panel_overlays(
         directory / f"{prefix}_bottom.png",
         channel_thumbnail_path=channel_thumbnail_path,
         panel_height=bottom_height,
+        protect_contrast=protect_channel_contrast,
         overlay_mode=overlay_mode,
     )
     return top, bottom
@@ -1336,6 +1352,12 @@ def create_custom_canvas_overlays(
             layer=config.channel,
             center_y=config.channel.y if channel_y_override is None else channel_y_override,
             channel_thumbnail_path=channel_thumbnail_path,
+            protect_contrast=channel_overlaps_video(
+                (config.video.x, config.video.y, config.video.width, config.video.height),
+                config.channel.x,
+                config.channel.y if channel_y_override is None else channel_y_override,
+                config.channel.max_width, config.channel.font_size, config.channel.background_color,
+            ),
         )
     channel_image.save(channel_path, format="PNG", optimize=True)
     return background_path, title_path, channel_path

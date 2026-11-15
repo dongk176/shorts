@@ -1,4 +1,6 @@
 "use client";
+import { ChannelContrastContext, useChannelContrast } from "@/components/channel-contrast-context";
+import { channelContrastStyle } from "@/lib/channel-contrast";
 
 import { conversionCopy } from "@/lib/conversion-copy";
 import { ProcessingTimeNotice } from "@/components/processing-time-notice";
@@ -1109,6 +1111,7 @@ function CommentCaptureChannel({
   onPointerDown?: PointerEventHandler<HTMLButtonElement>;
 }) {
   const ui = useUiText();
+  const contrastStyle = useChannelContrast({ x: 540, y: fixedCenterY ?? 1665, maxWidth: 800, fontSize: 42, color: "#FFFFFF" });
   const content = <>
     <ChannelAvatar
       url={channelThumbnailUrl}
@@ -1117,7 +1120,7 @@ function CommentCaptureChannel({
       fallbackBackground={COMMENT_BACKGROUND_COLOR}
       sizes="10px"
     />
-    <span className="max-w-[70cqw] truncate">{channelName}</span>
+    <span className="max-w-[70cqw] truncate" style={contrastStyle}>{channelName}</span>
   </>;
   return (
     <div
@@ -1173,6 +1176,7 @@ function FixedPresetChannel({
   onPointerDown?: PointerEventHandler<HTMLButtonElement>;
 }) {
   const ui = useUiText();
+  const contrastStyle = useChannelContrast({ x: 540, y: centerY, maxWidth: 800, fontSize: 48, color: foreground });
   const content = <>
     <ChannelAvatar
       url={channelThumbnailUrl}
@@ -1181,7 +1185,7 @@ function FixedPresetChannel({
       fallbackBackground={background}
       sizes="10px"
     />
-    <span className="max-w-[70cqw] truncate">{channelName}</span>
+    <span className="max-w-[70cqw] truncate" style={contrastStyle}>{channelName}</span>
   </>;
   return (
     <div
@@ -1242,6 +1246,7 @@ export function CaptionTemplateEditorChannel({
   fitSavedCommentChannel?: boolean;
 }) {
   const ui = useUiText();
+  const contrastStyle = useChannelContrast({ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, maxWidth: 800, fontSize, color: "#FFFFFF" });
   const [fitted, setFitted] = useState<ReturnType<typeof fitCaptionChannel> | null>(null);
   useEffect(() => {
     if (!fitSavedCommentChannel) return;
@@ -1273,7 +1278,7 @@ export function CaptionTemplateEditorChannel({
       fallbackBackground="#000000"
       sizes="20px"
     />
-    <span data-i18n-skip className="whitespace-nowrap">{channelFit?.wordSpacePx !== undefined
+    <span data-i18n-skip className="whitespace-nowrap" style={contrastStyle}>{channelFit?.wordSpacePx !== undefined
       ? channelFit.text.split(" ").map((word, index) => <span key={index}>{index > 0 && <span
           style={{ display: "inline-block", width: `${channelFit.wordSpacePx! / 10.8}cqw`, fontSize: 0 }}
         > </span>}{word}</span>)
@@ -1336,6 +1341,7 @@ function CustomEditorChannel({
   onPointerDown?: PointerEventHandler<HTMLButtonElement>;
 }) {
   const ui = useUiText();
+  const contrastStyle = useChannelContrast(template.config.channel);
   const channel = template.config.channel;
   if (!channel.visible && !forceVisible) return null;
   const style = {
@@ -1355,7 +1361,7 @@ function CustomEditorChannel({
       fallbackBackground={channel.backgroundColor || "#111111"}
       sizes="20px"
     />
-    <span className="truncate">{channelName}</span>
+    <span className="truncate" style={contrastStyle}>{channelName}</span>
   </>;
   if (onPointerDown) {
     return (
@@ -1404,6 +1410,7 @@ function PresetInlineEditorChannel({
   onPointerDown?: PointerEventHandler<HTMLButtonElement>;
 }) {
   const ui = useUiText();
+  const contrastStyle = useChannelContrast({ x: 540, y: 1665, maxWidth: 800, fontSize: 48, color: foreground });
   const content = <>
     <ChannelAvatar
       url={channelThumbnailUrl}
@@ -1412,7 +1419,7 @@ function PresetInlineEditorChannel({
       fallbackBackground={background}
       sizes="20px"
     />
-    <span className="whitespace-nowrap">{channelName}</span>
+    <span className="whitespace-nowrap" style={contrastStyle}>{channelName}</span>
   </>;
   if (!onPointerDown) {
     return <div className="flex items-start justify-center gap-2" style={{ fontFamily, fontWeight }}>{content}</div>;
@@ -1526,9 +1533,11 @@ function TemplatePreview({ template, videoAspectRatio, channelName, channelThumb
           ? <div className="h-full bg-[#040404]"><CommentCaptureCard outputLanguage={locale} comment={locale === "ko" ? TEMPLATE_PRESET_COMMENT_SAMPLE : { ...TEMPLATE_PRESET_COMMENT_SAMPLE, ...previewCopy.comment[locale] }} /></div>
           : null}
       </div>
+      <ChannelContrastContext.Provider value={{ video: { x: 0, y: layout.videoTop * 19.2, width: 1080, height: layout.videoHeight * 19.2 } }}>
       {template.id === "comment-capture"
         ? <CommentCaptureChannel channelName={channelName} channelThumbnailUrl={channelThumbnailUrl} fixedCenterY={presetChannelCenterY(template.id, layout.option.value)} />
         : <FixedPresetChannel centerY={presetChannelCenterY(template.id, layout.option.value)} channelName={channelName} channelThumbnailUrl={channelThumbnailUrl} foreground={template.channel} background={template.background} />}
+      </ChannelContrastContext.Provider>
     </div>
   );
 }
@@ -1658,6 +1667,7 @@ function SubtitleTemplatePreview({
         className="absolute z-20 flex items-center justify-center font-bold text-white"
         style={{
           ...rectStyle(layout.channel),
+          ...channelContrastStyle({ video: layout.video }, { x: layout.channel.x + layout.channel.width / 2, y: layout.channel.y + layout.channel.height / 2, maxWidth: 800, fontSize: snapshot.channel.fontSizePx, color: "#FFFFFF" }),
           gap: canvasCqw(snapshot.channel.gapPx),
           fontSize: canvasCqw(snapshot.channel.fontSizePx),
         }}
@@ -11168,6 +11178,7 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
                   {activeSubtitle.text}
                 </button>}
           </div>}
+          <ChannelContrastContext.Provider value={{ video: editorVideoRect, offset: overlayOffsets.channel, scale: channelScale }}>
           {activeCustomTemplate
             ? <>
                 {renderOverlayLayout.visible.comment && templateId === "comment-capture" && layoutPreviewComment && activeCustomTemplate.config.comment.visible
@@ -11352,6 +11363,7 @@ export function Editor({ item, outputLanguage, commentOutputLanguage = "ko", cha
                         : undefined}
                     />)}
               </>}
+          </ChannelContrastContext.Provider>
           {overlayPreviewEnabled
             && !templateProvidesComments
             && renderOverlayLayout.visible.comment

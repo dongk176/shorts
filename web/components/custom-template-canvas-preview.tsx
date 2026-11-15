@@ -1,3 +1,4 @@
+import { channelContrastStyle } from "@/lib/channel-contrast";
 import { localizedValue, type SiteLocale } from "@/lib/i18n/config";
 import { CustomTemplateTitlePreview } from "@/components/custom-template-title-preview";
 import { TemplateTitleV4Preview } from "@/components/template-title-v4-preview";
@@ -46,7 +47,7 @@ function PreviewChannel({
   return (
     <div data-i18n-skip
       className={`${positionedBelow ? "absolute" : inCommentFlow ? "relative mx-auto mt-[2cqw] block" : "absolute"} z-30 truncate rounded px-[1.5cqw] py-[.7cqw] text-center font-bold`}
-      style={{ ...flowStyle, color: channel.color, backgroundColor: channel.backgroundColor || "transparent", fontSize: customCanvasWidth(channel.fontSize), zIndex: templateDesignLayerZIndex(template.config, "channel") }}
+      style={{ ...flowStyle, ...channelContrastStyle({ video: template.config.video }, channel), color: channel.color, backgroundColor: channel.backgroundColor || "transparent", fontSize: customCanvasWidth(channel.fontSize), zIndex: templateDesignLayerZIndex(template.config, "channel") }}
     >
       ● {channel.displayName || label}
     </div>
