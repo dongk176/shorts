@@ -8,8 +8,8 @@ import { wrapEditorRenderText } from "./editor-render-spec";
 
 // Separate immutable releases. Existing fixed-layout workers must never receive
 // documents containing the shared editor's additional layers.
-export const UNIFIED_SNS_EDITOR_RELEASE_ID = "66f640ba-d156-4c90-9c4f-f79038bf9d14";
-export const UNIFIED_COMMUNITY_EDITOR_RELEASE_ID = "a576138e-1ddf-4469-8494-252058595705";
+export const UNIFIED_SNS_EDITOR_RELEASE_ID = "34df634e-d49a-4171-b3ea-f86199543ec1";
+export const UNIFIED_COMMUNITY_EDITOR_RELEASE_ID = "6f50a87c-250c-4d3e-a8c9-b79d1fbc2f91";
 export { communityHeadingColor };
 
 export const isUnifiedSnsSnapshot = (snapshot: Record<string, unknown> | null | undefined) =>
