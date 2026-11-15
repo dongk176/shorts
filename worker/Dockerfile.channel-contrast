@@ -1,6 +1,7 @@
-# Preserve the exact currently deployed runtime dependencies for this bounded patch.
+# Preserve the deployed runtime; update only zlib for CVE-2026-4738.
 # The older from-scratch package pins are no longer served by Alpine.
 FROM 181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:8af59b84aa7df9798275769d14047b62c1859564e7348a2010d410315fc6ca59 AS render
+RUN apk add --no-cache zlib=1.4-r0
 WORKDIR /app/worker
 COPY shorts_worker ./shorts_worker
 ARG WORKER_SOURCE_GIT_SHA=legacy
