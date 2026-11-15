@@ -4,7 +4,7 @@ import { isEditorRenderSpecV4Enabled } from "@/lib/editor-render-v4-feature";
 import { HttpError } from "@/lib/http";
 import type { ProjectDispatchTarget } from "@/lib/job-dispatch";
 import { assertCustomTemplateDesignRenderRelease } from "@/lib/custom-template-design";
-import { verifiedFileUploadSuccessorAdminReleaseId } from "@/lib/file-upload-successor";
+import { verifiedUploadSuccessorForAdmin } from "@/lib/file-upload-successor-server";
 
 export type InitialRenderRelease = {
   releaseId: string;
@@ -252,8 +252,8 @@ export async function resolveFileUploadInitialRenderRelease(
         workerImageDigest: String(previous.workerImageDigest || ""),
         fontManifestSha256: String(previous.fontManifestSha256 || ""),
       })) return null;
-    pinnedReleaseId = verifiedFileUploadSuccessorAdminReleaseId(
-      runtimeRow, identity, input.access.adminEnabled,
+    pinnedReleaseId = await verifiedUploadSuccessorForAdmin(
+      tx, runtimeRow, identity, input.access.adminEnabled,
     );
     if (!pinnedReleaseId) return null;
   } else if (input.access.publicEnabled) {

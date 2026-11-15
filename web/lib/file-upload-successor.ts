@@ -29,11 +29,18 @@ export function verifiedFileUploadSuccessorAdminReleaseId(
   environment: FileUploadWorkerIdentity,
   adminEnabled: boolean,
   now = Date.now(),
+  finalizedIdentity?: unknown,
 ): string | null {
   const published = object(runtimeRow.details);
   const successor = object(runtimeRow.successor);
   const identity = object(successor?.identity);
   const receiver = object(successor?.receiverEvidence);
+  const finalized = object(finalizedIdentity);
+  const verifiedFontChange = !!identity && !!finalized && [
+    "releaseId", "sourceGitSha", "workerImageDigest", "fontManifestSha256",
+    "probeRunId", "manifestSha256", "matrixSha256", "manifestS3VersionId",
+    "matrixS3VersionId", "artifactUri", "renderSpecVersion", "captionRenderSpecVersion",
+  ].every(key => finalized[key] === identity[key]);
   if (!adminEnabled || runtimeRow.passed !== true || !published || !successor
     || !identity || !receiver || successor.version !== 1 || successor.phase !== "admin_test"
     || !UUID.test(String(successor.id || ""))
@@ -47,7 +54,7 @@ export function verifiedFileUploadSuccessorAdminReleaseId(
     || identity.sourceGitSha !== environment.workerSourceGitSha
     || identity.workerImageDigest !== environment.workerImageDigest
     || identity.fontManifestSha256 !== environment.fontManifestSha256
-    || identity.fontManifestSha256 !== published.fontManifestSha256
+    || (identity.fontManifestSha256 !== published.fontManifestSha256 && !verifiedFontChange)
     || identity.renderSpecVersion !== 4 || identity.captionRenderSpecVersion !== 4
     || published.renderSpecVersion !== 4 || published.captionRenderSpecVersion !== 4
     || !SHA256.test(String(identity.manifestSha256 || ""))

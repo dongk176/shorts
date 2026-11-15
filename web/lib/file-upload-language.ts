@@ -2,6 +2,7 @@ import "server-only";
 import { uploadCandidateForUser } from "./file-upload-candidate";
 import type { Sql, TransactionSql } from "postgres";
 import { HttpError } from "./http";
+import { verifiedUploadSuccessorForAdmin } from "./file-upload-successor-server";
 
 type Evidence = {
   releaseId?: string; sourceGitSha?: string; workerImageDigest?: string; fontManifestSha256?: string;
@@ -38,6 +39,21 @@ export async function fileUploadLanguageEnabled(db: Sql | TransactionSql, releas
   if (!process.env.FILE_UPLOAD_MULTILINGUAL_VERIFIED_RELEASE_ID) return false;
   const [row] = await db`select passed,details,successor from shorts_mvp.file_upload_release_checks
     where check_key='runtime_identity' for share`;
+  if (row?.successor && userId) {
+    const [admin] = await db`select u.is_admin from shorts_mvp.app_users u
+      join shorts_mvp.upload_language_candidates c on c.administrator_id=u.id
+      where u.id=${userId} and u.is_admin and u.withdrawn_at is null
+        and c.release_id=${process.env.FILE_UPLOAD_MULTILINGUAL_VERIFIED_RELEASE_ID}::uuid
+        and c.expires_at>clock_timestamp() and c.admitted_jobs<c.max_jobs for share of u,c`;
+    if (admin?.isAdmin !== true) return false;
+    const successor = await verifiedUploadSuccessorForAdmin(db, row, {
+      workerSourceGitSha: process.env.FILE_UPLOAD_WORKER_SOURCE_GIT_SHA ?? "",
+      workerImageDigest: process.env.FILE_UPLOAD_WORKER_IMAGE_DIGEST ?? "",
+      fontManifestSha256: process.env.FILE_UPLOAD_WORKER_FONT_MANIFEST_SHA256 ?? "",
+    }, true);
+    return !!successor && successor === process.env.FILE_UPLOAD_MULTILINGUAL_VERIFIED_RELEASE_ID
+      && (!releaseId || successor === releaseId);
+  }
   return row?.passed === true && !row.successor
     && verifiedUploadLanguageEvidence(row.details, process.env, releaseId);
 }

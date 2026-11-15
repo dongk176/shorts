@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
+vi.mock("./file-upload-successor-server", () => ({ verifiedUploadSuccessorForAdmin: vi.fn() }));
 import { verifiedUploadLanguageEvidence, fileUploadLanguageEnabled } from "./file-upload-language";
+import { verifiedUploadSuccessorForAdmin } from "./file-upload-successor-server";
 import { fileUploadIntentHash, type FileUploadIntentIdentity } from "./file-upload-control";
 const source = "a".repeat(40), digest = `sha256:${"b".repeat(64)}`, font = "c".repeat(64);
 const env = { FILE_UPLOAD_MULTILINGUAL_VERIFIED_RELEASE_ID: "upload-release",
@@ -11,6 +13,23 @@ const evidence = () => ({ releaseId: "upload-release", sourceGitSha: source, wor
     workerImageDigest: digest, cases: ["ko", "en", "ja"].map(language => ({ language, generated: true,
       silenceRemoved: true, restored: true, edited: true, rendered: true })) } });
 describe("upload languages follow exact receiver verification", () => {
+  it("admits language tests only for a bounded administrator and the readied successor", async () => {
+    for (const [key, value] of Object.entries(env)) vi.stubEnv(key, value);
+    vi.stubEnv("FILE_UPLOAD_CANDIDATE_RELEASE_ID", "");
+    const runtime = { passed: true, details: evidence(), successor: { phase: "admin_test" } };
+    const verify = vi.mocked(verifiedUploadSuccessorForAdmin);
+    verify.mockReset(); verify.mockResolvedValue("upload-release");
+    try {
+      const denied = vi.fn().mockResolvedValueOnce([runtime]).mockResolvedValueOnce([]);
+      expect(await fileUploadLanguageEnabled(denied as never, "upload-release", "ordinary-user")).toBe(false);
+      expect(verify).not.toHaveBeenCalled();
+      const db = () => vi.fn().mockResolvedValueOnce([runtime]).mockResolvedValueOnce([{ isAdmin: true }]);
+      expect(await fileUploadLanguageEnabled(db() as never, "upload-release", "admin")).toBe(true);
+      expect(await fileUploadLanguageEnabled(db() as never, "another-release", "admin")).toBe(false);
+      verify.mockResolvedValue(null);
+      expect(await fileUploadLanguageEnabled(db() as never, "upload-release", "admin")).toBe(false);
+    } finally { vi.unstubAllEnvs(); verify.mockReset(); }
+  });
   it("requires all language roundtrips and the admitted release", () => {
     expect(verifiedUploadLanguageEvidence(evidence(), env, "upload-release")).toBe(true);
     expect(verifiedUploadLanguageEvidence(evidence(), env, "link-release")).toBe(false);

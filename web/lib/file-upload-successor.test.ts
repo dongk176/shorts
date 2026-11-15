@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+vi.mock("server-only", () => ({}));
 import { verifiedFileUploadSuccessorAdminReleaseId } from "@/lib/file-upload-successor";
+import { verifiedUploadSuccessorForAdmin } from "./file-upload-successor-server";
 
 const oldId = "b8467c45-803f-4c45-83d3-63bcacfe601b";
 const newId = "9d8a70c7-4d3f-4cb2-aa06-f2eb221aef56";
@@ -68,6 +70,28 @@ export function successorFixture() {
 }
 
 describe("verified file-upload successor admin admission", () => {
+  it("requires the exact finalized DB identity for an additive font successor", async () => {
+    const row = successorFixture();
+    row.details.fontManifestSha256 = "9".repeat(64);
+    const finalized = { ...row.successor.identity };
+    expect(verifiedFileUploadSuccessorAdminReleaseId(row, environment, true, now)).toBeNull();
+    expect(verifiedFileUploadSuccessorAdminReleaseId(row, environment, true, now, finalized)).toBe(newId);
+    for (const key of ["releaseId", "sourceGitSha", "workerImageDigest", "fontManifestSha256", "probeRunId", "manifestSha256", "manifestS3VersionId"]) {
+      expect(verifiedFileUploadSuccessorAdminReleaseId(row, environment, true, now, { ...finalized, [key]: "wrong" })).toBeNull();
+    }
+    const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+    const db = vi.fn().mockResolvedValue([{ identity: finalized }]);
+    try {
+      expect(await verifiedUploadSuccessorForAdmin(db as never, row, environment, false)).toBeNull();
+      expect(db).not.toHaveBeenCalled();
+      expect(await verifiedUploadSuccessorForAdmin(db as never, row, environment, true)).toBe(newId);
+      expect(db.mock.calls[0].slice(1)).toEqual([newId, row.details.fontManifestSha256]);
+      db.mockResolvedValue([{ identity: { ...finalized, matrixSha256: "0".repeat(64) } }]);
+      expect(await verifiedUploadSuccessorForAdmin(db as never, row, environment, true)).toBeNull();
+      db.mockRejectedValue(new Error("finalized additive font proof required"));
+      await expect(verifiedUploadSuccessorForAdmin(db as never, row, environment, true)).rejects.toThrow("finalized additive font proof required");
+    } finally { clock.mockRestore(); }
+  });
   it("admits only the observed successor identity for a verified administrator", () => {
     const row = successorFixture();
     expect(verifiedFileUploadSuccessorAdminReleaseId(row, environment, true, now)).toBe(newId);
