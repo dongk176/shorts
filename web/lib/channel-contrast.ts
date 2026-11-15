@@ -37,8 +37,8 @@ const channelContrastReleaseIds = new Set([
   "752221d5-00c6-48fc-b4b5-af2d8ddc9182",
   "c8324dfe-06f1-4765-b6d3-14410d8bd114",
   "3355b631-73ec-4f0f-a669-1fd460d2c284",
-  "ec4790a8-1c5c-41c8-ab95-c1e1db19055c",
-  "f8f16bdc-a6ec-4de2-b4ed-08947d4b2994"
+  "1fe6420f-833c-40f7-aece-1d04e7a7ce94",
+  "c2fe9b34-ebba-4c92-b8ae-5f0d0a763b10"
 ]);
 export function editorHasChannelContrast(releaseId: string | null): boolean {
   return releaseId !== null && channelContrastReleaseIds.has(releaseId);
