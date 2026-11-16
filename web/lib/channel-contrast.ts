@@ -37,6 +37,8 @@ const channelContrastReleaseIds = new Set([
   "752221d5-00c6-48fc-b4b5-af2d8ddc9182",
   "c8324dfe-06f1-4765-b6d3-14410d8bd114",
   "3355b631-73ec-4f0f-a669-1fd460d2c284",
+  "340f9382-c8b0-4926-acd0-b8a3987316e4",
+  "0f39f8e7-f4e7-48d1-9c0e-7735276ae06b",
   "1fe6420f-833c-40f7-aece-1d04e7a7ce94",
   "c2fe9b34-ebba-4c92-b8ae-5f0d0a763b10"
 ]);

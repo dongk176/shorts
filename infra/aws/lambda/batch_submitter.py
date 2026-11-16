@@ -1157,7 +1157,11 @@ def _editor_release_target(
     definition_pattern = (
         _LANGUAGE_TEST_EDITOR_DEFINITION if language_release else _EDITOR_RELEASE_JOB_DEFINITION
     )
-    if not definition_pattern.fullmatch(job_definition):
+    from editor_incident_identity import is_registered_japanese_editor
+
+    if not definition_pattern.fullmatch(job_definition) and not (
+        language_release and is_registered_japanese_editor(releases[0])
+    ):
         raise RuntimeError("Editor release job definition is not trusted")
     worker_image_digest = str(releases[0].get("worker_image_digest") or "")
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", worker_image_digest):
