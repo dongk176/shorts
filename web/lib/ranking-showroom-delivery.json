@@ -1,0 +1,269 @@
+{
+  "origin": "https://d1mzwx29nljvyq.cloudfront.net",
+  "assets": {
+    "ko/04-makeover": {
+      "path": "easycut/ranking-showcase/v1/ko-04-makeover-2278499ea6135c54.mp4",
+      "source": "ranking-showroom-20/04-makeover.mp4",
+      "sha256": "2278499ea6135c540e4676957a6c5cb3c3cb671d7646afe189cccec9b92d7f87",
+      "bytes": 26756156
+    },
+    "ko/05-craft": {
+      "path": "easycut/ranking-showcase/v1/ko-05-craft-cbc46547f6224cbd.mp4",
+      "source": "ranking-showroom-20/05-craft.mp4",
+      "sha256": "cbc46547f6224cbd87bb4675a5978ced590edfb5cfeef042c952f82e8ef910a1",
+      "bytes": 24785271
+    },
+    "ko/06-bikes": {
+      "path": "easycut/ranking-showcase/v1/ko-06-bikes-8be9aa9ac359cb2e.mp4",
+      "source": "ranking-showroom-20/06-bikes.mp4",
+      "sha256": "8be9aa9ac359cb2e59a628dcdf582f5647210503c73244e4db71c8c35237cead",
+      "bytes": 29455506
+    },
+    "ko/09-hair": {
+      "path": "easycut/ranking-showcase/v1/ko-09-hair-82dc8dbd96b6914a.mp4",
+      "source": "ranking-showroom-20/09-hair.mp4",
+      "sha256": "82dc8dbd96b6914a95541bc109f128006462684a598c0aad4423ba4701a0f5b4",
+      "bytes": 18199394
+    },
+    "ko/10-style": {
+      "path": "easycut/ranking-showcase/v1/ko-10-style-59d94df2841bf430.mp4",
+      "source": "ranking-showroom-20/10-style.mp4",
+      "sha256": "59d94df2841bf4302b02b262a502b97758e23a87e758e8bd95c97b88e543d8f2",
+      "bytes": 7297096
+    },
+    "ko/art": {
+      "path": "easycut/ranking-showcase/v1/ko-art-033887f2db8e798c.mp4",
+      "source": "ranking-showroom-20/art.mp4",
+      "sha256": "033887f2db8e798ccd14f785d39f02a2f9db5099129af7a108c79c6c23aeef9d",
+      "bytes": 12738757
+    },
+    "ko/basketball": {
+      "path": "easycut/ranking-showcase/v1/ko-basketball-beb1ae2d7e8dab7d.mp4",
+      "source": "ranking-showroom-20/basketball.mp4",
+      "sha256": "beb1ae2d7e8dab7d81f5a777423db7883860eaf96826a09439ac295413bfdd5b",
+      "bytes": 11763798
+    },
+    "ko/cake": {
+      "path": "easycut/ranking-showcase/v1/ko-cake-2b00f48596aa8a3b.mp4",
+      "source": "ranking-showroom-20/cake.mp4",
+      "sha256": "2b00f48596aa8a3bcb8e2b96b4ecd1a1cb78a77bc6a1a39169a59b7cb7376e6b",
+      "bytes": 4818390
+    },
+    "ko/cats": {
+      "path": "easycut/ranking-showcase/v1/ko-cats-37eb4cf8fbff4de8.mp4",
+      "source": "ranking-showroom-20/cats.mp4",
+      "sha256": "37eb4cf8fbff4de825bfe278a757509e5a5fbe712c0ce9d696c50b993fe6426a",
+      "bytes": 10060363
+    },
+    "ko/dance": {
+      "path": "easycut/ranking-showcase/v1/ko-dance-8bc6e4ad785d8414.mp4",
+      "source": "ranking-showroom-20/dance.mp4",
+      "sha256": "8bc6e4ad785d84140b26b9374df3139405c9be1c06a1bd4ef46df40650a69b6b",
+      "bytes": 10284996
+    },
+    "ko/dogs": {
+      "path": "easycut/ranking-showcase/v1/ko-dogs-edf58987c8275f92.mp4",
+      "source": "ranking-showroom-20/dogs.mp4",
+      "sha256": "edf58987c8275f9209d971725d75df6c7d00dcfee8ce4cd9bc74c5874e4ba5cb",
+      "bytes": 8722229
+    },
+    "ko/machines": {
+      "path": "easycut/ranking-showcase/v1/ko-machines-db2aecc0e8adda66.mp4",
+      "source": "ranking-showroom-20/machines.mp4",
+      "sha256": "db2aecc0e8adda66938fd48eb4146a03680b67aad4422cf46df938d5266ab63e",
+      "bytes": 17024620
+    },
+    "ko/miniatures": {
+      "path": "easycut/ranking-showcase/v1/ko-miniatures-94cc2aba7b973cc5.mp4",
+      "source": "ranking-showroom-20/miniatures.mp4",
+      "sha256": "94cc2aba7b973cc5370f479fdc342dd69695d4218536610763c4c745bb4069be",
+      "bytes": 6252331
+    },
+    "ko/rc": {
+      "path": "easycut/ranking-showcase/v1/ko-rc-537486f7ee9f0823.mp4",
+      "source": "ranking-showroom-20/rc.mp4",
+      "sha256": "537486f7ee9f0823170d049c59321031c23a4a8156cae8b5b9f2dfc184ee94ec",
+      "bytes": 8910752
+    },
+    "ko/robots": {
+      "path": "easycut/ranking-showcase/v1/ko-robots-19ebe5bbaa7bc271.mp4",
+      "source": "ranking-showroom-20/robots.mp4",
+      "sha256": "19ebe5bbaa7bc271ad077621e364610a7d72dba2fa98dbe0ace362e05bc23fe6",
+      "bytes": 7895316
+    },
+    "ko/sewing": {
+      "path": "easycut/ranking-showcase/v1/ko-sewing-fb6aead4a93cad93.mp4",
+      "source": "ranking-showroom-20/sewing.mp4",
+      "sha256": "fb6aead4a93cad9390b85ba764fce6ae1000bcae3d4347f6d31cd93a589a6e3e",
+      "bytes": 16609933
+    },
+    "ko/skate": {
+      "path": "easycut/ranking-showcase/v1/ko-skate-ffb783902601f368.mp4",
+      "source": "ranking-showroom-20/skate.mp4",
+      "sha256": "ffb783902601f3688757a0368abae9c67b342084e37af546758dce12e6222dc5",
+      "bytes": 16248732
+    },
+    "ko/soccer": {
+      "path": "easycut/ranking-showcase/v1/ko-soccer-7cab91e575df5354.mp4",
+      "source": "ranking-showroom-20/soccer.mp4",
+      "sha256": "7cab91e575df5354c8de35cef801d8ce912ac9d1de02bed898f2badc1f97ee0d",
+      "bytes": 18096452
+    },
+    "ko/travel": {
+      "path": "easycut/ranking-showcase/v1/ko-travel-7422af1aa73c230e.mp4",
+      "source": "ranking-showroom-20/travel.mp4",
+      "sha256": "7422af1aa73c230eff8fcb1ea312302174fc25be5294ed7f60c1c61a29c606e6",
+      "bytes": 12515001
+    },
+    "ko/wood": {
+      "path": "easycut/ranking-showcase/v1/ko-wood-414e8280b979f72d.mp4",
+      "source": "ranking-showroom-20/wood.mp4",
+      "sha256": "414e8280b979f72d2a9b5d309e1fc62819c990755c3d5f795a012bebbbcf9537",
+      "bytes": 12725441
+    },
+    "en/06-bikes": {
+      "path": "easycut/ranking-showcase/v1/en-06-bikes-c6386a82519f4146.mp4",
+      "source": "ranking-showroom-en/06-bikes.mp4",
+      "sha256": "c6386a82519f41468cf9aa47eeca7514689c6d96823dbd9e9b1c288c920d251f",
+      "bytes": 23316948
+    },
+    "en/09-hair": {
+      "path": "easycut/ranking-showcase/v1/en-09-hair-8357630ce889d2a4.mp4",
+      "source": "ranking-showroom-en/09-hair.mp4",
+      "sha256": "8357630ce889d2a4fb62d42dbdfa6e5926f7ba09be7dc115b6e66b91d6a4d84b",
+      "bytes": 14487781
+    },
+    "en/art": {
+      "path": "easycut/ranking-showcase/v1/en-art-5a9d51bffd9c71a5.mp4",
+      "source": "ranking-showroom-en/art.mp4",
+      "sha256": "5a9d51bffd9c71a5e9e237d45c32b4dba87d87ebd0932e2d6333fb4aadfa69f3",
+      "bytes": 10302177
+    },
+    "en/basketball": {
+      "path": "easycut/ranking-showcase/v1/en-basketball-482e5640c0296046.mp4",
+      "source": "ranking-showroom-en/basketball.mp4",
+      "sha256": "482e5640c0296046e4f6fa7d1fd64c4dd7b7732220e73492d2963e30baf19b77",
+      "bytes": 9063241
+    },
+    "en/cats": {
+      "path": "easycut/ranking-showcase/v1/en-cats-832e204fcae96805.mp4",
+      "source": "ranking-showroom-en/cats.mp4",
+      "sha256": "832e204fcae9680511faab7e2017c2c9486cbc34fe1c55a1a484c563d69efa21",
+      "bytes": 7730636
+    },
+    "en/dance": {
+      "path": "easycut/ranking-showcase/v1/en-dance-19c68a4e2d660f0b.mp4",
+      "source": "ranking-showroom-en/dance.mp4",
+      "sha256": "19c68a4e2d660f0bb12413c604e52a6b68f7b29a4b30eda1dad309fb77a98f76",
+      "bytes": 8427748
+    },
+    "en/dogs": {
+      "path": "easycut/ranking-showcase/v1/en-dogs-092611a3def8305c.mp4",
+      "source": "ranking-showroom-en/dogs.mp4",
+      "sha256": "092611a3def8305c8e55867b06a6d18685ce5a25302c727e7b4bb9d42ccc1bb3",
+      "bytes": 6937750
+    },
+    "en/miniatures": {
+      "path": "easycut/ranking-showcase/v1/en-miniatures-a0b02729ab626d0f.mp4",
+      "source": "ranking-showroom-en/miniatures.mp4",
+      "sha256": "a0b02729ab626d0f7ff8ceb742a2a601de7be4d7a2f41f0887913ef483832888",
+      "bytes": 4862149
+    },
+    "en/rc": {
+      "path": "easycut/ranking-showcase/v1/en-rc-7f9a1ce3d8b176a1.mp4",
+      "source": "ranking-showroom-en/rc.mp4",
+      "sha256": "7f9a1ce3d8b176a1e89c5247a6dcffd67cffc572f29ee0bbb1653f87dfdc9c00",
+      "bytes": 7214942
+    },
+    "en/robots": {
+      "path": "easycut/ranking-showcase/v1/en-robots-43854a2ddf31167e.mp4",
+      "source": "ranking-showroom-en/robots.mp4",
+      "sha256": "43854a2ddf31167e5d13eb568e744fbfbbcf086b82c743ec11e09f7ea9e7d3e8",
+      "bytes": 6219197
+    },
+    "en/sewing": {
+      "path": "easycut/ranking-showcase/v1/en-sewing-5b8682541c0f538c.mp4",
+      "source": "ranking-showroom-en/sewing.mp4",
+      "sha256": "5b8682541c0f538c87405633b4d4a49200a3904804b16fb9e47eaef37cb032e7",
+      "bytes": 13271340
+    },
+    "en/wood": {
+      "path": "easycut/ranking-showcase/v1/en-wood-66f047910295940b.mp4",
+      "source": "ranking-showroom-en/wood.mp4",
+      "sha256": "66f047910295940bb8a90fde9e954411ddd58d3642ed59be483c1041d3aaf5bf",
+      "bytes": 10109688
+    },
+    "ja/06-bikes": {
+      "path": "easycut/ranking-showcase/v1/ja-06-bikes-f828f33ccfca7fa4.mp4",
+      "source": "ranking-showroom-ja/06-bikes.mp4",
+      "sha256": "f828f33ccfca7fa4eafa6cea5b24fdc3aaf1dd922f8715ddfc923d23fad21c63",
+      "bytes": 24912421
+    },
+    "ja/09-hair": {
+      "path": "easycut/ranking-showcase/v1/ja-09-hair-e37cd8664f9563ab.mp4",
+      "source": "ranking-showroom-ja/09-hair.mp4",
+      "sha256": "e37cd8664f9563ab78d9297116f99aea579a84be4408e4c437e6f9fc69b6aec7",
+      "bytes": 14665950
+    },
+    "ja/art": {
+      "path": "easycut/ranking-showcase/v1/ja-art-02cde2b412bda544.mp4",
+      "source": "ranking-showroom-ja/art.mp4",
+      "sha256": "02cde2b412bda5449e552f9778ed88a5de3ed9163abd50b56cd96cdaa3bd3a86",
+      "bytes": 10634546
+    },
+    "ja/basketball": {
+      "path": "easycut/ranking-showcase/v1/ja-basketball-207cc4b297f994eb.mp4",
+      "source": "ranking-showroom-ja/basketball.mp4",
+      "sha256": "207cc4b297f994eb5debe72fa144d5cfca5361ef4c6f8a053dca96a77f8046cf",
+      "bytes": 9609010
+    },
+    "ja/cats": {
+      "path": "easycut/ranking-showcase/v1/ja-cats-f5e50aab40464828.mp4",
+      "source": "ranking-showroom-ja/cats.mp4",
+      "sha256": "f5e50aab40464828209b2863376ce7e6eac31ddbe0e05d741e1891bf61f5642f",
+      "bytes": 8295711
+    },
+    "ja/dance": {
+      "path": "easycut/ranking-showcase/v1/ja-dance-353f746bf26a72cd.mp4",
+      "source": "ranking-showroom-ja/dance.mp4",
+      "sha256": "353f746bf26a72cd49e502b548eb9a4345fa14e16ca0702206a40a09b7cc14b4",
+      "bytes": 8737374
+    },
+    "ja/dogs": {
+      "path": "easycut/ranking-showcase/v1/ja-dogs-a78c5a0e30aaa02a.mp4",
+      "source": "ranking-showroom-ja/dogs.mp4",
+      "sha256": "a78c5a0e30aaa02a54d4d2b05614e916ea696eda7b5302f475728f6080cb1699",
+      "bytes": 7189053
+    },
+    "ja/miniatures": {
+      "path": "easycut/ranking-showcase/v1/ja-miniatures-97e09e0c4bcc444c.mp4",
+      "source": "ranking-showroom-ja/miniatures.mp4",
+      "sha256": "97e09e0c4bcc444caafee8e8fa07b12a32a552538e5e53d7b2fba84f3bc72440",
+      "bytes": 4773352
+    },
+    "ja/rc": {
+      "path": "easycut/ranking-showcase/v1/ja-rc-76da1274f7c77fb5.mp4",
+      "source": "ranking-showroom-ja/rc.mp4",
+      "sha256": "76da1274f7c77fb52156955cad973cab6e268917ec683f6ae38ca465d8b632d5",
+      "bytes": 7317197
+    },
+    "ja/robots": {
+      "path": "easycut/ranking-showcase/v1/ja-robots-23603915deb489e2.mp4",
+      "source": "ranking-showroom-ja/robots.mp4",
+      "sha256": "23603915deb489e27602e1ab2e6a09cc3b9e58a23677baa19f0d9b0e2b486c59",
+      "bytes": 6185295
+    },
+    "ja/sewing": {
+      "path": "easycut/ranking-showcase/v1/ja-sewing-85c70f0ccf222ccd.mp4",
+      "source": "ranking-showroom-ja/sewing.mp4",
+      "sha256": "85c70f0ccf222ccd4a8e9dfcec23b058a6679bf618f176c3fd77542d399bb736",
+      "bytes": 14090973
+    },
+    "ja/wood": {
+      "path": "easycut/ranking-showcase/v1/ja-wood-0dc3afc562b5bf70.mp4",
+      "source": "ranking-showroom-ja/wood.mp4",
+      "sha256": "0dc3afc562b5bf700740fba7aad357f8391f011312846843c76e3f960936a513",
+      "bytes": 10661478
+    }
+  }
+}

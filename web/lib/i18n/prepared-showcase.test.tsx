@@ -9,6 +9,7 @@ import { I18nProvider } from "./provider";
 import { messagesByLocale } from "./messages";
 import { createUiText } from "./ui-text";
 import uiCopy from "./ui-copy.json";
+import { rankingShowroomVideo } from "../ranking-showroom-delivery";
 import { TEMPLATE_PRESET_COMMENT_SAMPLE } from "@/lib/template-config";
 vi.mock("next/navigation", () => ({usePathname: () => "/", useRouter: () => ({})}));
 function render(child: React.ReactNode, locale: "ko" | "en" | "ja") {
@@ -18,16 +19,16 @@ describe("prepared localized showroom", () => {
  it.each(["en", "ja"] as const)("shows only 12 recommended %s examples with paired media", locale => {
   const html = render(<RankingShowroom />, locale);
   expect((html.match(/role="tab"/g) || []).length).toBe(12);
-  expect(html).toContain(`/ranking-showroom-${locale}/dogs.mp4`);
+  expect(html).toContain(rankingShowroomVideo(locale, "dogs"));
   expect(html).toContain(`/ranking-showroom-${locale}/dogs.jpg`);
-  expect(html).not.toContain("/soccer.mp4");
+  expect(html).not.toMatch(/src="[^"]*soccer[^"]*\.mp4"/);
   expect(html).not.toMatch(/[가-힣]/);
   for (const copy of uiCopy) expect(createUiText(locale)(copy.ko)).toBe(copy[locale]);
  });
  it.each(["ko", "en", "ja"] as const)("connects the actual %s intro video to its matching poster", locale => {
   const html=render(<RankingIntroVideo />,locale);
   const folder=locale === "ko" ? "ranking-showroom-20" : `ranking-showroom-${locale}`;
-  expect(html).toContain(`src="/${folder}/dogs.mp4"`);
+  expect(html).toContain(`src="${rankingShowroomVideo(locale, "dogs")}"`);
   expect(html).toContain(`poster="/${folder}/dogs.jpg"`);
  });
  it.each(["en", "ja"] as const)("localizes untitled project fallback but retains authored titles in %s",locale=>{

@@ -1,4 +1,5 @@
 "use client";
+import { rankingShowroomVideo } from "@/lib/ranking-showroom-delivery";
 
 import { rankingShowroomContent } from "@/lib/ranking-showroom-content";
 import { useNavigationLocale } from "@/lib/i18n/provider";
@@ -34,7 +35,7 @@ export function RankingIntroVideo() {
   const locale = useNavigationLocale();
   const ui = useUiText();
   const { mediaRoot } = rankingShowroomContent[locale];
-  return <video key={locale} src={`${mediaRoot}/dogs.mp4`} poster={`${mediaRoot}/dogs.jpg`} muted playsInline loop aria-label={ui("랭킹 쇼츠 예시")} />;
+  return <video key={locale} src={rankingShowroomVideo(locale, "dogs")} poster={`${mediaRoot}/dogs.jpg`} muted playsInline loop aria-label={ui("랭킹 쇼츠 예시")} />;
 }
 
 export function RankingOnboarding({ mode, ownerId }: { mode: "home" | "studio"; ownerId?: string }) {

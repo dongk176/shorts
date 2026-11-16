@@ -2,7 +2,7 @@
 import { useNavigationLocale } from "@/lib/i18n/provider";
 import { useUiText } from "@/lib/i18n/use-ui-text";
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "@/lib/i18n/navigation";
 import { RankingResultPlayer } from "./ranking-result-player";
 import dynamic from "next/dynamic";
@@ -29,11 +29,10 @@ import { rankingAudioSequence, transitionSeconds, type RankingSound } from "@/li
 import { RankingSequencePreview } from "./ranking-sequence-preview";
 import { RankingYouTubeScenePreview, type RankingPreviewSeek } from "./ranking-youtube-scene-preview";
 import { RankingColorField } from "./ranking-color-field";
-import { RankingFramingEditor } from "./ranking-framing-editor";
-import { RankingTimeline } from "./ranking-timeline";
+import { RankingSourceEditor } from "./ranking-source-editor";
 import { RankingProgressOverlay } from "./ranking-progress-overlay";
 import { RankingOrderEditor } from "./ranking-order-editor";
-import { RankingRemotePlayer, type RankingRemoteHandle } from "./ranking-remote-player";
+import { type RankingRemoteHandle } from "./ranking-remote-player";
 import { rankingDirectRemote } from "@/lib/ranking-embed";
 import { rankingOrderForCount } from "@/lib/ranking-order";
 import {
@@ -145,11 +144,6 @@ export function RankingStudio({
   const player = useRef<HTMLVideoElement>(null);
   const sourceFileInput = useRef<HTMLInputElement>(null);
   const remotePlayer = useRef<RankingRemoteHandle>(null);
-  const [sourcePlaying, setSourcePlaying] = useState(false);
-  const [sourceReady, setSourceReady] = useState(false);
-  const selectedSourceId = slots[active]?.source?.id;
-  useEffect(() => { setSourcePlaying(false); setSourceReady(false); }, [active, selectedSourceId]);
-  const [current, setCurrent] = useState(0);
   const [showResult, setShowResult] = useState(false);
   const [previewPauseSignal, setPreviewPauseSignal] = useState(0);
   const [previewSeek, setPreviewSeek] = useState<RankingPreviewSeek | null>(null);
@@ -234,7 +228,7 @@ export function RankingStudio({
   function resetEditor(){
     const d=defaultRankingDraft(locale);projectRef.current=null;setProject(null);submission.current=null;uploadedFiles.current.clear();
     setSourceJobs({});setSourceNotice(null);setTitle(d.title);setSubtitle(d.subtitle);setStyle(d.style);setCount(d.count);setActive(0);setSlots(emptySlots());setOrderMode(d.orderMode);setCustomOrder([]);
-    setSoundEnabled(false);setSound(d.sound);setMusicEnabled(false);setMusic(null);setMusicVolume(d.musicVolume);setFiles({});setResult(null);setShowResult(false);setCurrent(0);setError("");setOrderOpen(false);setDesignOpen(false);setCustomDesignOpen(false);
+    setSoundEnabled(false);setSound(d.sound);setMusicEnabled(false);setMusic(null);setMusicVolume(d.musicVolume);setFiles({});setResult(null);setShowResult(false);setError("");setOrderOpen(false);setDesignOpen(false);setCustomDesignOpen(false);
   }
   async function startFresh(){
     if (pendingSources.current.size) return;
@@ -319,7 +313,6 @@ export function RankingStudio({
   const hasRemote = visible.some(
     (item) => item.source?.remote && !item.source.previewReady,
   );
-  const remoteSource = slot.source?.remote && !slot.source.previewReady;
   function updateSourceDuration(duration: number) {
     if (!Number.isFinite(duration) || duration <= 0) return;
     if (duration > RANKING_LIMITS.sourceSeconds) { setError(ui("3분 이하의 영상을 선택해 주세요.")); return; }
@@ -382,7 +375,7 @@ export function RankingStudio({
         const metadata=await inspectLocalFile(file,"video");if(!alive.current)return;const id=crypto.randomUUID();
         const start=!slot.source && slot.end>0?Math.min(slot.start,Math.max(0,metadata.duration-.5)):0;
         const end=!slot.source && slot.end>0?Math.min(metadata.duration,Math.max(start+.5,slot.end)):Math.min(10,metadata.duration);
-        setFiles(previous=>{const next={...previous,[id]:file};if(slot.source)delete next[slot.source.id];return next;});patch(active,{source:{id,...metadata,previewReady:true,durationKnown:true},pendingLink:false,start,end,framing:undefined});if(activeRef.current===active)setCurrent(0);
+        setFiles(previous=>{const next={...previous,[id]:file};if(slot.source)delete next[slot.source.id];return next;});patch(active,{source:{id,...metadata,previewReady:true,durationKnown:true},pendingLink:false,start,end,framing:undefined});
       });return;
     }
 
@@ -391,7 +384,6 @@ export function RankingStudio({
     const remote = !file ? rankingDirectRemote(slots[index].link) : null;
     if (remote?.platform === "youtube") {
       patch(index, { source: { id: crypto.randomUUID(), remote, duration: RANKING_LIMITS.sourceSeconds, durationKnown: false, previewReady: false, width: 0, height: 0, hasAudio: true }, pendingLink: true, start: 0, end: 10, framing: undefined });
-      setCurrent(0);
       setSourceJobs(previous => { const next = {...previous}; delete next[index]; return next; });
       return;
     }
@@ -421,7 +413,7 @@ export function RankingStudio({
         const data = await waitForOperation(queued, progress);
         if (!alive.current) return;
         const source = { ...data.source, remote: remote || data.source.remote } as RankingSource;
-        if (activeRef.current === index) setCurrent(0);
+
         patch(index, { source, pendingLink: false, start: 0, end: Math.min(10, source.duration) });
         if (!source.previewReady) {
           progress({stage: "converting"});
@@ -543,71 +535,9 @@ export function RankingStudio({
       Math.max(start + 0.5, previousEnd),
     );
     patch(index, { source, start, end });
-    if (activeRef.current === index) setCurrent(start);
+
   }
 
-  function seek(seconds: number) {
-    if (slot.source) setPreviewSeek(previous => ({sourceId: slot.source!.id, time: seconds, revision: (previous?.revision ?? 0) + 1}));
-    if (remoteSource && slot.source?.remote?.platform === "youtube") {
-      remotePlayer.current?.pause();
-      remotePlayer.current?.seek(seconds);
-      setCurrent(seconds);
-      return;
-    }
-    const video = player.current;
-    if (!video) return;
-    video.pause();
-    video.currentTime = seconds;
-    setCurrent(seconds);
-  }
-  const sourceUrl =
-    slot.source ? localMedia[slot.source.id] || (!remoteSource && project ? `/api/ranking-shorts/${project}/media/${slot.source.id}` : "") : "";
-  const sourcePlayer = slot.source ? (remoteSource && slot.source!.remote?.platform === "youtube" ? (
-                    <RankingRemotePlayer key={slot.source!.id} ref={remotePlayer} remote={slot.source!.remote}
-                      start={slot.start} label={ui(`${active + 1}위 원본 영상`)} suspended={Boolean(busy)} controlsHidden
-                      onReady={() => setSourceReady(true)}
-                      onTime={time => { setCurrent(time); if (sourcePlaying && time >= slot.end) remotePlayer.current?.pause(); }} onPlaying={playing => { setSourcePlaying(playing); if (playing) setPreviewPauseSignal(value => value + 1); }}
-                      onUnavailable={() => { /* The source player displays its own reconnect action. */ }}
-                      onDuration={updateSourceDuration} />
-                  ) : remoteSource && slot.source!.remote ? (
-                    <div className="ranking-empty-source">
-                      <strong>{ui("저장한 영상의 미리보기를 다시 연결해 주세요")}</strong>
-                      <button type="button" className="ranking-primary" disabled={Boolean(busy)} onClick={() => void importSource()}>{ui("영상 가져오기")}</button>
-                    </div>
-                  ) : (
-                    <div className={`ranking-source-player${slot.source!.height > slot.source!.width && slot.source!.width > 0 ? " is-portrait" : ""}`}
-                      style={{"--ranking-source-ratio": slot.source!.width > 0 && slot.source!.height > 0 ? slot.source!.width / slot.source!.height : 9 / 16} as CSSProperties}>
-                      <video
-                        key={sourceUrl + active}
-                        ref={player}
-                        src={sourceUrl}
-                        controls={false}
-                        playsInline
-                        preload="metadata"
-                        aria-label={ui(`${active + 1}위 원본 영상`)}
-                        onLoadedMetadata={(event) => {
-                          event.currentTarget.currentTime = slot.start;
-                          setCurrent(slot.start); setSourceReady(true);
-                        }}
-                        onTimeUpdate={(event) =>
-                          { setCurrent(event.currentTarget.currentTime); if (event.currentTarget.currentTime >= slot.end) event.currentTarget.pause(); }
-                        }
-                        onPlay={() => { setSourcePlaying(true); setPreviewPauseSignal((value) => value + 1); }}
-                        onPause={() => setSourcePlaying(false)}
-                        onError={() =>
-                          setError(
-                            ui("원본 영상을 불러오지 못했습니다. 다시 가져와 주세요."),
-                          )
-                        }
-                      />
-                    </div>
-                  )) : null;
-  function toggleSource() {
-    if (sourcePlaying) { player.current?.pause(); remotePlayer.current?.pause(); return; }
-    if (current >= slot.end - .05 || current < slot.start) seek(slot.start);
-    if (remoteSource) remotePlayer.current?.play();
-    else void player.current?.play().catch(() => setError(ui("재생 버튼을 다시 눌러 주세요.")));
-  }
   const canRender =
     !busy &&
     !sourcePending &&
@@ -679,7 +609,7 @@ export function RankingStudio({
         if (previousSource) setFiles(previous => { const next = {...previous}; delete next[previousSource.id]; return next; });
         setSourceJobs(previous => { const next = {...previous}; delete next[popularRank]; return next; });
         patch(popularRank, {link, source: {id: sourceId, remote, duration: video.durationSeconds, durationKnown: true, previewReady: false, width: 0, height: 0, hasAudio: true}, pendingLink: true, start: 0, end: Math.min(10, video.durationSeconds)});
-        setActive(popularRank); setCurrent(0); setError(""); setPopularRank(null); setSceneOpen(true); setPopularSelection(sourceId);
+        setActive(popularRank); setError(""); setPopularRank(null); setSceneOpen(true); setPopularSelection(sourceId);
       }} />}
       <header className="ranking-heading">
         <div>
@@ -996,7 +926,6 @@ export function RankingStudio({
                   disabled={Boolean(busy)}
                   onClick={() => {
                     setActive(index);
-                    setCurrent(item.start);
                     setSceneOpen(true);
                   }}
                   aria-pressed={active === index}
@@ -1016,7 +945,7 @@ export function RankingStudio({
             <button type="button" className="ranking-scene-summary" onClick={() => setSceneOpen(true)}>
               <span><strong>{locale === "en" ? `Rank ${active + 1} ·` : <>{active + 1}{ui("위 ·")}</>}{slot.label || ui("장면 선택")}</strong><small>{activeJob && !activeJob.error ? ui("영상 준비 중 · 다른 순위도 편집할 수 있어요") : slot.source ? ui(`${rankingTime(slot.start)} – ${rankingTime(slot.end)} · 구간 수정`) : ui("링크나 파일을 추가하세요")}</small></span><span aria-hidden="true">＋</span>
             </button>
-            {(!mobileScene || sceneOpen) && <SceneContainer {...sceneBackdrop} ref={(element: HTMLDialogElement | HTMLDivElement | null) => { scenePanel.current = element; sceneDialog.current = element instanceof HTMLDialogElement ? element : null; }} className={`ranking-scene-dialog${mobileScene ? "" : " is-inline"}`} aria-labelledby="ranking-scene-title" onCancel={(event) => { if (busy) event.preventDefault(); else setSceneOpen(false); }}>
+            {<SceneContainer {...sceneBackdrop} ref={(element: HTMLDialogElement | HTMLDivElement | null) => { scenePanel.current = element; sceneDialog.current = element instanceof HTMLDialogElement ? element : null; }} className={`ranking-scene-dialog${mobileScene ? "" : " is-inline"}`} aria-labelledby="ranking-scene-title" onCancel={(event) => { if (busy) event.preventDefault(); else setSceneOpen(false); }}>
               <header><div><small>{ui("순위별 장면")}</small><h2 id="ranking-scene-title">{locale === "en" ? `Rank ${active + 1} video` : <>{active + 1}{ui("위 영상 선택")}</>}</h2></div><button type="button" disabled={Boolean(busy)} aria-label={ui("장면 선택 닫기")} onClick={() => setSceneOpen(false)}>×</button></header>
               <div className="ranking-scene-scroll">
             <div className="ranking-clip-body">
@@ -1104,63 +1033,7 @@ export function RankingStudio({
                 </div>
               ) : activeJob?.error ? (
                 <div className="ranking-source-progress"><p role="alert" className="ranking-error">{activeJob.error}</p><button type="button" className="ranking-primary" onClick={() => void importSource()}>{ui("다시 가져오기")}</button></div>
-              ) : slot.source ? (
-                <>
-                  {<RankingFramingEditor key={slot.source.id} width={slot.source.width} height={slot.source.height}
-                    value={slot.framing} onChange={framing => patch(active, {framing})}
-                    analysisUrl={sourceUrl || undefined} start={slot.start} end={slot.end}
-                    playing={sourcePlaying} ready={sourceReady} time={current} onToggle={toggleSource}>
-                    {sourcePlayer}
-                  </RankingFramingEditor>}
-                  <div className="ranking-source-actions">
-                    <button type="button" className="ranking-source-remove" disabled={Boolean(busy)}
-                      aria-label={ui(`${active + 1}위 영상 제거`)} title={ui("영상 제거")}
-                      onClick={() => { patch(active, {source: null, start: 0, end: 0}); setCurrent(0); }}>
-                      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5m4-5v5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
-                    </button>
-                  </div>
-                  {slot.source.durationKnown === false ? (
-                    <div className="ranking-prepare-preview">
-                      {slot.pendingLink ? null : busy ? (
-                        <p className="ranking-hint">
-                          {ui("영상 길이와 장면을 불러오고 있어요.")}</p>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const sourceId = slot.source?.id;
-                            if (project && sourceId)
-                              void task(
-                                ui("구간 선택을 다시 준비하고 있습니다…"),
-                                () =>
-                                  prepareSource(
-                                    project,
-                                    sourceId,
-                                    active,
-                                    slot.start,
-                                    slot.end,
-                                  ),
-                              );
-                          }}
-                        >
-                          {ui("다시 시도")}</button>
-                      )}
-                    </div>
-                  ) : (
-                    <RankingTimeline
-                      key={slot.source.id + active}
-                      src={sourceUrl}
-                      duration={slot.source.duration}
-                      start={slot.start}
-                      end={slot.end}
-                      current={current}
-                      disabled={Boolean(busy)}
-                      onChange={(start, end) => patch(active, { start, end })}
-                      onSeek={seek}
-                    />
-                  )}
-                </>
-              ) : (
+              ) : slot.source ? null : (
 <div className={`ranking-empty-source${refreshedDesign ? " ranking-file-dropzone" : ""}${fileDragging ? " is-dragging" : ""}`}
                   role={refreshedDesign ? "button" : undefined}
                   tabIndex={refreshedDesign && !busy && !(activeJob && !activeJob.error) ? 0 : undefined}
@@ -1209,6 +1082,19 @@ export function RankingStudio({
                   <small>{ui("원본 최대 3분 · 250MB")}</small>
                 </div>
               )}
+              {visible.map((item, index) => item.source ? <RankingSourceEditor
+                key={`${index}:${item.source.id}`} slot={item} rank={index + 1}
+                active={active === index && !(activeJob && !activeJob.error)}
+                suspended={Boolean(busy || (mobileScene && !sceneOpen))}
+                project={project} localMedia={localMedia}
+                player={player} remotePlayer={remotePlayer}
+                onChange={changes => patch(index, changes)}
+                onError={setError}
+                onStart={() => setPreviewPauseSignal(value => value + 1)}
+                onSeek={time => setPreviewSeek(previous => ({sourceId: item.source!.id, time, revision: (previous?.revision ?? 0) + 1}))}
+                onImport={() => void importSource()}
+                onPrepare={() => { if (project && item.source) void task(ui("구간 선택을 다시 준비하고 있습니다…"), () => prepareSource(project, item.source!.id, index, item.start, item.end)); }}
+              /> : null)}
             </div>
               {error && <p role="alert" className="ranking-error">{ui(error)}</p>}
               </div>
@@ -1217,7 +1103,7 @@ export function RankingStudio({
                 <button type="button" disabled={Boolean(busy)} onClick={() => {
                   player.current?.pause();
                   if (active + 1 < count) {
-                    setActive(active + 1); setCurrent(slots[active + 1].start); setError("");
+                    setActive(active + 1); setError("");
                     sceneDialog.current?.querySelector(".ranking-scene-scroll")?.scrollTo(0, 0);
                   } else {
                     setSceneOpen(false);
@@ -1226,7 +1112,7 @@ export function RankingStudio({
                   }
                 }}>{active + 1 < count ? slot.source ? ui(`저장하고 ${active + 2}위로 →`) : ui(`${active + 2}위로 건너뛰기 →`) : ui("전체 확인하기 →")}</button>
               </footer> : <>              <footer><button type="button" disabled={Boolean(busy)} onClick={() => setSceneOpen(false)}>{ui("완료")}</button>
-                {active + 1 < count && <button type="button" disabled={Boolean(busy)} onClick={() => { player.current?.pause();  setActive(active + 1); setCurrent(slots[active + 1].start); setError(""); sceneDialog.current?.querySelector(".ranking-scene-scroll")?.scrollTo(0, 0); }}>{ui("다음 순위 고르기 ·")}{active + 2}{ui("위 →")}</button>}
+                {active + 1 < count && <button type="button" disabled={Boolean(busy)} onClick={() => { player.current?.pause();  setActive(active + 1); setError(""); sceneDialog.current?.querySelector(".ranking-scene-scroll")?.scrollTo(0, 0); }}>{ui("다음 순위 고르기 ·")}{active + 2}{ui("위 →")}</button>}
               </footer></>}
 
             </SceneContainer>}
@@ -1277,6 +1163,7 @@ export function RankingStudio({
               subtitle={subtitle}
               count={count}
               labels={visible.map((item) => item.label)}
+              previewSources={visible.flatMap(item => item.source ? [item.source] : [])}
               previewSource={slot.source || undefined}
               previewStart={previewSeek && previewSeek.sourceId === slot.source?.id ? previewSeek.time : slot.start}
               previewRank={active + 1}
@@ -1340,7 +1227,7 @@ export function RankingStudio({
       </div>
       {sourceNotice && <div className="ranking-source-toast" role="status">
         <span>✓ {sourceNotice.message}</span>
-        <button type="button" onClick={() => { setActive(sourceNotice.index); setSceneOpen(true); setCurrent(slots[sourceNotice.index].start); setSourceNotice(null); document.getElementById("ranking-clips-heading")?.scrollIntoView({behavior:"smooth",block:"start"}); }}>{ui("구간 고르기 →")}</button>
+        <button type="button" onClick={() => { setActive(sourceNotice.index); setSceneOpen(true); setSourceNotice(null); document.getElementById("ranking-clips-heading")?.scrollIntoView({behavior:"smooth",block:"start"}); }}>{ui("구간 고르기 →")}</button>
         <button type="button" aria-label={ui("알림 닫기")} onClick={() => setSourceNotice(null)}>×</button>
       </div>}
       <div className="ranking-notices" aria-live="polite">

@@ -1,4 +1,5 @@
 "use client";
+import { rankingShowroomVideo } from "@/lib/ranking-showroom-delivery";
 
 import { useUiText } from "@/lib/i18n/use-ui-text";
 
@@ -189,7 +190,7 @@ function LocalizedRankingShowroom({ locale }: { locale: keyof typeof rankingShow
       <div ref={result} className={styles.result}>
         <div className={styles.mediaLabel}>{ui("랭킹 쇼츠")}<span>{ui("1개")}</span></div>
         <div className={styles.resultFrame}>
-          <video key={`${locale}-${sample.name}-${retry}`} ref={video} src={`${mediaRoot}/${sample.name}.mp4`} poster={`${mediaRoot}/${sample.name}.jpg`} muted={muted} loop playsInline preload="none" aria-label={`${ui(sample.subtitle)} — ${ui("완성 영상")}`} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onError={() => setFailed(true)} />
+          <video key={`${locale}-${sample.name}-${retry}`} ref={video} src={rankingShowroomVideo(locale, sample.name)} poster={`${mediaRoot}/${sample.name}.jpg`} muted={muted} loop playsInline preload="none" aria-label={`${ui(sample.subtitle)} — ${ui("완성 영상")}`} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onError={() => setFailed(true)} />
           {failed && <div className={styles.error}><span>{ui("영상을 불러오지 못했어요.")}</span><button type="button" onClick={() => { setFailed(false); setRetry(value => value + 1); }}>{ui("다시 재생")}</button></div>}
         </div>
         <div className={styles.controls}>

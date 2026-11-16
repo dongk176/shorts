@@ -35,6 +35,7 @@ export function RankingSequencePreview({
   onStart,
   layoutOnly = false,
   previewSource,
+  previewSources,
   previewStart = 0,
   previewRank = 1,
   framedSources,
@@ -56,6 +57,7 @@ export function RankingSequencePreview({
   style: RankingStyle;
   layoutOnly?: boolean;
   previewSource?: RankingSource;
+  previewSources?: RankingSource[];
   previewStart?: number;
   previewRank?: number;
   suspended: boolean;
@@ -283,19 +285,12 @@ export function RankingSequencePreview({
             {item.transitionUrl ? media : <RankingFramedMedia width={geometry?.width || 0} height={geometry?.height || 0} framing={geometry?.framing}>{media}</RankingFramedMedia>}
           </div>;
         }) : <div className="ranking-composition-empty" />}
-        {!clip?.transitionUrl && previewSource && (layoutOnly || (!playing && elapsed === 0)) ? (
-          framedSources ? <div className="ranking-sequence-still"><RankingFramedMedia width={previewSource.width} height={previewSource.height} framing={framedSources[previewSource.id]?.framing}>
-            <RankingThumbnail key={previewSource.id}
-              lazy={false} portrait remote={previewSource.remote} time={previewStart}
-              videoUrl={localMedia[previewSource.id] || (project && (!previewSource.remote || previewSource.previewReady)
-                ? `/api/ranking-shorts/${project}/media/${previewSource.id}` : undefined)} />
-          </RankingFramedMedia></div> : (<div className="ranking-composition-still">
-            <RankingThumbnail key={previewSource.id}
-              lazy={false} portrait remote={previewSource.remote} time={previewStart}
-              videoUrl={localMedia[previewSource.id] || (project && (!previewSource.remote || previewSource.previewReady)
-                ? `/api/ranking-shorts/${project}/media/${previewSource.id}` : undefined)} />
-          </div>)
-        ) : null}
+        {(previewSources || (previewSource ? [previewSource] : [])).map(source => <RetainedStill
+          key={source.id} source={source} framedSources={framedSources}
+          active={!clip?.transitionUrl && source.id === previewSource?.id && (layoutOnly || (!playing && elapsed === 0))}
+          time={source.id === previewSource?.id ? previewStart : clips.find(item => item.sourceId === source.id)?.start || 0}
+          videoUrl={localMedia[source.id] || (project && (!source.remote || source.previewReady) ? `/api/ranking-shorts/${project}/media/${source.id}` : undefined)}
+        />)}
         {!clip?.transitionUrl && <RankingOverlay
           title={title}
           subtitle={subtitle}
@@ -347,4 +342,17 @@ export function RankingSequencePreview({
       ) : null}
     </div>
   );
+}
+
+// Keep the selected-frame video buffered when another rank or playback is shown.
+function RetainedStill({ source, active, time, videoUrl, framedSources }: {
+  source: RankingSource; active: boolean; time: number; videoUrl?: string;
+  framedSources?: Record<string, {width:number;height:number;framing?:RankingFraming}>;
+}) {
+  const [visited, setVisited] = useState(false);
+  useEffect(() => { if (active) setVisited(true); }, [active]);
+  const thumbnail = visited || active ? <RankingThumbnail lazy={false} portrait remote={source.remote} time={time} videoUrl={videoUrl} /> : null;
+  return <div className={framedSources ? "ranking-sequence-still" : "ranking-composition-still"} style={{display: active ? undefined : "none"}}>
+    {framedSources ? <RankingFramedMedia width={source.width} height={source.height} framing={framedSources[source.id]?.framing}>{thumbnail}</RankingFramedMedia> : thumbnail}
+  </div>;
 }
