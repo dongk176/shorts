@@ -1,3 +1,4 @@
+import { AdminMediaTraffic } from "./admin-media-traffic";
 import { AdminMeetingDashboard } from "./admin-meeting-dashboard";
 import { loadRankingFeedback } from "@/lib/ranking-feedback-store";
 import { AdminRankingFeedback } from "./admin-ranking-feedback";
@@ -128,6 +129,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
   const params = await searchParams;
   const requestedTab = first(params.tab);
   const validTabs: AdminTab[] = [
+    "traffic",
     "dashboard",
     "cancellations",
     "updates",
@@ -151,6 +153,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
     ? requestedTab as AdminTab
     : "billing";
   const expenseAccess = await hasExpenseAccess(admin);
+  if (tab === "traffic") return <AdminShell activeTab={tab} expenseAccess={expenseAccess}><AdminMediaTraffic params={params}/></AdminShell>;
   if (tab === "dashboard") return <AdminShell activeTab={tab} expenseAccess={expenseAccess}><AdminMeetingDashboard /></AdminShell>;
   if (tab === "expenses") {
     if (!expenseAccess) notFound();

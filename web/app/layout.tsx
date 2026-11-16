@@ -1,3 +1,4 @@
+import { MediaTrafficObserver } from "@/components/media-traffic-observer";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Script from "next/script";
@@ -145,6 +146,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
             </WelcomeOverlayQueueProvider>
           </UsageProvider>
           <GoogleAnalyticsMeasurement measurementId={analyticsMeasurementId} />
+          <MediaTrafficObserver />
           <LanguageSelector />
         </I18nProvider>
       </body>

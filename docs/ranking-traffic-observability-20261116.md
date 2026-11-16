@@ -1,0 +1,15 @@
+# Ranking traffic observability
+
+Authorized production baseline: 274c341f13788b0ac8129ab927ec01fa6b810fa0, deployment dpl_Cqs19LGbQiBkaeRLKRUpoc9YZZKw. Worktree .tmp/ranking-traffic-20261116, branch codex/ranking-traffic-20261116. Production database mvcprswvfybudtopepuj / shorts_mvp, AWS 181651591905 and Vercel prj_bQyHRVC3Pfzq2dvUnAqEDlw66GOw are verified. No lab dependency or new fixed-cost service.
+
+New ranking runtimes count successful source body writes and upload body reads, with owner/project bound to the existing HMAC session. yt-dlp cumulative per-format byte counters are separate downloader measurements. Successful output upload records file payload bytes. No renderer options, source storage rules, capability grants or media proxy path change.
+
+The runtime reporter has one background thread, a 500-event queue, 50-event batches, 10-second intervals and a 3-second network timeout. Stable event IDs deduplicate retries. Extended outages can drop oldest records; counters are not a complete billing ledger. Existing runtimes collect only after recreation. Callback targets production; pre-promotion verification tests signing/ingestion independently, followed by live callback verification after promotion.
+
+Public home examples use existing CloudFront E3NYPMMRTFR2KF. Only easycut/ranking-showcase/* gets Timing-Allow-Origin and anonymous CORS headers. Cache keys, original files, authorization on private videos and default distribution behavior remain unchanged. Browser reports are advisory: blocking, aborted media and page exits can omit entries. Unknown timing is null, never a zero-byte cache hit. Maximum 20 events/request, 100/page, 15-second batching; allowlisted assets and same-origin checks. No raw IPs, source URLs, signed URLs or auth tokens are stored.
+
+Final AWS playback/download redirects identify user/project and purpose but have unknown byte counts; complete CDN attribution requires separate delivery logs. Do not present these requests as full-file downloads or combine different network legs into billed usage.
+
+Administrator tab: /admin/easycutcutcutcutcutcut?tab=traffic. Existing admin auth protects reads and test-account changes. Filter 24 hours/7 days/30 days, audience, email/project. Table capped at 200 groups, clearly labelled totals for displayed rows. Explicit test-account list includes user-approved Il Mare Academy; candidate traffic always classified as test. RLS and revoked anon/authenticated grants protect both tables. Cleanup bounds records older than 90 days to 5,000 deletions per process-hour, only on telemetry intake.
+
+Verification: Range payload count, signed callback/tampering/generation binding, bounded retry queue, DB privacy and idempotency, unknown/cached byte distinctions, existing video regressions, build/lint/types and protected routes. Initial frontend test environment lacked worker/.venv; after linking the existing environment all eight related failures were rerun successfully. Evidence under .tmp/release/traffic. Ordinary bounded build/database/video tests use existing resources, with no fixed recurring commitment.

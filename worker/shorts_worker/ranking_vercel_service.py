@@ -10,9 +10,11 @@ import re
 import shutil
 import threading
 import time
+from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
+from uuid import uuid4
 
 import httpx
 
@@ -85,7 +87,73 @@ class Egress:
 
 class VercelPipeline(RankingPipeline):
     def acquire(self, directory, url):
+        self.traffic_source = directory.name
         return self.egress.run(lambda proxy: self._acquire(directory, url, proxy), self.deadline)
+
+    def download_traffic(self, count, interrupted):
+        reporter = getattr(self, "traffic_reporter", None)
+        if reporter:
+            reporter.record(self.traffic_source, "source_download", count or None, interrupted)
+
+
+class TrafficReporter:
+    """Bounded, off-request reporting. Missing reports never block video delivery."""
+
+    def __init__(self, config):
+        self.config = config
+        self.pending = deque(maxlen=500)
+        self.lock = threading.Lock()
+        self.enabled = bool(config.get("trafficUrl") and config.get("generation"))
+        if self.enabled:
+            threading.Thread(target=self.run, daemon=True).start()
+
+    def record(self, source, purpose, count, interrupted=False):
+        if not self.enabled:
+            return
+        event = dict(
+            id=str(uuid4()), resource=source, purpose=purpose, bytes=count, interrupted=interrupted
+        )
+        with self.lock:
+            self.pending.append(event)
+
+    def flush(self):
+        with self.lock:
+            events = list(self.pending)[:50]
+        if not events:
+            return
+        payload = dict(
+            project=self.config["project"],
+            generation=self.config["generation"],
+            events=events,
+            environment=self.config.get("environment", "production"),
+        )
+        raw = json.dumps(payload, separators=(",", ":")).encode()
+        signature = hmac.digest(self.config["secret"].encode(), raw, "sha256").hex()
+        try:
+            response = httpx.post(
+                self.config["trafficUrl"],
+                content=raw,
+                headers={
+                    "Content-Type": "application/json",
+                    "x-ranking-traffic-signature": signature,
+                },
+                timeout=3,
+                follow_redirects=False,
+            )
+            if response.status_code == 204:
+                ids = {e["id"] for e in events}
+                with self.lock:
+                    self.pending = deque(
+                        (e for e in self.pending if e["id"] not in ids), maxlen=500
+                    )
+        except Exception:
+            pass
+
+    def run(self):
+        # At most three seconds of background network work per ten seconds.
+        for _ in range(190):
+            time.sleep(10)
+            self.flush()
 
 
 class Service:
@@ -102,6 +170,7 @@ class Service:
         self.operations = {}
         self.sources = {}
         self.last_use = time.monotonic()
+        self.traffic = TrafficReporter(config)
 
     def submit(self, operation, data):
         checked_id(operation)
@@ -178,6 +247,7 @@ class Service:
                 egress=Egress(data.get("proxy", "")),
                 progress=lambda value: op.update(progress=value),
             )
+            pipeline.traffic_reporter = self.traffic
             if data["action"] != "render":
                 source = data["sourceId"]
                 if data.get("kind") == "audio":
@@ -221,6 +291,7 @@ class Service:
                             follow_redirects=False,
                         )
                     response.raise_for_status()
+                    self.traffic.record(operation, "render_output", file.stat().st_size)
                     result = {"duration": result["duration"], "outputKey": data["outputKey"]}
                 finally:
                     file.unlink(missing_ok=True)
@@ -343,6 +414,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(
                 200 if op else 404, {k: v for k, v in (op or {}).items() if k != "data"}
             )
+        sent = 0
+        sid = None
+        interrupted = False
+        purpose = parse_qs(urlsplit(self.path).query).get("purpose", ["source_preview"])[0]
+        if purpose not in {"source_preview", "sequence_preview", "thumbnail"}:
+            purpose = "source_preview"
         try:
             sid = self.media_identity("GET")
             file = self.service.directory / sid / "source.mp4"
@@ -371,15 +448,21 @@ class Handler(BaseHTTPRequestHandler):
                     if not chunk:
                         break
                     self.wfile.write(chunk)
+                    sent += len(chunk)
                     remaining -= len(chunk)
             self.service.last_use = time.monotonic()
         except RankingFailure:
             self.reply(403, {})
         except (BrokenPipeError, ConnectionResetError, TimeoutError):
-            pass
+            interrupted = True
+        finally:
+            if sid is not None and sent:
+                self.service.traffic.record(sid, purpose, sent, interrupted)
 
     def do_PUT(self):
         op = None
+        received = 0
+        sid = None
         try:
             sid = self.media_identity("PUT")
             with self.service.lock:
@@ -408,6 +491,7 @@ class Handler(BaseHTTPRequestHandler):
                     if not chunk:
                         raise ValueError("incomplete")
                     stream.write(chunk)
+                    received += len(chunk)
                     remaining -= len(chunk)
             operation = next(k for k, v in self.service.operations.items() if v is op)
             threading.Thread(target=self.service.execute, args=(operation,), daemon=True).start()
@@ -416,6 +500,11 @@ class Handler(BaseHTTPRequestHandler):
             if op:
                 op.update(status="failed", error="업로드가 중단되었습니다. 다시 추가해 주세요.")
             self.reply(400, {})
+        finally:
+            if sid is not None and received:
+                self.service.traffic.record(
+                    sid, "upload", received, bool(op and op["status"] == "failed")
+                )
 
 
 class BoundedServer(ThreadingHTTPServer):

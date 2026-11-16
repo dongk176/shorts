@@ -11,6 +11,7 @@ import { AdminSalesCard } from "./admin-sales-card";
 import type { AdminTrendData } from "@/lib/admin-trends";
 
 export type AdminTab =
+  | "traffic"
   | "dashboard"
   | "cancellations"
   | "updates"
@@ -108,6 +109,7 @@ const navigationGroups: Array<{
     label: "회원 관리",
     icon: "members",
     items: [
+      { tab: "traffic", label: "영상 트래픽", icon: "settings" },
       { tab: "members", label: "회원 관리", icon: "members" },
       { tab: "managed-accounts", label: "발급 계정", icon: "accounts" },
       { tab: "onboarding", label: "온보딩 분석", icon: "onboarding" },
@@ -147,6 +149,7 @@ const navigationGroups: Array<{
 ];
 
 const pageCopy: Record<AdminTab, { eyebrow: string; title: string }> = {
+  traffic: { eyebrow: "Operations / Traffic", title: "영상 트래픽" },
   dashboard: { eyebrow: "System / Dashboard", title: "대시보드" },
   cancellations: { eyebrow: "Commerce / Cancellations", title: "해지 사유" },
   updates: { eyebrow: "Content / Updates", title: "업데이트 관리" },

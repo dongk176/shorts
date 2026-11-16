@@ -247,7 +247,7 @@ export function RankingSequencePreview({
   return (
     <div className="ranking-sequence-preview">
       {backgroundMusic && (project || localMedia[backgroundMusic.sourceId]) && !layoutOnly ? <audio ref={music} loop preload="auto"
-        src={localMedia[backgroundMusic.sourceId] || `/api/ranking-shorts/${project}/media/${backgroundMusic.sourceId}`}
+        src={localMedia[backgroundMusic.sourceId] || `/api/ranking-shorts/${project}/media/${backgroundMusic.sourceId}?purpose=sequence_preview`}
         onLoadedMetadata={syncMusic} onError={() => setError(ui("배경음악 미리보기가 만료되었습니다. 음악을 다시 추가해 주세요."))} /> : null}
       <div data-i18n-content className={`ranking-composition${clip?.transitionUrl ? " is-transition" : ""}`} style={videoStyle}>
         {clips.length > 0 && !layoutOnly ? clips.map((item, itemIndex) => {
@@ -258,7 +258,7 @@ export function RankingSequencePreview({
             aria-hidden={itemIndex !== index}
             playsInline
             preload={itemIndex >= index && itemIndex <= index + 2 ? "auto" : "none"}
-            src={item.transitionUrl || localMedia[item.sourceId] || `/api/ranking-shorts/${project}/media/${item.sourceId}`}
+            src={item.transitionUrl || localMedia[item.sourceId] || `/api/ranking-shorts/${project}/media/${item.sourceId}?purpose=sequence_preview`}
             aria-label={ui("전체 미리보기 영상")}
             data-rank={item.rank}
             onLoadedMetadata={(event) => {
@@ -289,7 +289,7 @@ export function RankingSequencePreview({
           key={source.id} source={source} framedSources={framedSources}
           active={!clip?.transitionUrl && source.id === previewSource?.id && (layoutOnly || (!playing && elapsed === 0))}
           time={source.id === previewSource?.id ? previewStart : clips.find(item => item.sourceId === source.id)?.start || 0}
-          videoUrl={localMedia[source.id] || (project && (!source.remote || source.previewReady) ? `/api/ranking-shorts/${project}/media/${source.id}` : undefined)}
+          videoUrl={localMedia[source.id] || (project && (!source.remote || source.previewReady) ? `/api/ranking-shorts/${project}/media/${source.id}?purpose=thumbnail` : undefined)}
         />)}
         {!clip?.transitionUrl && <RankingOverlay
           title={title}

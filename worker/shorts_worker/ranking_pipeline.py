@@ -361,6 +361,16 @@ class RankingPipeline:
                                     {"stage": "downloading", "percent": min(100, float(match[1]))}
                                 )
                     time.sleep(0.1)
+                if "--progress-template" in args and hasattr(self, "download_traffic"):
+                    # Bounded stdout already contains per-format cumulative counters, including
+                    # the final update that can arrive after the child exits.
+                    raw_progress = os.pread(out.fileno(), 4 * 1024 * 1024, 0)
+                    counts = {}
+                    for format_id, amount in re.findall(
+                        rb"ranking-bytes:([A-Za-z0-9_.+-]{1,100}):(\d+)", raw_progress
+                    ):
+                        counts[format_id] = max(counts.get(format_id, 0), int(amount))
+                    self.download_traffic(sum(counts.values()), bool(process.returncode))
                 if process.returncode:
                     if youtube:
                         err.seek(0)
@@ -566,7 +576,8 @@ class RankingPipeline:
                     "--newline",
                     "--no-colors",
                     "--progress-template",
-                    "download:ranking-progress:%(progress._percent_str)s",
+                    ("download:ranking-progress:%(progress._percent_str)s "
+                     "ranking-bytes:%(info.format_id)s:%(progress.downloaded_bytes)s"),
                     "--max-filesize",
                     str(MAX_BYTES),
                     "--match-filter",

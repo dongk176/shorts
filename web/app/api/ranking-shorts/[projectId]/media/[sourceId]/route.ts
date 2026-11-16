@@ -1,3 +1,8 @@
+import { after } from "next/server";
+import { randomUUID } from "node:crypto";
+import { saveTrafficEvents } from "@/lib/media-traffic-store";
+import { trafficEnvironment } from "@/lib/media-traffic";
+import { trafficPurpose } from "@/lib/media-traffic";
 import { getDb } from "@/lib/db";
 import { HttpError } from "@/lib/http";
 import { getShortDownloadUrl, getShortPlaybackAccess } from "@/lib/aws";
@@ -52,6 +57,10 @@ export async function GET(
         ? (await rankingVercelAccess("GET", projectId, sourceId, admin.id)).url
         : rankingReceiverAccess("GET", projectId, sourceId, admin.id).url;
     }
+    if(query.get("result")==="1") after(async()=>{
+      try { await saveTrafficEvents([{id:randomUUID(),resource:sourceId,purpose:query.get("download")==="1"?"result_download":"result_playback",bytes:null,interrupted:false}],{userId:admin.id,projectId,provider:"aws_cloudfront",measurement:"unmeasured",environment:trafficEnvironment(new URL(request.url).hostname)}); } catch { console.warn("media_traffic_record_failed"); }
+    });
+    if(query.get("result")!=="1") { const target=new URL(url); target.searchParams.set("purpose",trafficPurpose(query.get("purpose")));url=target.toString(); }
     return new Response(null, {
       status: 307,
       headers: {

@@ -194,3 +194,69 @@ def test_render_source_budget_allows_ten_attempts_but_never_eleven(tmp_path, mon
         service.submit(operation, {**data, "attempt": 10})
     with pytest.raises(RankingFailure):
         service.submit(operation, {**data, "attempt": 9, "sourceId": str(uuid4())})
+
+
+def test_traffic_reporting_is_bounded_signed_and_retry_idempotent(monkeypatch):
+    from shorts_worker.ranking_vercel_service import TrafficReporter
+
+    monkeypatch.setattr("threading.Thread.start", lambda self: None)
+    config = dict(
+        project=str(uuid4()),
+        generation=str(uuid4()),
+        secret="a" * 64,
+        trafficUrl="https://www.easycut.co.kr/api/internal/ranking-traffic",
+        environment="candidate",
+    )
+    reporter = TrafficReporter(config)
+    for _ in range(600):
+        reporter.record(str(uuid4()), "source_preview", 1024)
+    assert len(reporter.pending) == 500
+    calls = []
+
+    def post(url, **kwargs):
+        calls.append(kwargs)
+        assert (
+            kwargs["headers"]["x-ranking-traffic-signature"]
+            == hmac.digest(config["secret"].encode(), kwargs["content"], "sha256").hex()
+        )
+        assert kwargs["timeout"] == 3
+        return type("Response", (), {"status_code": 500 if len(calls) == 1 else 204})()
+
+    monkeypatch.setattr("httpx.post", post)
+    reporter.flush()
+    assert len(reporter.pending) == 500
+    reporter.flush()
+    assert calls[0]["content"] == calls[1]["content"]
+    assert len(reporter.pending) == 450
+
+
+def test_media_range_counter_matches_sent_payload(tmp_path, monkeypatch):
+    import io
+    from types import SimpleNamespace
+
+    from shorts_worker.ranking_vercel_service import Handler
+
+    sid = str(uuid4())
+    (tmp_path / sid).mkdir()
+    (tmp_path / sid / "source.mp4").write_bytes(b"0123456789")
+    events = []
+    handler = Handler.__new__(Handler)
+    handler.path = "/sources/" + sid + "?purpose=sequence_preview"
+    handler.headers = {"Range": "bytes=2-5"}
+    handler.server = SimpleNamespace(
+        service=SimpleNamespace(
+            directory=tmp_path,
+            sources={sid: {}},
+            traffic=SimpleNamespace(record=lambda *a: events.append(a)),
+            origins=set(),
+        )
+    )
+    handler.connection = SimpleNamespace(settimeout=lambda _: None)
+    handler.wfile = io.BytesIO()
+    handler.media_identity = lambda _: sid
+    handler.send_response = lambda _: None
+    handler.send_header = lambda *a: None
+    handler.end_headers = lambda: None
+    handler.do_GET()
+    assert handler.wfile.getvalue() == b"2345"
+    assert events == [(sid, "sequence_preview", 4, False)]
