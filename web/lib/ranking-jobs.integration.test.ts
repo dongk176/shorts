@@ -24,7 +24,7 @@ import {
   queueRankingOperation,
   rankingOperation,
 } from "./ranking-jobs";
-import { processRankingEmails } from "./ranking-completion-email";
+import { processRankingEmails, rankingEmailContent } from "./ranking-completion-email";
 const url = process.env.RANKING_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
 suite("ranking isolated database workflow", () => {
@@ -184,6 +184,20 @@ suite("ranking isolated database workflow", () => {
     await processRankingEmails(send);
     expect(send).toHaveBeenCalledTimes(1);
   });
+  it("opens the completed project in the language used to create it", async () => {
+    const operation = randomUUID();
+    await state.db`insert into shorts_mvp.ranking_operations(id,project_id,action,status,request_id,payload)
+      values(${operation},${project},'render','succeeded',${randomUUID()},${state.db.json({ locale: "ja" })})`;
+    await state.db`insert into shorts_mvp.ranking_completion_emails(operation_id) values(${operation})`;
+    const send = vi.fn().mockResolvedValue("email-test");
+    await processRankingEmails(send);
+    expect(send).toHaveBeenCalledTimes(1);
+    const claim = send.mock.calls[0][0];
+    expect(claim.locale).toBe("ja");
+    const { subject, text } = rankingEmailContent(claim);
+    expect(subject).toContain("ランキングショート");
+    expect(text).toContain(`/jp/ranking-shorts?project=${project}&operation=${operation}`);
+  });
   it("terminates an exhausted email claim after a crashed sender", async () => {
     const op = randomUUID();
     await state.db`insert into shorts_mvp.ranking_operations(id,project_id,action,status,request_id) values(${op},${project},'render','succeeded',${randomUUID()})`;
@@ -207,4 +221,12 @@ suite("ranking isolated database workflow", () => {
       await state.db`select status from shorts_mvp.ranking_completion_emails where operation_id=${op}`;
     expect(rows[0].status).toBe("skipped");
   });
+});
+
+it("localizes completion links without requiring locale metadata on older jobs", () => {
+  const base = { projectId: "p", operationId: "o", email: "owner@example.test", attemptCount: 1 };
+  expect(rankingEmailContent(base).text).toContain("/ranking-shorts?project=p&operation=o");
+  expect(rankingEmailContent({ ...base, locale: "ja" }).text).toContain("/jp/ranking-shorts?project=p&operation=o");
+  expect(rankingEmailContent({ ...base, locale: "ja" }).subject).toContain("ランキングショートが完成しました");
+  expect(rankingEmailContent({ ...base, locale: "en" }).text).toContain("/en/ranking-shorts?project=p&operation=o");
 });

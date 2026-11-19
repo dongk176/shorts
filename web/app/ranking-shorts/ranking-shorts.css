@@ -68,6 +68,7 @@
 .ranking-design-panel .ranking-individual-colors{margin-bottom:0}
 @media(max-width:600px){.ranking-design-panel{padding:16px}}
 
+@font-face{font-family:RankingNotoJP;src:url('/fonts/editor/NotoSansCJKjp-Variable.ttf') format('truetype');font-weight:100 900;font-display:swap}
 @font-face{font-family:RankingPretendard;src:url('/fonts/editor/Pretendard-Bold.woff2') format('woff2');font-weight:400;font-display:swap}
 @font-face{font-family:RankingAggro;src:url('/fonts/editor/SandboxAggro-Bold.ttf') format('truetype');font-weight:400;font-display:swap}
 @font-face{font-family:RankingJalnan;src:url('/fonts/editor/Jalnan2-Regular.woff2') format('woff2');font-weight:400;font-display:swap}

@@ -16,12 +16,12 @@ export function RankingWorkspaceProjects({revision,submitted,preparing}:{revisio
  const items=useMemo(()=>{const result=projects.filter(p=>p.status!=="draft");if(submitted&&!result.some(p=>p.id===submitted.id))result.unshift(submitted);return result;},[projects,submitted]);
  return <section className="ranking-workspace-projects" id="ranking-workspace-projects" tabIndex={-1} aria-label={ui("랭킹 쇼츠 프로젝트")}>
   <div className="ranking-library-heading"><div><span>MY RANKING SHORTS</span><h2>{ui("랭킹 쇼츠 프로젝트")}</h2></div><p>{ui("제작 중인 영상부터 완성본까지, 여기에서 확인하세요.")}</p></div>
-  {preparing?<div className="ranking-preparing-card" role="status"><span className="ranking-spinner" aria-hidden="true"/><div><strong>{preparing.title || ui("랭킹 쇼츠")}</strong><p>{preparing.message || ui("제작을 준비하고 있습니다…")}</p></div></div>:null}
+  {preparing?<div className="ranking-preparing-card" role="status"><span className="ranking-spinner" aria-hidden="true"/><div><strong data-i18n-skip={Boolean(preparing.title) || undefined}>{preparing.title || ui("랭킹 쇼츠")}</strong><p>{ui(preparing.message || "제작을 준비하고 있습니다…")}</p></div></div>:null}
   {error?<p role="alert">{error} <button type="button" onClick={()=>setRetry(n=>n+1)}>{ui("다시 시도")}</button></p>:null}
   {items.length?<RankingProjectList projects={items} embedded onOpen={setSelected}/>:<div className="ranking-projects-empty">{loading?ui("프로젝트를 불러오고 있어요…"):ui("영상을 만들면 여기에 차곡차곡 모여요.")}</div>}
   {selected&&<dialog ref={dialog} {...backdrop} className="ranking-project-view" aria-label={selected.title||ui("랭킹 쇼츠 영상")} onCancel={()=>setSelected(null)}>
-   <header><h2>{selected.title||ui("랭킹 쇼츠")}</h2><button type="button" aria-label={ui("영상 닫기")} onClick={()=>setSelected(null)}>×</button></header>
-   {detailError?<p role="alert">{detailError}</p>:!detail?<p role="status">{ui("영상을 불러오고 있어요…")}</p>:detail.result?<><RankingResultPlayer url={detail.result.url}/><a href={`${detail.result.url}&download=1`} className="ranking-download-button">{ui("영상 다운로드 ↓")}</a></>:<p role="status">{detail.error||ui("영상을 만들고 있어요. 완료되면 프로젝트에서 확인할 수 있습니다.")}</p>}
+   <header><h2 data-i18n-skip={Boolean(selected.title) || undefined}>{selected.title||ui("랭킹 쇼츠")}</h2><button type="button" aria-label={ui("영상 닫기")} onClick={()=>setSelected(null)}>×</button></header>
+   {detailError?<p role="alert">{detailError}</p>:!detail?<p role="status">{ui("영상을 불러오고 있어요…")}</p>:detail.result?<><RankingResultPlayer url={detail.result.url}/><a href={`${detail.result.url}&download=1`} className="ranking-download-button">{ui("영상 다운로드 ↓")}</a></>:<p role="status">{ui(detail.error || "영상을 만들고 있어요. 완료되면 프로젝트에서 확인할 수 있습니다.")}</p>}
   </dialog>}
  </section>;
 }

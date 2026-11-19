@@ -1,3 +1,4 @@
+import { siteLocales } from "./i18n/config";
 import { transitionSeconds, rankingSoundSchema, rankingMusicSchema } from "./ranking-audio";
 import { z } from "zod";
 import { rankingFramingSchema } from "./ranking-framing";
@@ -31,6 +32,7 @@ export type RankingSource = {
 
 export const rankingRenderSchema = z
   .object({
+    locale: z.enum(siteLocales).optional(),
     title: z.string().trim().min(1).max(80),
     subtitle: z.string().trim().max(60).default("랭킹"),
     style: rankingStyleSchema.default(defaultRankingStyle),

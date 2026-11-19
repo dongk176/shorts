@@ -2,17 +2,29 @@ import "server-only";
 import { Resend } from "resend";
 import { getDb } from "./db";
 import { absoluteUrl } from "./seo";
+import { normalizeSiteLocale, type SiteLocale } from "./i18n/config";
+import { localizedHref } from "./i18n/routing";
 
 export type RankingEmail = {
   operationId: string;
   projectId: string;
   email: string;
   attemptCount: number;
+  locale?: SiteLocale;
 };
 export function rankingEmailContent(claim: RankingEmail) {
-  const url = absoluteUrl(
-    `/ranking-shorts?project=${encodeURIComponent(claim.projectId)}&operation=${encodeURIComponent(claim.operationId)}`,
-  );
+  const locale = normalizeSiteLocale(claim.locale);
+  const path = localizedHref("/ranking-shorts", locale);
+  const query = new URLSearchParams({ project: claim.projectId, operation: claim.operationId });
+  const url = absoluteUrl(`${path}?${query}`);
+  if (locale === "ja") return {
+    subject: "【EasyCut】ランキングショートが完成しました",
+    text: `ランキングショートが完成しました。\n\n作成時のアカウントでログインすると、動画を確認してダウンロードできます。\n${url}\n\n完成動画の保存期間はプロジェクト作成日から30日間です。`,
+  };
+  if (locale === "en") return {
+    subject: "[EasyCut] Your Ranking Short is ready",
+    text: `Your Ranking Short is ready.\n\nSign in with the account you used to create it to watch and download your video.\n${url}\n\nYour video is available for 30 days from the date you created the project.`,
+  };
   return {
     subject: "[이지컷] 랭킹 쇼츠가 완성됐어요",
     text: `랭킹 쇼츠 제작이 완료됐습니다.\n\n제작한 계정으로 로그인해 영상을 확인하고 다운로드하세요.\n${url}\n\n완성 영상은 작업 생성일로부터 30일간 보관됩니다.`,
@@ -31,7 +43,7 @@ export async function processRankingEmails(
     and (p.deleted_at is not null or p.expires_at<=now() or coalesce(u.email,'')='')`;
   const claims = await db.begin(async (tx) => {
     const rows =
-      await tx`select e.operation_id,p.id as project_id,u.email,e.attempt_count
+      await tx`select e.operation_id,p.id as project_id,u.email,e.attempt_count,o.payload->>'locale' as locale
       from shorts_mvp.ranking_completion_emails e join shorts_mvp.ranking_operations o on o.id=e.operation_id
       join shorts_mvp.ranking_projects p on p.id=o.project_id join shorts_mvp.app_users u on u.id=p.user_id
       where o.status='succeeded' and p.deleted_at is null and p.expires_at>now()
@@ -43,6 +55,7 @@ export async function processRankingEmails(
       operationId: String(row.operationId),
       projectId: String(row.projectId),
       email: String(row.email),
+      locale: normalizeSiteLocale(row.locale),
       attemptCount: Number(row.attemptCount) + 1,
     }));
   });

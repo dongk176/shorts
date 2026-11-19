@@ -11,10 +11,12 @@ export type RankingExample = {
   checkedAt?: string;
 };
 
+export const rankingExampleLanguages = { ko: "한국어", en: "영어", ja: "일본어" } as const;
+
 export function sortRankingExamples(items: RankingExample[], locale: string, sort = "views") {
+  const language = rankingExampleLanguages[locale.split("-")[0] as keyof typeof rankingExampleLanguages];
   return [...items].sort((a, b) => {
-    if (["ko", "en"].includes(locale.split("-")[0])) {
-      const language = locale.split("-")[0] === "ko" ? "한국어" : "영어";
+    if (language) {
       const priority = Number(b.language === language) - Number(a.language === language);
       if (priority) return priority;
     }

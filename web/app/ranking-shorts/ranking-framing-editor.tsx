@@ -86,7 +86,7 @@ export function RankingFramingEditor({ width, height, value, onChange, children,
       }}><svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true"><path d="M5 2v11a2 2 0 0 0 2 2h11M2 5h11a2 2 0 0 1 2 2v11" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>{ui("화면 조정")}{!open && changed ? <i aria-label={ui("조정됨")} /> : null}</button>
       </div>
     </div>
-    {status?.message ? <div className="ranking-framing-analysis" role="status" aria-live="polite" aria-busy={analyzing}><span>{status.message}</span>{status.undo ? <button type="button" onClick={() => { onChange(status.undo!); setAnalysis({key:analysisKey,pending:false,message:ui("이전 화면 조정으로 되돌렸어요.")}); }}>{ui("되돌리기")}</button> : null}</div> : null}
+    {status?.message ? <div className="ranking-framing-analysis" role="status" aria-live="polite" aria-busy={analyzing}><span>{ui(status.message)}</span>{status.undo ? <button type="button" onClick={() => { onChange(status.undo!); setAnalysis({key:analysisKey,pending:false,message:ui("이전 화면 조정으로 되돌렸어요.")}); }}>{ui("되돌리기")}</button> : null}</div> : null}
     <div ref={stage} className="ranking-framing-stage" style={{ aspectRatio: width > 0 && height > 0 ? width / height : 9 / 16, "--ranking-framing-aspect": width > 0 && height > 0 ? width / height : 9 / 16 } as CSSProperties}>
       {children}
       {open ? <div className="ranking-framing-guides">

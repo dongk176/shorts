@@ -138,9 +138,9 @@ export function RankingStudio({
     return () => cancelAnimationFrame(frame);
   }, [popularSelection, popularRank, mobileScene]);
   const [slots, setSlots] = useState(emptySlots);
-  const [title, setTitle] = useState(ui("놓치면 아쉬운 순간"));
+  const [title, setTitle] = useState(() => defaultRankingDraft(locale).title);
   const [style, setStyle] = useState<RankingStyle>(defaultRankingStyle);
-  const [subtitle, setSubtitle] = useState(ui("오늘의 랭킹"));
+  const [subtitle, setSubtitle] = useState(() => defaultRankingDraft(locale).subtitle);
   const player = useRef<HTMLVideoElement>(null);
   const sourceFileInput = useRef<HTMLInputElement>(null);
   const remotePlayer = useRef<RankingRemoteHandle>(null);
@@ -456,6 +456,7 @@ export function RankingStudio({
   async function render() {
     if (pendingSources.current.size) return;
     const parsed = rankingRenderSchema.safeParse({
+      locale,
       title,
       transitionSound,
       transitionVersion: 2,
@@ -933,7 +934,7 @@ export function RankingStudio({
                 >
                   <span>
                     {index + 1}
-                    <small>{locale === "en" ? "" : ui("위")}</small>
+                    <small>{locale === "ja" ? "位" : locale === "ko" ? "위" : ""}</small>
                   </span>
                   {refreshedDesign ? (sourceJobs[index] ? <span className={`ranking-rank-status ${sourceJobs[index].error ? "is-error" : "is-loading"}`} role="img" aria-label={sourceJobs[index].error ? ui("가져오기 실패") : ui("영상 준비 중")}>{sourceJobs[index].error ? "!" : ""}</span> : item.source ? <span className="ranking-rank-status is-ready" role="img" aria-label={ui("영상 준비됨")}>✓</span> : null) : (                  <i
                     className={sourceJobs[index] ? sourceJobs[index].error ? "is-failed" : "is-downloading" : item.source ? "is-ready" : ""}
@@ -943,7 +944,7 @@ export function RankingStudio({
               ))}
             </div>
             <button type="button" className="ranking-scene-summary" onClick={() => setSceneOpen(true)}>
-              <span><strong>{locale === "en" ? `Rank ${active + 1} ·` : <>{active + 1}{ui("위 ·")}</>}{slot.label || ui("장면 선택")}</strong><small>{activeJob && !activeJob.error ? ui("영상 준비 중 · 다른 순위도 편집할 수 있어요") : slot.source ? ui(`${rankingTime(slot.start)} – ${rankingTime(slot.end)} · 구간 수정`) : ui("링크나 파일을 추가하세요")}</small></span><span aria-hidden="true">＋</span>
+              <span><strong>{locale === "en" ? `Rank ${active + 1} ·` : <>{active + 1}{ui("위 ·")}</>}{slot.label ? <span data-i18n-skip>{slot.label}</span> : ui("장면 선택")}</strong><small>{activeJob && !activeJob.error ? ui("영상 준비 중 · 다른 순위도 편집할 수 있어요") : slot.source ? ui(`${rankingTime(slot.start)} – ${rankingTime(slot.end)} · 구간 수정`) : ui("링크나 파일을 추가하세요")}</small></span><span aria-hidden="true">＋</span>
             </button>
             {<SceneContainer {...sceneBackdrop} ref={(element: HTMLDialogElement | HTMLDivElement | null) => { scenePanel.current = element; sceneDialog.current = element instanceof HTMLDialogElement ? element : null; }} className={`ranking-scene-dialog${mobileScene ? "" : " is-inline"}`} aria-labelledby="ranking-scene-title" onCancel={(event) => { if (busy) event.preventDefault(); else setSceneOpen(false); }}>
               <header><div><small>{ui("순위별 장면")}</small><h2 id="ranking-scene-title">{locale === "en" ? `Rank ${active + 1} video` : <>{active + 1}{ui("위 영상 선택")}</>}</h2></div><button type="button" disabled={Boolean(busy)} aria-label={ui("장면 선택 닫기")} onClick={() => setSceneOpen(false)}>×</button></header>
@@ -1032,7 +1033,7 @@ export function RankingStudio({
                   <p>{ui("약 1분, 영상에 따라 더 걸릴 수 있어요.")}<br />{ui("이 페이지를 열어 둔 채 다른 순위를 편집하세요.")}</p>
                 </div>
               ) : activeJob?.error ? (
-                <div className="ranking-source-progress"><p role="alert" className="ranking-error">{activeJob.error}</p><button type="button" className="ranking-primary" onClick={() => void importSource()}>{ui("다시 가져오기")}</button></div>
+                <div className="ranking-source-progress"><p role="alert" className="ranking-error">{ui(activeJob.error)}</p><button type="button" className="ranking-primary" onClick={() => void importSource()}>{ui("다시 가져오기")}</button></div>
               ) : slot.source ? null : (
 <div className={`ranking-empty-source${refreshedDesign ? " ranking-file-dropzone" : ""}${fileDragging ? " is-dragging" : ""}`}
                   role={refreshedDesign ? "button" : undefined}
@@ -1226,7 +1227,7 @@ export function RankingStudio({
         </aside>
       </div>
       {sourceNotice && <div className="ranking-source-toast" role="status">
-        <span>✓ {sourceNotice.message}</span>
+        <span>✓ {ui(sourceNotice.message)}</span>
         <button type="button" onClick={() => { setActive(sourceNotice.index); setSceneOpen(true); setSourceNotice(null); document.getElementById("ranking-clips-heading")?.scrollIntoView({behavior:"smooth",block:"start"}); }}>{ui("구간 고르기 →")}</button>
         <button type="button" aria-label={ui("알림 닫기")} onClick={() => setSourceNotice(null)}>×</button>
       </div>}

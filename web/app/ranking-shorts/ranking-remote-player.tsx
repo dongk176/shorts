@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useUiText } from "@/lib/i18n/use-ui-text";
 import type { RankingRemote } from "@/lib/ranking-shorts";
 import {
   rankingEmbedUrl,
@@ -115,6 +116,7 @@ export const RankingRemotePlayer = forwardRef<
   const pendingSeek = useRef<number | null>(null);
   const latest = useRef({ start, onTime, onDuration, onPlaying, onUnavailable, onReady, onFrame, onPreviewBlocked });
   latest.current = { start, onTime, onDuration, onPlaying, onUnavailable, onReady, onFrame, onPreviewBlocked };
+  const ui = useUiText();
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
   const [instagramHeight, setInstagramHeight] = useState(780);
@@ -328,8 +330,8 @@ export const RankingRemotePlayer = forwardRef<
       )}
       {error ? (
         <p role="alert" className="ranking-error">
-          {error}
-          {!composition && remote.platform === "youtube" ? <button type="button" className="ranking-source-reconnect" onClick={() => { setError(""); setAttempt(value => value + 1); }}>다시 연결</button> : null}
+          {ui(error)}
+          {!composition && remote.platform === "youtube" ? <button type="button" className="ranking-source-reconnect" onClick={() => { setError(""); setAttempt(value => value + 1); }}>{ui("다시 연결")}</button> : null}
         </p>
       ) : null}
     </div>

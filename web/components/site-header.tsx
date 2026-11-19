@@ -123,9 +123,9 @@ function NavigationLinks({ pathname, onNavigate, mobile = false, isEnterprise }:
   mobile?: boolean;
   isEnterprise: boolean;
 }) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const ui = useUiText();
-  const rankingLabel = ui(locale === "ja" ? "랭킹 쇼츠 (영어)" : "랭킹 쇼츠");
+  const rankingLabel = ui("랭킹 쇼츠");
   const hasRecentUpdate = useRecentUpdates();
   let decodedPathname = pathname;
   try {
@@ -278,9 +278,9 @@ function GroupedNavigation({ collapsed, groupsOpen, onToggle, onNavigate, isEnte
   isEnterprise: boolean;
   pathname: string;
 }) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const ui = useUiText();
-  const rankingLabel = ui(locale === "ja" ? "랭킹 쇼츠 (영어)" : "랭킹 쇼츠");
+  const rankingLabel = ui("랭킹 쇼츠");
   const hasRecentUpdate = useRecentUpdates();
   const id = useId();
   const { rankingAvailable } = useUsageState();

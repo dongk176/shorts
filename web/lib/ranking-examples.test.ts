@@ -27,3 +27,10 @@ it("retains Korean priority when the user selects recent order", () => {
   expect(korean.every(item => item.language === "한국어")).toBe(true);
   expect(korean.map(item => item.publishedAt)).toEqual(korean.map(item => item.publishedAt).sort().reverse());
 });
+
+it("prioritizes Japanese references only when the catalog contains them", () => {
+  const original = catalog.items[0];
+  const japanese = { ...original, id: "ja-example", language: "일본어", views: 1 };
+  expect(sortRankingExamples([original, japanese], "ja-JP")[0]).toBe(japanese);
+  expect(sortRankingExamples(catalog.items, "ja")[0].views).toBe(Math.max(...catalog.items.map(item => item.views)));
+});

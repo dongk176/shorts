@@ -102,7 +102,7 @@ export function RankingOrderControls({ order, labels, onChange }: OrderProps) {
               }}
             >
               {rank}
-              <small>{locale === "en" ? "" : ui("위")}</small>
+              <small>{locale === "ja" ? "位" : locale === "ko" ? "위" : ""}</small>
             </button>
             {index < order.length - 1 ? (
               <span aria-hidden="true">›</span>

@@ -104,11 +104,6 @@ export async function middleware(request: NextRequest) {
     && (PUBLIC_ASSETS.has(pathname) || PUBLIC_ASSET_DIRECTORY.test(pathname))) {
     return NextResponse.next();
   }
-  if (route.locale === "ja" && route.pathname === "/ranking-shorts") {
-    const destination = request.nextUrl.clone();
-    destination.pathname = "/en/ranking-shorts";
-    return NextResponse.redirect(destination, 307);
-  }
   pathname = route.pathname;
   // Always overwrite a supplied header; the page URL decides its language.
   const requestHeaders = new Headers(request.headers);

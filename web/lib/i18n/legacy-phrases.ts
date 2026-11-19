@@ -1,5 +1,6 @@
 import preparedUiCopy from "./ui-copy.json";
 import { rankingEnglish, rankingDynamicEnglish } from "./ranking-en";
+import { rankingJapanese, rankingDynamicJapanese } from "./ranking-ja";
 import type { SiteLocale } from "./config";
 
 type Phrase = readonly [ko: string, en: string, ja: string];
@@ -2137,7 +2138,11 @@ export function translateLegacyText(value: string, locale: SiteLocale) {
   if (locale === "ko" || !/[가-힣]/.test(value)) return value;
   const exact = phraseMaps[locale].get(value.trim());
   if (exact) return withOriginalWhitespace(value, exact);
-  if (locale === "en") { const ranking = rankingEnglish[value.trim()] ?? rankingDynamicEnglish(value.trim()); if (ranking !== null && ranking !== undefined) return withOriginalWhitespace(value, ranking); }
+  const source = value.trim();
+  const ranking = locale === "ja"
+    ? rankingJapanese[source] ?? rankingDynamicJapanese(source)
+    : rankingEnglish[source] ?? rankingDynamicEnglish(source);
+  if (ranking != null) return withOriginalWhitespace(value, ranking);
 
   return translateDynamicText(value, locale) || value;
 }

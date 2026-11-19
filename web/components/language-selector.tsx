@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { siteLocales, type SiteLocale } from "@/lib/i18n/config";
 import { isLocalizedPage, localePath, localizedHref } from "@/lib/i18n/routing";
 import { useI18n } from "@/lib/i18n/provider";
@@ -24,13 +24,12 @@ export function LanguageSelector({ placement = "floating" }: { placement?: "floa
   const [open, setOpen] = useState(false);
   const [pendingLocale, setPendingLocale] = useState<SiteLocale | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const availableLocales = useMemo<readonly SiteLocale[]>(() => pathname === "/ranking-shorts" ? siteLocales.filter(value => value !== "ja") : siteLocales, [pathname]);
   const selectedLocale = pendingLocale || locale;
 
   useEffect(() => {
     if (!open) return;
 
-    const selectedIndex = availableLocales.indexOf(selectedLocale);
+    const selectedIndex = siteLocales.indexOf(selectedLocale);
     optionRefs.current[selectedIndex]?.focus();
 
     function closeOnOutsidePointer(event: PointerEvent) {
@@ -39,7 +38,7 @@ export function LanguageSelector({ placement = "floating" }: { placement?: "floa
 
     document.addEventListener("pointerdown", closeOnOutsidePointer);
     return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
-  }, [open, selectedLocale, availableLocales]);
+  }, [open, selectedLocale]);
 
   if (!isLocalizedPage(pathname)) return null;
   if (/^\/admin(?:\/|$)/.test(pathname)) return null;
@@ -74,7 +73,7 @@ export function LanguageSelector({ placement = "floating" }: { placement?: "floa
   }
 
   function moveOptionFocus(currentIndex: number, direction: 1 | -1) {
-    const nextIndex = (currentIndex + direction + availableLocales.length) % availableLocales.length;
+    const nextIndex = (currentIndex + direction + siteLocales.length) % siteLocales.length;
     optionRefs.current[nextIndex]?.focus();
   }
 
@@ -92,7 +91,7 @@ export function LanguageSelector({ placement = "floating" }: { placement?: "floa
       {(
         <div id={menuId} style={{ display: open ? undefined : "none" }} className="language-selector-menu" role="listbox" aria-label={t("common.language")}>
           <span className="language-selector-menu-title">{t("common.language")}</span>
-          {availableLocales.map((option, index) => (
+          {siteLocales.map((option, index) => (
             <a
               key={option}
               ref={(element) => { optionRefs.current[index] = element; }}
@@ -118,7 +117,7 @@ export function LanguageSelector({ placement = "floating" }: { placement?: "floa
                   optionRefs.current[0]?.focus();
                 } else if (event.key === "End") {
                   event.preventDefault();
-                  optionRefs.current[availableLocales.length - 1]?.focus();
+                  optionRefs.current[siteLocales.length - 1]?.focus();
                 } else if (event.key === "Escape") {
                   event.preventDefault();
                   setOpen(false);

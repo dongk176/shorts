@@ -8,6 +8,9 @@ import {
   type RankingStyle,
 } from "@/lib/ranking-templates";
 
+const jpFont = rankingDesign.japaneseFallback;
+const japaneseText = new RegExp(jpFont.characters, "u");
+
 export const RankingOverlay = memo(function RankingOverlay({
   title,
   subtitle,
@@ -30,20 +33,20 @@ export const RankingOverlay = memo(function RankingOverlay({
   const layout = rankingDesign.layout;
   const palette = rankingColors(style);
   const family = rankingDesign.fonts[style.font].family;
-  const [loadedFamily, setLoadedFamily] = useState("");
+  const usesJapaneseFont = [title, subtitle, ...labels].some(text => japaneseText.test(text));
+  const fontKey = `${family}:${usesJapaneseFont}`;
+  const [loadedKey, setLoadedKey] = useState("");
   useEffect(() => {
     let alive = true;
-    void document.fonts.load(`72px "${family}"`).then(() => {
-      if (alive) setLoadedFamily(family);
-    });
-    return () => {
-      alive = false;
-    };
-  }, [family]);
-  const context =
-    loadedFamily === family
-      ? document.createElement("canvas").getContext("2d")
-      : null;
+    const fonts = [document.fonts.load(`72px "${family}"`)];
+    if (usesJapaneseFont) fonts.push(document.fonts.load(`${jpFont.weight} 72px "${jpFont.family}"`));
+    void Promise.all(fonts).then(() => { if (alive) setLoadedKey(fontKey); });
+    return () => { alive = false; };
+  }, [family, fontKey, usesJapaneseFont]);
+  const context = loadedKey === fontKey ? document.createElement("canvas").getContext("2d") : null;
+  function textStyle(text: string) {
+    return japaneseText.test(text) ? { fontFamily: jpFont.family, fontWeight: jpFont.weight } : undefined;
+  }
   function width(text: string, size: number) {
     if (!context)
       return (
@@ -52,7 +55,8 @@ export const RankingOverlay = memo(function RankingOverlay({
           0,
         ) * size
       );
-    context.font = `${size}px ${family}`;
+    const font = textStyle(text);
+    context.font = `${font?.fontWeight ?? 400} ${size}px "${font?.fontFamily ?? family}"`;
     return context.measureText(text).width;
   }
   function fit(text: string, maximum: number, available: number) {
@@ -66,6 +70,7 @@ export const RankingOverlay = memo(function RankingOverlay({
   const secondX = (layout.width - width(second, secondSize)) / 2;
   return (
     <svg
+      data-i18n-skip
       className="ranking-composition-overlay"
       viewBox={`0 0 ${layout.width} ${layout.height}`}
       aria-hidden="true"
@@ -76,6 +81,7 @@ export const RankingOverlay = memo(function RankingOverlay({
         x={layout.width / 2}
         y={layout.titleBaseline}
         textAnchor="middle"
+        style={textStyle(title)}
         fontSize={fit(title, 72, layout.titleWidth)}
         fill={palette.title}
       >
@@ -85,6 +91,7 @@ export const RankingOverlay = memo(function RankingOverlay({
         xmlSpace="preserve"
         x={secondX}
         y={layout.subtitleBaseline}
+        style={textStyle(second)}
         fontSize={secondSize}
         fill={palette.subtitle}
       >
@@ -140,6 +147,7 @@ export const RankingOverlay = memo(function RankingOverlay({
             <text
               x={x + numberWidth + gap}
               y={y}
+              style={textStyle(label)}
               fontSize={labelSize}
               fill={rankingDesign.rankAppearance.colors[index] || rankingDesign.rankAppearance.defaultColor}
             >

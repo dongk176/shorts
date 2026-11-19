@@ -14,6 +14,12 @@
     "rankStep": 68,
     "rankOutline": 3
   },
+  "japaneseFallback": {
+    "family": "RankingNotoJP",
+    "file": "NotoSansCJKjp-Variable.ttf",
+    "weight": 700,
+    "characters": "[々〆〇ぁ-ヿㇰ-ㇿ㐀-鿿豈-﫿ｦ-ﾟ]"
+  },
   "fonts": {
     "pretendard": {
       "label": "프리텐다드",

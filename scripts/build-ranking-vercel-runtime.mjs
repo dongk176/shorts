@@ -21,6 +21,7 @@ const names = [
   "assets/ranking_templates.json",
   "assets/ranking_audio.json",
   ...Object.values(design.fonts).map((f) => "assets/editor_fonts/" + f.file),
+  "assets/editor_fonts/" + design.japaneseFallback.file,
   ...JSON.parse(await readFile(path.join(source, "assets/ranking_audio.json"), "utf8")).flatMap(
     (sound) => [sound.id, sound.asset].map(asset => "assets/ranking_audio/" + asset + ".mp4"),
   ),

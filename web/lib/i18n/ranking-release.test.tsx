@@ -24,3 +24,34 @@ describe("ranking English and Credit release",()=>{
  it("explains Credit through an accessible button without changing the allowance",()=>{const html=render(<CreditAllowance minutes={200}/>);expect(html).toContain('200');expect(html).toContain('Credit');expect(html).toContain('aria-haspopup="dialog"');expect(html).not.toContain('원본 영상 처리')});
  it("avoids a Korean particle after a variable duration",()=>{const text=interpolateMessage(messagesByLocale.ko['home.insufficientTime'],{duration:'1시간 0분',remaining:'20분 0초'});expect(text).not.toContain('분가');expect(text).toBe("선택한 구간(1시간 0분)이 남은 처리시간(20분 0초)을 초과해요. 구간을 줄여 주세요.");expect(translateLegacyText('양쪽 손잡이를 드래그해 쇼츠를 만들 범위를 정하세요. 4분부터 60분까지 선택할 수 있습니다.','en')).toContain('turn into Shorts')});
 });
+
+describe("Japanese ranking workspace", () => {
+  it("keeps the project, operation and fragment on the Japanese route and at sign-in", () => {
+    const destination = "/ranking-shorts?project=p&operation=o#result";
+    expect(localizedHref(destination, "ja")).toBe(`/jp${destination}`);
+    const login = localizedHref(`/auth/sign-in?next=${encodeURIComponent(destination)}`, "ja");
+    expect(new URL(login, "https://easycut.example").searchParams.get("next")).toBe(`/jp${destination}`);
+    expect(localizedHref(`/jp${destination}`, "en")).toBe(`/en${destination}`);
+  });
+
+  it("renders Japanese studio controls, Japanese defaults and Japanese rank labels on the first response", () => {
+    const html = render(<RankingStudio refreshedDesign ownerId="00000000-0000-4000-8000-000000000000" />, "ja");
+    for (const label of ["デザイン設定", "順位ごとのシーン", "動画のリンクまたはファイル", "動画を作成", "今日のランキング", "見逃せない瞬間", "1位"]) {
+      expect(html).toContain(label);
+    }
+    expect(html).toContain("RankingNotoJP");
+    expect(html).not.toMatch(/[가-힣]/u);
+  });
+
+  it("localizes rank-specific actions and processing errors while preserving saved user input", () => {
+    const ui = createUiText("ja");
+    expect(ui("저장하고 2위로 →")).toBe("保存して2位へ →");
+    expect(ui("4위 원본 영상은 3분 이하여야 합니다.")).toContain("4位の元動画は3分以内");
+    expect(ui("1위 영상 가져오는 중 · 2/10회")).toBe("1位の動画を読み込み中 ・ 2/10回");
+    const draft = defaultRankingDraft("ja");
+    expect(rankingDraftHasContent(draft)).toBe(false);
+    const authored = { ...draft, title: "大阪で見た 최고의 장면" };
+    expect(rankingDraftHasContent(authored)).toBe(true);
+    expect(authored.title).toBe("大阪で見た 최고의 장면");
+  });
+});

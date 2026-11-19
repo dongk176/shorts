@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from functools import lru_cache
 from pathlib import Path
 from urllib.parse import parse_qs, urljoin, urlsplit
 from uuid import UUID
@@ -28,6 +29,7 @@ MAX_SOURCE_SECONDS = 180
 DEADLINE_SECONDS = 540
 ASSETS = Path(__file__).parent / "assets"
 DESIGN = json.loads((ASSETS / "ranking_templates.json").read_text())
+JAPANESE_TEXT = re.compile(DESIGN["japaneseFallback"]["characters"])
 LAYOUT = DESIGN["layout"]
 SOUNDS = {item["id"]: item for item in json.loads((ASSETS / "ranking_audio.json").read_text())}
 DEFAULT_STYLE = {"template": "classic", "font": "pretendard", "palette": "gold", "position": "left"}
@@ -889,14 +891,24 @@ class RankingPipeline:
         draw = ImageDraw.Draw(image)
         draw.rectangle((0, 0, 719, LAYOUT["headerHeight"] - 1), fill="#000000")
 
+        @lru_cache(maxsize=32)
+        def load_font(size, japanese=False):
+            path = font_path
+            if japanese:
+                path = ASSETS / "editor_fonts" / DESIGN["japaneseFallback"]["file"]
+            font = ImageFont.truetype(str(path), size)
+            if japanese:
+                font.set_variation_by_axes([DESIGN["japaneseFallback"]["weight"]])
+            return font
+
         def fit(text, maximum, available):
+            japanese = bool(JAPANESE_TEXT.search(text))
             size = maximum
-            while (
-                size > 10
-                and draw.textlength(text, font=ImageFont.truetype(str(font_path), size)) > available
-            ):
+            font = load_font(size, japanese)
+            while size > 10 and draw.textlength(text, font=font) > available:
                 size -= 1
-            return ImageFont.truetype(str(font_path), size)
+                font = load_font(size, japanese)
+            return font
 
         title_font = fit(title, 72, LAYOUT["titleWidth"])
         draw.text(
@@ -944,7 +956,7 @@ class RankingPipeline:
             )
             text = labels.get(item_rank, "") if revealed else ""
             number = f"{item_rank}."
-            number_font = ImageFont.truetype(str(font_path), 48)
+            number_font = load_font(48)
             number_width = draw.textlength(number, font=number_font)
             label_font = fit(text, 42, LAYOUT["rankRight"] - LAYOUT["rankLeft"] - number_width - 10)
             x = LAYOUT["rankLeft"]

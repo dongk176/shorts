@@ -70,8 +70,9 @@ export const ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE = [
   "/billing/paypal/page",
   "/en/billing/paypal/page",
   "/jp/billing/paypal/page",
-  // User-requested English ranking workspace (2026-10-30).
+  // Released English and Japanese ranking workspaces.
   "/en/ranking-shorts/page",
+  "/jp/ranking-shorts/page",
   // User-requested feedback for the owner's completed ranking videos (2026-10-27).
   "/api/ranking-shorts/[projectId]/feedback/route",
   "/api/ranking-shorts/welcome/route",

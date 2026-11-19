@@ -30,7 +30,7 @@ export function RankingProgressOverlay({ message }: { message: string }) {
     >
       <span className="ranking-spinner" aria-hidden="true" />
       <p id={messageId} role="status" aria-live="polite" aria-atomic="true">
-        {message}
+        {ui(message)}
       </p>
     </dialog>
   );

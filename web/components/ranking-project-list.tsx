@@ -137,7 +137,7 @@ export function RankingProjectList({ projects, embedded = false, onOpen }: { pro
           const href = `/ranking-shorts?project=${project.id}`;
           return (
             <article key={project.id} data-ranking-project={project.id} className="project-card relative overflow-hidden rounded-2xl border border-white/10 bg-white/[.035] transition hover:border-white/20">
-              <Link href={href} onClick={onOpen ? (event) => { event.preventDefault(); onOpen(project); } : undefined} prefetch={false} aria-label={`${title} 열기`} className="block aspect-video overflow-hidden bg-black">
+              <Link href={href} onClick={onOpen ? (event) => { event.preventDefault(); onOpen(project); } : undefined} prefetch={false} aria-label={`${title} · ${ui("열기")}`} className="block aspect-video overflow-hidden bg-black">
                 <RankingThumbnail
                   key={`${project.id}:${project.operationId}`}
                   videoUrl={complete ? `/api/ranking-shorts/${project.id}/media/${project.operationId}?result=1` : undefined}
@@ -157,41 +157,41 @@ export function RankingProjectList({ projects, embedded = false, onOpen }: { pro
               {["queued", "running"].includes(project.status) ? (
                 <div role="status" className="mt-4 flex items-center gap-2 text-sm text-[#dfcba5]">
                   <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-r-transparent" aria-hidden="true" />
-                  {project.progressMessage || (project.status === "queued" ? "제작 순서를 기다리고 있어요" : "영상을 만들고 있어요")}
-                  <span className="sr-only">완료되면 자동으로 갱신됩니다.</span>
+                  {ui(project.progressMessage || (project.status === "queued" ? "제작 순서를 기다리고 있어요" : "영상을 만들고 있어요"))}
+                  <span className="sr-only">{ui("완료되면 자동으로 갱신됩니다.")}</span>
                 </div>
               ) : null}
-              {project.status === "failed" && project.operationId ? <button type="button" disabled={pending || project.busy} onClick={()=>void retryRender(project)} className="mt-3 min-h-11 rounded-xl bg-violet-600 px-4 text-sm font-bold text-white disabled:opacity-50" aria-label={`${title} 다시 만들기`}>{pending?"제작 준비 중…":"다시 만들기"}</button>:null}
-              <button data-ranking-menu={project.id} type="button" aria-label={`${title} 메뉴`} aria-expanded={menu === project.id} onClick={() => setMenu(menu === project.id ? null : project.id)} className="absolute right-2 top-2 flex h-10 w-10 items-center justify-center rounded-xl border border-white/20 bg-black/80 text-white">•••</button>
+              {project.status === "failed" && project.operationId ? <button type="button" disabled={pending || project.busy} onClick={()=>void retryRender(project)} className="mt-3 min-h-11 rounded-xl bg-violet-600 px-4 text-sm font-bold text-white disabled:opacity-50" aria-label={`${title} · ${ui("다시 만들기")}`}>{ui(pending?"제작 준비 중…":"다시 만들기")}</button>:null}
+              <button data-ranking-menu={project.id} type="button" aria-label={`${title} · ${ui("메뉴")}`} aria-expanded={menu === project.id} onClick={() => setMenu(menu === project.id ? null : project.id)} className="absolute right-2 top-2 flex h-10 w-10 items-center justify-center rounded-xl border border-white/20 bg-black/80 text-white">•••</button>
               {menu === project.id && <div data-ranking-menu={project.id} className="absolute right-2 top-14 z-10 flex flex-col gap-1 rounded-xl border border-white/20 bg-neutral-900 p-2 shadow-xl" onKeyDown={(event) => { if (event.key === "Escape") setMenu(null); }}>
-                {!["queued", "running"].includes(project.status) ? <Link href={href} onClick={onOpen ? (event) => { event.preventDefault(); onOpen(project); } : undefined} prefetch={false} aria-label={`${title} ${complete ? "영상 보기" : "작업 열기"}`} className="inline-flex min-h-11 items-center justify-center rounded-xl bg-white/10 px-4 text-sm font-bold text-white hover:bg-white/15">
-                  {complete ? "영상 보기" : "작업 열기"} <span className="ml-2" aria-hidden="true">↗</span>
+                {!["queued", "running"].includes(project.status) ? <Link href={href} onClick={onOpen ? (event) => { event.preventDefault(); onOpen(project); } : undefined} prefetch={false} aria-label={`${title} ${ui(complete ? "영상 보기" : "작업 열기")}`} className="inline-flex min-h-11 items-center justify-center rounded-xl bg-white/10 px-4 text-sm font-bold text-white hover:bg-white/15">
+                  {ui(complete ? "영상 보기" : "작업 열기")} <span className="ml-2" aria-hidden="true">↗</span>
                 </Link> : null}
                 {complete ? (
-                  <a href={`/api/ranking-shorts/${project.id}/media/${project.operationId}?result=1&download=1`} aria-label={`${title} 다운로드`} className="inline-flex min-h-11 items-center justify-center rounded-xl border border-white/15 px-4 text-sm font-semibold text-neutral-200 hover:bg-white/5">
-                    다운로드 <span className="ml-2" aria-hidden="true">↓</span>
+                  <a href={`/api/ranking-shorts/${project.id}/media/${project.operationId}?result=1&download=1`} aria-label={`${title} · ${ui("다운로드")}`} className="inline-flex min-h-11 items-center justify-center rounded-xl border border-white/15 px-4 text-sm font-semibold text-neutral-200 hover:bg-white/5">
+                    {ui("다운로드")} <span className="ml-2" aria-hidden="true">↓</span>
                   </a>
                 ) : null}
-                {complete ? <button type="button" disabled={pending || project.busy} onClick={()=>{setMenu(null);setError("");setSoundProject(project);}} className="min-h-11 rounded-xl px-4 text-sm text-white hover:bg-white/10">효과음 바꿔 만들기</button>:null}
-                <button type="button" disabled={project.busy} aria-label={`${title} 삭제`}
-                  title={project.busy ? "진행 중인 작업은 완료 후 삭제할 수 있습니다." : undefined}
+                {complete ? <button type="button" disabled={pending || project.busy} onClick={()=>{setMenu(null);setError("");setSoundProject(project);}} className="min-h-11 rounded-xl px-4 text-sm text-white hover:bg-white/10">{ui("효과음 바꿔 만들기")}</button>:null}
+                <button type="button" disabled={project.busy} aria-label={`${title} · ${ui("삭제")}`}
+                  title={project.busy ? ui("진행 중인 작업은 완료 후 삭제할 수 있습니다.") : undefined}
                   onClick={() => { setError(""); setDeleting(project); }}
-                  className="ml-auto inline-flex min-h-11 items-center rounded-xl px-3 text-sm font-semibold text-neutral-400 hover:bg-red-400/10 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-40">삭제</button>
+                  className="ml-auto inline-flex min-h-11 items-center rounded-xl px-3 text-sm font-semibold text-neutral-400 hover:bg-red-400/10 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-40">{ui("삭제")}</button>
               </div>}
               </div>
             </article>
           );
         })}
       </div>
-      {soundProject ? <dialog ref={soundDialog} className="m-auto w-[min(420px,calc(100vw-32px))] rounded-2xl border border-white/15 bg-neutral-900 p-6 text-white backdrop:bg-black/70" onCancel={(e)=>{if(pending)e.preventDefault();else setSoundProject(null);}} onClick={e=>{if(e.target===e.currentTarget&&!pending)setSoundProject(null);}} aria-label="효과음 바꿔 만들기">
-        <h2 className="text-lg font-bold">효과음 바꿔 만들기</h2><p className="mt-2 text-sm text-neutral-400">장면과 제목은 그대로 두고, 효과음만 바꿔요.</p>
-        <label className="mt-5 block text-sm">효과음<select aria-label="바꿀 효과음" disabled={pending} value={replacementSound||"none"} onChange={e=>setReplacementSound(e.target.value==="none"?null:e.target.value as RankingSound)} className="mt-2 block min-h-11 w-full rounded-lg border border-white/20 bg-neutral-800 px-3"><option value="none">없음</option>{rankingSounds.map(sound=><option key={sound.id} value={sound.id}>{sound.label}</option>)}</select></label>
-        {error?<p role="alert" className="mt-3 text-sm text-red-300">{error}</p>:null}
-        <p className="mt-3 text-xs text-neutral-400">영상 1개당 3분 차감</p><div className="mt-5 flex gap-3"><button type="button" disabled={pending} onClick={()=>setSoundProject(null)} className="min-h-11 flex-1 rounded-lg border border-white/20">취소</button><button type="button" disabled={pending} onClick={()=>void retryRender(soundProject,replacementSound)} className="min-h-11 flex-1 rounded-lg bg-violet-600 font-bold disabled:opacity-50">{pending?"준비 중…":"다시 만들기"}</button></div>
+      {soundProject ? <dialog ref={soundDialog} className="m-auto w-[min(420px,calc(100vw-32px))] rounded-2xl border border-white/15 bg-neutral-900 p-6 text-white backdrop:bg-black/70" onCancel={(e)=>{if(pending)e.preventDefault();else setSoundProject(null);}} onClick={e=>{if(e.target===e.currentTarget&&!pending)setSoundProject(null);}} aria-label={ui("효과음 바꿔 만들기")}>
+        <h2 className="text-lg font-bold">{ui("효과음 바꿔 만들기")}</h2><p className="mt-2 text-sm text-neutral-400">{ui("장면과 제목은 그대로 두고, 효과음만 바꿔요.")}</p>
+        <label className="mt-5 block text-sm">{ui("효과음")}<select aria-label={ui("바꿀 효과음")} disabled={pending} value={replacementSound||"none"} onChange={e=>setReplacementSound(e.target.value==="none"?null:e.target.value as RankingSound)} className="mt-2 block min-h-11 w-full rounded-lg border border-white/20 bg-neutral-800 px-3"><option value="none">{ui("없음")}</option>{rankingSounds.map(sound=><option key={sound.id} value={sound.id}>{ui(sound.label)}</option>)}</select></label>
+        {error?<p role="alert" className="mt-3 text-sm text-red-300">{ui(error)}</p>:null}
+        <p className="mt-3 text-xs text-neutral-400">{ui("영상 1개당 3분 차감")}</p><div className="mt-5 flex gap-3"><button type="button" disabled={pending} onClick={()=>setSoundProject(null)} className="min-h-11 flex-1 rounded-lg border border-white/20">{ui("취소")}</button><button type="button" disabled={pending} onClick={()=>void retryRender(soundProject,replacementSound)} className="min-h-11 flex-1 rounded-lg bg-violet-600 font-bold disabled:opacity-50">{ui(pending?"준비 중…":"다시 만들기")}</button></div>
       </dialog>:null}
       <ProjectDeleteOverlay open={Boolean(deleting)} state={error ? "error" : "confirm"}
         statusLabel={ui("랭킹 쇼츠 삭제")} title={ui(error ? "삭제하지 못했습니다" : "이 작업을 삭제할까요?")}
-        message={error || `${deleting?.title?.trim() || ui("제목 없는 랭킹 쇼츠")}\n${ui("프로젝트 목록에서 제거되며 영상 링크를 사용할 수 없게 됩니다.")}`}
+        message={ui(error) || `${deleting?.title?.trim() || ui("제목 없는 랭킹 쇼츠")}\n${ui("프로젝트 목록에서 제거되며 영상 링크를 사용할 수 없게 됩니다.")}`}
         actionLabel={ui(error ? "다시 시도" : "삭제하기")} closeLabel={ui("취소")} actionPending={pending}
         onAction={() => void remove()} onClose={() => { if (!pending) setDeleting(null); }} />
     </section>

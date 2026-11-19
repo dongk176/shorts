@@ -7,9 +7,10 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from PIL import Image, ImageChops
+from PIL import Image, ImageChops, ImageDraw, ImageFont
 
 from shorts_worker.ranking_pipeline import (
+    ASSETS,
     DESIGN,
     LAYOUT,
     RankingFailure,
@@ -160,6 +161,26 @@ def test_restricted_sources_never_enter_media_download(ranking_project, monkeypa
     assert len(calls) == 1
     assert "--skip-download" in calls[0]
     assert not any("cookie" in value for value in calls[0])
+
+
+def test_japanese_title_uses_bold_font_with_distinct_kanji(tmp_path):
+    title = "見逃せない瞬間"
+    target = tmp_path / "ranking.png"
+    RankingPipeline.overlay(title, 1, "東京の名場面", 1, target, subtitle="今日のランキング")
+
+    fallback = DESIGN["japaneseFallback"]
+    font = ImageFont.truetype(str(ASSETS / "editor_fonts" / fallback["file"]), 72)
+    font.set_variation_by_axes([fallback["weight"]])
+    assert bytes(font.getmask("東")) != bytes(font.getmask("京"))
+    region = (0, 0, 720, LAYOUT["titleBaseline"] + 8)
+    expected = Image.new("RGB", (720, region[3]), "black")
+    ImageDraw.Draw(expected).text(
+        (360, LAYOUT["titleBaseline"]), title, font=font, anchor="ms",
+        fill=DESIGN["palettes"]["gold"]["title"],
+    )
+    with Image.open(target) as overlay:
+        actual = overlay.crop(region).convert("RGB")
+        assert ImageChops.difference(actual, expected).getbbox() is None
 
 
 @pytest.mark.render

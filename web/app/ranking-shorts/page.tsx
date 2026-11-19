@@ -15,14 +15,24 @@ import { FixedPreview } from "./ranking-fixed-preview";
 export const dynamic = "force-dynamic";
 import { getRequestLocale } from "@/lib/i18n/server";
 import { localizedHref } from "@/lib/i18n/routing";
-export async function generateMetadata() { return { title: (await getRequestLocale()) === "en" ? "Ranking Shorts | EasyCut" : "랭킹 쇼츠 | EasyCut", robots: { index: false, follow: false } }; }
+const pageTitles = { ko: "랭킹 쇼츠", en: "Ranking Shorts", ja: "ランキングショート" };
+export async function generateMetadata() {
+  const locale = await getRequestLocale();
+  return { title: `${pageTitles[locale]} | EasyCut`, robots: { index: false, follow: false } };
+}
 export default async function RankingShortsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ project?: string; operation?: string }>;
+  searchParams: Promise<{ project?: string | string[]; operation?: string | string[] }>;
 }) {
   const locale = await getRequestLocale();
-  const next = localizedHref("/ranking-shorts", locale);
+  const params = await searchParams;
+  const project = typeof params.project === "string" ? params.project : null;
+  const operation = typeof params.operation === "string" ? params.operation : null;
+  const query = new URLSearchParams();
+  if (project) query.set("project", project);
+  if (operation) query.set("operation", operation);
+  const next = localizedHref("/ranking-shorts", locale) + (query.size ? `?${query}` : "");
   let ownerId: string;
   try {
     ownerId = (await requireRankingUser()).id;
@@ -32,7 +42,6 @@ export default async function RankingShortsPage({
       notFound();
     throw error;
   }
-  const { project, operation } = await searchParams;
   const user = await getAuthenticatedUser();
   return (
     <div className="app-shell ranking-refreshed ranking-page-shell site-chrome desktop-sidebar-layout min-h-screen text-neutral-100">

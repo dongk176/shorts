@@ -45,8 +45,6 @@ export function localizedHref(href: string, locale: SiteLocale): string {
     return href;
   }
   if (!isLocalizedPage(pathname)) return href;
-  // Ranking currently ships in Korean and English; use English for Japanese navigation.
-  if (pathname === "/ranking-shorts" && locale === "ja") return `/en/ranking-shorts${tail}`;
   return `${prefixes[locale]}${pathname === "/" ? (locale === "ko" ? "/" : "") : pathname}${tail}`;
 }
 
