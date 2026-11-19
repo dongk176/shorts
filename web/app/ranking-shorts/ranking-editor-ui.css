@@ -498,4 +498,10 @@
   }
 }
 
-.ranking-usage-note:lang(ja) { white-space: pre-line; }
+.ranking-refreshed .ranking-preview-column:lang(ja) { container-type: inline-size; }
+
+.ranking-refreshed .ranking-usage-note:lang(ja) {
+  font-size: clamp(11px, 5cqi, 12px);
+  white-space: pre-line;
+  text-wrap: balance;
+}
