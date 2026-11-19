@@ -44,8 +44,7 @@ export const newJpyPaddlePlans = [
   { ...legacyPaddlePlans[7], code: "paddle_pro_6m_jpy_20261021", jpy: 29940 },
   { ...legacyPaddlePlans[8], code: "paddle_pro_12m_jpy_20261021", jpy: 47880 },
 ] as const;
-export const currentPriceVersion = "_v20261105";
-export const currentPaddlePlans = [
+const november5PaddlePlans = [
   { ...legacyPaddlePlans[0], code: "paddle_lite_v20261105", usd: 1200, jpy: 1900 },
   { ...legacyPaddlePlans[3], code: "paddle_creator_3m_v20261105", usd: 8700, jpy: 12900 },
   { ...legacyPaddlePlans[4], code: "paddle_creator_6m_v20261105", usd: 14400, jpy: 17940 },
@@ -54,16 +53,30 @@ export const currentPaddlePlans = [
   { ...legacyPaddlePlans[7], code: "paddle_pro_6m_v20261105", usd: 35400, jpy: 52900 },
   { ...legacyPaddlePlans[8], code: "paddle_pro_12m_v20261105", usd: 58800, jpy: 87900 },
 ] as const;
-export const paddlePlans = [...legacyPaddlePlans, ...newJpyPaddlePlans, ...currentPaddlePlans] as const;
+export const currentPriceVersion = "_v20261119";
+export const currentPaddlePlans = [
+  { ...legacyPaddlePlans[0], code: "paddle_lite_v20261119", usd: 999, jpy: 980 },
+  { ...legacyPaddlePlans[3], code: "paddle_creator_3m_v20261119", usd: 6897, jpy: 6870 },
+  { ...legacyPaddlePlans[4], code: "paddle_creator_6m_v20261119", usd: 11394, jpy: 11340 },
+  { ...legacyPaddlePlans[5], code: "paddle_creator_12m_v20261119", usd: 17988, jpy: 17880 },
+  { ...legacyPaddlePlans[6], code: "paddle_pro_3m_v20261119", usd: 16497, jpy: 16470 },
+  { ...legacyPaddlePlans[7], code: "paddle_pro_6m_v20261119", usd: 29994, jpy: 29940 },
+  { ...legacyPaddlePlans[8], code: "paddle_pro_12m_v20261119", usd: 47988, jpy: 47880 },
+] as const;
+export const paddlePlans = [...legacyPaddlePlans, ...newJpyPaddlePlans, ...november5PaddlePlans, ...currentPaddlePlans] as const;
+
+export function paddlePriceVersion(code: string) {
+  return code.match(/(_jpy_20261021|_v[0-9]{8})$/)?.[1] ?? "";
+}
 export function isNewJpyPlan(code: string) {
   return newJpyPaddlePlans.some(plan => plan.code === code);
 }
 export function newPaddlePlanCode(code: string, currency: PaddleCurrency) {
   if (currency !== "USD" && currency !== "JPY") throw new Error("Unsupported Paddle currency");
-  return currency === "JPY" ? `${code}${jpyPriceVersion}` : code;
+  return `${code}${currentPriceVersion}`;
 }
 export function isNewCheckoutPlan(code: string, currency: PaddleCurrency) {
-  return currency === "JPY" ? isNewJpyPlan(code) : legacyPaddlePlans.some(plan => plan.code === code);
+  return (currency === "USD" || currency === "JPY") && currentPaddlePlans.some(plan => plan.code === code);
 }
 export type PaddlePlanCode = (typeof paddlePlans)[number]["code"];
 export type PaddleCurrency = "USD" | "JPY";
@@ -87,8 +100,8 @@ export function formatPaddlePrice(code: string, currency: PaddleCurrency, monthl
 export const paddlePackageTerms = [3, 6, 12] as const;
 export function paddleDisplayPlans(months: (typeof paddlePackageTerms)[number], currency: PaddleCurrency = "USD", currentCode?: string) {
   // Existing subscribers keep their original catalog, including management previews.
-  const suffix = currentCode?.endsWith(currentPriceVersion) ? currentPriceVersion
-    : currency === "JPY" && (!currentCode || isNewJpyPlan(currentCode)) ? jpyPriceVersion : "";
+  const suffix = currentCode ? paddlePriceVersion(currentCode) : currentPriceVersion;
+  if (suffix === jpyPriceVersion && currency !== "JPY") throw new Error("Invalid catalog currency");
   return [paddlePlan(`paddle_lite${suffix}`), paddlePlan(`paddle_creator_${months}m${suffix}`), paddlePlan(`paddle_pro_${months}m${suffix}`)];
 }
 
@@ -99,7 +112,7 @@ export function paddleInitialTerm(code?: string) {
 export function paddleDiscount(code:string,currency:PaddleCurrency) {
  const plan=paddlePlan(code);
  if(plan.billingMonths<=3) return null;
- const baseline=paddlePlan(code.replace(/_(6|12)m(?=_jpy_20261021$|_v20261105$|$)/, '_3m'));
+ const baseline=paddlePlan(code.replace(/_(6|12)m(?=_|$)/, '_3m'));
  const savings=1-paddleAmount(code,currency)*baseline.billingMonths/(paddleAmount(baseline.code,currency)*plan.billingMonths);
  return {percent:Math.floor(savings*1000)/10,baseline:baseline.code};
 }

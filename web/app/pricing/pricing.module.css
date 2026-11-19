@@ -1690,6 +1690,8 @@
 }
 
 .paddlePlanGrid .paddlePlanCard {
+  background-color: #191c1e;
+  backdrop-filter: none;
   min-height: 0;
   overflow: visible;
   padding-top: 34px;

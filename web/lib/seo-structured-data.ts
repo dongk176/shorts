@@ -2,7 +2,7 @@ import { type SiteLocale, localeTags } from "./i18n/config";
 import { localizedHref } from "./i18n/routing";
 import { seoBrand, seoDescriptions } from "./seo-localization";
 import { SITE_URL, absoluteUrl } from "./seo";
-import { paddlePlan } from "./paddle/catalog";
+import { newPaddlePlanCode, paddlePlan } from "./paddle/catalog";
 import { tossPlan, TOSS_NEW_PRO_PLAN_CODE } from "./toss-subscription";
 
 export function websiteStructuredData(locale: SiteLocale) {
@@ -28,7 +28,7 @@ export function publicMonthlyOffer(locale: SiteLocale, internationalPricing: boo
   // Match the anonymous pricing page; account-specific contracts are not public offers.
   if (locale !== "ko") {
     if (!internationalPricing) return undefined;
-    const plan = paddlePlan(locale === "ja" ? "paddle_lite_jpy_20261021" : "paddle_lite");
+    const plan = paddlePlan(newPaddlePlanCode("paddle_lite", locale === "ja" ? "JPY" : "USD"));
     return {
       "@type": "Offer", name: "EasyCut Pro",
       description: locale === "ja" ? "月額プラン・毎月のお支払い" : "Monthly subscription, billed every month",

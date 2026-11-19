@@ -212,9 +212,10 @@ export function PaddlePricing({
   const language = locale === "ja" ? "ja" : "en";
   const { refreshUsage } = useUsageState();
   const t = copy[language];
-  const currency = initial?.currency || (language === "ja" ? "JPY" : "USD");
-  const [months, setMonths] = useState<(typeof paddlePackageTerms)[number]>(() => paddleInitialTerm(initial?.providerStatus !== "canceled" ? initial?.planCode : undefined));
-  const displayedPlans = paddleDisplayPlans(months, currency, initial?.providerStatus !== "canceled" ? initial?.planCode : undefined);
+  const contract = initial?.providerStatus === "canceled" ? null : initial;
+  const currency = contract?.currency || (language === "ja" ? "JPY" : "USD");
+  const [months, setMonths] = useState<(typeof paddlePackageTerms)[number]>(() => paddleInitialTerm(contract?.planCode));
+  const displayedPlans = paddleDisplayPlans(months, currency, contract?.planCode);
   const [cancelSurvey, setCancelSurvey] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
   const [scriptReady, setScriptReady] = useState(false);
