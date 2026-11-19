@@ -137,7 +137,7 @@ export function RankingProjectList({ projects, embedded = false, onOpen }: { pro
           const href = `/ranking-shorts?project=${project.id}`;
           return (
             <article key={project.id} data-ranking-project={project.id} className="project-card relative overflow-hidden rounded-2xl border border-white/10 bg-white/[.035] transition hover:border-white/20">
-              <Link href={href} onClick={onOpen ? (event) => { event.preventDefault(); onOpen(project); } : undefined} prefetch={false} aria-label={`${title} · ${ui("열기")}`} className="block aspect-video overflow-hidden bg-black">
+              <Link href={href} onClick={onOpen ? (event) => { event.preventDefault(); onOpen(project); } : undefined} prefetch={false} aria-label={`${title} ${ui("열기")}`} className="block aspect-video overflow-hidden bg-black">
                 <RankingThumbnail
                   key={`${project.id}:${project.operationId}`}
                   videoUrl={complete ? `/api/ranking-shorts/${project.id}/media/${project.operationId}?result=1` : undefined}
@@ -161,19 +161,19 @@ export function RankingProjectList({ projects, embedded = false, onOpen }: { pro
                   <span className="sr-only">{ui("완료되면 자동으로 갱신됩니다.")}</span>
                 </div>
               ) : null}
-              {project.status === "failed" && project.operationId ? <button type="button" disabled={pending || project.busy} onClick={()=>void retryRender(project)} className="mt-3 min-h-11 rounded-xl bg-violet-600 px-4 text-sm font-bold text-white disabled:opacity-50" aria-label={`${title} · ${ui("다시 만들기")}`}>{ui(pending?"제작 준비 중…":"다시 만들기")}</button>:null}
-              <button data-ranking-menu={project.id} type="button" aria-label={`${title} · ${ui("메뉴")}`} aria-expanded={menu === project.id} onClick={() => setMenu(menu === project.id ? null : project.id)} className="absolute right-2 top-2 flex h-10 w-10 items-center justify-center rounded-xl border border-white/20 bg-black/80 text-white">•••</button>
+              {project.status === "failed" && project.operationId ? <button type="button" disabled={pending || project.busy} onClick={()=>void retryRender(project)} className="mt-3 min-h-11 rounded-xl bg-violet-600 px-4 text-sm font-bold text-white disabled:opacity-50" aria-label={`${title} ${ui("다시 만들기")}`}>{ui(pending?"제작 준비 중…":"다시 만들기")}</button>:null}
+              <button data-ranking-menu={project.id} type="button" aria-label={`${title} ${ui("메뉴")}`} aria-expanded={menu === project.id} onClick={() => setMenu(menu === project.id ? null : project.id)} className="absolute right-2 top-2 flex h-10 w-10 items-center justify-center rounded-xl border border-white/20 bg-black/80 text-white">•••</button>
               {menu === project.id && <div data-ranking-menu={project.id} className="absolute right-2 top-14 z-10 flex flex-col gap-1 rounded-xl border border-white/20 bg-neutral-900 p-2 shadow-xl" onKeyDown={(event) => { if (event.key === "Escape") setMenu(null); }}>
                 {!["queued", "running"].includes(project.status) ? <Link href={href} onClick={onOpen ? (event) => { event.preventDefault(); onOpen(project); } : undefined} prefetch={false} aria-label={`${title} ${ui(complete ? "영상 보기" : "작업 열기")}`} className="inline-flex min-h-11 items-center justify-center rounded-xl bg-white/10 px-4 text-sm font-bold text-white hover:bg-white/15">
                   {ui(complete ? "영상 보기" : "작업 열기")} <span className="ml-2" aria-hidden="true">↗</span>
                 </Link> : null}
                 {complete ? (
-                  <a href={`/api/ranking-shorts/${project.id}/media/${project.operationId}?result=1&download=1`} aria-label={`${title} · ${ui("다운로드")}`} className="inline-flex min-h-11 items-center justify-center rounded-xl border border-white/15 px-4 text-sm font-semibold text-neutral-200 hover:bg-white/5">
+                  <a href={`/api/ranking-shorts/${project.id}/media/${project.operationId}?result=1&download=1`} aria-label={`${title} ${ui("다운로드")}`} className="inline-flex min-h-11 items-center justify-center rounded-xl border border-white/15 px-4 text-sm font-semibold text-neutral-200 hover:bg-white/5">
                     {ui("다운로드")} <span className="ml-2" aria-hidden="true">↓</span>
                   </a>
                 ) : null}
                 {complete ? <button type="button" disabled={pending || project.busy} onClick={()=>{setMenu(null);setError("");setSoundProject(project);}} className="min-h-11 rounded-xl px-4 text-sm text-white hover:bg-white/10">{ui("효과음 바꿔 만들기")}</button>:null}
-                <button type="button" disabled={project.busy} aria-label={`${title} · ${ui("삭제")}`}
+                <button type="button" disabled={project.busy} aria-label={`${title} ${ui("삭제")}`}
                   title={project.busy ? ui("진행 중인 작업은 완료 후 삭제할 수 있습니다.") : undefined}
                   onClick={() => { setError(""); setDeleting(project); }}
                   className="ml-auto inline-flex min-h-11 items-center rounded-xl px-3 text-sm font-semibold text-neutral-400 hover:bg-red-400/10 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-40">{ui("삭제")}</button>
