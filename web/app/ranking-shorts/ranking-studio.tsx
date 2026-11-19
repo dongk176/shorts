@@ -617,7 +617,15 @@ export function RankingStudio({
           <div className="ranking-eyebrow">
             CREATIVE STUDIO <span>BETA</span>
           </div>
-          <div className="ranking-title-row"><h1>{ui("랭킹 쇼츠")}</h1><button type="button" className="ranking-guide-reopen" onClick={() => window.dispatchEvent(new Event("ranking-onboarding-guide"))}>{ui("사용법")}</button><RankingExamples /></div>
+          <div className="ranking-title-row">
+            <h1>{ui("랭킹 쇼츠")}</h1>
+            <div className="ranking-title-tools">
+              <button type="button" className="ranking-guide-reopen" onClick={() => window.dispatchEvent(new Event("ranking-onboarding-guide"))}>
+                {ui("사용법")}
+              </button>
+              <RankingExamples />
+            </div>
+          </div>
 
         </div>
         <div className="ranking-draft-actions">

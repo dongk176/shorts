@@ -460,3 +460,42 @@
 .ranking-guide-reopen{padding:7px 12px;border:1px solid #ffffff25;border-radius:9px;color:#ccc6d5;background:#ffffff06;font-size:13px;cursor:pointer}.ranking-guide-reopen:hover{background:#ffffff10}
 
 .ranking-usage-note { margin: 10px 0 0; text-align: center; color: #aaa8b3; font-size: 12px; line-height: 1.5; }
+
+.ranking-title-tools { display: contents; }
+
+.ranking-refreshed .ranking-title-row:lang(ja),
+.ranking-refreshed .ranking-title-tools:lang(ja) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.ranking-refreshed .ranking-title-row:lang(ja) h1,
+.ranking-refreshed .ranking-guide-reopen:lang(ja) {
+  white-space: nowrap;
+}
+
+@media (min-width: 701px) {
+  .ranking-refreshed .ranking-heading:lang(ja):has(.ranking-title-row) {
+    flex-wrap: wrap;
+    gap: 12px 20px;
+  }
+
+  .ranking-refreshed .ranking-heading:lang(ja) > div:has(.ranking-title-row) {
+    flex: 1 1 min-content;
+  }
+}
+
+.ranking-refreshed .ranking-import-row:lang(ja) {
+  container: ranking-import / inline-size;
+  flex-wrap: wrap;
+}
+
+@container ranking-import (max-width: 32rem) {
+  .ranking-refreshed .ranking-import-row > .ranking-link-input {
+    flex-basis: 100%;
+  }
+}
+
+.ranking-usage-note:lang(ja) { white-space: pre-line; }

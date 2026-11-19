@@ -40,6 +40,8 @@ describe("Japanese ranking workspace", () => {
       expect(html).toContain(label);
     }
     expect(html).toContain("RankingNotoJP");
+    expect(html).toContain('placeholder="動画URLを貼り付け"');
+    expect(html).toContain("動画1本につき3クレジットを使用します。\n作成に失敗した場合は返還されます。");
     expect(html).not.toMatch(/[가-힣]/u);
   });
 
