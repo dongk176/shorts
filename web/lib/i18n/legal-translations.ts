@@ -1,4 +1,5 @@
 import type { LegalTranslation } from "@/components/legal-document";
+import { messagesByLocale } from "./messages";
 
 export const termsTranslations: { en: LegalTranslation; ja: LegalTranslation } = {
   en: {
@@ -217,7 +218,7 @@ export const supportTranslations: { en: LegalTranslation; ja: LegalTranslation }
     title: "Customer Support",
     description: "Contact us about using the service, payments, privacy, or your account.",
     sections: [
-      { title: "Customer support", paragraphs: ["Hours: weekdays 14:00–19:00 KST · Phone: +82-10-4836-2874 · Email: easycut@easycut.co.kr", "Messages received on weekends or Korean public holidays are answered in order from the next business day's support hours."] },
+      { title: "Customer support", paragraphs: [`Hours: weekdays 14:00–19:00 KST · Phone: +82-10-4836-2874 ${messagesByLocale.en["support.emailResponseHint"]} · Email: easycut@easycut.co.kr`, "Messages received on weekends or Korean public holidays are answered in order from the next business day's support hours."] },
       { title: "Business information", paragraphs: ["Business: Artiroom · Representative: Kim Dong-min · Business registration no. 638-04-03590 · Mail-order business report no. 2025-Seoul Mapo-2971 · Address: 40, Seongsan-ro 8-gil, Mapo-gu, Seoul, Republic of Korea"] },
     ],
   },
@@ -226,7 +227,7 @@ export const supportTranslations: { en: LegalTranslation; ja: LegalTranslation }
     title: "カスタマーサポート",
     description: "サービス利用、決済、個人情報、アカウントに関するお問い合わせは、以下の窓口へお送りください。",
     sections: [
-      { title: "カスタマーサポート", paragraphs: ["受付時間：平日14:00～19:00（韓国時間） · 電話：+82-10-4836-2874 · メール：easycut@easycut.co.kr", "週末・韓国の祝日に受け付けたお問い合わせは、次の営業日の受付時間から順次回答します。"] },
+      { title: "カスタマーサポート", paragraphs: [`受付時間：平日14:00～19:00（韓国時間） · 電話：+82-10-4836-2874${messagesByLocale.ja["support.emailResponseHint"]} · メール：easycut@easycut.co.kr`, "週末・韓国の祝日に受け付けたお問い合わせは、次の営業日の受付時間から順次回答します。"] },
       { title: "事業者情報", paragraphs: ["商号：Artiroom · 代表者：Kim Dong-min · 事業者登録番号：638-04-03590 · 通信販売業届出番号：2025-Seoul Mapo-2971 · 住所：40, Seongsan-ro 8-gil, Mapo-gu, Seoul, Republic of Korea"] },
     ],
   },

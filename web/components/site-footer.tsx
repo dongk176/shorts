@@ -27,7 +27,10 @@ export function SiteFooter() {
           <li>{t("footer.representative")}</li>
           <li>{t("footer.businessNumber")}</li>
           <li>{t("footer.ecommerceNumber")}</li>
-          <li><a href={locale === "ko" ? "tel:010-4836-2874" : "tel:+821048362874"}>{t("footer.supportPhone")}</a></li>
+          <li>
+            <a href={locale === "ko" ? "tel:010-4836-2874" : "tel:+821048362874"}>{t("footer.supportPhone")}</a>{" "}
+            <a href="mailto:easycut@easycut.co.kr" className="whitespace-normal underline underline-offset-2">{t("support.emailResponseHint")}</a>
+          </li>
         </ul>
         <nav className="site-footer-links" aria-label={t("footer.links")}>
           <Link href="/ai-shorts-maker">{t("footer.shortsGuide")}</Link>
