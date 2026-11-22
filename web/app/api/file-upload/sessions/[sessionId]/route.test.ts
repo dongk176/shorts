@@ -223,6 +223,39 @@ describe("file upload capacity admission status", () => {
     });
   });
 
+  it.each([
+    ["waiting", "expired", true],
+    ["expired", "expired", false],
+    ["cancelled", "cancelled", false],
+    ["granted", "ready", false],
+  ] as const)("observes %s when expiry competes with another poll", async (current, expected, shouldRelease) => {
+    const calls: string[] = [];
+    const tx = vi.fn(async (strings: TemplateStringsArray) => {
+      const sql = strings.join("?").replace(/\s+/g, " ");
+      calls.push(sql);
+      if (sql.includes("update shorts_mvp.file_upload_capacity_requests")) return current === "waiting" ? [{ id: UPLOAD_SESSION_ID }] : [];
+      if (sql.includes("select status from shorts_mvp.file_upload_capacity_requests")) return [{ status: current }];
+      return [];
+    });
+    const capacity = { uploadSessionId: UPLOAD_SESSION_ID, jobId: JOB_ID, projectNumber: 91, status: "waiting",
+      queueExpiresAt: new Date(Date.now() - 1000), jobStatus: "uploading", jobStage: "uploading", jobProgress: 1 };
+    let uploadReads = 0;
+    const db = Object.assign(vi.fn(async (strings: TemplateStringsArray) => {
+      const sql = strings.join("?");
+      if (sql.includes("from shorts_mvp.file_upload_capacity_requests capacity")) return [capacity];
+      if (sql.includes("from shorts_mvp.upload_sessions upload") && ++uploadReads > 1 && current === "granted") {
+        return [{ ...capacity, status: "awaiting_upload", expiresAt: new Date(Date.now() + 60000), consumedAt: null }];
+      }
+      return [];
+    }), { begin: (callback: (transaction: typeof tx) => unknown) => callback(tx) });
+    mocks.getDb.mockReturnValue(db);
+    const response = await GET(cancelRequest(), context());
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ status: expected });
+    expect(calls.some(sql => sql.includes("finalize_project_job"))).toBe(shouldRelease);
+    expect(mocks.releaseCapacity).toHaveBeenCalledTimes(shouldRelease ? 1 : 0);
+  });
+
   it("starts a fresh fifteen-minute upload window only after a healthy grant", async () => {
     const queueExpiresAt = new Date(Date.now() + 30 * 60_000).toISOString();
     const uploadExpiresAt = new Date(Date.now() + 15 * 60_000);

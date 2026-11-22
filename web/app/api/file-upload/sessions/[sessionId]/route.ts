@@ -61,7 +61,7 @@ export async function GET(_: Request, context: RouteContext) {
     // Release mode controls new sessions only. An owner must still be able to
     // recover the authoritative state of an already-issued upload after an
     // operator pauses new traffic or the browser loses the final PUT response.
-    let rows = await db`
+    const readOwnedUpload = () => db`
       select upload.id as upload_session_id,upload.job_id,upload.status,
         upload.received_bytes,upload.expected_bytes,upload.expires_at,
         upload.claimed_at,upload.consumed_at,upload.completed_at,
@@ -78,6 +78,7 @@ export async function GET(_: Request, context: RouteContext) {
         and job.execution_backend='upload_service'
       limit 1
     `;
+    let rows = await readOwnedUpload();
     if (!rows[0]) {
       const capacityRows = await db`
         select capacity.id as upload_session_id,capacity.job_id,capacity.status,
@@ -97,6 +98,30 @@ export async function GET(_: Request, context: RouteContext) {
       `;
       const capacity = capacityRows[0];
       if (!capacity) throw hiddenNotFound();
+      const terminalCapacityResponse = (status: "expired" | "cancelled") => {
+        const expired = status === "expired";
+        return noStore(NextResponse.json({
+          uploadSessionId: parsedSessionId.data,
+          jobId: String(capacity.jobId),
+          projectNumber: Number(capacity.projectNumber),
+          status,
+          receiverStatus: expired ? "waiting" : "cancelled",
+          jobStatus: String(capacity.jobStatus),
+          jobStage: String(capacity.jobStage),
+          jobProgress: Number(capacity.jobProgress || 0),
+          receivedBytes: 0,
+          expectedBytes: 0,
+          received: false,
+          expiresAt: null,
+          preparationExpiresAt: new Date(capacity.queueExpiresAt).toISOString(),
+          failureCode: expired ? "upload_capacity_expired" : "upload_cancelled",
+          failureReason: expired ? "업로드 시작 시간이 만료되었습니다." : "원본 업로드가 취소되었습니다.",
+          sourceDeleted: true,
+        }));
+      };
+      if (capacity.status === "expired" || capacity.status === "cancelled") {
+        return terminalCapacityResponse(capacity.status);
+      }
       const capacityFunctionArn = await uploadCapacityFunctionForJob(db, String(capacity.jobId), session.userId);
       const queueExpired = new Date(capacity.queueExpiresAt).getTime() <= Date.now();
       let capacityStatus: CapacityLeaseStatus = { leaseState: "expired" };
@@ -194,52 +219,39 @@ export async function GET(_: Request, context: RouteContext) {
             on conflict (id) do nothing
           `;
         });
-        rows = await db`
-          select upload.id as upload_session_id,upload.job_id,upload.status,
-            upload.received_bytes,upload.expected_bytes,upload.expires_at,
-            upload.claimed_at,upload.consumed_at,upload.completed_at,
-            upload.failure_code,upload.failure_reason,upload.source_deleted_at,
-            job.project_number,job.status as job_status,job.stage as job_stage,
-            job.progress as job_progress
-          from shorts_mvp.upload_sessions upload
-          join shorts_mvp.video_jobs job on job.id=upload.job_id
-          where upload.id=${parsedSessionId.data}
-            and upload.user_id=${session.userId}
-          limit 1
-        `;
+        rows = await readOwnedUpload();
       } else if (queueExpired) {
-        await db.begin(async (tx) => {
-          await tx`
+        const finalStatus = await db.begin(async (tx) => {
+          const expired = await tx`
             update shorts_mvp.file_upload_capacity_requests
             set status='expired'
-            where id=${parsedSessionId.data} and status='waiting'
+            where id=${parsedSessionId.data} and user_id=${session.userId}
+              and status='waiting'
+            returning id
           `;
+          if (!expired.length) {
+            // A simultaneous grant or cancellation owns the session and job.
+            const [current] = await tx`
+              select status from shorts_mvp.file_upload_capacity_requests
+              where id=${parsedSessionId.data} and user_id=${session.userId}
+            `;
+            return { status: String(current?.status ?? ""), newlyExpired: false };
+          }
           await tx`
             select * from shorts_mvp.finalize_project_job(
               ${capacity.jobId},'upload_capacity_expired',
               '업로드 시작 시간이 만료되었습니다.'
             )
           `;
+          return { status: "expired", newlyExpired: true };
         });
-        await releaseFileUploadCapacity(parsedSessionId.data, capacityFunctionArn).catch(() => undefined);
-        return noStore(NextResponse.json({
-          uploadSessionId: parsedSessionId.data,
-          jobId: String(capacity.jobId),
-          projectNumber: Number(capacity.projectNumber),
-          status: "expired",
-          receiverStatus: "waiting",
-          jobStatus: String(capacity.jobStatus),
-          jobStage: String(capacity.jobStage),
-          jobProgress: Number(capacity.jobProgress || 0),
-          receivedBytes: 0,
-          expectedBytes: 0,
-          received: false,
-          expiresAt: null,
-          preparationExpiresAt: new Date(capacity.queueExpiresAt).toISOString(),
-          failureCode: "upload_capacity_expired",
-          failureReason: "업로드 시작 시간이 만료되었습니다.",
-          sourceDeleted: true,
-        }));
+        if (finalStatus.newlyExpired) {
+          await releaseFileUploadCapacity(parsedSessionId.data, capacityFunctionArn).catch(() => undefined);
+        }
+        if (finalStatus.status === "expired" || finalStatus.status === "cancelled") {
+          return terminalCapacityResponse(finalStatus.status);
+        }
+        rows = await readOwnedUpload();
       } else {
         return noStore(NextResponse.json({
           uploadSessionId: parsedSessionId.data,
