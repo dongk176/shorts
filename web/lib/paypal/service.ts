@@ -211,7 +211,14 @@ export async function reconcilePayPal(db=getDb()) {
   if(!paypalEnabled())return {checked:0,failed:0};
   const started=Date.now();
   const rows=await db`select c.provider_subscription_id as paypal_id from shorts_mvp.paypal_checkouts c left join shorts_mvp.paypal_subscriptions s on s.paypal_id=c.provider_subscription_id
- where c.environment=${paypalEnvironment()} and c.provider_subscription_id is not null and (s.paypal_id is null or s.provider_status not in ('CANCELLED','EXPIRED')) order by c.last_lookup_at asc nulls first,c.created_at asc limit 10`;
+ where c.environment=${paypalEnvironment()} and c.provider_subscription_id is not null
+   and (s.paypal_id is null or s.provider_status not in ('CANCELLED','EXPIRED'))
+   and not (
+     c.status='canceled' and c.last_lookup_error_code is not distinct from 'PAYPAL_REFERENCE_UNAVAILABLE'
+     and s.provider_status is not distinct from 'APPROVAL_PENDING' and s.subscription_id is null
+     and c.last_lookup_at is not null and c.last_lookup_at>now()-interval '1 day'
+   )
+ order by c.last_lookup_at asc nulls first,c.created_at asc limit 10`;
   let checked=0,failed=0;
   // Two independent lookups at a time; never leave unawaited work on route exit.
   for(let i=0;i<rows.length;i+=2) {

@@ -9,3 +9,10 @@ it("preserves materially invalid or too-short ranges for validation",()=>{
  expect(rankingSourceEnd(9.4,10,9.8)).toBe(10);
  expect(rankingSourceEnd(0,10,NaN)).toBe(10);
 });
+
+it("matches whole-second player endpoints to their measured container tails", () => {
+  expect(rankingSourceEnd(29, 39, 38.464)).toBe(38.464);
+  expect(rankingSourceEnd(0, 10, 9.009)).toBe(9.009);
+  expect(rankingSourceEnd(0, 31, 30.378)).toBe(30.378);
+  expect(rankingSourceEnd(0, 10.1, 9.3)).toBe(10.1);
+});

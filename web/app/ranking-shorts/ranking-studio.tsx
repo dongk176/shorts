@@ -440,15 +440,51 @@ export function RankingStudio({
       if(check?.ok)return cached;
       uploadedFiles.current.delete(localId);
     }
-    const input={requestId:crypto.randomUUID(),size:file.size,...(kind==="audio"?{kind}: {})};
-    const queue=()=>requestJson(`/api/ranking-shorts/${id}/sources`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(input)});
-    let queued=await queue();const deadline=Date.now()+300_000;
-    while(queued.preparing&&Date.now()<deadline){setBusy(ui("영상 처리기를 준비하고 있습니다…"));await pause(5000);queued=await queue();}
-    if(queued.preparing)throw new Error(ui("영상 처리기가 준비 중이에요. 입력 내용은 보관되니 잠시 후 다시 눌러 주세요."));
-    setBusy(kind==="audio"?ui("배경음악을 전송하고 있습니다…"):ui("영상 파일을 전송하고 있습니다…"));
-    try{const response=await fetch(queued.upload.url,{method:"PUT",headers:{Authorization:`Bearer ${queued.upload.token}`,"Content-Type":"application/octet-stream"},body:file,signal:AbortSignal.timeout(600_000)});if(!response.ok)throw Error(ui("파일을 전송하지 못했습니다. 다시 시도해 주세요."));}
-    catch(error){const cancelled=await fetch(queued.pollUrl,{method:"DELETE"}).catch(()=>null);if(cancelled?.status!==409)throw error;}
-    const data=await waitForOperation(queued);uploadedFiles.current.set(localId,data.source);return data.source as RankingSource;
+    for (let attempt = 0; ; attempt++) {
+      const input = { requestId: crypto.randomUUID(), size: file.size, ...(kind === "audio" ? { kind } : {}) };
+      const queue = () => requestJson(`/api/ranking-shorts/${id}/sources`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+      });
+      let queued = await queue();
+      const deadline = Date.now() + 300_000;
+      while (queued.preparing && Date.now() < deadline) {
+        setBusy(ui("영상 처리기를 준비하고 있습니다…"));
+        await pause(5000);
+        queued = await queue();
+      }
+      if (queued.preparing) throw new Error(ui("영상 처리기가 준비 중이에요. 입력 내용은 보관되니 잠시 후 다시 눌러 주세요."));
+      setBusy(kind === "audio" ? ui("배경음악을 전송하고 있습니다…") : ui("영상 파일을 전송하고 있습니다…"));
+      let retryable = true;
+      try {
+        const response = await fetch(queued.upload.url, {
+          method: "PUT", headers: { Authorization: `Bearer ${queued.upload.token}`, "Content-Type": "application/octet-stream" },
+          body: file, signal: AbortSignal.timeout(600_000),
+        });
+        if (!response.ok) {
+          retryable = [408, 410, 429].includes(response.status) || response.status >= 500;
+          throw new Error(ui("파일을 전송하지 못했습니다. 다시 시도해 주세요."));
+        }
+      } catch (error) {
+        const canceled = await fetch(queued.pollUrl, { method: "DELETE" }).catch(() => null);
+        if (attempt === 0 && canceled?.ok && retryable) continue;
+        if (canceled?.status !== 409) throw error;
+      }
+      // A lost PUT response can mean the file already arrived. Poll the
+      // original operation until the server confirms success or a terminal failure.
+      let data;
+      try {
+        data = await waitForOperation(queued);
+      } catch (error) {
+        if (attempt === 0 && error instanceof Error && [
+          "작업 공간이 만료되었습니다. 영상을 다시 가져와 주세요.",
+          "업로드가 중단되었습니다. 다시 추가해 주세요.",
+          "업로드가 중단되었습니다.",
+        ].includes(error.message)) continue;
+        throw error;
+      }
+      uploadedFiles.current.set(localId, data.source);
+      return data.source as RankingSource;
+    }
   }
 
   function invalidateAudio() {setResult(null); setShowResult(false);}

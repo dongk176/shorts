@@ -519,15 +519,14 @@ async function markPaymentSucceeded(input: {
     || input.payment.totalAmount !== input.transaction.amountKrw
     || input.payment.status !== "DONE"
   ) {
-    await markPaymentFailed({
-      db: input.db,
-      transaction: input.transaction,
+    // Both callers persist this typed failure once, keeping the order blocked
+    // until the provider returns a matching approved payment.
+    throw new TossBillingApiError({
       code: "PROVIDER_RESULT_MISMATCH",
       message: "결제사 승인 결과와 내부 주문이 일치하지 않습니다.",
       retryable: false,
       outcomeUnknown: true,
     });
-    throw new Error("결제 승인 결과 확인이 필요합니다.");
   }
   const summary = tossPaymentResponseSummary(input.payment);
   await input.db.begin(async (tx) => {

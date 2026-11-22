@@ -214,6 +214,14 @@ it('keeps unavailable provider references blocked instead of treating 404 as unp
  expect((await pg.query('select * from shorts_mvp.usage_grants')).rows).toHaveLength(0);
 });
 
+it('backs off only abandoned unpaid provider references and checks them again after a day', async () => {
+ transactions=[]; sub.status='APPROVAL_PENDING'; await syncPayPalSubscription(id,db(pg));
+ await pg.exec("update shorts_mvp.paypal_checkouts set status='canceled',last_lookup_at=now(),last_lookup_error_code='PAYPAL_REFERENCE_UNAVAILABLE'");
+ expect(await reconcilePayPal(db(pg))).toMatchObject({checked:0});
+ await pg.exec("update shorts_mvp.paypal_checkouts set last_lookup_at=now()-interval '25 hours'");
+ expect(await reconcilePayPal(db(pg))).toMatchObject({checked:1});
+});
+
 it('failed lookups rotate through the bounded queue instead of starving later checkouts',async()=>{
  await pg.exec(`with users as (insert into shorts_mvp.app_users(id) select gen_random_uuid() from generate_series(1,11) returning id) insert into shorts_mvp.paypal_checkouts(user_id,environment,plan_code,provider_plan_id,provider_subscription_id,locale,status) select id,'sandbox','starter_3m','${planId}','I-'||upper(substr(replace(id::text,'-',''),1,12)),'en','ready' from users`);
  vi.mocked(paypalRequest).mockRejectedValue(Error('provider unavailable'));
