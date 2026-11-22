@@ -5,16 +5,6 @@
     "legacy_project": {
       "schedulingMode": "fair_share",
       "current": {
-        "releaseId": "legacy-project-43fd759084b4-v4",
-        "workerSourceGitSha": "43fd759084b49f1bbc13aff609332b646fb7f534",
-        "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:b2391bed81ca493e2a99db8c1798aaae2400ce7fc4fd7e7475786a2c5300c4d2",
-        "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-v4-legacy-project-43fd759084b4:1",
-        "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-project-fargate-production",
-        "renderSpecVersion": 4,
-        "captionRenderSpecVersion": 4,
-        "fontManifestSha256": "1da578de91943f1299bb48e33649264dc748f89356879702817ceab38668beff"
-      },
-      "previous": {
         "releaseId": "legacy-project-ce70d54685be-v4",
         "workerSourceGitSha": "ce70d54685be401763e364dbb1c3389f445883a7",
         "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:38dd00e495cd2abde5dcd5692e14b4c3e2a0f9bfb033c0fb554a831f9028599d",
@@ -23,21 +13,21 @@
         "renderSpecVersion": 4,
         "captionRenderSpecVersion": 4,
         "fontManifestSha256": "1da578de91943f1299bb48e33649264dc748f89356879702817ceab38668beff"
+      },
+      "previous": {
+        "releaseId": "legacy-project-4e73c744e049-v4",
+        "workerSourceGitSha": "4e73c744e049df9f5292c59ea755041309500fb3",
+        "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:8af59b84aa7df9798275769d14047b62c1859564e7348a2010d410315fc6ca59",
+        "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-v4-legacy-project-4e73c744e049:1",
+        "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-project-fargate-production",
+        "renderSpecVersion": 4,
+        "captionRenderSpecVersion": 4,
+        "fontManifestSha256": "b9f530954066e89e95fcd2cfb77db558e68530329d3d1d9db17e4e73c859d486"
       }
     },
     "source_range": {
       "schedulingMode": "fair_share",
       "current": {
-        "releaseId": "source-range-43fd759084b4-v4",
-        "workerSourceGitSha": "43fd759084b49f1bbc13aff609332b646fb7f534",
-        "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:b2391bed81ca493e2a99db8c1798aaae2400ce7fc4fd7e7475786a2c5300c4d2",
-        "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-v4-source-range-43fd759084b4:1",
-        "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-source-range-production",
-        "renderSpecVersion": 4,
-        "captionRenderSpecVersion": 4,
-        "fontManifestSha256": "1da578de91943f1299bb48e33649264dc748f89356879702817ceab38668beff"
-      },
-      "previous": {
         "releaseId": "source-range-ce70d54685be-v4",
         "workerSourceGitSha": "ce70d54685be401763e364dbb1c3389f445883a7",
         "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:38dd00e495cd2abde5dcd5692e14b4c3e2a0f9bfb033c0fb554a831f9028599d",
@@ -46,21 +36,21 @@
         "renderSpecVersion": 4,
         "captionRenderSpecVersion": 4,
         "fontManifestSha256": "1da578de91943f1299bb48e33649264dc748f89356879702817ceab38668beff"
+      },
+      "previous": {
+        "releaseId": "source-range-4e73c744e049-v4",
+        "workerSourceGitSha": "4e73c744e049df9f5292c59ea755041309500fb3",
+        "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:8af59b84aa7df9798275769d14047b62c1859564e7348a2010d410315fc6ca59",
+        "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-v4-source-range-4e73c744e049:1",
+        "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-source-range-production",
+        "renderSpecVersion": 4,
+        "captionRenderSpecVersion": 4,
+        "fontManifestSha256": "b9f530954066e89e95fcd2cfb77db558e68530329d3d1d9db17e4e73c859d486"
       }
     },
     "elevenlabs_transcription": {
       "schedulingMode": "fair_share",
       "current": {
-        "releaseId": "elevenlabs-transcription-43fd759084b4-v4",
-        "workerSourceGitSha": "43fd759084b49f1bbc13aff609332b646fb7f534",
-        "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:b2391bed81ca493e2a99db8c1798aaae2400ce7fc4fd7e7475786a2c5300c4d2",
-        "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-v4-elevenlabs-transcription-43fd759084b4:1",
-        "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-elevenlabs-transcription-canary-production",
-        "renderSpecVersion": 4,
-        "captionRenderSpecVersion": 4,
-        "fontManifestSha256": "1da578de91943f1299bb48e33649264dc748f89356879702817ceab38668beff"
-      },
-      "previous": {
         "releaseId": "elevenlabs-transcription-ce70d54685be-v4",
         "workerSourceGitSha": "ce70d54685be401763e364dbb1c3389f445883a7",
         "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:38dd00e495cd2abde5dcd5692e14b4c3e2a0f9bfb033c0fb554a831f9028599d",
@@ -69,21 +59,21 @@
         "renderSpecVersion": 4,
         "captionRenderSpecVersion": 4,
         "fontManifestSha256": "1da578de91943f1299bb48e33649264dc748f89356879702817ceab38668beff"
+      },
+      "previous": {
+        "releaseId": "elevenlabs-transcription-4e73c744e049-v4",
+        "workerSourceGitSha": "4e73c744e049df9f5292c59ea755041309500fb3",
+        "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:8af59b84aa7df9798275769d14047b62c1859564e7348a2010d410315fc6ca59",
+        "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-v4-elevenlabs-transcription-4e73c744e049:1",
+        "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-elevenlabs-transcription-canary-production",
+        "renderSpecVersion": 4,
+        "captionRenderSpecVersion": 4,
+        "fontManifestSha256": "b9f530954066e89e95fcd2cfb77db558e68530329d3d1d9db17e4e73c859d486"
       }
     },
     "subtitle_templates": {
       "schedulingMode": "fair_share",
       "current": {
-        "releaseId": "subtitle-templates-43fd759084b4-v4",
-        "workerSourceGitSha": "43fd759084b49f1bbc13aff609332b646fb7f534",
-        "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:b2391bed81ca493e2a99db8c1798aaae2400ce7fc4fd7e7475786a2c5300c4d2",
-        "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-v4-subtitle-templates-43fd759084b4:1",
-        "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-elevenlabs-transcription-canary-production",
-        "renderSpecVersion": 4,
-        "captionRenderSpecVersion": 4,
-        "fontManifestSha256": "1da578de91943f1299bb48e33649264dc748f89356879702817ceab38668beff"
-      },
-      "previous": {
         "releaseId": "subtitle-templates-ce70d54685be-v4",
         "workerSourceGitSha": "ce70d54685be401763e364dbb1c3389f445883a7",
         "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:38dd00e495cd2abde5dcd5692e14b4c3e2a0f9bfb033c0fb554a831f9028599d",
@@ -92,21 +82,21 @@
         "renderSpecVersion": 4,
         "captionRenderSpecVersion": 4,
         "fontManifestSha256": "1da578de91943f1299bb48e33649264dc748f89356879702817ceab38668beff"
+      },
+      "previous": {
+        "releaseId": "subtitle-templates-4e73c744e049-v4",
+        "workerSourceGitSha": "4e73c744e049df9f5292c59ea755041309500fb3",
+        "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:8af59b84aa7df9798275769d14047b62c1859564e7348a2010d410315fc6ca59",
+        "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-v4-subtitle-templates-4e73c744e049:1",
+        "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-elevenlabs-transcription-canary-production",
+        "renderSpecVersion": 4,
+        "captionRenderSpecVersion": 4,
+        "fontManifestSha256": "b9f530954066e89e95fcd2cfb77db558e68530329d3d1d9db17e4e73c859d486"
       }
     },
     "unified_template_subtitles": {
       "schedulingMode": "fifo",
       "current": {
-        "releaseId": "unified-template-subtitles-43fd759084b4-v4",
-        "workerSourceGitSha": "43fd759084b49f1bbc13aff609332b646fb7f534",
-        "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:b2391bed81ca493e2a99db8c1798aaae2400ce7fc4fd7e7475786a2c5300c4d2",
-        "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-v4-unified-template-subtitles-43fd759084b4:1",
-        "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-prepare-production",
-        "renderSpecVersion": 4,
-        "captionRenderSpecVersion": 4,
-        "fontManifestSha256": "1da578de91943f1299bb48e33649264dc748f89356879702817ceab38668beff"
-      },
-      "previous": {
         "releaseId": "unified-template-subtitles-ce70d54685be-v4",
         "workerSourceGitSha": "ce70d54685be401763e364dbb1c3389f445883a7",
         "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:38dd00e495cd2abde5dcd5692e14b4c3e2a0f9bfb033c0fb554a831f9028599d",
@@ -115,6 +105,16 @@
         "renderSpecVersion": 4,
         "captionRenderSpecVersion": 4,
         "fontManifestSha256": "1da578de91943f1299bb48e33649264dc748f89356879702817ceab38668beff"
+      },
+      "previous": {
+        "releaseId": "unified-template-subtitles-4e73c744e049-v4",
+        "workerSourceGitSha": "4e73c744e049df9f5292c59ea755041309500fb3",
+        "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:8af59b84aa7df9798275769d14047b62c1859564e7348a2010d410315fc6ca59",
+        "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-v4-unified-template-subtitles-4e73c744e049:1",
+        "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-prepare-production",
+        "renderSpecVersion": 4,
+        "captionRenderSpecVersion": 4,
+        "fontManifestSha256": "b9f530954066e89e95fcd2cfb77db558e68530329d3d1d9db17e4e73c859d486"
       }
     }
   }
