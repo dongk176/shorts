@@ -119,3 +119,13 @@ referenced the prior exact release tag. Corrected those test fixtures together
 with all exact bindings for a new immutable 20261122-2 tag. The failed tag is
 retained unchanged. Infra tests now pass 43/43; renderer/app source is unchanged
 from 64e79054. New cloud run must pass the full gate before image registration.
+
+Cloud run 44995728134 passed full make verify, image scan, isolated SQL
+contracts, AWS probe bba92f4e-3b19-4259-82b7-eebfc47a96e9 (exit 0) and
+69/69 browser parity cases (DOM max 1.533px, pixels max 2px). Registered
+canary-ready f48a9a2b-17bc-4db7-af99-f49cfb14edb6, source 43fd7590,
+digest sha256:b2391bed81ca493e2a99db8c1798aaae2400ce7fc4fd7e7475786a2c5300c4d2.
+All 15 isolated checks passed. Same image run locally with network disabled
+also passed all 3 incident tail deficits; audio 9.000s, video 9.033333s on a
+9s synthetic selection. No customer failed job replay. Production promotion
+remains pending exact successor handoff and administrator canary checks.
