@@ -8,7 +8,7 @@ Worktree: .tmp/service-recovery-20261122, branch codex/service-recovery-20261122
 existing HEAD b6fe1f744d7b2fde7f8ba0d6dd722d447e222a6b retained.
 Vercel production hostname resolved to dpl_C4zob5U1kADUV2BWAVZyNEvnzRGm,
 source 2d1577892713631e98ac0a9f79519afe494bc501, an ancestor of this worktree.
-No production writes or deployments were performed in this investigation.
+Initial diagnosis was read-only. Subsequent authorized release preparation is recorded below.
 
 ## Submitted failures
 
@@ -86,7 +86,7 @@ submitted failures above.
 
 ## Release status
 
-NOT DEPLOYED. Existing recovery changes preserved. User initially prohibited
+Production web/worker NOT PROMOTED. Existing recovery changes preserved. User initially prohibited
 browser/screen use and later authorized incognito login only. User subsequently authorized isolated browser release validation and Docker restart.
 Do not promote an unverified worker or falsify parity/canary evidence. Next work
 requires exact-image validation, existing release registration/canary procedure,
@@ -102,3 +102,20 @@ authorized Docker restart. New immutable candidate tag is
 editor-v4-render-parity-20261122-1; old protected tags remain untouched.
 Candidate metadata tests: 41 passed. This does not imply cloud registration
 or production promotion has completed.
+
+## Candidate verification follow-up
+
+Docker recovered after the authorized restart. Isolated schema tests passed
+47 + 79 = 126 checks. Candidate 64e79054 web deployment
+dpl_7gb99fkgrGE5uQoZC2Yh4QQZEWd4 is READY and unaliased. Source route comparison
+against promoted 2d157789 has no removed/added routes. Authenticated browser
+verification passed home, guidebook, pricing, admin and editor entry; save/render
+verification remains pending the exact worker.
+
+Stage B renewal for tag 20261122-1 completed and verified its live template;
+production queues, worker definitions and stable pointers remain unchanged.
+Cloud workflow 44994663733 stopped in make verify because infra tests still
+referenced the prior exact release tag. Corrected those test fixtures together
+with all exact bindings for a new immutable 20261122-2 tag. The failed tag is
+retained unchanged. Infra tests now pass 43/43; renderer/app source is unchanged
+from 64e79054. New cloud run must pass the full gate before image registration.

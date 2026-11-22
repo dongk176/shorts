@@ -376,7 +376,7 @@ describe("shorts MVP infrastructure", () => {
   it("splits the exact protected Stage B tag between build and approval roles", () => {
     const { editorCanary } = stacks("production", {
       githubEditorReleaseRef:
-        "refs/tags/editor-v4-render-parity-20261115-11",
+        "refs/tags/editor-v4-render-parity-20261122-2",
       editorReleaseRegistrarPassRoleArns: exactRegistrarPassRoleArns,
     });
     const roles = editorCanary.findResources("AWS::IAM::Role");
@@ -395,7 +395,7 @@ describe("shorts MVP infrastructure", () => {
     expect(buildCondition?.StringEquals?.[
       "token.actions.githubusercontent.com:sub"
     ]).toBe(
-      "repo:dongk176/shorts:ref:refs/tags/editor-v4-render-parity-20261115-11",
+      "repo:dongk176/shorts:ref:refs/tags/editor-v4-render-parity-20261122-2",
     );
     expect(verifierCondition?.StringLike).toBeUndefined();
     expect(verifierCondition?.StringEquals?.[
@@ -409,7 +409,7 @@ describe("shorts MVP infrastructure", () => {
   it("lets only the verifier read isolated evidence and invoke the registrar", () => {
     const { editorCanary } = stacks("production", {
       githubEditorReleaseRef:
-        "refs/tags/editor-v4-render-parity-20261115-11",
+        "refs/tags/editor-v4-render-parity-20261122-2",
       editorReleaseRegistrarPassRoleArns: exactRegistrarPassRoleArns,
     });
     const template = editorCanary.toJSON();
@@ -451,11 +451,11 @@ describe("shorts MVP infrastructure", () => {
   it("requires unique exact PassRole ARNs when the protected tag is enabled", () => {
     expect(() => stacks("production", {
       githubEditorReleaseRef:
-        "refs/tags/editor-v4-render-parity-20261115-11",
+        "refs/tags/editor-v4-render-parity-20261122-2",
     })).toThrow(/editorReleaseRegistrarPassRoleArns context is required/);
     expect(() => stacks("production", {
       githubEditorReleaseRef:
-        "refs/tags/editor-v4-render-parity-20261115-11",
+        "refs/tags/editor-v4-render-parity-20261122-2",
       editorReleaseRegistrarPassRoleArns: JSON.stringify([
         "arn:aws:iam::123456789012:role/shorts-*",
         "arn:aws:iam::123456789012:role/shorts-task",
