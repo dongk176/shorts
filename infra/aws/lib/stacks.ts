@@ -403,7 +403,7 @@ function projectTargetRegistry(
 }
 
 /**
- * Each function asset contains only its handler and common.py. This prevents a
+ * Each function asset includes only the Python modules its handler uses. This prevents a
  * cleanup-only hotfix from silently revising the submitter, dispatcher, and
  * state functions that happen to live in the same source directory.
  */
@@ -416,6 +416,7 @@ function isolatedLambdaCode(
   }
   const sourceDirectory = path.join(__dirname, "../lambda");
   const sources = [`${handlerModule}.py`, "common.py"];
+  if (handlerModule === "batch_submitter") sources.push("editor_incident_identity.py");
   for (const source of sources) {
     if (!fs.existsSync(path.join(sourceDirectory, source))) {
       throw new Error(`Lambda source is missing: ${source}`);
