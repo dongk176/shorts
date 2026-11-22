@@ -1775,7 +1775,13 @@ def test_one_pixel_text_layout_wraps_without_clipping_the_glyphs(
     shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
     reason="ffmpeg and ffprobe are required",
 )
-@pytest.mark.parametrize("source_duration", [9.8, 9.6, 9.2])
+@pytest.mark.parametrize("source_duration", [
+    9.8, 9.6, 9.2,
+    # 2026-11-22 incidents: measured source-tail deficits for projects
+    # 38210 (82 - 81.033333), 38356 (67.23 - 66.291667),
+    # and 38481 (76.57 - 75.78), shifted onto the synthetic 10s clock.
+    9.033333, 9.061667, 9.21,
+])
 def test_editor_sequence_pads_small_source_tail_drift_to_document_duration(
     tmp_path: Path,
     source_duration: float,

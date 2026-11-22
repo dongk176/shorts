@@ -98,7 +98,8 @@ test("release switches default to legacy and v2 saving is server-authorized", as
     "state.canaryEnabled === true", "state.renderV4KillSwitch === false",
     "state.successorAdminReleaseId === state.candidateReleaseId",
     "state.candidateDocumentVersion === 3",
-    "state.candidateFontManifestSha256 === state.stableFontManifestSha256",
+    "state.candidateFontManifestSha256 === state.successorFontManifestSha256",
+    "state.stableFontManifestSha256 === state.successorPredecessorFontManifestSha256",
     "exactEditorRenderV4Capability",
   ]) assert.ok(successorGuard.includes(condition), `Missing exact successor guard: ${condition}`);
   assert.match(resolver, /shorts_mvp\.editor_target_successor_admin_release\(\$\{userId\}::uuid\)/);
@@ -245,11 +246,11 @@ test("release workflow promotes one tested digest without deploying the website"
   assert.doesNotMatch(workflow, /vars\.AWS_WORKER_BUILD_ROLE_ARN/);
   assert.match(
     workflow,
-    /github\.ref == 'refs\/tags\/editor-v4-render-parity-20261115-11'/,
+    /github\.ref == 'refs\/tags\/editor-v4-render-parity-20261122-1'/,
   );
   assert.deepEqual(
     [...new Set(workflow.match(/editor-v4-render-parity-[0-9]{8}-[0-9]+/g))],
-    ["editor-v4-render-parity-20261115-11"],
+    ["editor-v4-render-parity-20261122-1"],
   );
   assert.equal(workflow.match(/fetch-depth: 0/g)?.length, 2);
   assert.equal(workflow.match(/fetch-tags: true/g)?.length, 2);
