@@ -530,7 +530,7 @@ def test_missing_openai_key_fails_before_youtube_download(tmp_path) -> None:
     worker.ingestion.download_bundle.assert_not_called()
     worker.repository.stage.assert_not_called()
     worker.repository.fail_job.assert_called_once_with(
-        "job-a", "TranscriptionError", worker.FINAL_TRANSCRIPTION_MESSAGE
+        "job-a", "transcription_processing_failed", worker.FINAL_PROCESSING_MESSAGE
     )
 
 

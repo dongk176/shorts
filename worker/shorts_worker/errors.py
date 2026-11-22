@@ -71,6 +71,15 @@ class BotCheckError(IngestionError):
 class TranscriptionError(ShortsMakerError):
     """Required audio transcription failed or produced no usable text."""
 
+    code = "transcription_processing_failed"
+
+
+class NoSpeechDetected(TranscriptionError):
+    """All completed audio chunks produced no usable speech."""
+
+    # Older database triggers use this code for the no-speech message.
+    code = "TranscriptionError"
+
 
 class SubtitleTranslationError(ShortsMakerError):
     """Transcription exists, but translated captions could not be validated."""

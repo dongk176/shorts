@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from shorts_worker.config import Settings
-from shorts_worker.errors import TranscriptionError
+from shorts_worker.errors import NoSpeechDetected, TranscriptionError
 from shorts_worker.media import media_duration, probe_media
 from shorts_worker.subtitles import (
     ELEVENLABS_FALLBACK_POLICY,
@@ -290,9 +290,10 @@ def test_all_api_failures_still_fail_when_no_transcript_is_usable(
         lambda *_args, **_kwargs: {"format": {"duration": "30"}},
     )
 
-    with pytest.raises(TranscriptionError, match="비어"):
+    with pytest.raises(TranscriptionError, match="요청을 완료하지 못했습니다") as failure:
         transcriber.transcribe(tmp_path / "source.mp4", tmp_path / "work")
 
+    assert failure.value.code == "transcription_processing_failed"
     assert call_count == 2
 
 
@@ -331,7 +332,7 @@ def test_all_silent_chunks_fail_transcription(
         lambda *_args, **_kwargs: {"format": {"duration": "10"}},
     )
 
-    with pytest.raises(TranscriptionError, match="비어"):
+    with pytest.raises(NoSpeechDetected, match="비어"):
         transcriber.transcribe(tmp_path / "source.mp4", tmp_path / "work")
 
 

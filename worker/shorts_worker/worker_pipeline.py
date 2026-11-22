@@ -42,6 +42,7 @@ from .errors import (
     BotCheckError,
     CaptionCompileError,
     IngestionError,
+    NoSpeechDetected,
     RenderError,
     RetryableIngestionError,
     RetryExhaustedIngestionError,
@@ -2106,7 +2107,11 @@ class BatchWorker:
             elif isinstance(exc, CaptionCompileError):
                 error_message = self.FINAL_CAPTION_MESSAGE
             elif isinstance(exc, TranscriptionError):
-                error_message = self.FINAL_TRANSCRIPTION_MESSAGE
+                error_code = exc.code
+                error_message = (
+                    self.FINAL_TRANSCRIPTION_MESSAGE if isinstance(exc, NoSpeechDetected)
+                    else self.FINAL_PROCESSING_MESSAGE
+                )
             else:
                 error_message = str(exc)
             _log_event(
@@ -3260,8 +3265,9 @@ class BatchWorker:
             self.repository.remove_partial_shorts(job_id)
             self.repository.fail_job(
                 job_id,
-                type(exc).__name__,
-                self.FINAL_TRANSCRIPTION_MESSAGE,
+                exc.code,
+                self.FINAL_TRANSCRIPTION_MESSAGE if isinstance(exc, NoSpeechDetected)
+                else self.FINAL_PROCESSING_MESSAGE,
             )
             raise
         except BotCheckError as exc:

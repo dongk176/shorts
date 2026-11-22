@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import Settings
-from .errors import TranscriptionError
+from .errors import NoSpeechDetected, TranscriptionError
 from .media import media_duration, probe_media, run_command
 from .schemas import SubtitleSegment
 
@@ -931,11 +931,13 @@ class AudioTranscriber:
         ordered = [results[index] for index in sorted(results)]
         segments = [segment for result in ordered for segment in result.segments]
         if not segments:
-            if policy == ELEVENLABS_FALLBACK_POLICY and failed_chunk_count:
+            if failed_chunk_count:
                 raise TranscriptionError(
                     "단어 타임스탬프를 포함한 전체 전사를 완료하지 못했습니다."
+                    if policy == ELEVENLABS_FALLBACK_POLICY
+                    else "오디오 전사 요청을 완료하지 못했습니다."
                 )
-            raise TranscriptionError("전체 오디오 전사 결과가 비어 있습니다.")
+            raise NoSpeechDetected("전체 오디오 전사 결과가 비어 있습니다.")
         fallback_results = [result for result in ordered if result.fallback_reason]
         providers = {result.provider for result in ordered if not result.skipped}
         provider = (
