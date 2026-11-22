@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { collectSearchVideoPages, detailsResponseSchema, verifiedCatalogDetails, YoutubeFreeApiError } from "./youtube-free";
+import { collectSearchVideoPages, detailsResponseSchema, parseDiscoveryDetails, verifiedCatalogDetails, YoutubeFreeApiError } from "./youtube-free";
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -36,6 +36,18 @@ afterEach(() => {
 });
 
 describe("free YouTube search collection", () => {
+  it("retains valid detail rows when an identified peer has malformed metadata", () => {
+    const good = detail("youtube-good");
+    const broken = detail("youtube-bad", { snippet: null });
+    const result = parseDiscoveryDetails({ items: [good, broken] }, [good.id, broken.id]);
+    expect(result.hasDeferredItems).toBe(true);
+    expect(result.items.map(item => item.id)).toEqual([good.id]);
+    expect(parseDiscoveryDetails({ items: [good] }, [good.id]).hasDeferredItems).toBe(false);
+    for (const items of [[broken], [good, {}], [good, good], [good, detail("unexpected")]]) {
+      expect(() => parseDiscoveryDetails({ items }, [good.id, broken.id])).toThrow();
+    }
+  });
+
   it("retains explicit English metadata from search and refresh details", () => {
     const original=detail("english0001");
     const result=verifiedCatalogDetails([original.id],detailsResponseSchema.parse({items:[{...original,snippet:{...original.snippet,title:"English video",defaultAudioLanguage:"en-GB"}}]}));

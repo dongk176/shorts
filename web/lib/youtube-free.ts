@@ -200,8 +200,23 @@ export async function requestFreeSearchPage(options: {
   }
 }
 
-export async function requestVideoDetails(videoIds: string[], fetchImpl: typeof fetch) {
-  if (!videoIds.length) return detailsResponseSchema.parse({ items: [] });
+export function parseDiscoveryDetails(raw: unknown, requestedIds: string[]) {
+  const { items } = z.object({ items: z.array(z.unknown()) }).parse(raw);
+  const seen = new Set<string>();
+  const valid: DetailItem[] = [];
+  for (const item of items) {
+    const { id } = z.object({ id: z.string() }).parse(item);
+    if (!requestedIds.includes(id) || seen.has(id)) throw new YoutubeFreeApiError("영상 ID를 확인하지 못했습니다.");
+    seen.add(id);
+    const parsed = detailsResponseSchema.shape.items.element.safeParse(item);
+    if (parsed.success) valid.push(parsed.data);
+  }
+  if (items.length && !valid.length) throw new YoutubeFreeApiError("영상 상세 정보를 확인하지 못했습니다.");
+  return { items: valid, hasDeferredItems: valid.length < items.length };
+}
+
+export async function requestVideoDetails(videoIds: string[], fetchImpl: typeof fetch, mode: "strict" | "discovery" = "strict") {
+  if (!videoIds.length) return { items: [], hasDeferredItems: false };
   const endpoint = new URL("https://www.googleapis.com/youtube/v3/videos");
   endpoint.searchParams.set("key", apiKey());
   endpoint.searchParams.set("part", "snippet,contentDetails,statistics,status,liveStreamingDetails");
@@ -220,7 +235,9 @@ export async function requestVideoDetails(videoIds: string[], fetchImpl: typeof 
     throw new YoutubeFreeApiError("YouTube 무료 소재 상세 정보 요청에 실패했습니다.");
   }
   try {
-    return detailsResponseSchema.parse(await response.json());
+    const raw: unknown = await response.json();
+    if (mode === "discovery") return parseDiscoveryDetails(raw, videoIds);
+    return { ...detailsResponseSchema.parse(raw), hasDeferredItems: false };
   } catch (error) {
     if (error instanceof YoutubeQuotaError) throw error;
     console.error("YouTube free detail response was invalid");

@@ -267,14 +267,14 @@ export async function collectDiscoveryLane(
             fetchImpl,
           });
           const ids = [...new Set(search.items.map((item) => item.id.videoId))];
-          const details = await requestVideoDetails(ids, fetchImpl);
+          const details = await requestVideoDetails(ids, fetchImpl, "discovery");
           const verified = verifiedCatalogDetails(ids, details);
           await persistPage(
             db,
             runId,
             lane,
             verified.items,
-            task.continuation
+            task.continuation && !details.hasDeferredItems
               ? {
                   key: task.key,
                   conditions,
@@ -284,8 +284,13 @@ export async function collectDiscoveryLane(
                       : search.nextPageToken,
                 }
               : undefined,
-            verified.unavailableIds,
+            details.hasDeferredItems ? [] : verified.unavailableIds,
           );
+          if (details.hasDeferredItems) {
+            // Keep the cursor and existing availability until the complete page can be verified.
+            console.warn("youtube_discovery_incomplete_details", { lane, runId });
+            await failure();
+          }
         } catch (error) {
           // Invalidate once and wait for the NEXT scheduled run; no token retry loop.
           if (error instanceof InvalidSearchPageTokenError)
