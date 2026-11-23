@@ -98,7 +98,8 @@ test("release switches default to legacy and v2 saving is server-authorized", as
     "state.canaryEnabled === true", "state.renderV4KillSwitch === false",
     "state.successorAdminReleaseId === state.candidateReleaseId",
     "state.candidateDocumentVersion === 3",
-    "state.candidateFontManifestSha256 === state.stableFontManifestSha256",
+    "state.candidateFontManifestSha256 === state.successorFontManifestSha256",
+    "state.stableFontManifestSha256 === state.successorPredecessorFontManifestSha256",
     "exactEditorRenderV4Capability",
   ]) assert.ok(successorGuard.includes(condition), `Missing exact successor guard: ${condition}`);
   assert.match(resolver, /shorts_mvp\.editor_target_successor_admin_release\(\$\{userId\}::uuid\)/);

@@ -17,6 +17,11 @@ import pytest
 LAMBDA_DIR = Path(__file__).parents[2] / "infra" / "aws" / "lambda"
 
 
+@pytest.fixture(autouse=True)
+def lambda_module_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.syspath_prepend(str(LAMBDA_DIR))
+
+
 def _load_lambda(name: str) -> tuple[ModuleType, MagicMock]:
     fake_sqs = MagicMock()
     fake_boto3 = SimpleNamespace(client=lambda service: fake_sqs)

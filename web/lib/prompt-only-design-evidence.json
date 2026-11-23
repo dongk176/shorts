@@ -1,0 +1,100 @@
+{
+  "3c559307-a495-4082-9ac8-d5d9147452b9": {
+    "probe": {
+      "batchStatus": "SUCCEEDED",
+      "id": "8bac62b6-f21e-4bd7-af59-e5faa8c2e0bf",
+      "gitSha": "4b6dd0078e5cfb32da77bab53466c31cf451d4a5",
+      "workerImageDigest": "sha256:db1544afdf211b0bb7ccaf0c4afd30f4c43290aaa9e2d28fa6b7da4e6908a5d7",
+      "fontManifestSha256": "1da578de91943f1299bb48e33649264dc748f89356879702817ceab38668beff",
+      "batchJobId": "c57bdeaa-63c7-441a-bda2-75285a79a8c2",
+      "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-ja-quality-probe-4b6dd0078e5c:2",
+      "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-language-test-production",
+      "artifactUri": "s3://shorts-mvp-editor-test-181651591905-ap-northeast-2/editor-release-probes/4b6dd0078e5cfb32da77bab53466c31cf451d4a5/db1544afdf21/90cd8b88a65d42239e4a59df3131d431/c57bdeaa-63c7-441a-bda2-75285a79a8c2/manifest.json",
+      "manifestSha256": "d5392bf2082676c81117a2bb3a4ee4c5e7696b26e8e202360076c7b086d6cd3e",
+      "manifestS3VersionId": "I5rrYArL99ZHV7aNhpo1WQMQ9UVIpRSp",
+      "matrixUri": "s3://shorts-mvp-editor-test-181651591905-ap-northeast-2/editor-release-probes/4b6dd0078e5cfb32da77bab53466c31cf451d4a5/db1544afdf21/90cd8b88a65d42239e4a59df3131d431/c57bdeaa-63c7-441a-bda2-75285a79a8c2/browser-parity/matrix.json",
+      "matrixSha256": "4a7f6adf82260b3b7860141ac2dcb2145de028251a5fe83916e043bb26ad7eac",
+      "matrixS3VersionId": "7bAHW1D3VNUuGkmdJd4pn9xI9jGrWHjQ"
+    },
+    "baselineReleaseId": "5d3b0681-ea40-4729-8201-fa4c57de592f",
+    "baselineManifestSha256": "b9008d7dc98d4f7a99739d5a1105675b9652faa7d801b34a2521cc29c3312ebb",
+    "frameCount": 69,
+    "checks": {
+      "worker-image": true,
+      "runtime-identity": true,
+      "legacy-no-timeline": true,
+      "captured-timeline": true,
+      "editor-v2": true,
+      "subtitle-layout": true,
+      "caption-template-pop": true,
+      "ffprobe": true,
+      "frame-parity": true,
+      "render-spec-v4": true,
+      "caption-render-spec-v4": true,
+      "worker-title-compositor-parity": true,
+      "worker-caption-noop-parity": true,
+      "font-manifest": true,
+      "font-fallback": true,
+      "browser-parity-worker-matrix": true
+    },
+    "customTemplateDesign": {
+      "version": 1,
+      "passed": true,
+      "sourceGitSha": "4b6dd0078e5cfb32da77bab53466c31cf451d4a5",
+      "workerImageDigest": "sha256:db1544afdf211b0bb7ccaf0c4afd30f4c43290aaa9e2d28fa6b7da4e6908a5d7",
+      "fontManifestSha256": "1da578de91943f1299bb48e33649264dc748f89356879702817ceab38668beff",
+      "renderSpecVersion": 4,
+      "captionRenderSpecVersion": 4,
+      "wrapRevision": "editor-text-v1"
+    }
+  },
+  "221b1fcd-9b06-499d-97e9-d2093db2a4e3": {
+    "probe": {
+      "batchStatus": "SUCCEEDED",
+      "id": "a6cf7579-dac3-461a-91f8-4aa31f386f2a",
+      "gitSha": "a730f07144dffc8e77af65b93949dcda4b6690de",
+      "workerImageDigest": "sha256:f61567d7cad262a7401cdfbf5638ffce6ad9b9a2354d15c690b1d2e0ba127787",
+      "fontManifestSha256": "1da578de91943f1299bb48e33649264dc748f89356879702817ceab38668beff",
+      "batchJobId": "d272058e-5826-4931-a5a2-161c594c41dd",
+      "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-ja-quality-probe-a730f07144df:2",
+      "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-language-test-production",
+      "artifactUri": "s3://shorts-mvp-editor-test-181651591905-ap-northeast-2/editor-release-probes/a730f07144dffc8e77af65b93949dcda4b6690de/f61567d7cad2/67adcac17d8d4014a69440511a41a423/d272058e-5826-4931-a5a2-161c594c41dd/manifest.json",
+      "manifestSha256": "2ebe46a13bf55f388ad688c4c413254e2e9ec269ee730b6dcef7bc86decc0858",
+      "manifestS3VersionId": "zNxC3DPPTMQnLNXnYCfztdbcebcKPEBj",
+      "matrixUri": "s3://shorts-mvp-editor-test-181651591905-ap-northeast-2/editor-release-probes/a730f07144dffc8e77af65b93949dcda4b6690de/f61567d7cad2/67adcac17d8d4014a69440511a41a423/d272058e-5826-4931-a5a2-161c594c41dd/browser-parity/matrix.json",
+      "matrixSha256": "ed58ea636235756ef0a79e0dd7c3a48d43d2e4a305c3ca8eb27100a8a6b5e473",
+      "matrixS3VersionId": "FADzgLAsGy3AWYJkrdOrpNTcnLWAuEub"
+    },
+    "baselineReleaseId": "5d3b0681-ea40-4729-8201-fa4c57de592f",
+    "baselineManifestSha256": "b9008d7dc98d4f7a99739d5a1105675b9652faa7d801b34a2521cc29c3312ebb",
+    "frameCount": 69,
+    "checks": {
+      "worker-image": true,
+      "runtime-identity": true,
+      "legacy-no-timeline": true,
+      "captured-timeline": true,
+      "editor-v2": true,
+      "subtitle-layout": true,
+      "caption-template-pop": true,
+      "ffprobe": true,
+      "frame-parity": true,
+      "render-spec-v4": true,
+      "caption-render-spec-v4": true,
+      "worker-title-compositor-parity": true,
+      "worker-caption-noop-parity": true,
+      "font-manifest": true,
+      "font-fallback": true,
+      "browser-parity-worker-matrix": true
+    },
+    "customTemplateDesign": {
+      "version": 1,
+      "passed": true,
+      "sourceGitSha": "a730f07144dffc8e77af65b93949dcda4b6690de",
+      "workerImageDigest": "sha256:f61567d7cad262a7401cdfbf5638ffce6ad9b9a2354d15c690b1d2e0ba127787",
+      "fontManifestSha256": "1da578de91943f1299bb48e33649264dc748f89356879702817ceab38668beff",
+      "renderSpecVersion": 4,
+      "captionRenderSpecVersion": 4,
+      "wrapRevision": "editor-text-v1"
+    }
+  }
+}

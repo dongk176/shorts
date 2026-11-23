@@ -49,6 +49,30 @@ test("pins all five production lanes and the approved unified rotation states", 
     fontManifestSha256: "b9f530954066e89e95fcd2cfb77db558e68530329d3d1d9db17e4e73c859d486",
   };
   const approvedStates = [
+    // Live AWS definition/digest and stable DB release checked 2026-11-22.
+    {
+  "schedulingMode": "fifo",
+  "current": {
+    "releaseId": "unified-template-subtitles-ce70d54685be-v4",
+    "workerSourceGitSha": "ce70d54685be401763e364dbb1c3389f445883a7",
+    "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:38dd00e495cd2abde5dcd5692e14b4c3e2a0f9bfb033c0fb554a831f9028599d",
+    "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-v4-unified-template-subtitles-ce70d54685be:1",
+    "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-prepare-production",
+    "renderSpecVersion": 4,
+    "captionRenderSpecVersion": 4,
+    "fontManifestSha256": "1da578de91943f1299bb48e33649264dc748f89356879702817ceab38668beff"
+  },
+  "previous": {
+    "releaseId": "unified-template-subtitles-4e73c744e049-v4",
+    "workerSourceGitSha": "4e73c744e049df9f5292c59ea755041309500fb3",
+    "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:8af59b84aa7df9798275769d14047b62c1859564e7348a2010d410315fc6ca59",
+    "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-v4-unified-template-subtitles-4e73c744e049:1",
+    "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-prepare-production",
+    "renderSpecVersion": 4,
+    "captionRenderSpecVersion": 4,
+    "fontManifestSha256": "b9f530954066e89e95fcd2cfb77db558e68530329d3d1d9db17e4e73c859d486"
+  }
+},
     { schedulingMode: "fifo", current: oldCurrent, previous: oldPrevious },
     { schedulingMode: "fifo", current: v4Current, previous: oldCurrent },
     { schedulingMode: "fifo", current: v4Next, previous: v4Current },

@@ -39,6 +39,7 @@ export async function verifyCandidateJobAdmission({
   if (
     response.status !== 200
     || body?.ready !== true
+    || body?.publicAdmissionChecked !== true
     || body?.targetCount !== 5
     || body?.fingerprint !== expectedFingerprint
   ) {

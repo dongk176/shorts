@@ -1,3 +1,5 @@
+import * as fs from "node:fs";
+import * as path from "node:path";
 import * as cdk from "aws-cdk-lib";
 import { Match, Template } from "aws-cdk-lib/assertions";
 import { describe, expect, it } from "vitest";
@@ -141,6 +143,7 @@ function stacks(
     foundation,
   });
   return {
+    outdir: app.outdir,
     editorRepository: Template.fromStack(editorRepositoryStack),
     foundation: Template.fromStack(foundation),
     compute: Template.fromStack(compute),
@@ -1000,6 +1003,20 @@ describe("shorts MVP infrastructure", () => {
     expect(() => stacks("test", {
       projectTargetRegistryJson: JSON.stringify(selfExecuting),
     })).not.toThrow();
+  });
+
+  it("ships the editor identity helper alongside each batch submitter", () => {
+    const { outdir, compute, editorCanary } = stacks();
+    for (const template of [compute, editorCanary]) {
+      const [submitter] = Object.values(template.findResources("AWS::Lambda::Function", {
+        Properties: { Handler: "batch_submitter.handler" },
+      }));
+      const hash = submitter.Properties.Code.S3Key.replace(/\.zip$/, "");
+      const directory = path.join(outdir, `asset.${hash}`);
+      expect(fs.existsSync(path.join(directory, "batch_submitter.py"))).toBe(true);
+      expect(fs.readFileSync(path.join(directory, "editor_incident_identity.py")))
+        .toEqual(fs.readFileSync(path.join(__dirname, "../lambda/editor_incident_identity.py")));
+    }
   });
 
   it("requires the committed target registry in production", () => {

@@ -5,6 +5,7 @@ import {
   assertCustomTemplateDesignAccess,
   lockCustomTemplateDesignAccess,
 } from "@/lib/custom-template-design-access";
+import promptOnlyDesignEvidence from "@/lib/prompt-only-design-evidence.json";
 import { HttpError } from "@/lib/http";
 import { type TemplateConfig } from "@/lib/template-config";
 import { templateDesignFingerprint, templateHasCustomDesign } from "@/lib/template-design";
@@ -58,14 +59,19 @@ export async function assertCustomTemplateDesignRenderRelease(
       l.verification#>>'{probe,matrixSha256}' as matrix_sha256,
       l.verification#>>'{probe,matrixS3VersionId}' as matrix_s3_version_id,
       l.verification->>'details' as details_json,
+      case when l.verification->>'kind'='japanese-quality-prompt-only'
+        then l.verification::text end as prompt_only_json,
       l.verification#>>'{probe,artifactUri}' as check_artifact_uri
     from shorts_mvp.editor_releases r
     join shorts_mvp.language_test_releases l on l.id=r.id
     where r.id=${releaseId} and l.verified_at is not null
-      and l.verification->>'kind'='admin-language-isolated-v1'
       and l.verification#>>'{probe,batchStatus}'='SUCCEEDED'
-      and l.verification#>>'{browser,checks,browser-worker-visual-parity}'='true'
-      and l.verification#>>'{browser,checks,actualChromium}'='true'
+      and ((l.verification->>'kind'='admin-language-isolated-v1'
+        and l.verification#>>'{browser,checks,browser-worker-visual-parity}'='true'
+        and l.verification#>>'{browser,checks,actualChromium}'='true')
+        or (l.verification->>'kind'='japanese-quality-prompt-only'
+          and l.verification#>>'{browserParityInheritance,browserChecks,browser-worker-visual-parity}'='true'
+          and l.verification#>>'{browserParityInheritance,browserChecks,actualChromium}'='true'))
     for share of r,l
   ` : await tx`
     select r.git_sha,r.worker_image_digest,r.font_manifest_sha256,
@@ -91,6 +97,23 @@ export async function assertCustomTemplateDesignRenderRelease(
   let details;
   try {
     details = typeof row?.detailsJson === "string" ? JSON.parse(row.detailsJson) : null;
+    if (row?.promptOnlyJson) {
+      // These immutable manifests include the design render and reproduce all 69
+      // browser-reference frames. Prompt-only registrations store their probe
+      // identity separately from the original language release's details.
+      const proof = JSON.parse(row.promptOnlyJson);
+      const pin = Object.entries(promptOnlyDesignEvidence).find(([id]) => id === releaseId)?.[1];
+      const parity = proof.browserParityInheritance;
+      if (!pin || proof.kind !== "japanese-quality-prompt-only"
+        || proof.rendererAndDocumentSchemaUnchanged !== true || proof.applicationAdmissionSchemaValidated !== true
+        || proof.sourceGitSha !== row.gitSha || proof.imageDigest !== row.workerImageDigest
+        || parity?.baselineReleaseId !== pin.baselineReleaseId || parity.baselineManifestSha256 !== pin.baselineManifestSha256
+        || parity.allFreshFrameHashesEqual !== true || parity.freshFrameCount !== pin.frameCount
+        || parity.browserChecks?.actualChromium !== true || parity.browserChecks?.["browser-worker-visual-parity"] !== true
+        || Object.entries(pin.probe).some(([key, value]) => proof.probe?.[key] !== value)) throw unavailable();
+      details = { probeRunId: pin.probe.id, customTemplateDesign: pin.customTemplateDesign,
+        checks: { ...pin.checks, "browser-worker-visual-parity": true } };
+    }
   } catch {
     throw unavailable();
   }

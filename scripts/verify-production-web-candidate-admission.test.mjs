@@ -21,6 +21,7 @@ test("accepts only a healthy candidate with the exact registry identity", async 
     registry,
     fetchImpl: async () => response(200, {
       ready: true,
+      publicAdmissionChecked: true,
       targetCount: 5,
       fingerprint: productionProjectTargetsFingerprint(registry),
     }),
@@ -43,6 +44,7 @@ test("fails closed on incomplete configuration or identity mismatch", async () =
       registry,
       fetchImpl: async () => response(200, {
         ready: true,
+        publicAdmissionChecked: true,
         targetCount: 5,
         fingerprint: "0".repeat(64),
       }),
@@ -58,4 +60,12 @@ test("rejects non-Vercel or insecure origins", async () => {
       /무별칭 Vercel 후보/,
     );
   }
+});
+
+test("rejects legacy configuration-only success without public admission check", async () => {
+  await assert.rejects(verifyCandidateJobAdmission({
+    url: "https://shorts-abc123-artiroom.vercel.app", registry,
+    fetchImpl: async () => response(200, { ready: true, targetCount: 5,
+      fingerprint: productionProjectTargetsFingerprint(registry) }),
+  }), /사전검증 실패/);
 });

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import promptEvidence from "./prompt-only-design-evidence.json";
 import { createDefaultTemplateConfig } from "@/lib/template-config";
 
 vi.mock("server-only", () => ({}));
@@ -86,6 +87,27 @@ describe("design save admission", () => {
 });
 
 describe("immutable design renderer evidence", () => {
+  it.each(Object.entries(promptEvidence))("validates the exact prompt-only design probe for %s", async (id, pin) => {
+    const {probe} = pin;
+    const proof = {kind: "japanese-quality-prompt-only", probe: {...probe}, sourceGitSha: probe.gitSha,
+      imageDigest: probe.workerImageDigest, rendererAndDocumentSchemaUnchanged: true, applicationAdmissionSchemaValidated: true,
+      browserParityInheritance: {baselineReleaseId: pin.baselineReleaseId, baselineManifestSha256: pin.baselineManifestSha256,
+        allFreshFrameHashesEqual: true, freshFrameCount: pin.frameCount, browserChecks: {actualChromium: true, "browser-worker-visual-parity": true}}};
+    const row = {gitSha: probe.gitSha, probeGitSha: probe.gitSha, workerImageDigest: probe.workerImageDigest,
+      probeWorkerImageDigest: probe.workerImageDigest, fontManifestSha256: probe.fontManifestSha256,
+      probeFontManifestSha256: probe.fontManifestSha256, renderSpecVersion: 4, captionRenderSpecVersion: 4,
+      probeRunId: probe.id, artifactUri: probe.artifactUri, checkArtifactUri: probe.artifactUri, manifestSha256: probe.manifestSha256,
+      matrixSha256: probe.matrixSha256, manifestS3VersionId: probe.manifestS3VersionId, matrixS3VersionId: probe.matrixS3VersionId};
+    const db = vi.fn().mockImplementation(() => [{...row, promptOnlyJson: JSON.stringify(proof)}]);
+    const check = () => assertCustomTemplateDesignRenderRelease(db as never, id, {languageTest:true});
+    await expect(check()).resolves.toEqual({compatibleSuccessor: undefined});
+    proof.probe.matrixS3VersionId = "different-version";
+    await expect(check()).rejects.toMatchObject({status:503});
+    proof.probe.matrixS3VersionId = probe.matrixS3VersionId;
+    proof.browserParityInheritance.allFreshFrameHashesEqual = false;
+    await expect(check()).rejects.toMatchObject({status:503});
+  });
+
   it("uses separately attested feature artifacts without changing public evidence", async () => {
     const row = verifiedRow();
     const featureRow = databaseRow({ ...row, details: { ...row.details,
