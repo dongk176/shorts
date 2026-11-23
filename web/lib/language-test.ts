@@ -7,7 +7,8 @@ import { z } from "zod";
 import { HttpError } from "./http";
 import { CULTURE_COMMENT_PROFILE, type CommentProfile } from "./comment-profile";
 import type { ProjectDispatchTarget } from "./job-dispatch";
-import { resolveRequestedEditorRelease, type RequestedEditorRelease, type EditorReleaseAssignment } from "./editor-rendering-release";
+import { resolveEditorRelease, resolveRequestedEditorRelease, type RequestedEditorRelease, type EditorReleaseAssignment } from "./editor-rendering-release";
+import { resolveOwnedEditorRenderSuccessor } from "./editor-render-successor";
 
 export const LANGUAGE_TEST_UNAVAILABLE = "언어 기능을 잠시 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.";
 const digest = z.string().regex(/^sha256:[a-f0-9]{64}$/);
@@ -122,7 +123,17 @@ export async function resolveOwnedProjectEditorRelease(
   db: Db, userId: string | null, requested: RequestedEditorRelease, shortId: string,
 ): Promise<EditorReleaseAssignment> {
   const pinned = await languageTestEditorRelease(db, userId, shortId);
-  if (!pinned) return resolveRequestedEditorRelease(db, userId, requested);
+  if (!pinned) {
+    if (process.env.EDITOR_RENDER_SUCCESSOR_ENABLED === "true") {
+      const base = await resolveEditorRelease(db, userId);
+      const editing = await resolveOwnedEditorRenderSuccessor(db, userId, shortId, base);
+      if (editing.releaseId !== base.releaseId && editing.releaseId === requested.releaseId
+        && editing.channel === requested.channel && editing.uiVersion === requested.uiVersion
+        && editing.documentVersion === requested.documentVersion) return editing;
+    }
+    // Editors opened before the switch retain their supported stable binding.
+    return resolveRequestedEditorRelease(db, userId, requested);
+  }
   if (pinned.releaseId !== requested.releaseId || pinned.channel !== requested.channel
     || pinned.uiVersion !== requested.uiVersion || pinned.documentVersion !== requested.documentVersion) {
     throw new HttpError(409, "이 프로젝트의 편집기를 다시 열어 주세요.", "EDITOR_RELEASE_CHANGED");

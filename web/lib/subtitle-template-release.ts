@@ -1,4 +1,5 @@
 import { languageTestEditorRelease } from "./language-test";
+import { resolveOwnedEditorRenderSuccessor } from "./editor-render-successor";
 import type { Sql, TransactionSql } from "postgres";
 import {
   editorRenderingV2GlobalEnabled,
@@ -315,7 +316,11 @@ export async function resolveUnifiedTemplateSubtitleEditorContext(
       isAdmin: true, pilotEnabled: true,
     } };
   }
-  return resolveEffectiveSubtitleTemplateContext(db, userId, false);
+  const context = await resolveEffectiveSubtitleTemplateContext(db, userId, false);
+  if (!shortId) return context;
+  return { ...context, editorRelease: await resolveOwnedEditorRenderSuccessor(
+    db, userId, shortId, context.editorRelease,
+  ) };
 }
 
 export async function getEffectiveSubtitleTemplateAccess(
