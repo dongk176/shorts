@@ -1937,3 +1937,27 @@ def test_concurrent_project_finalizers_do_not_double_charge_edited_outputs(uploa
             (select count(*) from shorts_mvp.job_events) as job_events
         """).fetchone()
     assert row == {"usage_events": "1", "job_events": "1"}
+
+
+def test_project_finalizer_keeps_ingestion_details_only_for_the_failed_result():
+    repository = WorkerRepository("postgresql://example", "ap-northeast-2")
+    details = {"asset": "video", "upstream_reason": "Requested format is not available"}
+    for status in ("failed", "completed", "rendering"):
+        connection = MagicMock()
+        connection.execute.return_value.fetchone.return_value = {"final_status": status}
+
+        @contextmanager
+        def connect(current=connection):
+            yield current
+
+        repository.connect = connect
+        repository.finalize_project_job(
+            "job-a", error_code="youtube_extractor_failed", error_message="수집 실패",
+            error_details=details,
+        )
+        assert connection.execute.call_count == (2 if status == "failed" else 1)
+        if status == "failed":
+            query, values = connection.execute.call_args.args
+            assert "status='failed' and error_code=%s" in query
+            assert values[0].obj == details
+            assert values[1:] == ("job-a", "youtube_extractor_failed")

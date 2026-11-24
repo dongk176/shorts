@@ -1781,6 +1781,8 @@ def test_one_pixel_text_layout_wraps_without_clipping_the_glyphs(
     # 38210 (82 - 81.033333), 38356 (67.23 - 66.291667),
     # and 38481 (76.57 - 75.78), shifted onto the synthetic 10s clock.
     9.033333, 9.061667, 9.21,
+    # Project 39406: 65s metadata versus 64.305011s stored timeline.
+    9.305011,
 ])
 def test_editor_sequence_pads_small_source_tail_drift_to_document_duration(
     tmp_path: Path,
@@ -2143,10 +2145,11 @@ def test_v4_editor_renders_stored_v3_pop_caption_with_canonical_font_and_gap(
     reason="ffmpeg and ffprobe are required",
 )
 @pytest.mark.parametrize(
-    "translated_five_four", [False, True, "legacy-metadata", "highlight-metadata"]
+    "translated_five_four",
+    [False, True, "legacy-metadata", "highlight-metadata", "pop-metadata"],
 )
 def test_v4_caption_off_preserves_non_caption_composition(
-    tmp_path: Path, translated_five_four: bool,
+    tmp_path: Path, translated_five_four: bool | str,
 ) -> None:
     clean = tmp_path / "caption-toggle-clean.mp4"
     _run([
@@ -2173,16 +2176,15 @@ def test_v4_caption_off_preserves_non_caption_composition(
         schema_version=4,
     )
     if translated_five_four:
-        fixture_name = (
-            "caption-composition-highlight-5x4.json"
-            if translated_five_four == "highlight-metadata"
-            else "caption-composition-5x4.json"
-        )
+        fixture_name = {
+            "highlight-metadata": "caption-composition-highlight-5x4.json",
+            "pop-metadata": "caption-composition-pop-5x4.json",
+        }.get(translated_five_four, "caption-composition-5x4.json")
         fixture = json.loads((FIXTURE.parent / fixture_name).read_text())
         with pytest.raises(RenderError, match="안전영역"):
             editor_video_frame(_document_v3(), fixture["stored"])
         caption_spec = fixture["normalized"]
-        if translated_five_four == "highlight-metadata":
+        if translated_five_four in ("highlight-metadata", "pop-metadata"):
             # Composition metadata repair must not move, resize or recolor any
             # actual subtitle glyphs, even when captions are switched back on.
             assert create_caption_ass(

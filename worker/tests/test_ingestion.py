@@ -413,10 +413,14 @@ def test_content_restriction_never_fails_over_egress(monkeypatch) -> None:
         ("ERROR: This format is DRM-protected", "youtube_drm_restricted"),
     ],
 )
+@pytest.mark.parametrize(
+    "extra_error", ["", "Sign in to confirm you're not a bot", "HTTP Error 429"],
+)
 def test_content_restrictions_have_distinct_failure_codes(
     monkeypatch: pytest.MonkeyPatch,
     upstream_error: str,
     expected_code: str,
+    extra_error: str,
 ) -> None:
     monkeypatch.delenv("WARP_PROXY_URL", raising=False)
     monkeypatch.delenv("FALLBACK_PROXY_URL", raising=False)
@@ -424,7 +428,7 @@ def test_content_restrictions_have_distinct_failure_codes(
         subprocess,
         "run",
         lambda *_args, **_kwargs: subprocess.CompletedProcess(
-            args=[], returncode=1, stdout="", stderr=upstream_error
+            args=[], returncode=1, stdout="", stderr=upstream_error + "\n" + extra_error
         ),
     )
 
@@ -432,6 +436,7 @@ def test_content_restrictions_have_distinct_failure_codes(
         YtDlpIngestionProvider()._run(["yt-dlp", "https://youtu.be/dQw4w9WgXcQ"])
 
     assert caught.value.code == expected_code
+    assert caught.value.retryable is False
 
 
 @pytest.mark.parametrize(

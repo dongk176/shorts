@@ -651,3 +651,46 @@ def test_long_link_rejected_before_media_download(ranking_project, monkeypatch):
     with pytest.raises(RankingFailure, match="3분"):
         pipeline.register_link(str(uuid4()), "https://www.youtube.com/watch?v=abcdefghijk")
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize("phase", ["metadata", "media"])
+def test_extractor_failure_records_stage_without_raw_output(ranking_project, phase):
+    import sys
+
+    from shorts_worker.ranking_pipeline import RankingDownloadFailure
+
+    pipeline = RankingPipeline(ranking_project)
+    args = [
+        sys.executable, "-c",
+        "import sys;sys.stderr.write('Requested format is not available '"
+        "'https://user:secret@proxy.invalid');sys.exit(1)",
+        "yt_dlp", "youtube",
+    ]
+    if phase == "metadata":
+        args.append("--skip-download")
+    with pytest.raises(RankingDownloadFailure) as caught:
+        pipeline.run(args)
+    assert caught.value.phase == phase
+    assert caught.value.category == "terminal"
+    assert caught.value.reason == "format_unavailable"
+    assert "secret" not in str(caught.value)
+    assert "proxy.invalid" not in str(caught.value)
+
+
+@pytest.mark.parametrize("start,end,duration", [
+    (0, 8, 7.488), (3.378, 14, 13.482), (0, 8, 7.253), (9.5, 48, 47.232),
+])
+def test_reported_whole_second_selection_fits_actual_container(
+    ranking_project, monkeypatch, start, end, duration,
+):
+    pipeline = RankingPipeline(ranking_project)
+    source = str(uuid4())
+    (ranking_project / "sources.json").write_text(json.dumps([{"id": source}]))
+    monkeypatch.setattr(pipeline, "probe", lambda _: {"duration": duration})
+    clip = {"rank": 1, "sourceId": source, "label": "scene", "start": start, "end": end}
+    result = pipeline.validate_render({"title": "test", "clips": [clip]})
+    assert result[0]["start"] == start
+    assert result[0]["end"] == duration
+    for invalid_end in (end + .1, end + 1):
+        with pytest.raises(RankingFailure, match="1위"):
+            pipeline.validate_render({"title": "test", "clips": [{**clip, "end": invalid_end}]})

@@ -514,6 +514,12 @@ class YtDlpIngestionProvider(IngestionProvider):
             retryable=False,
             error_type=type(error).__name__,
             failure_reason=_failure_reason(error),
+            error_code=error.code if isinstance(error, IngestionError) else None,
+            upstream_reason=(
+                _safe_upstream_reason(str(error.details.get("upstream_reason", "")))
+                if isinstance(error, IngestionError) and error.details.get("upstream_reason")
+                else None
+            ),
         )
 
     def _base_args(self) -> list[str]:
@@ -626,6 +632,11 @@ class YtDlpIngestionProvider(IngestionProvider):
 
             output = result.stderr or result.stdout
             lowered_output = output.lower()
+            # A combined error must not turn a content restriction into a route retry.
+            for markers, code, message in _TERMINAL_RESTRICTIONS:
+                if any(marker in lowered_output for marker in markers):
+                    raise IngestionError(message, code=code, details=failure_context)
+
             bot_challenges = (
                 "sign in to confirm you’re not a bot",
                 "sign in to confirm you're not a bot",
@@ -663,10 +674,6 @@ class YtDlpIngestionProvider(IngestionProvider):
                     details=failure_context,
                 )
                 continue
-
-            for markers, code, message in _TERMINAL_RESTRICTIONS:
-                if any(marker in lowered_output for marker in markers):
-                    raise IngestionError(message, code=code, details=failure_context)
 
             if any(
                 marker in lowered_output

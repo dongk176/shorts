@@ -46,9 +46,10 @@ class RankingFailure(ValueError):
 
 
 class RankingDownloadFailure(RankingFailure):
-    def __init__(self, category: str, reason: str = "unknown"):
+    def __init__(self, category: str, reason: str = "unknown", *, phase: str = "unknown"):
         self.category = category
         self.reason = reason
+        self.phase = phase if phase in {"metadata", "media"} else "unknown"
         super().__init__(
             "영상을 가져오지 못했습니다. 제한 없는 공개 영상인지 확인하거나 "
             "사용 권한이 있는 영상 파일을 넣어 주세요."
@@ -312,6 +313,7 @@ class RankingPipeline:
         youtube = "yt_dlp" in args and any(
             platform in args for platform in ("youtube", "instagram", "tiktok")
         )
+        phase = "metadata" if "--skip-download" in args else "media"
         remaining = self.deadline - time.monotonic()
         if remaining <= 0:
             raise RankingFailure("처리 시간이 초과되었습니다. 더 짧은 영상으로 시도해 주세요.")
@@ -340,7 +342,7 @@ class RankingPipeline:
                 while process.poll() is None:
                     if time.monotonic() >= until:
                         if youtube:
-                            raise RankingDownloadFailure("network_error", "timeout")
+                            raise RankingDownloadFailure("network_error", "timeout", phase=phase)
                         raise RankingFailure("영상 처리 시간이 초과되었습니다.")
                     if out.tell() > 4 * 1024 * 1024 or err.tell() > 4 * 1024 * 1024:
                         raise RankingFailure("영상 정보를 처리할 수 없습니다.")
@@ -381,7 +383,7 @@ class RankingPipeline:
                             output, media="--skip-download" not in args
                         )
                         raise RankingDownloadFailure(
-                            category, download_failure_reason(output, category)
+                            category, download_failure_reason(output, category), phase=phase,
                         )
                     raise RankingFailure(
                         "영상을 가져오거나 변환하지 못했습니다. 공개 영상인지 확인하거나 "
@@ -829,9 +831,12 @@ class RankingPipeline:
                 raise RankingFailure("등록된 영상을 선택해 주세요.")
             duration = self.probe(source)["duration"]
             start, end = float(clip["start"]), float(clip["end"])
-            # Embedded players and downloaded containers can differ by a few frames.
-            # Clamp only a small tail discrepancy; never expand the selected scene.
-            if math.isfinite(end) and math.isfinite(duration) and 0 < end - duration <= 0.5:
+            # Some players expose only a whole-second ceiling. Reconcile that
+            # exact boundary, or the existing half-second drift; never shift start.
+            if (
+                math.isfinite(end) and math.isfinite(duration) and end > duration
+                and (end - duration <= 0.5 or end == math.ceil(duration))
+            ):
                 end = duration
                 clip["end"] = end
             if (

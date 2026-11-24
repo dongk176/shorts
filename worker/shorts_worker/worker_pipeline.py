@@ -2109,6 +2109,7 @@ class BatchWorker:
                 error_message = self.FINAL_TRANSCRIPTION_MESSAGE
             else:
                 error_message = str(exc)
+            error_details = exc.failure_details() if isinstance(exc, IngestionError) else None
             _log_event(
                 "project_run_failed",
                 job_id=job_id,
@@ -2116,6 +2117,7 @@ class BatchWorker:
                 preparation_finished=preparation_finished,
                 error_type=type(exc).__name__,
                 error_code=error_code,
+                error_details=error_details,
                 resource_tier=resource_tier,
                 container_peak_memory_bytes=_container_memory_peak_bytes(),
             )
@@ -2131,6 +2133,7 @@ class BatchWorker:
                 job_id,
                 error_code=error_code,
                 error_message=error_message,
+                error_details=error_details,
             )
         finally:
             if route_id and not route_download_started:

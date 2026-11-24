@@ -44,13 +44,18 @@ function normalizeLegacyCaptionMetadata(spec: CompiledSpec): CompiledSpec {
   if (!video || typeof video !== "object" || Array.isArray(video)
     || !caption || typeof caption !== "object" || Array.isArray(caption)
     || video.x !== 0 || video.y !== 528 || video.width !== 1080 || video.height !== 864
-    || spec.cues.some((cue) => !Number.isFinite(cue.centerX) || !Number.isFinite(cue.centerY))) return spec;
+    || spec.cues.some((cue) => spec.templateId === "pop"
+      ? !cue.words?.length || !cue.events?.length
+        || cue.words.some(word => !Number.isFinite(word.centerX) || !Number.isFinite(word.centerY))
+        || cue.events.some(event => !event.positions?.length
+          || event.positions.some(position => !Number.isFinite(position.centerX) || !Number.isFinite(position.centerY)))
+      : !Number.isFinite(cue.centerX) || !Number.isFinite(cue.centerY))) return spec;
   const legacyDefaultBox = caption.x === 90 && caption.y === 1340
     && caption.width === 900 && caption.height === 140;
-  // Older lower-position highlight captions used a different fixed box. V4
+  // Older lower-position highlight/pop captions used a different fixed box. V4
   // renders from safeArea and absolute cue positions, not this composition box.
   // Preserve those coordinates even when captions are currently switched off.
-  const legacyHighlightBox = spec.templateId === "highlight"
+  const legacyHighlightBox = ["highlight", "pop"].includes(spec.templateId)
     && spec.layoutMode === "absolute-word-positions-v1"
     && caption.x === 120 && caption.y === 1333
     && caption.width === 840 && caption.height === 140

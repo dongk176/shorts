@@ -300,6 +300,7 @@ class Service:
             if isinstance(exc, RankingDownloadFailure):
                 op["failureCategory"] = exc.category
                 op["failureReason"] = exc.reason
+                op["failurePhase"] = exc.phase
             if data.get("sourceId"):
                 shutil.rmtree(self.directory / data["sourceId"], ignore_errors=True)
             op.update(

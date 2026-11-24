@@ -1,0 +1,224 @@
+{
+  "stored": {
+    "schemaVersion": 4,
+    "templateId": "pop",
+    "captionPlacement": "lower",
+    "fps": 30,
+    "clipStartSeconds": 0,
+    "clipEndSeconds": 1,
+    "timingLeadFrames": 7,
+    "layout": {
+      "canvas": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 1920
+      },
+      "video": {
+        "x": 0,
+        "y": 528,
+        "width": 1080,
+        "height": 864
+      },
+      "title": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 528
+      },
+      "channel": {
+        "x": 0,
+        "y": 1710,
+        "width": 1080,
+        "height": 160
+      },
+      "caption": {
+        "x": 120,
+        "y": 1333,
+        "width": 840,
+        "height": 140
+      }
+    },
+    "safeArea": {
+      "x": 120,
+      "y": 1333,
+      "width": 840,
+      "height": 140
+    },
+    "font": {
+      "fontId": "pretendard",
+      "fileId": "Pretendard-Bold.woff2",
+      "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+      "family": "\"Editor V4 Pretendard\"",
+      "weight": 700,
+      "metrics": {
+        "revision": "editor-font-metrics-v2",
+        "cssToAssScale": 0.838314,
+        "cssToAssBaselineOffsetEm": -0.000205
+      }
+    },
+    "style": {
+      "fontSize": 72,
+      "textColor": "#FFFFFF",
+      "accentColor": "#35E6E3",
+      "outlineColor": "#080808",
+      "outlineWidth": 8,
+      "shadow": 0,
+      "background": null,
+      "maxLines": 1
+    },
+    "cues": [
+      {
+        "startFrame": 0,
+        "endFrame": 24,
+        "words": [
+          {
+            "text": "字幕",
+            "startFrame": 0,
+            "endFrame": 24,
+            "spaceBefore": false,
+            "sourceWordIndexes": [
+              0
+            ],
+            "speechStartFrame": 3,
+            "speechEndFrame": 24,
+            "fontSize": 72,
+            "centerX": 540.0,
+            "centerY": 1403.0,
+            "maxScale": 112
+          }
+        ],
+        "easeFrames": 2,
+        "events": [
+          {
+            "startFrame": 0,
+            "endFrame": 24,
+            "activeWordIndex": 0,
+            "positions": [
+              {
+                "centerX": 540.0,
+                "centerY": 1403.0,
+                "advanceWidth": 135.203,
+                "gapBefore": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "layoutMode": "absolute-word-positions-v1",
+    "wordGapPx": 6,
+    "joinedWordGapPx": 0
+  },
+  "normalized": {
+    "schemaVersion": 4,
+    "templateId": "pop",
+    "captionPlacement": "lower",
+    "fps": 30,
+    "clipStartSeconds": 0,
+    "clipEndSeconds": 1,
+    "timingLeadFrames": 7,
+    "layout": {
+      "canvas": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 1920
+      },
+      "video": {
+        "x": 0,
+        "y": 528,
+        "width": 1080,
+        "height": 864
+      },
+      "title": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 528
+      },
+      "channel": {
+        "x": 0,
+        "y": 1710,
+        "width": 1080,
+        "height": 160
+      },
+      "caption": {
+        "x": 120,
+        "y": 1333,
+        "width": 840,
+        "height": 59
+      }
+    },
+    "safeArea": {
+      "x": 120,
+      "y": 1333,
+      "width": 840,
+      "height": 140
+    },
+    "font": {
+      "fontId": "pretendard",
+      "fileId": "Pretendard-Bold.woff2",
+      "sha256": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+      "family": "\"Editor V4 Pretendard\"",
+      "weight": 700,
+      "metrics": {
+        "revision": "editor-font-metrics-v2",
+        "cssToAssScale": 0.838314,
+        "cssToAssBaselineOffsetEm": -0.000205
+      }
+    },
+    "style": {
+      "fontSize": 72,
+      "textColor": "#FFFFFF",
+      "accentColor": "#35E6E3",
+      "outlineColor": "#080808",
+      "outlineWidth": 8,
+      "shadow": 0,
+      "background": null,
+      "maxLines": 1
+    },
+    "cues": [
+      {
+        "startFrame": 0,
+        "endFrame": 24,
+        "words": [
+          {
+            "text": "字幕",
+            "startFrame": 0,
+            "endFrame": 24,
+            "spaceBefore": false,
+            "sourceWordIndexes": [
+              0
+            ],
+            "speechStartFrame": 3,
+            "speechEndFrame": 24,
+            "fontSize": 72,
+            "centerX": 540.0,
+            "centerY": 1403.0,
+            "maxScale": 112
+          }
+        ],
+        "easeFrames": 2,
+        "events": [
+          {
+            "startFrame": 0,
+            "endFrame": 24,
+            "activeWordIndex": 0,
+            "positions": [
+              {
+                "centerX": 540.0,
+                "centerY": 1403.0,
+                "advanceWidth": 135.203,
+                "gapBefore": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "layoutMode": "absolute-word-positions-v1",
+    "wordGapPx": 6,
+    "joinedWordGapPx": 0
+  }
+}

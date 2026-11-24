@@ -81,6 +81,8 @@ export type TossBillingRenewalResult = {
   reconciliationPending: number;
   manualReview: number;
   results: TossRenewalItemResult[];
+  deferred: number;
+  closedFulfillmentsForReview: number;
 };
 
 const MAX_RENEWAL_ATTEMPTS = 3;
@@ -439,27 +441,37 @@ async function reconcileRenewalAttempts(input: {
 
 async function markRenewalFailure(input: {
   db: Sql;
-  subscription: TossRenewalSubscription;
+  subscription: Pick<TossRenewalSubscription, "id">;
   providerOrderId: string;
   now: Date;
 }) {
-  const rows = await input.db`
-    select status,failure_code,failure_message,next_retry_at,attempt_no
-    from shorts_mvp.billing_toss_transactions
-    where provider_order_id=${input.providerOrderId} and transaction_type='payment'
-    limit 1
-  `;
-  const failure = rows[0] as {
-    status: string;
-    failureCode: string | null;
-    failureMessage: string | null;
-    nextRetryAt: Date | null;
-    attemptNo: number;
-  } | undefined;
-  if (!failure) return;
-  await input.db.begin(async (tx) => {
+  return input.db.begin(async (tx) => {
     const locked = await lockTossSubscription(tx, input.subscription.id);
-    if (!locked) return;
+    if (!locked) return "gone";
+    // Read after the subscription lock: a concurrent fulfillment may have already
+    // advanced the period or approved the payment since recovery selected it.
+    const rows = await tx`
+      select status,failure_code,failure_message,next_retry_at,attempt_no
+      from shorts_mvp.billing_toss_transactions transaction
+      where provider_order_id=${input.providerOrderId} and transaction_type='payment'
+        and subscription_id=${locked.id}
+        and exists (
+          select 1 from shorts_mvp.billing_orders billing_order
+          where billing_order.id=transaction.billing_order_id
+            and billing_order.kind='subscription_renewal' and billing_order.provider='toss'
+            and billing_order.renewal_period_start=${locked.currentPeriodEnd}
+        )
+      limit 1 for update
+    `;
+    const failure = rows[0] as {
+      status: string;
+      failureCode: string | null;
+      failureMessage: string | null;
+      nextRetryAt: Date | null;
+      attemptNo: number;
+    } | undefined;
+    // An approved payment must never be downgraded because its quota write failed.
+    if (!failure || !["failed", "unknown"].includes(failure.status)) return failure?.status ?? "gone";
     await tx`
       update shorts_mvp.user_subscriptions
       set status='past_due',retry_count=${Math.min(MAX_RENEWAL_ATTEMPTS, failure.attemptNo)},
@@ -472,7 +484,51 @@ async function markRenewalFailure(input: {
       where id=${locked.id} and payment_provider='toss'
     `;
     await syncCachedPlan(tx, locked.userId, "free");
+    return failure.status;
   });
+}
+
+async function restoreRenewalFailure(input: { db: Sql; subscriptionId: string; now: Date }) {
+  const rows = await input.db`
+    select transaction.provider_order_id
+    from shorts_mvp.billing_toss_transactions transaction
+    join shorts_mvp.billing_orders billing_order on billing_order.id=transaction.billing_order_id
+    join shorts_mvp.user_subscriptions subscription on subscription.id=transaction.subscription_id
+    where subscription.id=${input.subscriptionId}
+      and transaction.transaction_type='payment' and transaction.status in ('failed','unknown')
+      and billing_order.kind='subscription_renewal' and billing_order.provider='toss'
+      and billing_order.renewal_period_start=subscription.current_period_end
+      and subscription.status='active'
+    order by transaction.attempt_no desc,transaction.created_at desc limit 1
+  `;
+  if (rows[0]) await markRenewalFailure({
+    db: input.db, subscription: { id: input.subscriptionId },
+    providerOrderId: rows[0].providerOrderId as string, now: input.now,
+  });
+}
+
+async function flagClosedRenewalFulfillments(db: Sql) {
+  // Preserve the provider approval and the user's cancellation. Never grant or refund
+  // an old payment automatically; make its unresolved settlement visible for review.
+  const rows = await db`
+    update shorts_mvp.billing_toss_transactions transaction
+    set fulfillment_status='manual_review',
+      fulfillment_failure_message='구독 종료 후 미지급 승인 결제입니다. 결제사 대조 후 지급 또는 환불을 확인해 주세요.',
+      updated_at=clock_timestamp()
+    from shorts_mvp.billing_orders billing_order,shorts_mvp.user_subscriptions subscription
+    where transaction.billing_order_id=billing_order.id
+      and transaction.subscription_id=subscription.id
+      and billing_order.kind='subscription_renewal' and billing_order.provider='toss'
+      and subscription.payment_provider='toss' and subscription.status in ('canceled','expired')
+      and transaction.transaction_type='payment' and transaction.status='succeeded'
+      and transaction.fulfillment_status='pending'
+      and not exists (
+        select 1 from shorts_mvp.usage_grants grant_row
+        where grant_row.billing_order_id=billing_order.id
+      )
+    returning transaction.id
+  `;
+  return rows.length;
 }
 
 async function fulfillRenewal(input: {
@@ -574,7 +630,7 @@ async function fulfillRenewal(input: {
 
 async function candidateSubscriptionIds(db: Sql, now: Date) {
   const rows = await db`
-    select distinct subscription.id
+    select subscription.id
     from shorts_mvp.user_subscriptions subscription
     join shorts_mvp.billing_customer_cohorts cohort
       on cohort.user_id=subscription.user_id and cohort.cohort='toss_v1'
@@ -593,7 +649,10 @@ async function candidateSubscriptionIds(db: Sql, now: Date) {
             and coalesce(transaction.next_retry_at,transaction.updated_at)<=${now}
         )
       )
-    order by subscription.id
+    order by coalesce((
+      select max(attempt.updated_at) from shorts_mvp.billing_toss_transactions attempt
+      where attempt.subscription_id=subscription.id and attempt.transaction_type='payment'
+    ),subscription.updated_at),subscription.id
     limit 100
   `;
   return rows.map((row) => row.id as string);
@@ -605,7 +664,10 @@ async function processOneTossRenewal(input: {
   now: Date;
 }) {
   const unresolved = await reconcileRenewalAttempts(input);
-  if (unresolved) return { state: "reconciliation_pending", quotasCreated: 0, charged: 0 };
+  if (unresolved) {
+    await restoreRenewalFailure(input);
+    return { state: "reconciliation_pending", quotasCreated: 0, charged: 0 };
+  }
   const quotasCreated = await issueDueQuotas(input);
   const prepared = await prepareRenewal(input);
   if (prepared.action === "gone" || prepared.action === "not_due") {
@@ -636,6 +698,8 @@ async function processOneTossRenewal(input: {
     return { state: "reconciliation_pending", quotasCreated, charged: 0 };
   }
   if (prepared.decision.action === "wait" || prepared.decision.action === "exhausted") {
+    // Recover an interruption between the committed provider result and subscription update.
+    await restoreRenewalFailure(input);
     return { state: prepared.decision.action, quotasCreated, charged: 0 };
   }
 
@@ -686,20 +750,28 @@ async function processOneTossRenewal(input: {
       quotasCreated,
       charged: charged.state === "succeeded" ? 1 : 0,
     };
-  } catch {
-    await markRenewalFailure({
+  } catch (error) {
+    const paymentState = await markRenewalFailure({
       db: input.db,
       subscription: prepared.subscription,
       providerOrderId,
       now: input.now,
     });
-    return { state: "failed", quotasCreated, charged: 0 };
+    console.error("toss_billing_renewal_settlement_incomplete", {
+      subscriptionId: input.subscriptionId, paymentState,
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    });
+    return {
+      state: paymentState === "succeeded" ? "fulfillment_pending"
+        : paymentState === "unknown" ? "reconciliation_pending" : "failed",
+      quotasCreated, charged: paymentState === "succeeded" ? 1 : 0,
+    };
   }
 }
 
 export async function processTossBillingRenewals(
   db: Sql,
-  options: { now?: Date } = {},
+  options: { now?: Date; deadlineMs?: number } = {},
 ): Promise<TossBillingRenewalResult> {
   if (!(await tossRuntimeRenewalsEnabled(db))) {
     return {
@@ -714,16 +786,25 @@ export async function processTossBillingRenewals(
       reconciliationPending: 0,
       manualReview: 0,
       results: [],
+      deferred: 0,
+      closedFulfillmentsForReview: 0,
     };
   }
   // Validate the server-only secret before creating any ledger attempt.
   tossBillingSecretKey();
   const now = options.now ?? new Date();
+  const deadline = options.deadlineMs ?? performance.now() + 160_000;
+  const closedFulfillmentsForReview = await flagClosedRenewalFulfillments(db);
   const ids = await candidateSubscriptionIds(db, now);
   const results: TossRenewalItemResult[] = [];
   let quotasCreated = 0;
   let charged = 0;
   for (const subscriptionId of ids) {
+    // Do not start another charge without room for its 65s provider timeout and
+    // bounded DB settlement. Finish the in-flight item; never race a payment promise.
+    if (performance.now() + 90_000 >= deadline) break;
+    const started = performance.now();
+    console.info("toss_billing_renewal_item_started", { subscriptionId });
     try {
       const result = await processOneTossRenewal({ db, subscriptionId, now });
       quotasCreated += result.quotasCreated;
@@ -735,12 +816,19 @@ export async function processTossBillingRenewals(
         errorName: error instanceof Error ? error.name : "UnknownError",
       });
       results.push({ subscriptionId, state: "error" });
+    } finally {
+      console.info("toss_billing_renewal_item_finished", {
+        subscriptionId, durationMs: Math.round(performance.now() - started),
+        state: results.at(-1)?.state,
+      });
     }
   }
   return {
     enabled: true,
     scanned: ids.length,
     processed: results.length,
+    deferred: ids.length - results.length,
+    closedFulfillmentsForReview,
     quotasCreated,
     charged,
     renewed: results.filter((item) => item.state === "renewed").length,

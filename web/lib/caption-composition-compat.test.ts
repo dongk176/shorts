@@ -42,9 +42,8 @@ describe("stored translated caption composition compatibility", () => {
   });
 });
 
-const highlightFixture = JSON.parse(readFileSync(new URL("../../test-fixtures/caption-composition-highlight-5x4.json", import.meta.url), "utf8"));
-
-describe("stored 5:4 highlight composition compatibility", () => {
+describe.each(["highlight", "pop"])("stored 5:4 %s composition compatibility", (template) => {
+  const highlightFixture = JSON.parse(readFileSync(new URL(`../../test-fixtures/caption-composition-${template}-5x4.json`, import.meta.url), "utf8"));
   it("repairs only composition metadata, preserving absolute caption rendering and provenance", () => {
     const original = structuredClone(highlightFixture.stored);
     expect(parseCaptionRenderSpec(original)).not.toBeNull();
@@ -66,12 +65,15 @@ describe("stored 5:4 highlight composition compatibility", () => {
   });
   it.each(["template", "video", "caption", "safe-area", "version", "cue-position"])("does not widen the repair to unrelated %s data", (change) => {
     const value = structuredClone(highlightFixture.stored);
-    if (change === "template") value.templateId = "pop";
+    if (change === "template") value.templateId = "basic";
     if (change === "video") value.layout.video.y -= 1;
     if (change === "caption") value.layout.caption.y += 1;
     if (change === "safe-area") value.safeArea.y += 1;
     if (change === "version") value.schemaVersion = 3;
-    if (change === "cue-position") delete value.cues[0].centerY;
+    if (change === "cue-position") {
+      if (template === "pop") delete value.cues[0].words[0].centerY;
+      else delete value.cues[0].centerY;
+    }
     expect(normalizeStoredCaptionComposition(value)).toBeNull();
   });
 });

@@ -1329,14 +1329,24 @@ class WorkerRepository:
         *,
         error_code: str | None = None,
         error_message: str | None = None,
+        error_details: dict[str, object] | None = None,
     ) -> dict[str, Any] | None:
-        with self.connect() as connection:
-            return connection.execute(
+        with self.connect() as connection, connection.transaction():
+            result = connection.execute(
                 """
                 select * from shorts_mvp.finalize_project_job(%s,%s,%s)
                 """,
                 (job_id, error_code, error_message),
             ).fetchone()
+            if result and result.get("final_status") == "failed" and error_details:
+                connection.execute(
+                    """
+                    update shorts_mvp.video_jobs set error_details=%s
+                    where id=%s and status='failed' and error_code=%s
+                    """,
+                    (Jsonb(error_details), job_id, error_code),
+                )
+            return result
 
     def project_timeline_needed(self, short_id: str) -> bool:
         with self.connect() as connection:

@@ -459,3 +459,18 @@ def test_selected_subtitle_template_uses_basic_translation_in_render_and_editor(
         assert short["job"]["subtitle_template_id"] == caption_template
     for target in worker._capture_project_timelines.call_args.kwargs["targets"]:
         assert target.caption_editor_source["spec"]["templateId"] == "basic"
+
+
+def test_project_acquisition_failure_preserves_classified_upstream_detail(tmp_path, monkeypatch):
+    from shorts_worker.errors import IngestionError
+
+    worker, *_ = setup_worker(tmp_path, monkeypatch, language="ja")
+    error = IngestionError("수집 실패", code="youtube_extractor_failed", details={
+        "asset": "video", "upstream_reason": "Requested format is not available",
+    })
+    worker._download_with_inline_route_rotation.side_effect = error
+    worker.project("job")
+    kwargs = worker.repository.finalize_project_job.call_args.kwargs
+    assert kwargs["error_code"] == "youtube_extractor_failed"
+    assert kwargs["error_details"]["upstream_reason"] == "Requested format is not available"
+    assert kwargs["error_details"]["retryable"] is False

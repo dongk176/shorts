@@ -21,13 +21,16 @@ export async function GET(request: Request) {
   if (!secret || !provided || !safeSecretEqual(secret, provided)) {
     return NextResponse.json({ detail: "Unauthorized" }, { status: 401 });
   }
+  const deadlineMs = performance.now() + 260_000;
   const db = getDb();
   const failedEngines: Array<"legacy" | "toss" | "creator-support"> = [];
   let legacy: Awaited<ReturnType<typeof processBillingRenewals>> | null = null;
   let toss: Awaited<ReturnType<typeof processTossBillingRenewals>> | null = null;
 
   try {
+    console.info("billing_renewal_stage_started", { stage: "legacy" });
     legacy = await processBillingRenewals(db);
+    console.info("billing_renewal_stage_finished", { stage: "legacy" });
   } catch (error) {
     failedEngines.push("legacy");
     console.error("legacy_billing_renewal_cron_failed", {
@@ -36,7 +39,9 @@ export async function GET(request: Request) {
   }
 
   try {
-    toss = await processTossBillingRenewals(db);
+    console.info("billing_renewal_stage_started", { stage: "toss" });
+    toss = await processTossBillingRenewals(db, { deadlineMs });
+    console.info("billing_renewal_stage_finished", { stage: "toss", deferred: toss.deferred });
   } catch (error) {
     failedEngines.push("toss");
     console.error("toss_billing_renewal_cron_failed", {

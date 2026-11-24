@@ -122,3 +122,16 @@ it("does not spend ten attempts on proxy authentication configuration errors", a
   expect(state.query.mock.calls.some(([s])=>s.join("").includes("finished_at=now()"))).toBe(true);
   expect(state.query.mock.calls.flat().join(" ")).not.toContain("private diagnostic");
 });
+
+it.each(["metadata", "media", "https://user:secret@proxy.invalid"])("logs only a finite failure stage: %s", async (phase) => {
+  const log = vi.spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    state.fetch.mockResolvedValue(Response.json({status:"failed",attempt:0,failureCategory:"terminal",failureReason:"format_unavailable",failurePhase:phase}));
+    await syncRankingVercelOperation(project, operation);
+    expect(log).toHaveBeenCalledWith("ranking_download_failed", expect.objectContaining({
+      reason:"format_unavailable", phase: ["metadata", "media"].includes(phase) ? phase : "unknown",
+    }));
+    expect(JSON.stringify(log.mock.calls)).not.toContain("secret");
+    expect(state.lease).not.toHaveBeenCalled();
+  } finally { log.mockRestore(); }
+});

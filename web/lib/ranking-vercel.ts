@@ -362,6 +362,7 @@ export async function syncRankingVercelOperation(
     error?: string;
     failureCategory?: "bot_check" | "network_error" | "terminal";
     failureReason?: string;
+    failurePhase?: string;
     progress?: unknown;
   };
   if (
@@ -434,7 +435,8 @@ export async function syncRankingVercelOperation(
     const egress = op.payload?.egress;
     const routeId = typeof egress?.routeId === "string" && /^[a-z0-9][a-z0-9_-]{0,31}$/.test(egress.routeId) ? egress.routeId : undefined;
     const registryVersion = typeof egress?.registryVersion === "string" && /^[A-Za-z0-9-]{1,128}$/.test(egress.registryVersion) ? egress.registryVersion : undefined;
-    console.warn("ranking_download_failed", {operation, category:state.failureCategory, reason,routeId,registryVersion});
+    const phase = ["metadata", "media"].includes(state.failurePhase || "") ? state.failurePhase : "unknown";
+    console.warn("ranking_download_failed", {operation, category:state.failureCategory, reason,phase,routeId,registryVersion});
     if (state.failureCategory === "network_error") state.error = reason === "proxy_auth"
       ? "다운로드 연결 설정을 확인하고 있어요. 잠시 후 다시 시도해 주세요."
       : "영상 연결이 원활하지 않아 가져오지 못했어요. 입력 내용은 유지돼요. 잠시 후 다시 시도해 주세요.";
