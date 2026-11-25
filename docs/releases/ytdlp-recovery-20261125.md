@@ -17,7 +17,9 @@ video/audio probe. These are component tests, not project E2E evidence.
 - Old test: `3e6dd069-11af-44e3-a1e3-7718416fcb60`, exit 1.
 - New test: `18e7ba39-e86c-440b-a46c-dffcf8757a9a`, exit 0.
 - Four-minute download/transcription/render test:
-  `b4da265f-752e-403e-ad2b-f9fe7f39cd0c`, result pending.
+  `b4da265f-752e-403e-ad2b-f9fe7f39cd0c`, passed: download 22.64 seconds,
+  OpenAI transcription 39 segments, 1080x1920 audio/video render and full decode,
+  temporary-file cleanup; total 35.23 seconds.
 
 Verbose proxy configuration was also misclassified as a connection failure.
 The classifier now requires actual connection-error markers; regression
@@ -29,17 +31,26 @@ in the promoted web source's ingestion module are included.
 
 The web source contains unrelated worker changes that are not deployed in the
 generation runtime. Do not build that entire worker directory for this repair.
-`Dockerfile.ytdlp-hotfix` derives from the current immutable production image:
+The normal successor also changes the stable editor. Retaining the old
+generation renderer would undo the live editing-only recovery. Therefore
+`Dockerfile.ytdlp-hotfix` derives from the currently used, verified production
+editing image (release `f48a9a2b-17bc-4db7-af99-f49cfb14edb6`):
 
-`shorts-mvp-editor-releases-production@sha256:38dd00e495cd2abde5dcd5692e14b4c3e2a0f9bfb033c0fb554a831f9028599d`
+`shorts-mvp-editor-releases-production@sha256:b2391bed81ca493e2a99db8c1798aaae2400ce7fc4fd7e7475786a2c5300c4d2`
 
-Its application baseline is `ce70d54685be401763e364dbb1c3389f445883a7`.
+Its application baseline is `43fd759084b49f1bbc13aff609332b646fb7f534`.
 Only yt-dlp/default dependencies, the reviewed ingestion module and the build
 identity marker change. Renderers, fonts, entrypoint, model prompts and tools
 are inherited. The new source marker identifies this explicit assembly recipe;
 it does not assert that all files under the web worktree's worker directory
 were copied. The normal Dockerfile/requirements are also pinned for future
 builds, but the recovery workflow uses the hotfix Dockerfile explicitly.
+
+This is a material configuration difference from the successful component
+tests on the old generation image `38dd00e4...`. The exact final image must
+pass the registrar and real generation/edit checks. Its existing generation
+recovery changes have not yet been promoted; the source diff and canary must
+be reviewed before promotion. The old component success alone cannot approve it.
 
 Japanese/English generation has a separate image and registry. It must be
 checked and upgraded separately; a Korean worker test cannot attest that image.
