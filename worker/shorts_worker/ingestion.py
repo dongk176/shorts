@@ -701,10 +701,22 @@ class YtDlpIngestionProvider(IngestionProvider):
                 )
                 continue
 
-            if (
-                "connection refused" in lowered_output
-                or "proxy" in lowered_output
-                or "socks" in lowered_output
+            # Verbose yt-dlp output always lists its proxy configuration. Only
+            # actual connection errors identify a broken proxy route.
+            if any(
+                marker in lowered_output
+                for marker in (
+                    "connection refused",
+                    "proxyerror",
+                    "proxy error",
+                    "unable to connect to proxy",
+                    "cannot connect to proxy",
+                    "tunnel connection failed",
+                    "socks connection failed",
+                    "socks5error",
+                    "sockshttperror",
+                    "http error 407",
+                )
             ):
                 last_error = RetryableIngestionError(
                     "프록시 연결 오류로 다운로드할 수 없습니다.",

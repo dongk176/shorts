@@ -468,6 +468,43 @@ def test_generic_content_unavailable_is_retryable(
     assert caught.value.failure_details()["upstream_reason"] == upstream_error
 
 
+@pytest.mark.parametrize(
+    ("upstream_error", "expected_code"),
+    [
+        (
+            "ERROR: [youtube] abc: Requested format is not available. "
+            "Use --list-formats for a list of available formats",
+            "youtube_extractor_failed",
+        ),
+        ("ERROR: ProxyError: Unable to connect to proxy", "ingestion_proxy_connection_failed"),
+        ("ERROR: Tunnel connection failed: 407", "ingestion_proxy_connection_failed"),
+        ("ERROR: SOCKS5Error: Connection refused", "ingestion_proxy_connection_failed"),
+        (
+            "ERROR: HTTP Error 407: Proxy Authentication Required",
+            "ingestion_proxy_connection_failed",
+        ),
+    ],
+)
+def test_verbose_proxy_configuration_does_not_determine_failure_category(
+    monkeypatch: pytest.MonkeyPatch,
+    upstream_error: str,
+    expected_code: str,
+) -> None:
+    monkeypatch.delenv("WARP_PROXY_URL", raising=False)
+    monkeypatch.delenv("FALLBACK_PROXY_URL", raising=False)
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="",
+            stderr="[debug] Proxy map: {'all': 'socks5://proxy.invalid:8080'}\n" + upstream_error,
+        ),
+    )
+    with pytest.raises(IngestionError) as caught:
+        YtDlpIngestionProvider()._run(["yt-dlp", "https://youtu.be/dQw4w9WgXcQ"])
+    assert caught.value.code == expected_code
+
+
 def test_explicit_region_restriction_remains_terminal_with_generic_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
