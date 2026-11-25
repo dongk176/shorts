@@ -57,3 +57,38 @@ downloads remain available. This replaces the earlier automatic 14:00 reopening.
 The recovery deployment pins maintenance on without an automatic deadline. Its
 exact tested deployment is retained for a creation-only rollback, preserving
 all worker fixes. The open continuation changes only that maintenance pin.
+
+## November 25 execution and submission repair
+
+General release `ab0ebdb4-b925-432f-8d4a-40888d655339` was promoted through
+the existing administrator controls after project 39995 completed five shorts,
+two real editor renders completed, a downloaded file decoded successfully,
+and regenerated comments persisted on reopening. The rollback selection drill
+ran inside a rolled-back database transaction; it did not switch public users.
+After promotion, project 39996 completed five shorts in 264 seconds and its
+downloaded H.264/AAC output decoded successfully. These two creation projects
+used bounded operator submissions through normal admission, quota and outbox
+processing, not the browser's creation POST.
+
+The closed deployment is `dpl_3HEZGc1UrApyGT4UJmmYGZu5kKsa` (`d6285c84`).
+The open deployment is `dpl_esQtyFThH1Pdom2fPmM3hiDzu9qc` (`43085f4c`),
+promoted at approximately 11:47 KST. Both retain all 321 production routes.
+
+The first public language project, 39997, exposed a registration omission:
+the three specialized catalogs had verified registries but lacked their five
+rows each in `editor_release_project_targets`. The actual deployed submitter
+rejected them with `Selected project target differs from verified v4 release evidence`.
+The omission delayed submission; it was not a media extraction failure.
+The missing 15 rows were added only after comparing the existing immutable
+catalogs, passed image checks, and all 15 exact registered AWS definitions and
+digests. No target checks were weakened, no existing binding was overwritten,
+and no project or usage reservation was duplicated. Projects 39997 and 39998
+then dispatched normally. The actual submitter's five language target checks
+also passed against the repaired live records.
+
+Future specialized registrations must create the five immutable project-target
+rows in the same registration transaction. Before public selection, compare
+every lane's release ID, source SHA, image digest, revisioned definition and
+queue with those rows and exercise `_initial_render_v4_environment` using the
+deployed submitter. Passing only the web admission SQL or the image component
+probe does not verify this submission boundary.
