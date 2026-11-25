@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+vi.mock("@/lib/generation-maintenance", () => ({ generationMaintenanceResponse: () => null }));
 
 const mocks = vi.hoisted(() => ({
   refreshSession: vi.fn(),

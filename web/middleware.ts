@@ -4,6 +4,7 @@ import { refreshSupabaseSession } from "@/lib/supabase/middleware";
 import { isLocalizedPage, localePath, localizedHref, SITE_LOCALE_HEADER } from "@/lib/i18n/routing";
 import { SITE_LOCALE_COOKIE } from "@/lib/i18n/config";
 import { entryLocale, isLocaleCrawler } from "@/lib/i18n/entry-locale";
+import { generationMaintenanceResponse } from "@/lib/generation-maintenance";
 
 const CANONICAL_HOST = "www.easycut.co.kr";
 const LEGACY_PRODUCTION_HOSTS = new Set([
@@ -82,6 +83,11 @@ export async function middleware(request: NextRequest) {
     return refreshSupabaseSession(request);
   }
   const route = localePath(pathname);
+  const maintenance = generationMaintenanceResponse(request);
+  if (maintenance) return maintenance;
+  // These API matchers exist only for the temporary creation gate. Preserve
+  // their normal route-owned authentication and all reads/cancellations.
+  if (pathname.startsWith("/api/")) return NextResponse.next();
   const homeEntry = pathname === "/" && !route.prefixed && ["GET", "HEAD"].includes(request.method);
   if (homeEntry && !isLocaleCrawler(request.headers.get("user-agent"))) {
     const locale = entryLocale(
@@ -164,5 +170,5 @@ function preventSharedLocaleCache(response: NextResponse) {
 
 export const config = {
   runtime: "nodejs",
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)", "/api/jobs/:path*", "/api/youtube/analyze", "/api/ranking-shorts/:path*", "/api/file-upload/sessions/:path*"],
 };
