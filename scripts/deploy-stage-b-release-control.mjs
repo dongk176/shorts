@@ -309,7 +309,12 @@ export function validateStageBChangeSetId(changeSetId, region) {
 }
 
 export function validatePromotedStageBDeployment(deployment, expectedBase, expectedProject) {
-  const actualSha = String(deployment?.meta?.gitCommitSha || "").trim();
+  const gitSha = String(deployment?.meta?.gitCommitSha || "").trim();
+  const githubSha = String(deployment?.meta?.githubCommitSha || "").trim();
+  if (gitSha && githubSha && gitSha !== githubSha) {
+    throw new Error("운영 배포의 Git SHA 증거가 서로 다릅니다.");
+  }
+  const actualSha = gitSha || githubSha;
   if (
     deployment?.target !== "production"
     || deployment?.readyState !== "READY"

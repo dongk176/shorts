@@ -39,6 +39,17 @@ test("pins a clean exact HEAD to the actual promoted production SHA", () => {
     meta: { gitCommitSha: base },
   };
   assert.equal(validatePromotedStageBDeployment(deployment, base, "shorts"), base);
+  assert.equal(validatePromotedStageBDeployment(
+    { ...deployment, meta: { githubCommitSha: base } }, base, "shorts",
+  ), base);
+  assert.throws(() => validatePromotedStageBDeployment(
+    { ...deployment, meta: { gitCommitSha: base, githubCommitSha: "b".repeat(40) } },
+    base, "shorts",
+  ), /증거가 서로 다릅니다/);
+  assert.throws(() => validatePromotedStageBDeployment(
+    { ...deployment, readySubstate: "STAGED", meta: { githubCommitSha: base } },
+    base, "shorts",
+  ), /promoted 운영 배포/);
   assert.throws(
     () => validatePromotedStageBDeployment(
       { ...deployment, meta: { gitCommitSha: "b".repeat(40) } },
