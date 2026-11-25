@@ -43,7 +43,7 @@ try {
       "/vercel/sandbox/venv/bin/pip",
       [
         "install",
-        "yt-dlp[default]==2026.7.4",
+        "yt-dlp[default]==2026.11.23",
         "bgutil-ytdlp-pot-provider==1.3.1",
         "yt-dlp-ejs==0.8.0",
         "Pillow==11.3.0",
@@ -83,7 +83,7 @@ try {
     if (result.exitCode !== 0)
       throw new Error(`Dependency installation failed: ${cmd}`);
   }
-  const result = await sandbox.snapshot();
+  const result = await sandbox.snapshot({ expiration: 0 });
   await writeFile(
     process.env.RANKING_SNAPSHOT_RECORD || "ranking-snapshot.json",
     JSON.stringify(
