@@ -5,7 +5,7 @@ export const CONVERSION_MAINTENANCE_END_MS = Date.parse("2026-11-25T05:00:00Z");
 
 export type GenerationMaintenanceMode = "scheduled" | "recovery" | "open";
 // Release pin: the verified recovery deployment remains available for an exact rollback.
-export const GENERATION_MAINTENANCE_MODE: GenerationMaintenanceMode = "recovery";
+export const GENERATION_MAINTENANCE_MODE: GenerationMaintenanceMode = "open";
 
 export function isConversionMaintenanceActive(nowMs = Date.now(), mode: GenerationMaintenanceMode = GENERATION_MAINTENANCE_MODE) {
   if (mode === "open") return false;
