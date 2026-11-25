@@ -1,0 +1,11 @@
+# The caller selects one exact production family from ytdlp-specialized-bases.json.
+# Preserve that family's application, renderer, fonts and entrypoint.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE} AS render
+ARG WORKER_SOURCE_GIT_SHA
+ARG RUNTIME_FAMILY
+LABEL io.easycut.runtime-family=${RUNTIME_FAMILY}
+RUN python -m pip install --no-cache-dir --upgrade --upgrade-strategy eager 'yt-dlp[default]==2026.11.23' \
+    && python -c "from importlib.metadata import version; assert version('yt-dlp') == '2026.11.23'; assert version('yt-dlp-ejs') == '0.8.0'; assert version('bgutil-ytdlp-pot-provider') == '1.3.1'"
+COPY shorts_worker/ingestion.py /app/worker/shorts_worker/ingestion.py
+RUN python -c "import re; from pathlib import Path; sha='$WORKER_SOURCE_GIT_SHA'; assert re.fullmatch('[0-9a-f]{40}', sha); Path('/app/worker/.worker-source-git-sha').write_text(sha + '\\n')"

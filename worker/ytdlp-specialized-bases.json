@@ -1,0 +1,17 @@
+{
+  "language": {
+    "source": "4b6dd0078e5cfb32da77bab53466c31cf451d4a5",
+    "digest": "sha256:db1544afdf211b0bb7ccaf0c4afd30f4c43290aaa9e2d28fa6b7da4e6908a5d7",
+    "release": "3c559307-a495-4082-9ac8-d5d9147452b9"
+  },
+  "sns": {
+    "source": "a730f07144dffc8e77af65b93949dcda4b6690de",
+    "digest": "sha256:f61567d7cad262a7401cdfbf5638ffce6ad9b9a2354d15c690b1d2e0ba127787",
+    "release": "221b1fcd-9b06-499d-97e9-d2093db2a4e3"
+  },
+  "community": {
+    "source": "08aaa3d8b7bb09fbf525520d36186846d15c4082",
+    "digest": "sha256:c99dd86c6cf6af61feef931b202029295aad211345f3ed0707401e27caac9c1d",
+    "release": "8b0a6b0f-ab5d-43dd-afce-b3a2409b59b9"
+  }
+}
