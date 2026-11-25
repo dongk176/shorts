@@ -1,0 +1,309 @@
+{
+  "ids": {
+    "language": "8e9883a0-a9bb-4bea-9d59-9504b016b581",
+    "sns": "c9969722-6f41-4a19-b9e5-b608ec236056",
+    "community": "d2234ec0-5e71-42dd-9b89-bacdec2d7ce5",
+    "sns_editor": "38f0c9d2-5eb9-4310-b57a-ef7156497a71",
+    "community_editor": "8aa1a928-fbc0-4bba-af16-314296cc7d56"
+  },
+  "old": {
+    "sns": "221b1fcd-9b06-499d-97e9-d2093db2a4e3",
+    "community": "8b0a6b0f-ab5d-43dd-afce-b3a2409b59b9",
+    "sns_editor": "340f9382-c8b0-4926-acd0-b8a3987316e4",
+    "community_editor": "0f39f8e7-f4e7-48d1-9c0e-7735276ae06b"
+  },
+  "registrations": {
+    "language": {
+      "id": "8e9883a0-a9bb-4bea-9d59-9504b016b581",
+      "source": "f969c8be6a5dc18088d9c3b5cba77f8e783a5d7b",
+      "digest": "sha256:657005eadea0284c2a5ec7d7380c47beecac8a06336378c397e99c8d12716b56",
+      "previous": "3c559307-a495-4082-9ac8-d5d9147452b9",
+      "registry": {
+        "lanes": {
+          "source_range": {
+            "current": {
+              "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:657005eadea0284c2a5ec7d7380c47beecac8a06336378c397e99c8d12716b56",
+              "releaseId": "language-culture-flash-v1-source-range-f969c8be6a5d",
+              "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-language-test-production",
+              "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-language-test-ytdlp-language-source-range-f969c8be6a5d:1",
+              "renderSpecVersion": 4,
+              "fontManifestSha256": "1da578de91943f1299bb48e33649264dc748f89356879702817ceab38668beff",
+              "workerSourceGitSha": "f969c8be6a5dc18088d9c3b5cba77f8e783a5d7b",
+              "captionRenderSpecVersion": 4
+            },
+            "previous": null,
+            "schedulingMode": "fifo"
+          },
+          "legacy_project": {
+            "current": {
+              "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:657005eadea0284c2a5ec7d7380c47beecac8a06336378c397e99c8d12716b56",
+              "releaseId": "language-culture-flash-v1-legacy-project-f969c8be6a5d",
+              "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-language-test-production",
+              "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-language-test-ytdlp-language-legacy-project-f969c8be6a5d:1",
+              "renderSpecVersion": 4,
+              "fontManifestSha256": "1da578de91943f1299bb48e33649264dc748f89356879702817ceab38668beff",
+              "workerSourceGitSha": "f969c8be6a5dc18088d9c3b5cba77f8e783a5d7b",
+              "captionRenderSpecVersion": 4
+            },
+            "previous": null,
+            "schedulingMode": "fifo"
+          },
+          "subtitle_templates": {
+            "current": {
+              "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:657005eadea0284c2a5ec7d7380c47beecac8a06336378c397e99c8d12716b56",
+              "releaseId": "language-culture-flash-v1-subtitle-templates-f969c8be6a5d",
+              "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-language-test-production",
+              "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-language-test-ytdlp-language-subtitle-templates-f969c8be6a5d:1",
+              "renderSpecVersion": 4,
+              "fontManifestSha256": "1da578de91943f1299bb48e33649264dc748f89356879702817ceab38668beff",
+              "workerSourceGitSha": "f969c8be6a5dc18088d9c3b5cba77f8e783a5d7b",
+              "captionRenderSpecVersion": 4
+            },
+            "previous": null,
+            "schedulingMode": "fifo"
+          },
+          "elevenlabs_transcription": {
+            "current": {
+              "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:657005eadea0284c2a5ec7d7380c47beecac8a06336378c397e99c8d12716b56",
+              "releaseId": "language-culture-flash-v1-elevenlabs-transcription-f969c8be6a5d",
+              "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-language-test-production",
+              "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-language-test-ytdlp-language-elevenlabs-transcription-f969c8be6a5d:1",
+              "renderSpecVersion": 4,
+              "fontManifestSha256": "1da578de91943f1299bb48e33649264dc748f89356879702817ceab38668beff",
+              "workerSourceGitSha": "f969c8be6a5dc18088d9c3b5cba77f8e783a5d7b",
+              "captionRenderSpecVersion": 4
+            },
+            "previous": null,
+            "schedulingMode": "fifo"
+          },
+          "unified_template_subtitles": {
+            "current": {
+              "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:657005eadea0284c2a5ec7d7380c47beecac8a06336378c397e99c8d12716b56",
+              "releaseId": "language-culture-flash-v1-unified-template-subtitles-f969c8be6a5d",
+              "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-language-test-production",
+              "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-language-test-ytdlp-language-unified-template-subtitles-f969c8be6a5d:1",
+              "renderSpecVersion": 4,
+              "fontManifestSha256": "1da578de91943f1299bb48e33649264dc748f89356879702817ceab38668beff",
+              "workerSourceGitSha": "f969c8be6a5dc18088d9c3b5cba77f8e783a5d7b",
+              "captionRenderSpecVersion": 4
+            },
+            "previous": null,
+            "schedulingMode": "fifo"
+          }
+        },
+        "version": 1,
+        "environment": "production"
+      },
+      "editorDefinition": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-release-language-test-ytdlp-language-editor-f969c8be6a5d:1",
+      "editorQueue": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-language-test-production",
+      "definitions": {
+        "source_range": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-language-test-ytdlp-language-source-range-f969c8be6a5d:1",
+        "legacy_project": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-language-test-ytdlp-language-legacy-project-f969c8be6a5d:1",
+        "subtitle_templates": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-language-test-ytdlp-language-subtitle-templates-f969c8be6a5d:1",
+        "elevenlabs_transcription": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-language-test-ytdlp-language-elevenlabs-transcription-f969c8be6a5d:1",
+        "unified_template_subtitles": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-language-test-ytdlp-language-unified-template-subtitles-f969c8be6a5d:1",
+        "editor": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-release-language-test-ytdlp-language-editor-f969c8be6a5d:1"
+      }
+    },
+    "sns": {
+      "id": "c9969722-6f41-4a19-b9e5-b608ec236056",
+      "source": "f969c8be6a5dc18088d9c3b5cba77f8e783a5d7b",
+      "digest": "sha256:5d43bce55a3ea6b8c5060c8f01074f7d9853e3626227689aa7ea2019550d70ff",
+      "previous": "221b1fcd-9b06-499d-97e9-d2093db2a4e3",
+      "registry": {
+        "lanes": {
+          "source_range": {
+            "current": {
+              "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:5d43bce55a3ea6b8c5060c8f01074f7d9853e3626227689aa7ea2019550d70ff",
+              "releaseId": "sns-template-ytdlp-source-range-f969c8be6a5d",
+              "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-language-test-production",
+              "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-language-test-sns-ytdlp-source-range-f969c8be6a5d:1",
+              "renderSpecVersion": 4,
+              "fontManifestSha256": "1da578de91943f1299bb48e33649264dc748f89356879702817ceab38668beff",
+              "workerSourceGitSha": "f969c8be6a5dc18088d9c3b5cba77f8e783a5d7b",
+              "captionRenderSpecVersion": 4
+            },
+            "previous": null,
+            "schedulingMode": "fifo"
+          },
+          "legacy_project": {
+            "current": {
+              "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:5d43bce55a3ea6b8c5060c8f01074f7d9853e3626227689aa7ea2019550d70ff",
+              "releaseId": "sns-template-ytdlp-legacy-project-f969c8be6a5d",
+              "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-language-test-production",
+              "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-language-test-sns-ytdlp-legacy-project-f969c8be6a5d:1",
+              "renderSpecVersion": 4,
+              "fontManifestSha256": "1da578de91943f1299bb48e33649264dc748f89356879702817ceab38668beff",
+              "workerSourceGitSha": "f969c8be6a5dc18088d9c3b5cba77f8e783a5d7b",
+              "captionRenderSpecVersion": 4
+            },
+            "previous": null,
+            "schedulingMode": "fifo"
+          },
+          "subtitle_templates": {
+            "current": {
+              "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:5d43bce55a3ea6b8c5060c8f01074f7d9853e3626227689aa7ea2019550d70ff",
+              "releaseId": "sns-template-ytdlp-subtitle-templates-f969c8be6a5d",
+              "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-language-test-production",
+              "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-language-test-sns-ytdlp-subtitle-templates-f969c8be6a5d:1",
+              "renderSpecVersion": 4,
+              "fontManifestSha256": "1da578de91943f1299bb48e33649264dc748f89356879702817ceab38668beff",
+              "workerSourceGitSha": "f969c8be6a5dc18088d9c3b5cba77f8e783a5d7b",
+              "captionRenderSpecVersion": 4
+            },
+            "previous": null,
+            "schedulingMode": "fifo"
+          },
+          "elevenlabs_transcription": {
+            "current": {
+              "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:5d43bce55a3ea6b8c5060c8f01074f7d9853e3626227689aa7ea2019550d70ff",
+              "releaseId": "sns-template-ytdlp-elevenlabs-transcription-f969c8be6a5d",
+              "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-language-test-production",
+              "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-language-test-sns-ytdlp-elevenlabs-transcription-f969c8be6a5d:1",
+              "renderSpecVersion": 4,
+              "fontManifestSha256": "1da578de91943f1299bb48e33649264dc748f89356879702817ceab38668beff",
+              "workerSourceGitSha": "f969c8be6a5dc18088d9c3b5cba77f8e783a5d7b",
+              "captionRenderSpecVersion": 4
+            },
+            "previous": null,
+            "schedulingMode": "fifo"
+          },
+          "unified_template_subtitles": {
+            "current": {
+              "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:5d43bce55a3ea6b8c5060c8f01074f7d9853e3626227689aa7ea2019550d70ff",
+              "releaseId": "sns-template-ytdlp-unified-template-subtitles-f969c8be6a5d",
+              "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-language-test-production",
+              "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-language-test-sns-ytdlp-unified-template-subtitles-f969c8be6a5d:1",
+              "renderSpecVersion": 4,
+              "fontManifestSha256": "1da578de91943f1299bb48e33649264dc748f89356879702817ceab38668beff",
+              "workerSourceGitSha": "f969c8be6a5dc18088d9c3b5cba77f8e783a5d7b",
+              "captionRenderSpecVersion": 4
+            },
+            "previous": null,
+            "schedulingMode": "fifo"
+          }
+        },
+        "version": 1,
+        "environment": "production"
+      },
+      "editorDefinition": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-release-language-test-sns-ytdlp-editor-f969c8be6a5d:1",
+      "editorQueue": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-language-test-production",
+      "definitions": {
+        "source_range": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-language-test-sns-ytdlp-source-range-f969c8be6a5d:1",
+        "legacy_project": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-language-test-sns-ytdlp-legacy-project-f969c8be6a5d:1",
+        "subtitle_templates": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-language-test-sns-ytdlp-subtitle-templates-f969c8be6a5d:1",
+        "elevenlabs_transcription": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-language-test-sns-ytdlp-elevenlabs-transcription-f969c8be6a5d:1",
+        "unified_template_subtitles": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-language-test-sns-ytdlp-unified-template-subtitles-f969c8be6a5d:1",
+        "editor": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-release-language-test-sns-ytdlp-editor-f969c8be6a5d:1"
+      }
+    },
+    "community": {
+      "id": "d2234ec0-5e71-42dd-9b89-bacdec2d7ce5",
+      "source": "f969c8be6a5dc18088d9c3b5cba77f8e783a5d7b",
+      "digest": "sha256:39df0ff6f234fd39453d19ad040508296b1f6fb821af892b89933e9bfd70c098",
+      "previous": "8b0a6b0f-ab5d-43dd-afce-b3a2409b59b9",
+      "registry": {
+        "lanes": {
+          "source_range": {
+            "current": {
+              "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:39df0ff6f234fd39453d19ad040508296b1f6fb821af892b89933e9bfd70c098",
+              "releaseId": "sns-template-community-ytdlp-source-range-f969c8be6a5d",
+              "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-language-test-production",
+              "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-language-test-sns-community-ytdlp-source-range-f969c8be6a5d:1",
+              "renderSpecVersion": 4,
+              "fontManifestSha256": "1da578de91943f1299bb48e33649264dc748f89356879702817ceab38668beff",
+              "workerSourceGitSha": "f969c8be6a5dc18088d9c3b5cba77f8e783a5d7b",
+              "captionRenderSpecVersion": 4
+            },
+            "previous": null,
+            "schedulingMode": "fifo"
+          },
+          "legacy_project": {
+            "current": {
+              "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:39df0ff6f234fd39453d19ad040508296b1f6fb821af892b89933e9bfd70c098",
+              "releaseId": "sns-template-community-ytdlp-legacy-project-f969c8be6a5d",
+              "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-language-test-production",
+              "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-language-test-sns-community-ytdlp-legacy-project-f969c8be6a5d:1",
+              "renderSpecVersion": 4,
+              "fontManifestSha256": "1da578de91943f1299bb48e33649264dc748f89356879702817ceab38668beff",
+              "workerSourceGitSha": "f969c8be6a5dc18088d9c3b5cba77f8e783a5d7b",
+              "captionRenderSpecVersion": 4
+            },
+            "previous": null,
+            "schedulingMode": "fifo"
+          },
+          "subtitle_templates": {
+            "current": {
+              "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:39df0ff6f234fd39453d19ad040508296b1f6fb821af892b89933e9bfd70c098",
+              "releaseId": "sns-template-community-ytdlp-subtitle-templates-f969c8be6a5d",
+              "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-language-test-production",
+              "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-language-test-sns-community-ytdlp-subtitle-templates-f969c8be6a5d:1",
+              "renderSpecVersion": 4,
+              "fontManifestSha256": "1da578de91943f1299bb48e33649264dc748f89356879702817ceab38668beff",
+              "workerSourceGitSha": "f969c8be6a5dc18088d9c3b5cba77f8e783a5d7b",
+              "captionRenderSpecVersion": 4
+            },
+            "previous": null,
+            "schedulingMode": "fifo"
+          },
+          "elevenlabs_transcription": {
+            "current": {
+              "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:39df0ff6f234fd39453d19ad040508296b1f6fb821af892b89933e9bfd70c098",
+              "releaseId": "sns-template-community-ytdlp-elevenlabs-transcription-f969c8be6a5d",
+              "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-language-test-production",
+              "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-language-test-sns-community-ytdlp-elevenlabs-transcription-f969c8be6a5d:1",
+              "renderSpecVersion": 4,
+              "fontManifestSha256": "1da578de91943f1299bb48e33649264dc748f89356879702817ceab38668beff",
+              "workerSourceGitSha": "f969c8be6a5dc18088d9c3b5cba77f8e783a5d7b",
+              "captionRenderSpecVersion": 4
+            },
+            "previous": null,
+            "schedulingMode": "fifo"
+          },
+          "unified_template_subtitles": {
+            "current": {
+              "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:39df0ff6f234fd39453d19ad040508296b1f6fb821af892b89933e9bfd70c098",
+              "releaseId": "sns-template-community-ytdlp-unified-template-subtitles-f969c8be6a5d",
+              "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-language-test-production",
+              "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-language-test-sns-community-ytdlp-unified-template-subtitles-f969c8be6a5d:1",
+              "renderSpecVersion": 4,
+              "fontManifestSha256": "1da578de91943f1299bb48e33649264dc748f89356879702817ceab38668beff",
+              "workerSourceGitSha": "f969c8be6a5dc18088d9c3b5cba77f8e783a5d7b",
+              "captionRenderSpecVersion": 4
+            },
+            "previous": null,
+            "schedulingMode": "fifo"
+          }
+        },
+        "version": 1,
+        "environment": "production"
+      },
+      "editorDefinition": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-release-language-test-sns-community-ytdlp-editor-f969c8be6a5d:1",
+      "editorQueue": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-language-test-production",
+      "definitions": {
+        "source_range": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-language-test-sns-community-ytdlp-source-range-f969c8be6a5d:1",
+        "legacy_project": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-language-test-sns-community-ytdlp-legacy-project-f969c8be6a5d:1",
+        "subtitle_templates": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-language-test-sns-community-ytdlp-subtitle-templates-f969c8be6a5d:1",
+        "elevenlabs_transcription": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-language-test-sns-community-ytdlp-elevenlabs-transcription-f969c8be6a5d:1",
+        "unified_template_subtitles": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-language-test-sns-community-ytdlp-unified-template-subtitles-f969c8be6a5d:1",
+        "editor": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-release-language-test-sns-community-ytdlp-editor-f969c8be6a5d:1"
+      }
+    }
+  },
+  "editors": {
+    "sns_editor": {
+      "id": "38f0c9d2-5eb9-4310-b57a-ef7156497a71",
+      "previous": "340f9382-c8b0-4926-acd0-b8a3987316e4",
+      "source": "a35625d12e7ef0e7133f3dc927128dec5c06ab3a",
+      "digest": "sha256:f150c2b75115a1c01278a7432a6ec452449ceb558e70c03ff0d16c59f0db2e6c",
+      "definition": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-release-ytdlp-sns-editor-a35625d12e7e:1"
+    },
+    "community_editor": {
+      "id": "8aa1a928-fbc0-4bba-af16-314296cc7d56",
+      "previous": "0f39f8e7-f4e7-48d1-9c0e-7735276ae06b",
+      "source": "a35625d12e7ef0e7133f3dc927128dec5c06ab3a",
+      "digest": "sha256:24c699d084b0bbba3e6e154dd006b55cdf1d54d20e2e699404f53bf1035fd949",
+      "definition": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-release-ytdlp-community-editor-a35625d12e7e:1"
+    }
+  }
+}

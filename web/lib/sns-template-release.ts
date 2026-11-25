@@ -4,7 +4,7 @@ import { languageTestRegistrySchema } from "./language-test";
 import { COMMUNITY_TEMPLATE_RELEASE_ID } from "./community-template-contract";
 
 // A separate immutable release: never repoint the public language settings.
-export const SNS_TEMPLATE_RELEASE_ID = "221b1fcd-9b06-499d-97e9-d2093db2a4e3";
+export const SNS_TEMPLATE_RELEASE_ID = "c9969722-6f41-4a19-b9e5-b608ec236056";
 export const SNS_TEMPLATE_UNAVAILABLE = "SNS 템플릿을 준비 중입니다. 잠시 후 다시 시도해 주세요.";
 
 export async function snsTemplateRelease(db: Sql | TransactionSql, community = false) {

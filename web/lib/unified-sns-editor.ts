@@ -10,8 +10,8 @@ import { wrapEditorRenderText } from "./editor-render-spec";
 // documents containing the shared editor's additional layers.
 // Identity-corrected successors, verified with real request binding. The
 // earlier contrast images contain the predecessor's hard-coded release IDs.
-export const UNIFIED_SNS_EDITOR_RELEASE_ID = "340f9382-c8b0-4926-acd0-b8a3987316e4";
-export const UNIFIED_COMMUNITY_EDITOR_RELEASE_ID = "0f39f8e7-f4e7-48d1-9c0e-7735276ae06b";
+export const UNIFIED_SNS_EDITOR_RELEASE_ID = "38f0c9d2-5eb9-4310-b57a-ef7156497a71";
+export const UNIFIED_COMMUNITY_EDITOR_RELEASE_ID = "8aa1a928-fbc0-4bba-af16-314296cc7d56";
 export { communityHeadingColor };
 
 export const isUnifiedSnsSnapshot = (snapshot: Record<string, unknown> | null | undefined) =>
