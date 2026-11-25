@@ -3,13 +3,13 @@ import { SITE_LOCALE_COOKIE } from "./i18n/config";
 import { entryLocale } from "./i18n/entry-locale";
 import { localePath } from "./i18n/routing";
 
-import { generationMaintenanceCopy, CONVERSION_MAINTENANCE_START_MS, CONVERSION_MAINTENANCE_END_MS } from "./conversion-maintenance";
+import { maintenanceCopy, isConversionMaintenanceActive, GENERATION_MAINTENANCE_MODE, type GenerationMaintenanceMode, CONVERSION_MAINTENANCE_START_MS, CONVERSION_MAINTENANCE_END_MS } from "./conversion-maintenance";
 export const GENERATION_MAINTENANCE_START = CONVERSION_MAINTENANCE_START_MS;
 export const GENERATION_MAINTENANCE_END = CONVERSION_MAINTENANCE_END_MS;
 
 
-export function generationMaintenanceResponse(request: NextRequest, now = Date.now()): NextResponse | null {
-  if (now < GENERATION_MAINTENANCE_START || now >= GENERATION_MAINTENANCE_END) return null;
+export function generationMaintenanceResponse(request: NextRequest, now = Date.now(), mode: GenerationMaintenanceMode = GENERATION_MAINTENANCE_MODE): NextResponse | null {
+  if (!isConversionMaintenanceActive(now, mode)) return null;
   const route = localePath(request.nextUrl.pathname);
   const path = route.pathname.replace(/\/$/, "") || "/";
   const api = request.method === "POST" && (
@@ -30,12 +30,12 @@ export function generationMaintenanceResponse(request: NextRequest, now = Date.n
       if (referer.origin === request.nextUrl.origin) locale = localePath(referer.pathname).locale;
     } catch { /* Requests without a page use their language preference. */ }
   }
-  const copy = generationMaintenanceCopy[locale];
+  const copy = maintenanceCopy(mode)[locale];
   const headers = {
     "Cache-Control": "private, no-store, max-age=0",
-    "Retry-After": String(Math.max(1, Math.ceil((GENERATION_MAINTENANCE_END - now) / 1000))),
+    "Retry-After": mode === "scheduled" ? String(Math.max(1, Math.ceil((GENERATION_MAINTENANCE_END - now) / 1000))) : "300",
     "Content-Language": locale,
     Vary: "Cookie, Accept-Language, X-Vercel-IP-Country",
   };
-  return NextResponse.json({ detail: copy.detail, code: "GENERATION_MAINTENANCE", endsAt: "2026-11-25T05:00:00Z" }, { status: 503, headers });
+  return NextResponse.json({ detail: copy.detail, code: "GENERATION_MAINTENANCE", endsAt: mode === "scheduled" ? "2026-11-25T05:00:00Z" : null }, { status: 503, headers });
 }

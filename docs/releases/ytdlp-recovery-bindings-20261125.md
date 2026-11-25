@@ -46,3 +46,14 @@ queues, capacity, publishing gates, or the existing creation-only maintenance de
 
 The Supabase preflight reported existing unrelated search-path/auth advisories; this migration
 retains all five functions' fixed search paths and existing privileges, and changes no RLS or grants.
+
+## Verified reopening and one-hour observation
+
+The owner subsequently authorized reopening immediately after the promoted
+worker completes a real project, followed by one hour of observation. Eight
+unique terminally failed projects during that hour require restoring creation
+maintenance; intermediate retries are excluded. Existing browsing, editing and
+downloads remain available. This replaces the earlier automatic 14:00 reopening.
+The recovery deployment pins maintenance on without an automatic deadline. Its
+exact tested deployment is retained for a creation-only rollback, preserving
+all worker fixes. The open continuation changes only that maintenance pin.
