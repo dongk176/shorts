@@ -9,6 +9,11 @@ worker/ytdlp-specialized-bases.json, not from the general candidate. The only
 runtime changes are yt-dlp/default dependencies, the reviewed ingestion module
 and the source identity marker. Family application code, prompts, renderers,
 fonts, entrypoint, language behavior and editor support remain inherited.
+The initial candidate scan found CVE-2026-4738 against zlib 1.3.2-r0. The
+candidate also pins the available Alpine 3.22 zlib update, 1.4-r0. An apk
+simulation confirmed this replaces only zlib; FFmpeg and fonts do not change.
+The first candidate is not eligible for registration. Rescan the rebuilt
+image and rerun its actual-image functional checks before using it.
 The build source SHA identifies this assembly recipe, not a wholesale copy of
 the web checkout's worker directory. Use immutable family-specific image tags.
 
