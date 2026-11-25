@@ -12,14 +12,16 @@ from .release_identity import verify_initial_render_v4_runtime
 from .schemas import CustomTemplateConfig, EditorDocument
 from .sns_template import validate_copy
 
-UNIFIED_SNS_EDITOR_RELEASE_ID = "66f640ba-d156-4c90-9c4f-f79038bf9d14"
-UNIFIED_COMMUNITY_EDITOR_RELEASE_ID = "a576138e-1ddf-4469-8494-252058595705"
+UNIFIED_SNS_EDITOR_RELEASE_ID = "38f0c9d2-5eb9-4310-b57a-ef7156497a71"
+UNIFIED_COMMUNITY_EDITOR_RELEASE_ID = "8aa1a928-fbc0-4bba-af16-314296cc7d56"
 
 SNS_EDITOR_RELEASE_ID = "4fbfeeaa-e210-4143-aece-c17029d962a0"
 SNS_GENERATION_RELEASE_IDS = {
+    "c9969722-6f41-4a19-b9e5-b608ec236056",
     "b871796a-f83a-4aed-8d56-bf039de1cdbf",
     "8dc98fc0-a5bb-411f-9cc6-0e8dc28648ca",
     "8af2c7e6-5421-4e93-9671-b0e8bb41de8a",
+    "221b1fcd-9b06-499d-97e9-d2093db2a4e3",
 }
 
 

@@ -12,6 +12,7 @@ from .sns_template import SnsLayout, draw_text, fit_text, font, text_width
 COMMUNITY_RELEASE_ID = "8b0a6b0f-ab5d-43dd-afce-b3a2409b59b9"
 COMMUNITY_EDITOR_RELEASE_ID = "ca57c1ae-c841-4f44-835a-f566a3c097c1"
 COMMUNITY_GENERATION_RELEASE_IDS = {
+    "d2234ec0-5e71-42dd-9b89-bacdec2d7ce5",
     COMMUNITY_RELEASE_ID, "46d7f96b-7e16-4fa6-920f-b3c915cad8e8",
     "1ce342d0-cf2d-41b4-961b-f3abd9f4e336",
     "0641d236-5e76-467e-95f3-bf695e6d6083", "a7db3266-7fc0-4175-a818-39aaff712ad3"}

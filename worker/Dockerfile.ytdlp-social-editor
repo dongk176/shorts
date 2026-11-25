@@ -1,0 +1,11 @@
+# Preserve the currently deployed social editor; only admit the verified new
+# generation identities and identify this assembly recipe.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE} AS render
+ARG WORKER_SOURCE_GIT_SHA
+ARG RUNTIME_FAMILY
+LABEL io.easycut.runtime-family=${RUNTIME_FAMILY}
+RUN apk add --no-cache --upgrade 'zlib=1.4-r0'
+COPY shorts_worker/sns_editor.py /app/worker/shorts_worker/sns_editor.py
+COPY shorts_worker/community_template.py /app/worker/shorts_worker/community_template.py
+RUN python -c "import re; from pathlib import Path; sha='$WORKER_SOURCE_GIT_SHA'; assert re.fullmatch('[0-9a-f]{40}', sha); Path('/app/worker/.worker-source-git-sha').write_text(sha + '\\n')"

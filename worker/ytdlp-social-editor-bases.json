@@ -1,0 +1,14 @@
+{
+  "sns_editor": {
+    "source": "fd35cadf2f801b5908063b312bb1e078babe2b40",
+    "digest": "sha256:59e32b13b032ecf84fee628090ecde1916607db9d7ae49a611f44bc41517239e",
+    "previousRelease": "340f9382-c8b0-4926-acd0-b8a3987316e4",
+    "release": "38f0c9d2-5eb9-4310-b57a-ef7156497a71"
+  },
+  "community_editor": {
+    "source": "fd35cadf2f801b5908063b312bb1e078babe2b40",
+    "digest": "sha256:e7dac55ec0964b9dc0e812695780ac6d7d1f0a1f3b2cbbaf973bdaea359a159b",
+    "previousRelease": "0f39f8e7-f4e7-48d1-9c0e-7735276ae06b",
+    "release": "8aa1a928-fbc0-4bba-af16-314296cc7d56"
+  }
+}
