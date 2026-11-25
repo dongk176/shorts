@@ -8,11 +8,11 @@ const request = (path: string, method = "GET", headers: Record<string, string> =
 describe("temporary generation maintenance", () => {
   it("reopens exactly at 14:00 KST without a second deployment", () => {
     expect(generationMaintenanceResponse(request("/"), GENERATION_MAINTENANCE_START - 1)).toBeNull();
-    expect(generationMaintenanceResponse(request("/"), GENERATION_MAINTENANCE_END - 1)?.status).toBe(503);
+    expect(generationMaintenanceResponse(request("/api/jobs", "POST"), GENERATION_MAINTENANCE_END - 1)?.status).toBe(503);
     expect(generationMaintenanceResponse(request("/api/jobs", "POST"), GENERATION_MAINTENANCE_END)).toBeNull();
   });
   it.each([["/", "ko", "오후 2시"], ["/en", "en", "05:00 UTC"], ["/jp/ranking-shorts", "ja", "14:00"]])("localizes %s and avoids shared caching", async (path, locale, time) => {
-    const response = generationMaintenanceResponse(request(path), during)!;
+    const response = generationMaintenanceResponse(request("/api/jobs", "POST", { referer: `https://www.easycut.co.kr${path}` }), during)!;
     expect(response.status).toBe(503);
     expect(response.headers.get("content-language")).toBe(locale);
     expect(response.headers.get("cache-control")).toContain("no-store");
@@ -24,7 +24,7 @@ describe("temporary generation maintenance", () => {
     expect(response.headers.get("content-language")).toBe("ja");
     expect((await response.json()).code).toBe("GENERATION_MAINTENANCE");
   });
-  it.each([["/projects/31338", "GET"], ["/projects/31338/edit/id", "GET"], ["/api/shorts/id/rerender", "POST"], ["/api/shorts/id/download", "GET"], ["/api/jobs/id", "GET"], ["/api/file-upload/sessions/id", "DELETE"], ["/api/ranking-shorts/id", "PATCH"], ["/api/cron/billing-renewals", "GET"], ["/guidebook", "GET"], ["/pricing", "GET"], ["/admin/easycutcutcutcutcutcut", "GET"]])("preserves existing projects, editing, downloads and unrelated services: %s", (path, method) => {
+  it.each([["/", "GET"], ["/en", "GET"], ["/jp", "GET"], ["/ranking-shorts", "GET"], ["/projects/31338", "GET"], ["/projects/31338/edit/id", "GET"], ["/api/shorts/id/rerender", "POST"], ["/api/shorts/id/download", "GET"], ["/api/jobs/id", "GET"], ["/api/file-upload/sessions/id", "DELETE"], ["/api/ranking-shorts/id", "PATCH"], ["/api/cron/billing-renewals", "GET"], ["/guidebook", "GET"], ["/pricing", "GET"], ["/admin/easycutcutcutcutcutcut", "GET"]])("preserves existing projects, editing, downloads and unrelated services: %s", (path, method) => {
     expect(generationMaintenanceResponse(request(path, method), during)).toBeNull();
   });
 });

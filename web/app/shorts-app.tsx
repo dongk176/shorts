@@ -145,7 +145,7 @@ import { SHOW_MONETIZATION_CONTENT } from "@/lib/content-visibility";
 import { captionCompositionRect } from "@/lib/caption-composition";
 import { jobNeedsPolling, startHomeJobPolling } from "@/lib/home-job-polling";
 import { SIMULATED_PROGRESS_START } from "@/lib/creation-progress";
-import { isConversionMaintenanceActive } from "@/lib/conversion-maintenance";
+import { isConversionMaintenanceActive, generationMaintenanceCopy } from "@/lib/conversion-maintenance";
 import { isPlaybackAvailable, shortPlaybackVersionKey } from "@/lib/project-playback";
 import { isEditorRenderSpecV4Enabled } from "@/lib/editor-render-v4-feature";
 import { templateBackgroundStyle } from "@/lib/template-design-preview";
@@ -13909,12 +13909,6 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
   }, [sourceMode, uploadModeEnabled]);
 
   useEffect(() => {
-    if (!conversionMaintenanceOpen) return;
-    const timer = window.setTimeout(closeConversionMaintenance, 3_200);
-    return () => window.clearTimeout(timer);
-  }, [closeConversionMaintenance, conversionMaintenanceOpen]);
-
-  useEffect(() => {
     const currentUrl = new URL(window.location.href);
     const requestedSubtitleTemplate = subtitleTemplateOptions.find(
       (template) => template.id === currentUrl.searchParams.get("subtitleTemplate"),
@@ -14368,6 +14362,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
   };
 
   const createUploadJob = async (betaNoticeConfirmed = false) => {
+    if (isConversionMaintenanceActive()) { setConversionMaintenanceOpen(true); return; }
     if (!uploadSourceActive || !uploadVideo || !selectedSource) return;
     if (needsUpgrade) { openUpgradePlans(); return; }
     if (!rightsConfirmed) {
@@ -14673,6 +14668,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
   };
 
   const createJob = async () => {
+    if (isConversionMaintenanceActive()) { setConversionMaintenanceOpen(true); return; }
     if (!analysis) return;
     if (communityTemplateSelected && !communityTemplateActive) {
       setError("커뮤니티 템플릿 연결을 확인해 주세요. 새로고침 후 다시 선택해 주세요.");
@@ -14934,8 +14930,9 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
       <NoticeDialog
         open={conversionMaintenanceOpen}
         dialogId="conversion-maintenance"
-        title={ui("서비스 점검 중입니다")}
-        description="더 안정적인 서비스를 위해 잠시 점검하고 있어요. 오후 12:40부터 다시 이용할 수 있습니다."
+        title={generationMaintenanceCopy[locale].title}
+        description={generationMaintenanceCopy[locale].detail}
+        confirmLabel={locale === "en" ? "OK" : locale === "ja" ? "確認" : "확인"}
         variant="info"
         onClose={closeConversionMaintenance}
       />
@@ -15047,13 +15044,13 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
         ) : null}
         {sourceMode === "youtube" ? (
           <>
-            <form id="workspace" onSubmit={event => { if (state?.capabilities.midform) { event.preventDefault(); setConversionChoiceStage("analyze"); setConversionChoiceOpen(true); } else void analyze(event); }} noValidate={state?.capabilities.midform === true} className={`url-console w-full max-w-3xl ${uploadModeVisible ? "mt-3" : "mt-8"}`}>
+            <form id="workspace" onSubmit={event => { if (isConversionMaintenanceActive()) { event.preventDefault(); setConversionMaintenanceOpen(true); return; } if (state?.capabilities.midform) { event.preventDefault(); setConversionChoiceStage("analyze"); setConversionChoiceOpen(true); } else void analyze(event); }} noValidate={state?.capabilities.midform === true} className={`url-console w-full max-w-3xl ${uploadModeVisible ? "mt-3" : "mt-8"}`}>
               <div className="relative flex-1">
                 <span className="absolute inset-y-0 left-4 flex items-center text-xl text-[#d7aaa4]" aria-hidden="true">↗</span>
                 <input type="url" value={youtubeUrl} onChange={(event) => { setYoutubeUrl(event.target.value); setRightsConfirmed(false); setRightsConfirmationAttention(false); }} placeholder={t("home.youtubePlaceholder")} className="url-input" aria-label={t("home.youtubeLabel")} />
                 <button type="button" onClick={() => void pasteYoutubeUrl()} className="paste-button" aria-label={t("home.pasteLabel")} title={t("home.paste")}><svg viewBox="0 0 24 24" width="19" height="19" fill="none" aria-hidden="true"><path d="M9 5.5h6M9.5 3h5a1 1 0 0 1 1 1v3h-7V4a1 1 0 0 1 1-1Z" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/><path d="M8 5H6.75A1.75 1.75 0 0 0 5 6.75v12.5C5 20.216 5.784 21 6.75 21h10.5A1.75 1.75 0 0 0 19 19.25V6.75A1.75 1.75 0 0 0 17.25 5H16" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg></button>
               </div>
-              <button disabled={busy} className="ai-button">{busy ? t("home.checking") : t("home.convert")}</button>
+              <button disabled={busy} onClick={event => { if (isConversionMaintenanceActive()) { event.preventDefault(); setConversionMaintenanceOpen(true); } }} className="ai-button">{busy ? t("home.checking") : t("home.convert")}</button>
             </form>
             <p className="mt-4 text-xs font-medium leading-6 text-neutral-400 sm:text-sm">{t("home.sourceDurationHint")}</p>
           </>
@@ -15368,7 +15365,7 @@ export function ShortsApp({ initialState = null, initialLocale, initialStateLoad
               {ui(error)}
             </div>
           )}
-          <button disabled={creationActionDisabled({ creationBlocked: analysisCreationBlocked, rangeValid: sourceRangeIsValid, needsUpgrade, busy, stateReady: stateLoadStatus === "ready" })} onClick={() => { if (needsUpgrade) { openUpgradePlans(); return; } if (state?.capabilities.midform && !shortsChosen) { setConversionChoiceStage("create"); setConversionChoiceOpen(true); } else void (uploadSourceActive ? createUploadJob() : createJob()); }} aria-busy={busy || loginPromptPending} className={`h-[52px] w-full rounded-xl py-4 font-bold text-black transition duration-150 disabled:bg-neutral-800 disabled:text-neutral-500 ${loginPromptPending ? "scale-[.985] bg-neutral-200 shadow-[inset_0_2px_6px_rgba(0,0,0,.22)] motion-reduce:transform-none" : "bg-white hover:bg-neutral-100 active:scale-[.985]"}`}>
+          <button disabled={creationActionDisabled({ creationBlocked: analysisCreationBlocked, rangeValid: sourceRangeIsValid, needsUpgrade, busy, stateReady: stateLoadStatus === "ready" })} onClick={() => { if (isConversionMaintenanceActive()) { setConversionMaintenanceOpen(true); return; } if (needsUpgrade) { openUpgradePlans(); return; } if (state?.capabilities.midform && !shortsChosen) { setConversionChoiceStage("create"); setConversionChoiceOpen(true); } else void (uploadSourceActive ? createUploadJob() : createJob()); }} aria-busy={busy || loginPromptPending} className={`h-[52px] w-full rounded-xl py-4 font-bold text-black transition duration-150 disabled:bg-neutral-800 disabled:text-neutral-500 ${loginPromptPending ? "scale-[.985] bg-neutral-200 shadow-[inset_0_2px_6px_rgba(0,0,0,.22)] motion-reduce:transform-none" : "bg-white hover:bg-neutral-100 active:scale-[.985]"}`}>
             <span className="inline-flex items-center justify-center gap-2">
               {(busy || loginPromptPending) && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-black/25 border-t-black motion-reduce:animate-none" />}
               {ui(busy
