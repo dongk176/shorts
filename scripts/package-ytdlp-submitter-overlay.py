@@ -2,6 +2,7 @@
 from __future__ import annotations
 import argparse
 import base64
+import copy
 import hashlib
 import io
 from pathlib import Path
@@ -23,7 +24,7 @@ def package(source: Path, output: Path) -> None:
         assert original.read(TARGET) == before
         with ZipFile(output, 'w') as result:
             for entry in original.infolist():
-                result.writestr(entry, after if entry.filename == TARGET else original.read(entry.filename))
+                result.writestr(copy.copy(entry), after if entry.filename == TARGET else original.read(entry.filename))
         with ZipFile(output) as result:
             assert original.namelist() == result.namelist()
             assert [name for name in original.namelist() if original.read(name) != result.read(name)] == [TARGET]
